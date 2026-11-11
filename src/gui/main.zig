@@ -1,7 +1,11 @@
 //! oez: the GUI. One window of live traces for now.
 //!
 //!   oez [--sim 32,16] [--16ch A1,B1] [--aux] [--adc] [--driver usb|d3xx] [--seconds S]
-//!       [--present auto|mailbox|immediate|fifo] [--late-ms MS]
+//!       [--present auto|mailbox|immediate|fifo] [--margin-ms MS] [--script STEPS]
+//!
+//! --script feeds synthetic input for tests, as "SECONDS:STEP;SECONDS:STEP;...", where STEP is
+//! wheel=N, hwheel=N (axis units, 15 = one click), pinch=F (scale factor), or keys such as
+//! "]]==" (any of [ ] - = r q). It goes through the same path as real input.
 //!
 //! Without --sim it opens the board. Controls:
 //!   wheel / two-finger scroll      Y scale (µV per row)
@@ -13,6 +17,13 @@
 //! acquisition back. Once a second it logs the frame rate and the sample-to-screen latency:
 //! the time from a sample's block reaching the ring to the frame showing it being presented
 //! (from Wayland presentation feedback).
+//!
+//! Frame timing. The compositor shows, one refresh later, whatever was committed just before
+//! each refresh. Drawing right after its frame callback therefore costs two refreshes
+//! (measured 32.7 ms at 60 Hz); drawing just before the next refresh costs one plus a margin
+//! (19.4 ms with 2.7 ms to spare). So each frame is drawn `margin` before the next refresh,
+//! predicted from the presentation timestamps. The margin is 3 ms; it widens only while
+//! frames keep landing late and then returns; --margin-ms fixes it.
 
 const std = @import("std");
 const oez = @import("oez");
@@ -31,8 +42,48 @@ const Args = struct {
     sim: [8]usize = @splat(0),
     num_sim: usize = 0,
     present: gpu_mod.PresentMode = .auto,
-    late_ms: f64 = 0,
+    /// Fixed margin before the refresh at which to draw; negative = adapt.
+    margin_ms: f64 = -1,
+    script: []const u8 = "",
 };
+
+const Input = @import("window.zig").Input;
+
+/// Adds the script steps that are due at `elapsed_s` to `in`. `pos` is the script cursor.
+fn runScript(script: []const u8, pos: *usize, elapsed_s: f64, in: *Input) void {
+    while (pos.* < script.len) {
+        const rest = script[pos.*..];
+        const end = std.mem.indexOfScalar(u8, rest, ';') orelse rest.len;
+        const step = rest[0..end];
+        const colon = std.mem.indexOfScalar(u8, step, ':') orelse {
+            pos.* += @min(end + 1, rest.len);
+            continue;
+        };
+        const at = std.fmt.parseFloat(f64, step[0..colon]) catch 0;
+        if (at > elapsed_s) return;
+        const what = step[colon + 1 ..];
+        if (std.mem.startsWith(u8, what, "wheel=")) {
+            in.scroll_y += std.fmt.parseFloat(f64, what[6..]) catch 0;
+        } else if (std.mem.startsWith(u8, what, "hwheel=")) {
+            in.scroll_x += std.fmt.parseFloat(f64, what[7..]) catch 0;
+        } else if (std.mem.startsWith(u8, what, "pinch=")) {
+            in.pinch *= std.fmt.parseFloat(f64, what[6..]) catch 1;
+        } else for (what) |ch| {
+            if (in.num_keys == in.keys.len) break;
+            in.keys[in.num_keys] = switch (ch) {
+                '[' => .left_bracket,
+                ']' => .right_bracket,
+                '-' => .minus,
+                '=' => .equal,
+                'r' => .r,
+                'q' => .q,
+                else => continue,
+            };
+            in.num_keys += 1;
+        }
+        pos.* += @min(end + 1, rest.len);
+    }
+}
 
 fn parseArgs(args: []const [:0]const u8) !Args {
     var a: Args = .{};
@@ -51,8 +102,10 @@ fn parseArgs(args: []const [:0]const u8) !Args {
         }.f;
         if (std.mem.eql(u8, arg, "--seconds")) {
             a.seconds = try std.fmt.parseFloat(f64, try next(args, &i, arg));
-        } else if (std.mem.eql(u8, arg, "--late-ms")) {
-            a.late_ms = try std.fmt.parseFloat(f64, try next(args, &i, arg));
+        } else if (std.mem.eql(u8, arg, "--script")) {
+            a.script = try next(args, &i, arg);
+        } else if (std.mem.eql(u8, arg, "--margin-ms")) {
+            a.margin_ms = try std.fmt.parseFloat(f64, try next(args, &i, arg));
         } else if (std.mem.eql(u8, arg, "--aux")) {
             a.settings.acquire_aux = true;
         } else if (std.mem.eql(u8, arg, "--adc")) {
@@ -109,7 +162,7 @@ const View = struct {
     const uv_min = 5.0;
     const uv_max = 20000.0;
 
-    fn apply(self: *View, in: @import("window.zig").Input) bool {
+    fn apply(self: *View, in: Input) bool {
         // One wheel click (about 15 units) changes a scale by 15 %.
         const per_unit = 0.0093;
         var sx = in.scroll_x;
@@ -203,9 +256,23 @@ pub fn main(init: std.process.Init) !u8 {
     var newest_acquired_ns: i128 = 0;
     // Acquisition time of the newest sample drawn in each frame, by frame tag.
     var frame_acquired: [64]i128 = @splat(0);
+    // Per-frame timing, to explain frames that land late (logged with OEZ_FRAME_DEBUG=1).
+    const FrameTiming = struct { wake_late_ms: f64 = 0, draw_ms: f64 = 0, before_refresh_ms: f64 = 0, callback_to_draw_ms: f64 = 0 };
+    var frame_timing: [64]FrameTiming = @splat(.{});
+    const frame_debug = std.c.getenv("OEZ_FRAME_DEBUG") != null;
+    var ready_seen_ns: i128 = 0;
+    var target_refresh_ns: i128 = 0;
     var frame_tag: u64 = 0;
-    var ready_since: i128 = 0;
+    // Frame pacing: the last presentation time and refresh period, the margin before the
+    // next refresh at which to draw, and when the pending frame is due.
+    var last_present_ns: i128 = 0;
+    var margin_ms: f64 = if (args.margin_ms >= 0) args.margin_ms else 3.0;
+    var draw_at: i128 = 0;
+    var misses: u64 = 0;
+    var misses_this_second: u32 = 0;
+    var clean_seconds: u32 = 0;
 
+    var script_pos: usize = 0;
     const t_start = nowNs(io);
     var next_report: i128 = t_start + std.time.ns_per_s;
     var frames: u64 = 0;
@@ -217,7 +284,9 @@ pub fn main(init: std.process.Init) !u8 {
     var title_buf: [160]u8 = undefined;
 
     while (!win.closed and !acq.done.load(.acquire)) {
-        try win.pump(if (win.frame_ready) 0 else 2);
+        // Wake for events, for new samples (every 2 ms), or when the frame is due.
+        const wait_ms: i32 = if (draw_at != 0) @intCast(std.math.clamp(@divFloor(draw_at - nowNs(io), std.time.ns_per_ms), 0, 2)) else 2;
+        try win.pump(wait_ms);
 
         // New samples into the GPU's history.
         while (reader.next(&blk)) {
@@ -227,7 +296,9 @@ pub fn main(init: std.process.Init) !u8 {
             newest_acquired_ns = blk.acquired_ns;
         }
 
-        if (view.apply(win.takeInput())) break;
+        var input = win.takeInput();
+        if (args.script.len > 0) runScript(args.script, &script_pos, @as(f64, @floatFromInt(nowNs(io) - t_start)) / 1e9, &input);
+        if (view.apply(input)) break;
 
         for (win.takePresented()) |p| {
             const acquired = frame_acquired[p.tag % frame_acquired.len];
@@ -237,13 +308,36 @@ pub fn main(init: std.process.Init) !u8 {
                 lat_min = @min(lat_min, ms);
                 lat_max = @max(lat_max, ms);
                 lat_n += 1;
+                // Landed a refresh late: it was drawn too close to the deadline.
+                const refresh_ms = @as(f64, @floatFromInt(p.refresh_ns)) / 1e6;
+                if (refresh_ms > 0 and ms > 1.5 * refresh_ms + margin_ms) {
+                    const ft = frame_timing[p.tag % frame_timing.len];
+                    if (frame_debug) log.info("late frame {d}: latency {d:.1} ms; woke {d:.2} ms after its time, draw took {d:.2} ms, committed {d:.2} ms before the predicted refresh, {d:.2} ms after the frame callback; presented {d:.2} ms after that refresh", .{ p.tag, ms, ft.wake_late_ms, ft.draw_ms, ft.before_refresh_ms, ft.callback_to_draw_ms, 0.0 });
+                    misses += 1;
+                    misses_this_second += 1;
+                }
             }
             refresh_ns = p.refresh_ns;
+            last_present_ns = p.time_ns;
         }
 
         const now = nowNs(io);
-        if (win.frame_ready and ready_since == 0) ready_since = now;
-        const due = win.frame_ready and @as(f64, @floatFromInt(now - ready_since)) >= args.late_ms * 1e6;
+        if (win.frame_ready and draw_at == 0) {
+            ready_seen_ns = now;
+            target_refresh_ns = 0;
+            // The next refresh after now, less the margin. Without presentation feedback
+            // (or before the first), draw at once.
+            draw_at = now;
+            if (refresh_ns > 0 and last_present_ns > 0 and now > last_present_ns) {
+                const period: i128 = refresh_ns;
+                const next_refresh = last_present_ns + (@divFloor(now - last_present_ns, period) + 1) * period;
+                const at = next_refresh - @as(i128, @intFromFloat(margin_ms * 1e6));
+                // Already inside the margin: this refresh is lost anyway, so aim at the next.
+                draw_at = if (at >= now) at else at + period;
+                target_refresh_ns = if (at >= now) next_refresh else next_refresh + period;
+            }
+        }
+        const due = win.frame_ready and draw_at != 0 and now >= draw_at;
         if (due and newest > 0) {
             if (win.resized or gpu.swapchain == .null) {
                 try gpu.resize(win.width, win.height);
@@ -268,6 +362,13 @@ pub fn main(init: std.process.Init) !u8 {
                     c.win.beforePresent(c.tag);
                 }
             }.f);
+            const done = nowNs(io);
+            frame_timing[frame_tag % frame_timing.len] = .{
+                .wake_late_ms = @as(f64, @floatFromInt(now - draw_at)) / 1e6,
+                .draw_ms = @as(f64, @floatFromInt(done - now)) / 1e6,
+                .before_refresh_ms = if (target_refresh_ns != 0) @as(f64, @floatFromInt(target_refresh_ns - done)) / 1e6 else 0,
+                .callback_to_draw_ms = @as(f64, @floatFromInt(now - ready_seen_ns)) / 1e6,
+            };
             switch (result) {
                 .presented => frames += 1,
                 .out_of_date => {
@@ -275,17 +376,38 @@ pub fn main(init: std.process.Init) !u8 {
                     win.frame_ready = true;
                 },
             }
-            ready_since = 0;
+            draw_at = 0;
         }
 
         if (now >= next_report) {
             const secs = @as(f64, @floatFromInt(now - t_start)) / 1e9;
             const avg = if (lat_n > 0) lat_sum / lat_n else 0;
-            log.info("t={d:.0}s {d} fps, latency ms avg {d:.1} min {d:.1} max {d:.1} ({d:.0} frames), refresh {d:.2} ms, display lost {d} blocks, ring overflow {d}, span {d:.2} s, {d:.0} uV/row, {d}x{d}", .{
-                secs,             frames,                                  avg,           if (lat_n > 0) lat_min else 0, lat_max, lat_n,
-                @as(f64, @floatFromInt(refresh_ns)) / 1e6, reader.lost, acq.ring_overflow.load(.monotonic), view.span_s, view.uv_per_row, gpu.extent.width, gpu.extent.height,
+            log.info("t={d:.0}s {d} fps, latency ms avg {d:.1} min {d:.1} max {d:.1}, refresh {d:.2} ms, margin {d:.1} ms, late frames {d}, display lost {d} blocks, ring overflow {d}, span {d:.2} s, {d:.0} uV/row, {d}x{d}", .{
+                secs,                                      frames,      avg,    if (lat_n > 0) lat_min else 0,          lat_max,
+                @as(f64, @floatFromInt(refresh_ns)) / 1e6, margin_ms,   misses, reader.lost,                            acq.ring_overflow.load(.monotonic),
+                view.span_s,                               view.uv_per_row, gpu.extent.width, gpu.extent.height,
             });
-            if (std.fmt.bufPrintSentinel(&title_buf, "oEZ   {d:.2} s   {d:.0} uV/row   latency {d:.1} ms   {d} fps", .{ view.span_s, view.uv_per_row, avg, frames }, 0)) |t| win.setTitle(t) else |_| {}
+            // Adapt the margin to sustained lateness only. A few late frames now and then come
+            // from the desktop (a window moved, a resize), and a wider margin would not have
+            // saved them: widen when at least 5 frames in a second were late, and return
+            // towards 3 ms after 3 clean seconds.
+            if (args.margin_ms < 0) {
+                const refresh_ms = @as(f64, @floatFromInt(refresh_ns)) / 1e6;
+                if (misses_this_second >= 5) {
+                    margin_ms = @min(margin_ms + 0.5, @max(3.0, 0.5 * refresh_ms));
+                    clean_seconds = 0;
+                } else if (misses_this_second == 0) {
+                    clean_seconds += 1;
+                    if (clean_seconds >= 3 and margin_ms > 3.0) {
+                        margin_ms = @max(3.0, margin_ms - 0.5);
+                        clean_seconds = 0;
+                    }
+                } else clean_seconds = 0;
+            }
+            misses_this_second = 0;
+            if (std.c.getenv("OEZ_NO_TITLE") == null) {
+                if (std.fmt.bufPrintSentinel(&title_buf, "oEZ   {d:.2} s   {d:.0} uV/row   latency {d:.1} ms   {d} fps", .{ view.span_s, view.uv_per_row, avg, frames }, 0)) |t| win.setTitle(t) else |_| {}
+            }
             frames = 0;
             lat_sum = 0;
             lat_min = std.math.inf(f64);
