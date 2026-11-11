@@ -4,6 +4,11 @@
 //!       [--present auto|mailbox|immediate|fifo] [--margin-ms MS] [--script STEPS]
 //!       [--monitor DP-2] [--tearing] [--free MS]
 //!
+//! --direct DP-2 drives that monitor itself, with no compositor: frames are flipped by oez at
+//!   each refresh. It works only where nothing else drives the monitor: from a text console
+//!   (Ctrl+Alt+F3), with a DRM lease, or on a graphics card of its own. There is no window and
+//!   no input in this mode yet: it runs for --seconds (default 20) or until Ctrl+C, and
+//!   --script changes the view. Margin 1.5 ms unless --margin-ms.
 //! --monitor makes the window fullscreen on that monitor (the neural display).
 //! --tearing asks the compositor to show frames at once instead of at the refresh (it needs
 //!   a fullscreen window and Hyprland's general.allow_tearing); implies --present immediate.
@@ -74,6 +79,8 @@ const Args = struct {
     margin_ms: f64 = -1,
     script: []const u8 = "",
     monitor: []const u8 = "",
+    /// Connector of a monitor to drive directly, with no compositor.
+    direct: []const u8 = "",
     tearing: bool = false,
     /// Free-running: least interval between frames in ms; negative = paced to the refresh.
     free_ms: f64 = -1,
@@ -153,6 +160,9 @@ fn parseArgs(args: []const [:0]const u8, config: []const u8) !Args {
         }.f;
         if (std.mem.eql(u8, arg, "--seconds")) {
             a.seconds = try std.fmt.parseFloat(f64, try next(args, &i, arg));
+        } else if (std.mem.eql(u8, arg, "--direct")) {
+            a.direct = try next(args, &i, arg);
+            if (a.seconds == 0) a.seconds = 20;
         } else if (std.mem.eql(u8, arg, "--monitor")) {
             a.monitor = try next(args, &i, arg);
         } else if (std.mem.eql(u8, arg, "--tearing")) {
@@ -249,6 +259,135 @@ const View = struct {
     }
 };
 
+/// The display loop when oez drives the monitor itself (--direct). One frame is in flight at
+/// a time: draw `margin` before a refresh, wait until that frame is on screen, repeat. The
+/// time a frame reached the screen comes from vkWaitForPresentKHR.
+fn runDirect(io: Io, gpa: std.mem.Allocator, args: Args, layout: oez.types.Layout, acq: *oez.acquisition.Acquisition, reader: *oez.ring.LossyReader, blk: *oez.types.Block) !u8 {
+    const nch = layout.numChannels();
+    const fs = layout.sample_rate;
+    var gpu = Gpu.init(gpa, .{ .direct = args.direct }, .fifo) catch |e| {
+        log.err("direct display on {s} failed: {t}", .{ args.direct, e });
+        return 1;
+    };
+    defer gpu.deinit();
+    try gpu.createHistory(nch, @intFromFloat((View.span_max + 2.0) * fs));
+    try gpu.resize(0, 0);
+    const period: i128 = gpu.refresh_period_ns;
+    const margin_ms: f64 = if (args.margin_ms >= 0) args.margin_ms else 1.5;
+    const margin: i128 = @intFromFloat(margin_ms * 1e6);
+    log.info("{d}x{d}, refresh {d:.3} ms, drawing {d:.2} ms before each refresh", .{ gpu.extent.width, gpu.extent.height, @as(f64, @floatFromInt(period)) / 1e6, margin_ms });
+
+    try acq.start();
+    defer acq.join();
+
+    var view: View = .{};
+    var newest: i64 = 0;
+    var newest_acquired_ns: i128 = 0;
+    var in_flight: u64 = 0; // present id awaited, 0 = none
+    var in_flight_acquired: i128 = 0;
+    var in_flight_since: i128 = 0;
+    var draw_at: i128 = 0;
+    var last_flip: i128 = 0;
+    var script_pos: usize = 0;
+
+    const t_start = nowNs(io);
+    var next_report: i128 = t_start + std.time.ns_per_s;
+    var frames: u64 = 0;
+    var lat_sum: f64 = 0;
+    var lat_min: f64 = std.math.inf(f64);
+    var lat_max: f64 = 0;
+    var missed: u64 = 0; // refreshes that passed without a new frame
+    var total_frames: u64 = 0;
+    var total_missed: u64 = 0;
+    var total_lat: f64 = 0;
+    var worst: f64 = 0;
+
+    while (!acq.done.load(.acquire)) {
+        while (reader.next(blk)) {
+            if (blk.len == 0) continue;
+            gpu.writeSamples(blk.first_sample, blk.samples());
+            newest = blk.first_sample + @as(i64, @intCast(blk.len));
+            newest_acquired_ns = blk.acquired_ns;
+        }
+        var input: Input = .{};
+        if (args.script.len > 0) runScript(args.script, &script_pos, @as(f64, @floatFromInt(nowNs(io) - t_start)) / 1e9, &input);
+        if (view.apply(input)) break;
+
+        var now = nowNs(io);
+        if (in_flight != 0) {
+            // Blocks for up to 1 ms, which also paces this loop.
+            if (try gpu.waitPresented(in_flight, std.time.ns_per_ms)) {
+                now = nowNs(io);
+                const ms = @as(f64, @floatFromInt(now - in_flight_acquired)) / 1e6;
+                lat_sum += ms;
+                lat_min = @min(lat_min, ms);
+                lat_max = @max(lat_max, ms);
+                frames += 1;
+                if (last_flip != 0 and now - last_flip > period + @divTrunc(period, 2)) missed += @intCast(@divTrunc(now - last_flip + @divTrunc(period, 2), period) - 1);
+                last_flip = now;
+                draw_at = now + period - margin;
+                in_flight = 0;
+            } else if (now - in_flight_since > 2 * std.time.ns_per_s) {
+                log.err("a frame was not shown within 2 s; giving up", .{});
+                return 1;
+            }
+        } else if (newest > 0 and now >= draw_at) {
+            const params: gpu_mod.TraceParams = .{
+                .nch = @intCast(nch),
+                .cap_mask = @intCast(gpu.hist_cap - 1),
+                .newest = @truncate(@as(u64, @bitCast(newest))),
+                .first_ch = 0,
+                .cols = gpu.extent.width,
+                .rows = @intCast(layout.num_electrodes),
+                .span = @floatCast(view.span_s * fs),
+                .lsb_per_row = @floatCast(view.uv_per_row / oez.types.electrode_uv_per_bit),
+                .half_px = 1.5 / @as(f32, @floatFromInt(gpu.extent.height)),
+            };
+            const result = try gpu.draw(params, {}, struct {
+                fn f(_: void) void {}
+            }.f);
+            switch (result) {
+                .presented => {
+                    in_flight = gpu.present_id;
+                    in_flight_acquired = newest_acquired_ns;
+                    in_flight_since = now;
+                },
+                .out_of_date => try gpu.resize(0, 0),
+                .busy => {},
+            }
+        } else {
+            const wait = std.math.clamp(draw_at - now, 0, std.time.ns_per_ms);
+            if (wait > 0) io.sleep(.fromNanoseconds(@intCast(wait)), .awake) catch {};
+        }
+
+        if (now >= next_report) {
+            const secs = @as(f64, @floatFromInt(now - t_start)) / 1e9;
+            log.info("t={d:.0}s {d} fps, latency ms avg {d:.2} min {d:.2} max {d:.2}, refreshes without a new frame {d}, display lost {d} blocks, ring overflow {d}", .{
+                secs, frames, if (frames > 0) lat_sum / @as(f64, @floatFromInt(frames)) else 0, if (frames > 0) lat_min else 0, lat_max, missed, reader.lost, acq.ring_overflow.load(.monotonic),
+            });
+            if (secs > 1.5) {
+                total_frames += frames;
+                total_missed += missed;
+                total_lat += lat_sum;
+                worst = @max(worst, lat_max);
+            }
+            frames = 0;
+            lat_sum = 0;
+            lat_min = std.math.inf(f64);
+            lat_max = 0;
+            missed = 0;
+            next_report += std.time.ns_per_s;
+        }
+        if (args.seconds > 0 and @as(f64, @floatFromInt(now - t_start)) >= args.seconds * 1e9) break;
+    }
+    if (total_frames > 0) log.info("direct on {s}, margin {d:.2} ms: {d} frames, latency avg {d:.2} ms, worst {d:.2} ms, refreshes without a new frame {d}", .{ args.direct, margin_ms, total_frames, total_lat / @as(f64, @floatFromInt(total_frames)), worst, total_missed });
+    if (acq.done.load(.acquire)) {
+        log.err("acquisition ended early: {t}", .{acq.failure orelse error.Unknown});
+        return 1;
+    }
+    return 0;
+}
+
 fn nowNs(io: Io) i128 {
     return Io.Clock.awake.now(io).nanoseconds;
 }
@@ -306,6 +445,8 @@ pub fn main(init: std.process.Init) !u8 {
     var blk = try oez.types.Block.init(gpa, nch, bs);
     defer blk.deinit(gpa);
 
+    if (args.direct.len > 0) return runDirect(io, gpa, args, layout, &acq, &reader, &blk);
+
     // ---- window and renderer ----
     var win: Window = undefined;
     try win.init("oEZ");
@@ -322,7 +463,7 @@ pub fn main(init: std.process.Init) !u8 {
     }
     _ = win.declareLowLatency();
     if (args.tearing and !win.preferTearing()) log.warn("the compositor has no tearing control; frames will wait for the refresh", .{});
-    var gpu = try Gpu.init(gpa, win.display, win.surface, args.present);
+    var gpu = try Gpu.init(gpa, .{ .wayland = .{ .display = win.display, .surface = win.surface } }, args.present);
     defer gpu.deinit();
     // The longest time base plus a margin, so new samples never overwrite what is drawn.
     try gpu.createHistory(nch, @intFromFloat((View.span_max + 2.0) * fs));

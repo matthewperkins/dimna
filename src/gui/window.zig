@@ -129,7 +129,6 @@ pub const Window = struct {
         const wm_base = self.wm_base orelse return error.NoXdgShell;
         wm_base.setListener(*Window, onWmBase, self);
         if (self.seat) |seat| seat.setListener(*Window, onSeat, self);
-        if (self.presentation) |p| p.setListener(*Window, onPresentation, self);
 
         self.surface = try compositor.createSurface();
         self.xdg_surface = try wm_base.getXdgSurface(self.surface);
@@ -262,6 +261,8 @@ pub const Window = struct {
                     if (self.seat == null) self.seat = registry.bind(g.name, wl.Seat, @min(g.version, 5)) catch null;
                 } else if (std.mem.eql(u8, name, std.mem.span(wp.Presentation.interface.name))) {
                     self.presentation = registry.bind(g.name, wp.Presentation, 1) catch null;
+                    // Listen at once: the clock id is sent right after binding.
+                    if (self.presentation) |p| p.setListener(*Window, onPresentation, self);
                 } else if (std.mem.eql(u8, name, std.mem.span(zwp.PointerGesturesV1.interface.name))) {
                     self.gestures = registry.bind(g.name, zwp.PointerGesturesV1, 1) catch null;
                 } else if (std.mem.eql(u8, name, std.mem.span(wp.ContentTypeManagerV1.interface.name))) {

@@ -14,6 +14,37 @@ extern fn vkGetInstanceProcAddr(instance: ?vk.Instance, name: [*:0]const u8) vk.
 
 pub const PresentMode = enum { auto, mailbox, immediate, fifo };
 
+/// Where frames go.
+pub const Target = union(enum) {
+    /// A Wayland surface: the compositor shows the frames.
+    wayland: struct { display: *anyopaque, surface: *anyopaque },
+    /// A monitor that oez drives itself, named by its connector (e.g. "DP-2"). Needs the
+    /// kernel's permission to drive it: no compositor on it (a text console), a lease, or a
+    /// graphics card of its own.
+    direct: []const u8,
+};
+
+const linux = std.os.linux;
+
+/// Finds the DRM card and connector id of a connector name through sysfs.
+fn findConnector(name: []const u8) ?struct { card: u32, connector_id: u32 } {
+    var card: u32 = 0;
+    while (card < 8) : (card += 1) {
+        var path_buf: [128]u8 = undefined;
+        const path = std.fmt.bufPrintSentinel(&path_buf, "/sys/class/drm/card{d}-{s}/connector_id", .{ card, name }, 0) catch return null;
+        const rc = linux.open(path, .{ .ACCMODE = .RDONLY, .CLOEXEC = true }, 0);
+        if (linux.errno(rc) != .SUCCESS) continue;
+        const fd: i32 = @intCast(rc);
+        defer _ = linux.close(fd);
+        var buf: [32]u8 = undefined;
+        const n = linux.read(fd, &buf, buf.len);
+        if (linux.errno(n) != .SUCCESS) continue;
+        const id = std.fmt.parseInt(u32, std.mem.trim(u8, buf[0..n], " \n"), 10) catch continue;
+        return .{ .card = card, .connector_id = id };
+    }
+    return null;
+}
+
 /// Matches `Params` in traces.vert.
 pub const TraceParams = extern struct {
     nch: u32,
@@ -68,9 +99,19 @@ pub const Gpu = struct {
     nch: usize = 0,
     hist_device_local: bool = false,
 
-    pub fn init(gpa: std.mem.Allocator, wl_display: *anyopaque, wl_surface: *anyopaque, mode: PresentMode) !Gpu {
+    // Direct display only.
+    direct: bool = false,
+    drm_fd: i32 = -1,
+    display: vk.DisplayKHR = .null,
+    /// The monitor's refresh period in ns.
+    refresh_period_ns: u64 = 0,
+    present_id: u64 = 0,
+
+    pub fn init(gpa: std.mem.Allocator, target: Target, mode: PresentMode) !Gpu {
         const vkb = vk.BaseWrapper.load(vkGetInstanceProcAddr);
-        const instance_exts = [_][*:0]const u8{ "VK_KHR_surface", "VK_KHR_wayland_surface" };
+        const wayland_exts = [_][*:0]const u8{ "VK_KHR_surface", "VK_KHR_wayland_surface" };
+        const direct_exts = [_][*:0]const u8{ "VK_KHR_surface", "VK_KHR_display", "VK_EXT_direct_mode_display", "VK_EXT_acquire_drm_display" };
+        const instance_exts: []const [*:0]const u8 = if (target == .direct) &direct_exts else &wayland_exts;
         const instance_handle = try vkb.createInstance(&.{
             .p_application_info = &.{
                 .p_application_name = "oez",
@@ -79,8 +120,8 @@ pub const Gpu = struct {
                 .engine_version = 0,
                 .api_version = @bitCast(vk.API_VERSION_1_2),
             },
-            .enabled_extension_count = instance_exts.len,
-            .pp_enabled_extension_names = &instance_exts,
+            .enabled_extension_count = @intCast(instance_exts.len),
+            .pp_enabled_extension_names = instance_exts.ptr,
         }, null);
         const vki = try gpa.create(vk.InstanceWrapper);
         errdefer gpa.destroy(vki);
@@ -88,17 +129,98 @@ pub const Gpu = struct {
         const instance = vk.InstanceProxy.init(instance_handle, vki);
         errdefer instance.destroyInstance(null);
 
-        const surface = try instance.createWaylandSurfaceKHR(&.{ .display = @ptrCast(wl_display), .surface = @ptrCast(wl_surface) }, null);
+        const pdevs = try instance.enumeratePhysicalDevicesAlloc(gpa);
+        defer gpa.free(pdevs);
+
+        var drm_fd: i32 = -1;
+        errdefer if (drm_fd >= 0) {
+            _ = linux.close(drm_fd);
+        };
+        var display: vk.DisplayKHR = .null;
+        var display_pdev: ?vk.PhysicalDevice = null;
+        var refresh_period_ns: u64 = 0;
+        const surface = switch (target) {
+            .wayland => |w| try instance.createWaylandSurfaceKHR(&.{ .display = @ptrCast(w.display), .surface = @ptrCast(w.surface) }, null),
+            .direct => |name| blk: {
+                // The monitor's DRM connector, a descriptor on its card, and from those the
+                // Vulkan display. Opening the card makes us its master only if nobody else is.
+                const conn = findConnector(name) orelse {
+                    log.err("no connector named '{s}' under /sys/class/drm", .{name});
+                    return error.NoSuchMonitor;
+                };
+                var path_buf: [32]u8 = undefined;
+                const path = std.fmt.bufPrintSentinel(&path_buf, "/dev/dri/card{d}", .{conn.card}, 0) catch unreachable;
+                const rc = linux.open(path, .{ .ACCMODE = .RDWR, .CLOEXEC = true }, 0);
+                if (linux.errno(rc) != .SUCCESS) {
+                    log.err("cannot open {s}: {t}", .{ path, linux.errno(rc) });
+                    return error.DisplayNotAvailable;
+                }
+                drm_fd = @intCast(rc);
+                for (pdevs) |pd| {
+                    display = instance.getDrmDisplayEXT(pd, drm_fd, conn.connector_id) catch continue;
+                    display_pdev = pd;
+                    break;
+                }
+                const pd = display_pdev orelse {
+                    log.err("no Vulkan device drives connector {d} ({s})", .{ conn.connector_id, name });
+                    return error.DisplayNotAvailable;
+                };
+                instance.acquireDrmDisplayEXT(pd, drm_fd, display) catch |e| {
+                    log.err("cannot take over {s} ({t}): something else is driving it. Run from a text console, or with a lease or a graphics card of its own.", .{ name, e });
+                    return error.DisplayNotAvailable;
+                };
+                // The largest mode, at its highest refresh rate.
+                var mode_buf: [128]vk.DisplayModePropertiesKHR = undefined;
+                var mode_count: u32 = mode_buf.len;
+                _ = try instance.getDisplayModePropertiesKHR(pd, display, &mode_count, &mode_buf);
+                const modes = mode_buf[0..mode_count];
+                if (modes.len == 0) return error.DisplayNotAvailable;
+                var best = modes[0];
+                for (modes) |m| {
+                    const a = @as(u64, m.parameters.visible_region.width) * m.parameters.visible_region.height;
+                    const b = @as(u64, best.parameters.visible_region.width) * best.parameters.visible_region.height;
+                    if (a > b or (a == b and m.parameters.refresh_rate > best.parameters.refresh_rate)) best = m;
+                }
+                refresh_period_ns = 1_000_000_000_000 / @as(u64, @max(best.parameters.refresh_rate, 1));
+                log.info("{s}: {d}x{d} at {d:.3} Hz, driven directly", .{ name, best.parameters.visible_region.width, best.parameters.visible_region.height, @as(f64, @floatFromInt(best.parameters.refresh_rate)) / 1000.0 });
+                // A plane that can show this display.
+                var plane_buf: [64]vk.DisplayPlanePropertiesKHR = undefined;
+                var plane_count: u32 = plane_buf.len;
+                _ = try instance.getPhysicalDeviceDisplayPlanePropertiesKHR(pd, &plane_count, &plane_buf);
+                const planes = plane_buf[0..plane_count];
+                var plane: ?u32 = null;
+                for (planes, 0..) |pl, i| {
+                    if (pl.current_display != .null and pl.current_display != display) continue;
+                    var supported_buf: [16]vk.DisplayKHR = undefined;
+                    var supported_count: u32 = supported_buf.len;
+                    _ = try instance.getDisplayPlaneSupportedDisplaysKHR(pd, @intCast(i), &supported_count, &supported_buf);
+                    const supported = supported_buf[0..supported_count];
+                    if (std.mem.indexOfScalar(vk.DisplayKHR, supported, display) != null) {
+                        plane = @intCast(i);
+                        break;
+                    }
+                }
+                const plane_index = plane orelse return error.DisplayNotAvailable;
+                break :blk try instance.createDisplayPlaneSurfaceKHR(&.{
+                    .display_mode = best.display_mode,
+                    .plane_index = plane_index,
+                    .plane_stack_index = planes[plane_index].current_stack_index,
+                    .transform = .{ .identity_khr = true },
+                    .global_alpha = 1.0,
+                    .alpha_mode = .{ .opaque_khr = true },
+                    .image_extent = best.parameters.visible_region,
+                }, null);
+            },
+        };
         errdefer instance.destroySurfaceKHR(surface, null);
 
         // A device with a queue family that does graphics and can present to this surface;
-        // a discrete GPU if there is one.
-        const pdevs = try instance.enumeratePhysicalDevicesAlloc(gpa);
-        defer gpa.free(pdevs);
+        // a discrete GPU if there is one (direct: the device that drives the monitor).
         var chosen: ?vk.PhysicalDevice = null;
         var chosen_family: u32 = 0;
         var chosen_discrete = false;
         for (pdevs) |pd| {
+            if (display_pdev != null and pd != display_pdev.?) continue;
             const families = try instance.getPhysicalDeviceQueueFamilyPropertiesAlloc(pd, gpa);
             defer gpa.free(families);
             for (families, 0..) |f, i| {
@@ -119,13 +241,23 @@ pub const Gpu = struct {
         log.info("Vulkan device: {s}", .{std.mem.sliceTo(&props.device_name, 0)});
 
         const priority = [_]f32{1.0};
-        const device_exts = [_][*:0]const u8{"VK_KHR_swapchain"};
-        const device_handle = try instance.createDevice(pdev, &.{
+        // Direct display: present ids and waiting for a present tell when a frame reached
+        // the screen (the role presentation feedback has on Wayland).
+        const wayland_dev_exts = [_][*:0]const u8{"VK_KHR_swapchain"};
+        const direct_dev_exts = [_][*:0]const u8{ "VK_KHR_swapchain", "VK_KHR_present_id", "VK_KHR_present_wait" };
+        const device_exts: []const [*:0]const u8 = if (target == .direct) &direct_dev_exts else &wayland_dev_exts;
+        var wait_feature: vk.PhysicalDevicePresentWaitFeaturesKHR = .{ .present_wait = .true };
+        var id_feature: vk.PhysicalDevicePresentIdFeaturesKHR = .{ .present_id = .true, .p_next = &wait_feature };
+        const device_handle = instance.createDevice(pdev, &.{
+            .p_next = if (target == .direct) &id_feature else null,
             .queue_create_info_count = 1,
             .p_queue_create_infos = &[_]vk.DeviceQueueCreateInfo{.{ .queue_family_index = chosen_family, .queue_count = 1, .p_queue_priorities = &priority }},
-            .enabled_extension_count = device_exts.len,
-            .pp_enabled_extension_names = &device_exts,
-        }, null);
+            .enabled_extension_count = @intCast(device_exts.len),
+            .pp_enabled_extension_names = device_exts.ptr,
+        }, null) catch |e| {
+            if (target == .direct) log.err("device creation failed ({t}); direct display needs VK_KHR_present_id and VK_KHR_present_wait", .{e});
+            return e;
+        };
         const vkd = try gpa.create(vk.DeviceWrapper);
         errdefer gpa.destroy(vkd);
         vkd.* = vk.DeviceWrapper.load(device_handle, vki.dispatch.vkGetDeviceProcAddr.?);
@@ -143,6 +275,10 @@ pub const Gpu = struct {
             .queue = dev.getDeviceQueue(chosen_family, 0),
             .queue_family = chosen_family,
             .mem_props = instance.getPhysicalDeviceMemoryProperties(pdev),
+            .direct = target == .direct,
+            .drm_fd = drm_fd,
+            .display = display,
+            .refresh_period_ns = refresh_period_ns,
         };
 
         // Surface format: 8-bit BGRA or RGBA, not sRGB-encoded (colours are written as is).
@@ -164,7 +300,8 @@ pub const Gpu = struct {
                 return std.mem.indexOfScalar(vk.PresentModeKHR, list, m) != null;
             }
         }.f;
-        self.present_mode = switch (mode) {
+        // Direct display: FIFO, one frame in flight, flipped at the refresh.
+        self.present_mode = if (target == .direct) .fifo_khr else switch (mode) {
             .auto => if (has(modes, .mailbox_khr)) .mailbox_khr else if (has(modes, .immediate_khr)) .immediate_khr else .fifo_khr,
             .mailbox => if (has(modes, .mailbox_khr)) .mailbox_khr else .fifo_khr,
             .immediate => if (has(modes, .immediate_khr)) .immediate_khr else .fifo_khr,
@@ -223,6 +360,10 @@ pub const Gpu = struct {
         dev.destroyRenderPass(self.render_pass, null);
         dev.destroyDevice(null);
         self.instance.destroySurfaceKHR(self.surface, null);
+        if (self.direct) {
+            self.instance.releaseDisplayEXT(self.pdev, self.display) catch {};
+            _ = linux.close(self.drm_fd);
+        }
         self.instance.destroyInstance(null);
         self.gpa.destroy(self.vkd);
         self.gpa.destroy(self.vki);
@@ -430,6 +571,16 @@ pub const Gpu = struct {
         }
     }
 
+    /// Direct display: waits up to `timeout_ns` for the frame with present id `id` (the value
+    /// of `present_id` after its `draw`) to reach the screen. True once it has.
+    pub fn waitPresented(self: *Gpu, id: u64, timeout_ns: u64) !bool {
+        const r = self.dev.waitForPresentKHR(self.swapchain, id, timeout_ns) catch |e| switch (e) {
+            error.OutOfDateKHR => return true,
+            else => return e,
+        };
+        return r == .success;
+    }
+
     pub const DrawResult = enum {
         presented,
         /// The swapchain no longer fits the window: call `resize`.
@@ -484,7 +635,11 @@ pub const Gpu = struct {
         }}, self.in_flight);
 
         before_present(context);
+        self.present_id += 1;
+        const ids = [_]u64{self.present_id};
+        const id_info: vk.PresentIdKHR = .{ .swapchain_count = 1, .p_present_ids = &ids };
         const result = dev.queuePresentKHR(self.queue, &.{
+            .p_next = if (self.direct) &id_info else null,
             .wait_semaphore_count = 1,
             .p_wait_semaphores = &[_]vk.Semaphore{self.render_done},
             .swapchain_count = 1,
