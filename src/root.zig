@@ -9,6 +9,9 @@ pub const ring = @import("ring.zig");
 pub const acquisition = @import("acquisition.zig");
 pub const record = @import("record.zig");
 pub const events = @import("events.zig");
+pub const usbfs = @import("usbfs.zig");
+pub const ft600 = @import("ft600.zig");
+pub const oni_usb = @import("oni_usb.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());

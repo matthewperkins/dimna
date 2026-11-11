@@ -10,10 +10,43 @@ Zig 0.17.1 (pinned in `build.zig.zon`).
     zig build --release=safe     # zig-out/bin/oez-headless (safety checks stay on)
     zig build test               # unit tests
 
-liboni is vendored (`vendor/liboni`, MIT) and built in. The FT600 driver
-`libonidriver_ft600.so` is still FTDI's D3XX-based one, built by
-`../oers/scripts/build-ft600-driver.sh` (D3XX **1.0.x** only) into `~/.local/lib`. It is found
-via `$ONI_DRIVER_PATH`, next to the executable, `../lib`, `~/.local/lib` or `/usr/local/lib`.
+liboni is vendored (`vendor/liboni`, MIT) and built in. Two patches are carried in
+`onidriverloader.c`: a driver search directory (from oers) and a driver compiled into the
+program (`oni_register_builtin_driver`).
+
+## Two ways to reach the FT600
+
+    oez-headless --driver usb ...     # oEZ's own transport: no FTDI code in the process
+    oez-headless --driver d3xx ...    # liboni's ft600 driver on FTDI's closed D3XX (default for now)
+
+**`usb`** needs nothing installed beyond read/write access to the device node (the Open Ephys
+udev rule). Three layers, all in this repo:
+
+- `src/usbfs.zig`: USB through the kernel's usbdevfs, in Zig, without libusb. Bulk transfers
+  are asynchronous URBs, so a read that times out still reports the bytes that arrived.
+- `src/ft600.zig`: the FT600 wire protocol (documented at the top of the file). It was learned
+  by logging the usbdevfs requests D3XX 1.0.14 makes for the ONI driver's calls on this board.
+  Nothing is sent that D3XX does not send on every open, and the chip configuration is only
+  ever read.
+- `src/oni_usb.zig`: a port of liboni's `drivers/ft600/onidriver_ft600.c` onto that.
+
+`OEZ_USB_TRACE=1` logs every command and control-channel transfer to stderr.
+
+Measured on the rig against `d3xx` (46 channels, 30 kHz, recording):
+
+| | usb | d3xx |
+|---|---|---|
+| 600 s soak | CLEAN, 18,000,096 samples | CLEAN, 18,000,096 samples |
+| CPU for a 20 s recording run (user + sys) | 6.4 s | 10.8 s |
+| open + port scan | about 2.5 s | about 8.6 s |
+
+Recordings made back to back agree: electrode noise profile r = 0.9997, AUX within 0.4 mV,
+ADC within 0.03 mV. The faster open comes from not waiting 200 ms on every pipe abort when no
+transfer is announced (the chip then has nothing it may send).
+
+**`d3xx`** needs `libonidriver_ft600.so`, built by `../oers/scripts/build-ft600-driver.sh`
+(D3XX **1.0.x** only) into `~/.local/lib`. It is found via `$ONI_DRIVER_PATH`, next to the
+executable, `../lib`, `~/.local/lib` or `/usr/local/lib`.
 
 ## Run
 
@@ -74,3 +107,7 @@ Use explicit little-endian dtypes (`'<i2'`, `'<i8'`, `'<u2'`) in other readers.
 
 Only volatile FPGA and Intan-chip registers are written (same sequence as oers and stock).
 There are no flash, EEPROM or FTDI chip-configuration writes. Worst case: power-cycle the board.
+The `usb` transport sends the FT600 only what D3XX sends on every open: GPIO requests (GPIO 0
+is the board's FIFO reset), transfer announcements, aborts, and two read-only requests
+(firmware version, chip configuration). The request that writes the chip configuration is not
+implemented.

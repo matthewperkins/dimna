@@ -1,7 +1,10 @@
 //! oez-headless: open the board, acquire for a while, and check the stream.
 //!
 //!   oez-headless [--seconds S] [--16ch A1,B1] [--aux] [--adc] [--leds] [--rate HZ] [--block N]
-//!                [--record ROOT] [--live-test]
+//!                [--record ROOT] [--live-test] [--driver d3xx|usb]
+//!
+//! --driver usb talks to the FT600 directly through the kernel (no FTDI library); d3xx (the
+//! default for now) uses liboni's ft600 driver on FTDI's D3XX.
 //!
 //! --live-test changes settings on a schedule while acquiring (needs >= 26 s; use with
 //! --record so the changes are stamped in events.tsv): at 2 s it asks to turn ADC acquisition
@@ -32,6 +35,7 @@ const Args = struct {
     seconds: f64 = 10.0,
     record_root: ?[]const u8 = null,
     live_test: bool = false,
+    driver: oez.board.Driver = .d3xx,
     settings: oez.types.Settings = .{},
 };
 
@@ -58,6 +62,12 @@ fn parseArgs(args: []const [:0]const u8) !Args {
             a.settings.block_samples = try std.fmt.parseInt(usize, try next(args, &i, arg), 10);
         } else if (std.mem.eql(u8, arg, "--record")) {
             a.record_root = try next(args, &i, arg);
+        } else if (std.mem.eql(u8, arg, "--driver")) {
+            const name = try next(args, &i, arg);
+            a.driver = std.meta.stringToEnum(oez.board.Driver, name) orelse {
+                log.err("--driver: '{s}' is not d3xx or usb", .{name});
+                return error.BadArgs;
+            };
         } else if (std.mem.eql(u8, arg, "--live-test")) {
             a.live_test = true;
         } else if (std.mem.eql(u8, arg, "--aux")) {
@@ -91,13 +101,15 @@ pub fn main(init: std.process.Init) !u8 {
     const args = parseArgs(try init.minimal.args.toSlice(init.arena.allocator())) catch return 2;
 
     var dirbuf: [std.fs.max_path_bytes:0]u8 = undefined;
-    if (oez.oni.configureDriverSearch(io, init.environ_map, &dirbuf)) |d| {
-        log.info("using libonidriver_ft600.so from {s}", .{d});
-    } else log.info("libonidriver_ft600.so not found in known locations; trying the default library path", .{});
+    if (args.driver == .d3xx) {
+        if (oez.oni.configureDriverSearch(io, init.environ_map, &dirbuf)) |d| {
+            log.info("using libonidriver_ft600.so from {s}", .{d});
+        } else log.info("libonidriver_ft600.so not found in known locations; trying the default library path", .{});
+    }
 
     if (!oez.acquisition.lockMemory()) log.warn("mlockall failed; pages may be swapped out", .{});
 
-    var board = Board.open(io) catch |e| {
+    var board = Board.open(io, args.driver) catch |e| {
         log.err("could not open the board: {t} (liboni: {s})", .{ e, oez.oni.errorStr(oez.oni.lastError()) });
         return 1;
     };

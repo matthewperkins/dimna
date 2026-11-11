@@ -10,6 +10,7 @@
 
 const std = @import("std");
 const oni = @import("oni.zig");
+const oni_usb = @import("oni_usb.zig");
 const types = @import("types.zig");
 const parser_mod = @import("parser.zig");
 const registers = @import("registers.zig");
@@ -132,8 +133,17 @@ pub fn chipName(id: i32) []const u8 {
     };
 }
 
+/// How the FT600 is reached.
+pub const Driver = enum {
+    /// liboni's ft600 driver on FTDI's closed D3XX library (libonidriver_ft600.so).
+    d3xx,
+    /// oEZ's own driver straight on the kernel's USB interface (`oni_usb.zig`).
+    usb,
+};
+
 pub const Board = struct {
     io: Io,
+    driver: Driver = .d3xx,
     ctx: oni.Context,
     settings: Settings = .{},
     regs: Rhd2000Registers,
@@ -176,9 +186,16 @@ pub const Board = struct {
     /// Open the first ONI acquisition board on the FT600 bus, initialize it and scan ports.
     /// Uses default settings; apply others with `applySettings` afterwards (as oers does, so a
     /// non-default sample rate gets its cable-delay rescan).
-    pub fn open(io: Io) (oni.OpenError || Error)!Board {
-        log.info("searching for ONI acquisition board (driver ft600)", .{});
-        var b: Board = .{ .io = io, .ctx = try oni.Context.open("ft600", -1), .regs = .init(30000.0) };
+    pub fn open(io: Io, driver: Driver) (oni.OpenError || Error)!Board {
+        const name: [:0]const u8 = switch (driver) {
+            .d3xx => "ft600",
+            .usb => blk: {
+                oni_usb.register();
+                break :blk oni_usb.driver_name;
+            },
+        };
+        log.info("searching for ONI acquisition board (driver {s})", .{name});
+        var b: Board = .{ .io = io, .driver = driver, .ctx = try oni.Context.open(name, -1), .regs = .init(30000.0) };
         errdefer b.ctx.deinit();
         try b.detect();
         try b.initialize();
@@ -197,12 +214,14 @@ pub const Board = struct {
         if (self.ctx.driverInfo()) |d| {
             log.info("ONI driver {s} {d}.{d}.{d}{s}{s}", .{ d.name, d.version[0], d.version[1], d.version[2], if (d.pre_release != null) "-" else "", d.pre_release orelse "" });
         }
-        if (self.ctx.getDriverOptU32(0)) |v| {
-            log.info("FTDI driver {d}.{d}.{d}", .{ (v >> 24) & 0xff, (v >> 16) & 0xff, v & 0xffff });
-        } else |_| {}
-        if (self.ctx.getDriverOptU32(1)) |v| {
-            log.info("FTDI library {d}.{d}.{d}", .{ (v >> 24) & 0xff, (v >> 16) & 0xff, v & 0xff });
-        } else |_| {}
+        if (self.driver == .d3xx) {
+            if (self.ctx.getDriverOptU32(0)) |v| {
+                log.info("FTDI driver {d}.{d}.{d}", .{ (v >> 24) & 0xff, (v >> 16) & 0xff, v & 0xffff });
+            } else |_| {}
+            if (self.ctx.getDriverOptU32(1)) |v| {
+                log.info("FTDI library {d}.{d}.{d}", .{ (v >> 24) & 0xff, (v >> 16) & 0xff, v & 0xff });
+            } else |_| {}
+        }
         const v = try self.ctx.readReg(device_info, 2);
         self.fw = .{ (v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff, (v >> 24) & 0xff };
         log.info("ECP5-ONI gateware v{d}.{d}.{d}", .{ self.fw[0], self.fw[1], self.fw[2] });
