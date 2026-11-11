@@ -105,7 +105,7 @@ pub const Settings = struct {
     rhd2132_16ch: [8]bool = @splat(false),
     clock_divider: u32 = 1,
     /// liboni block read size in bytes. Smaller = lower latency, more USB transactions.
-    usb_block_bytes: u32 = 24 * 1024,
+    usb_block_bytes: u32 = 8 * 1024,
     /// Samples per block handed to the pipeline.
     block_samples: usize = 32,
 };

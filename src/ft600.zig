@@ -13,6 +13,18 @@
 //!
 //!   command 1 = "a transfer of `length` bytes on `pipe` follows" (IN and OUT alike)
 //!   command 3 = abort the pipe
+//!   command 0 = leave stream mode on the pipe
+//!   command 2 = stream mode on the pipe with transfers of `length` bytes: reads then need
+//!               no announcement (D3XX: FT_SetStreamPipe sends 0 then 2; FT_ClearStreamPipe
+//!               sends 0 then 3)
+//!
+//! Stream mode is not used. It was implemented and measured on the rig (46 channels, 30 kHz):
+//! the chip still ends a transfer whenever its FIFO runs empty, so without pacing it doubles
+//! the reads (249,000 against 124,000 plus as many announcements in 10 s, same CPU), and with
+//! pacing it costs as much CPU as announced reads (0.5 s against 0.6 s per 10 s) while
+//! delivering later (4.7 ms against 2.1 ms average), because unannounced data has to be read
+//! in whole stream-size transfers through a buffer. What does cut the work is pacing the
+//! reads (`oni_usb.zig`, `readStream`).
 //!
 //! An announced IN transfer ends when `length` bytes have been sent or the chip's FIFO runs
 //! empty (a short packet), whichever comes first; the next read needs a new announcement.
@@ -89,6 +101,12 @@ pub const Ft600 = struct {
     /// Bulk packet size at the link's speed (1024 at SuperSpeed).
     packet_size: usize,
     drain: []u8,
+    /// True when the last data-channel read emptied the chip's FIFO (its transfer ended
+    /// short): the reader has caught up with the board.
+    caught_up: bool = false,
+    /// Bulk IN transfers done on the data channel, and the bytes they carried.
+    data_transfers: u64 = 0,
+    data_bytes: u64 = 0,
 
     /// Opens the `index`-th board (bus/device order) whose product string is `product`;
     /// a negative index means the first. Claims both interfaces.
@@ -179,6 +197,11 @@ pub const Ft600 = struct {
         }
         const want = @min(buf.len, self.outstanding[i]);
         const t = try self.dev.bulk(ch.in(), buf[0..want], timeout_ms);
+        if (ch == .data) {
+            self.data_transfers += 1;
+            self.data_bytes += t.actual;
+            self.caught_up = t.actual < want;
+        }
         if (ch == .control or t.timed_out) trace("read {x:0>2} want {d} (announced {d}) -> {d}{s} {x}", .{ ch.in(), want, self.outstanding[i], t.actual, if (t.timed_out) " TIMEOUT" else "", buf[0..@min(t.actual, 24)] });
         if (t.timed_out) {
             // Cancelled. If the last packet received was a short one, the chip has ended the
@@ -223,6 +246,17 @@ pub const Ft600 = struct {
         try self.command(pipe, cmd_abort, 0);
     }
 };
+
+pub fn monotonicNs() i128 {
+    var ts: linux.timespec = undefined;
+    _ = linux.clock_gettime(.MONOTONIC, &ts);
+    return @as(i128, ts.sec) * 1_000_000_000 + ts.nsec;
+}
+
+pub fn sleepNs(ns: u64) void {
+    var ts: linux.timespec = .{ .sec = @intCast(ns / 1_000_000_000), .nsec = @intCast(ns % 1_000_000_000) };
+    while (linux.errno(linux.nanosleep(&ts, &ts)) == .INTR) {}
+}
 
 pub fn sleepMs(ms: u32) void {
     var ts: linux.timespec = .{ .sec = @intCast(ms / 1000), .nsec = @intCast(@as(u64, ms % 1000) * 1_000_000) };

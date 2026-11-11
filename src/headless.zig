@@ -1,7 +1,11 @@
 //! oez-headless: open the board, acquire for a while, and check the stream.
 //!
 //!   oez-headless [--seconds S] [--16ch A1,B1] [--aux] [--adc] [--leds] [--rate HZ] [--block N]
-//!                [--record ROOT] [--live-test] [--driver d3xx|usb]
+//!                [--record ROOT] [--live-test] [--driver d3xx|usb] [--usb-block BYTES]
+//!
+//! --usb-block sets how many bytes liboni fetches at a time (default 8192, about 1.4 ms at 46
+//! channels). Nothing reaches the pipeline until a block is complete, so smaller means lower
+//! latency and more USB transfers.
 //!
 //! --driver usb (the default) talks to the FT600 directly through the kernel, with no FTDI
 //! library; d3xx uses liboni's ft600 driver on FTDI's D3XX, as a fallback.
@@ -11,7 +15,8 @@
 //! off (must be refused while recording), LEDs on/off at 4/6 s, lower bandwidth 300 Hz at
 //! 8 s and back to 1 Hz at 14 s, upper bandwidth 1 kHz at 18 s and back to 7.5 kHz at 22 s.
 //!
-//! Prints one status line per second. Besides the driver's own counters it checks, as a
+//! Prints one status line per second. `delivery` is how much later than the quickest block of
+//! that second a block's newest sample reached the ring (USB block granularity shows here). Besides the driver's own counters it checks, as a
 //! consumer, that blocks arrive contiguous (`gapblk`) and that the board clock advances by
 //! about one sample period every sample (`tstep`, in board-clock ticks: 1666.7 at 30 kHz and
 //! 50 MHz; it jitters by about ±10 ticks, and a lost sample would show as ~2×). Exit status 1
@@ -58,6 +63,8 @@ fn parseArgs(args: []const [:0]const u8) !Args {
             a.seconds = try std.fmt.parseFloat(f64, try next(args, &i, arg));
         } else if (std.mem.eql(u8, arg, "--rate")) {
             a.settings.sample_rate = try std.fmt.parseInt(u32, try next(args, &i, arg), 10);
+        } else if (std.mem.eql(u8, arg, "--usb-block")) {
+            a.settings.usb_block_bytes = try std.fmt.parseInt(u32, try next(args, &i, arg), 10);
         } else if (std.mem.eql(u8, arg, "--block")) {
             a.settings.block_samples = try std.fmt.parseInt(usize, try next(args, &i, arg), 10);
         } else if (std.mem.eql(u8, arg, "--record")) {
@@ -203,6 +210,16 @@ pub fn main(init: std.process.Init) !u8 {
     var lat_sum_ns: i128 = 0;
     var lat_n: u64 = 0;
     var lat_max_ns: i96 = 0;
+    // Delivery delay of each block's newest sample, relative to the quickest delivery in the
+    // same second (host time minus sample time has an unknown, slowly drifting offset).
+    const period_ns: f64 = 1e9 / layout.sample_rate;
+    var age_min: f64 = std.math.inf(f64);
+    var age_max: f64 = -std.math.inf(f64);
+    var age_sum: f64 = 0;
+    var age_n: f64 = 0;
+    var delay_avg_sum: f64 = 0;
+    var delay_max: f64 = 0;
+    var delay_ticks: f64 = 0;
     var tstep_min: u64 = std.math.maxInt(u64);
     var tstep_max: u64 = 0;
     var last_hw: ?u64 = null;
@@ -218,6 +235,13 @@ pub fn main(init: std.process.Init) !u8 {
             lat_sum_ns += lat;
             lat_n += 1;
             lat_max_ns = @max(lat_max_ns, lat);
+            if (b.len > 0) {
+                const age = @as(f64, @floatFromInt(b.acquired_ns)) - @as(f64, @floatFromInt(b.first_sample + @as(i64, @intCast(b.len)) - 1)) * period_ns;
+                age_min = @min(age_min, age);
+                age_max = @max(age_max, age);
+                age_sum += age;
+                age_n += 1;
+            }
             if (expect_next) |e| {
                 if (b.first_sample != e) gap_blocks += 1;
             }
@@ -258,13 +282,25 @@ pub fn main(init: std.process.Init) !u8 {
             const s = health.samples.load(.monotonic);
             const lat_avg_ms: f64 = if (lat_n > 0) @as(f64, @floatFromInt(lat_sum_ns)) / @as(f64, @floatFromInt(lat_n)) / 1e6 else 0;
             if (rec) |r| std.debug.print("  rec: {d} samples, backlog {d} blocks, max write {d} us, max sync {d} us{s}\n", .{ r.stats.samples.load(.monotonic), r.backlog(), r.stats.max_write_us.load(.monotonic), r.stats.max_sync_us.load(.monotonic), if (r.done.load(.acquire)) " FAILED" else "" });
-            std.debug.print("t={d:>4}s samples={d} (+{d}) dropped={d} gaps={d} bad={d} rderr={d} hwbuf={d:.1}% (peak {d:.1}) ring={d}/{d} overflow={d} gapblk={d} tstep={d}..{d} lat avg {d:.2} max {d:.2} ms\n", .{
+            const d_avg = if (age_n > 0) (age_sum / age_n - age_min) / 1e6 else 0;
+            const d_max = if (age_n > 0) (age_max - age_min) / 1e6 else 0;
+            if (age_n > 0 and next_tick > 1) {
+                delay_avg_sum += d_avg;
+                delay_max = @max(delay_max, d_max);
+                delay_ticks += 1;
+            }
+            age_min = std.math.inf(f64);
+            age_max = -std.math.inf(f64);
+            age_sum = 0;
+            age_n = 0;
+            std.debug.print("t={d:>4}s samples={d} (+{d}) dropped={d} gaps={d} bad={d} rderr={d} hwbuf={d:.1}% (peak {d:.1}) ring={d}/{d} overflow={d} gapblk={d} tstep={d}..{d} lat avg {d:.2} max {d:.2} ms, delivery +{d:.2} avg +{d:.2} max ms\n", .{
                 @as(u64, @intCast(next_tick)),                                                             s,                                       s - last_samples,
                 health.dropped_samples.load(.monotonic),                               health.discontinuities.load(.monotonic), health.bad_frames.load(.monotonic),
                 health.read_errors.load(.monotonic),                                   pct(health.hw_buffer_milli_pct.load(.monotonic)), pct(health.hw_buffer_peak_milli_pct.load(.monotonic)),
                 ring_peak,                                                             ring.capacity(),                         acq.ring_overflow.load(.monotonic),
                 gap_blocks,                                                            if (tstep_max == 0) 0 else tstep_min,    tstep_max,
                 lat_avg_ms,                                                            @as(f64, @floatFromInt(lat_max_ns)) / 1e6,
+                d_avg,                                                                 d_max,
             });
             last_samples = s;
             ring_peak = 0;
@@ -323,6 +359,7 @@ pub fn main(init: std.process.Init) !u8 {
         secs,     consumed_samples, blocks,     @as(f64, @floatFromInt(consumed_samples)) / secs, dropped,                                              gaps, bad, overflow,
         gap_blocks, if (tstep_max == 0) 0 else tstep_min, tstep_max, acq.realtime.load(.acquire), pct(health.hw_buffer_peak_milli_pct.load(.monotonic)),
     });
+    if (delay_ticks > 0) std.debug.print("delivery delay of a block's newest sample, beyond the quickest in each second: avg {d:.2} ms, worst {d:.2} ms\n", .{ delay_avg_sum / delay_ticks, delay_max });
     if (failed) {
         log.err("acquisition thread ended early: {t}", .{acq.failure orelse error.Unknown});
         return 1;

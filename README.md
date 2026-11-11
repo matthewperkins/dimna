@@ -32,17 +32,39 @@ udev rule). Three layers, all in this repo:
 
 `OEZ_USB_TRACE=1` logs every command and control-channel transfer to stderr.
 
-Measured on the rig against `d3xx` (46 channels, 30 kHz, recording):
+Measured on the rig against `d3xx` (46 channels, 30 kHz):
 
 | | usb | d3xx |
 |---|---|---|
-| 600 s soak | CLEAN, 18,000,096 samples | CLEAN, 18,000,096 samples |
-| CPU for a 20 s recording run (user + sys) | 6.4 s | 10.8 s |
+| CPU for a 20 s recording run (user + sys) | 2.2 s | 8.7 s |
 | open + port scan | about 2.5 s | about 8.6 s |
+| delivery delay, avg / worst (8 KB USB blocks) | 0.76 / 2.45 ms | 0.73 / 4.58 ms |
 
-Recordings made back to back agree: electrode noise profile r = 0.9997, AUX within 0.4 mV,
-ADC within 0.03 mV. The faster open comes from not waiting 200 ms on every pipe abort when no
-transfer is announced (the chip then has nothing it may send).
+Recordings made back to back agree: electrode noise profile r = 0.9999, AUX within 0.3 mV,
+ADC within 0.03 mV. Two things make the difference:
+
+- **Paced reads.** The chip ends a transfer whenever its FIFO runs empty, so reading as fast
+  as possible (as D3XX does) fetches each block in dozens of one-sample pieces: about 12,400
+  transfers a second, each with its announcement. liboni needs the whole block before it hands
+  anything on, so after a read that emptied the FIFO the driver sleeps until the rest of the
+  block should have been produced and fetches it in one transfer. `OEZ_USB_PACE=0` turns that
+  off.
+- **No idle waits.** D3XX waits 200 ms on every pipe abort; that is skipped when no transfer
+  is announced (the chip then has nothing it may send).
+
+`--usb-block BYTES` (`Settings.usb_block_bytes`) sets how much liboni fetches at a time.
+Nothing reaches the pipeline before a block is complete, so it sets the delivery delay:
+
+| usb block | delivery delay avg / worst | CPU per 10 s | transfers per s |
+|---|---|---|---|
+| 24576 | 2.05 / 4.21 ms | 0.40 s | 495 |
+| 8192 (default) | 0.70 / 1.92 ms | 0.60 s | 1,498 |
+| 4096 | 0.38 / 1.34 ms | 0.89 s | 3,531 |
+| 2048 | 0.23 / 2.10 ms | 1.37 s | 8,263 |
+
+(Delivery delay: how much later than the quickest block of the same second a block's newest
+sample reached the ring; `oez-headless` prints it.) The FT600's stream mode was also tried and
+is not used: see the notes at the top of `src/ft600.zig`.
 
 **`d3xx`** needs `libonidriver_ft600.so`, built by `../oers/scripts/build-ft600-driver.sh`
 (D3XX **1.0.x** only) into `~/.local/lib`. It is found via `$ONI_DRIVER_PATH`, next to the
@@ -96,6 +118,10 @@ append-only; `meta.toml` describes everything and is replaced atomically.
 Crash safety: once a second `samples.i16` is synced, then the index records for it are written
 and synced, so every index record points at data already on disk. After a crash the indexed
 data is CRC-verifiable and any tail beyond it is kept but unverified.
+
+`tools/oez_compare.py A B` compares two recordings of the same headstages (layout, noise
+profile, AUX and ADC levels). `tools/usbshim/usbshim.c` is the LD_PRELOAD logger used to learn
+the FT600 protocol from D3XX.
 
 `tools/oez_read.py` is a reference reader (numpy + standard library) and verifier:
 

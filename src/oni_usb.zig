@@ -25,6 +25,12 @@ const aux_size = 8192;
 
 const gpa = std.heap.c_allocator;
 
+/// `OEZ_USB_PACE=0` turns read pacing off (see `readStream`).
+fn pacing() bool {
+    const v = std.c.getenv("OEZ_USB_PACE") orelse return true;
+    return v[0] != '0';
+}
+
 fn Ring(comptime size: usize) type {
     return struct {
         const Self = @This();
@@ -68,6 +74,11 @@ const Ctx = struct {
     sig_offset: usize = 0,
     sig_error: bool = false,
     reg_op: struct { dev_idx: u32 = 0, dev_addr: u32 = 0, value: u32 = 0, rw: u32 = 0 } = .{},
+    /// Read pacing: how long the board takes to produce one byte (running estimate, 0 =
+    /// unknown), and when the last block was completed.
+    ns_per_byte: f64 = 0,
+    last_block_ns: i128 = 0,
+    pace: bool = true,
 
     fn resetCtx(self: *Ctx) void {
         self.sig_state = .cmd;
@@ -151,8 +162,22 @@ const Ctx = struct {
 
     fn stopAcq(self: *Ctx) void {
         ft600.sleepMs(10);
-        self.ft.?.abort(ft600.Channel.data.in()) catch {};
+        const ft = &self.ft.?;
+        if (self.state == .running and ft.data_transfers > 1000) {
+            log.info("data channel: {d} transfers, {d} bytes ({d} bytes per transfer)", .{ ft.data_transfers, ft.data_bytes, ft.data_bytes / ft.data_transfers });
+        }
+        ft.abort(ft600.Channel.data.in()) catch {};
         self.state = .init;
+    }
+
+    fn startAcq(self: *Ctx) void {
+        const ft = &self.ft.?;
+        ft.data_transfers = 0;
+        ft.data_bytes = 0;
+        self.ns_per_byte = 0;
+        self.last_block_ns = 0;
+        self.pace = pacing();
+        self.state = .running;
     }
 
     fn closeDevice(self: *Ctx) void {
@@ -266,13 +291,37 @@ fn readStream(p: c.oni_driver_ctx, stream: c.oni_read_stream_t, data: ?*anyopaqu
         const want = (size >> 2) << 2; // whole 32-bit words
         if (want < ctx.in_block) return c.ONI_EINVALREADSIZE;
         const ft = &ctx.ft.?;
+        // The chip ends a transfer whenever its FIFO runs empty, so reading as fast as
+        // possible fetches a block in dozens of pieces of one sample each (about 12,000
+        // transfers a second, each with its announcement). liboni needs the whole block
+        // before it hands anything on, so nothing is gained by that. Pacing: after a short
+        // read (we have caught up), sleep until the rest of the block should have been
+        // produced, less a margin, and fetch it in one transfer. When we are behind, the
+        // chip's FIFO does not run empty (`caught_up` is false) and there is no sleep.
+        const margin_ns = 100_000;
         var got: usize = 0;
         while (got < want) {
             got += ft.read(.data, dst[got..want], 1000) catch |e| {
                 log.err("data read failed: {t}", .{e});
                 return c.ONI_EREADFAILURE;
             };
+            if (got < want and ft.caught_up and ctx.pace and ctx.ns_per_byte > 0) {
+                const wait: f64 = @as(f64, @floatFromInt(want - got)) * ctx.ns_per_byte - margin_ns;
+                if (wait > 50_000) ft600.sleepNs(@intFromFloat(@min(wait, 5_000_000)));
+            }
         }
+        const now = ft600.monotonicNs();
+        if (ctx.last_block_ns != 0) {
+            var per_byte: f64 = @as(f64, @floatFromInt(now - ctx.last_block_ns)) / @as(f64, @floatFromInt(want));
+            if (ctx.ns_per_byte == 0) {
+                ctx.ns_per_byte = per_byte;
+            } else {
+                // A stall must not teach us to sleep long: limit each step, then smooth.
+                per_byte = std.math.clamp(per_byte, 0.5 * ctx.ns_per_byte, 2.0 * ctx.ns_per_byte);
+                ctx.ns_per_byte = 0.9 * ctx.ns_per_byte + 0.1 * per_byte;
+            }
+        }
+        ctx.last_block_ns = now;
         return @intCast(got);
     }
     return c.ONI_EPATHINVALID;
@@ -360,9 +409,9 @@ fn setOptCallback(p: c.oni_driver_ctx, option: c_int, value: ?*const anyopaque, 
     const ctx = cast(p);
     const v: u32 = @as(*align(1) const u32, @ptrCast(value.?)).*;
     if (option == c.ONI_OPT_RUNNING) {
-        if (v == 0) ctx.stopAcq() else ctx.state = .running;
+        if (v == 0) ctx.stopAcq() else ctx.startAcq();
     } else if (option == c.ONI_OPT_RESETACQCOUNTER) {
-        if (v > 1) ctx.state = .running;
+        if (v > 1) ctx.startAcq();
     } else if (option == c.ONI_OPT_BLOCKREADSIZE) {
         if (ctx.state == .running) return c.ONI_EINVALSTATE;
         if (v % 4 != 0) return c.ONI_EINVALREADSIZE;
