@@ -1,0 +1,8 @@
+.{
+    .name = .oez,
+    .version = "0.0.0",
+    .fingerprint = 0x149052cf29e0c493,
+    .minimum_zig_version = "0.17.1",
+    .dependencies = .{},
+    .paths = .{ "build.zig", "build.zig.zon", "src", "vendor" },
+}
