@@ -135,15 +135,15 @@ pub fn chipName(id: i32) []const u8 {
 
 /// How the FT600 is reached.
 pub const Driver = enum {
-    /// liboni's ft600 driver on FTDI's closed D3XX library (libonidriver_ft600.so).
-    d3xx,
-    /// oEZ's own driver straight on the kernel's USB interface (`oni_usb.zig`).
+    /// oEZ's own driver straight on the kernel's USB interface (`oni_usb.zig`). The default.
     usb,
+    /// liboni's ft600 driver on FTDI's closed D3XX library (libonidriver_ft600.so): a fallback.
+    d3xx,
 };
 
 pub const Board = struct {
     io: Io,
-    driver: Driver = .d3xx,
+    driver: Driver = .usb,
     ctx: oni.Context,
     settings: Settings = .{},
     regs: Rhd2000Registers,

@@ -16,8 +16,8 @@ program (`oni_register_builtin_driver`).
 
 ## Two ways to reach the FT600
 
-    oez-headless --driver usb ...     # oEZ's own transport: no FTDI code in the process
-    oez-headless --driver d3xx ...    # liboni's ft600 driver on FTDI's closed D3XX (default for now)
+    oez-headless ...                  # --driver usb, the default: no FTDI code in the process
+    oez-headless --driver d3xx ...    # fallback: liboni's ft600 driver on FTDI's closed D3XX
 
 **`usb`** needs nothing installed beyond read/write access to the device node (the Open Ephys
 udev rule). Three layers, all in this repo:

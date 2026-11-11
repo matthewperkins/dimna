@@ -3,8 +3,8 @@
 //!   oez-headless [--seconds S] [--16ch A1,B1] [--aux] [--adc] [--leds] [--rate HZ] [--block N]
 //!                [--record ROOT] [--live-test] [--driver d3xx|usb]
 //!
-//! --driver usb talks to the FT600 directly through the kernel (no FTDI library); d3xx (the
-//! default for now) uses liboni's ft600 driver on FTDI's D3XX.
+//! --driver usb (the default) talks to the FT600 directly through the kernel, with no FTDI
+//! library; d3xx uses liboni's ft600 driver on FTDI's D3XX, as a fallback.
 //!
 //! --live-test changes settings on a schedule while acquiring (needs >= 26 s; use with
 //! --record so the changes are stamped in events.tsv): at 2 s it asks to turn ADC acquisition
@@ -35,7 +35,7 @@ const Args = struct {
     seconds: f64 = 10.0,
     record_root: ?[]const u8 = null,
     live_test: bool = false,
-    driver: oez.board.Driver = .d3xx,
+    driver: oez.board.Driver = .usb,
     settings: oez.types.Settings = .{},
 };
 
