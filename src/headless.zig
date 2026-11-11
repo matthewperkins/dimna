@@ -1,7 +1,12 @@
 //! oez-headless: open the board, acquire for a while, and check the stream.
 //!
 //!   oez-headless [--seconds S] [--16ch A1,B1] [--aux] [--adc] [--leds] [--rate HZ] [--block N]
-//!                [--record ROOT]
+//!                [--record ROOT] [--live-test]
+//!
+//! --live-test changes settings on a schedule while acquiring (needs >= 26 s; use with
+//! --record so the changes are stamped in events.tsv): at 2 s it asks to turn ADC acquisition
+//! off (must be refused while recording), LEDs on/off at 4/6 s, lower bandwidth 300 Hz at
+//! 8 s and back to 1 Hz at 14 s, upper bandwidth 1 kHz at 18 s and back to 7.5 kHz at 22 s.
 //!
 //! Prints one status line per second. Besides the driver's own counters it checks, as a
 //! consumer, that blocks arrive contiguous (`gapblk`) and that the board clock advances by
@@ -26,6 +31,7 @@ fn onSigint(_: std.posix.SIG) callconv(.c) void {
 const Args = struct {
     seconds: f64 = 10.0,
     record_root: ?[]const u8 = null,
+    live_test: bool = false,
     settings: oez.types.Settings = .{},
 };
 
@@ -52,6 +58,8 @@ fn parseArgs(args: []const [:0]const u8) !Args {
             a.settings.block_samples = try std.fmt.parseInt(usize, try next(args, &i, arg), 10);
         } else if (std.mem.eql(u8, arg, "--record")) {
             a.record_root = try next(args, &i, arg);
+        } else if (std.mem.eql(u8, arg, "--live-test")) {
+            a.live_test = true;
         } else if (std.mem.eql(u8, arg, "--aux")) {
             a.settings.acquire_aux = true;
         } else if (std.mem.eql(u8, arg, "--adc")) {
@@ -129,7 +137,50 @@ pub fn main(init: std.process.Init) !u8 {
 
     std.posix.sigaction(.INT, &.{ .handler = .{ .handler = onSigint }, .mask = std.posix.sigemptyset(), .flags = 0 }, null);
 
-    if (rec) |r| try r.start();
+    if (rec) |r| {
+        r.events_in = &acq.events;
+        try r.start();
+    }
+    const LiveStep = struct { at_ms: i64, name: []const u8, edit: *const fn (*oez.types.Settings) void };
+    const steps = [_]LiveStep{
+        .{ .at_ms = 2000, .name = "ADC off (a restart change)", .edit = struct {
+            fn f(st: *oez.types.Settings) void {
+                st.acquire_adc = !st.acquire_adc;
+            }
+        }.f },
+        .{ .at_ms = 4000, .name = "LEDs on", .edit = struct {
+            fn f(st: *oez.types.Settings) void {
+                st.leds = true;
+            }
+        }.f },
+        .{ .at_ms = 6000, .name = "LEDs off", .edit = struct {
+            fn f(st: *oez.types.Settings) void {
+                st.leds = false;
+            }
+        }.f },
+        .{ .at_ms = 8000, .name = "lower bandwidth 300 Hz", .edit = struct {
+            fn f(st: *oez.types.Settings) void {
+                st.lower_bandwidth = 300.0;
+            }
+        }.f },
+        .{ .at_ms = 14000, .name = "lower bandwidth 1 Hz", .edit = struct {
+            fn f(st: *oez.types.Settings) void {
+                st.lower_bandwidth = 1.0;
+            }
+        }.f },
+        .{ .at_ms = 18000, .name = "upper bandwidth 1 kHz", .edit = struct {
+            fn f(st: *oez.types.Settings) void {
+                st.upper_bandwidth = 1000.0;
+            }
+        }.f },
+        .{ .at_ms = 22000, .name = "upper bandwidth 7.5 kHz", .edit = struct {
+            fn f(st: *oez.types.Settings) void {
+                st.upper_bandwidth = 7500.0;
+            }
+        }.f },
+    };
+    var next_step: usize = 0;
+    var live_ok = true;
     try acq.start();
     const t_start = Io.Clock.awake.now(io);
     var next_tick: i64 = 1;
@@ -172,6 +223,25 @@ pub fn main(init: std.process.Init) !u8 {
             ring.release(me);
         }
         const elapsed_ms = t_start.untilNow(io, .awake).toMilliseconds();
+        if (args.live_test and next_step < steps.len and elapsed_ms >= steps[next_step].at_ms) {
+            const step = steps[next_step];
+            next_step += 1;
+            var want = acq.requested;
+            step.edit(&want);
+            if (acq.applySettings(want, rec != null)) |change| {
+                log.info("live test: {s}: queued ({t})", .{ step.name, change });
+                if (std.mem.indexOf(u8, step.name, "restart") != null and rec != null) {
+                    log.err("live test: a restart change was accepted while recording", .{});
+                    live_ok = false;
+                }
+            } else |e| {
+                const expected = e == error.RecordingActive and std.mem.indexOf(u8, step.name, "restart") != null;
+                if (expected) log.info("live test: {s}: refused while recording, as it should be", .{step.name}) else {
+                    log.err("live test: {s}: {t}", .{ step.name, e });
+                    live_ok = false;
+                }
+            }
+        }
         if (elapsed_ms >= next_tick * 1000) {
             const s = health.samples.load(.monotonic);
             const lat_avg_ms: f64 = if (lat_n > 0) @as(f64, @floatFromInt(lat_sum_ns)) / @as(f64, @floatFromInt(lat_n)) / 1e6 else 0;
@@ -198,6 +268,11 @@ pub fn main(init: std.process.Init) !u8 {
         io.sleep(.fromMilliseconds(1), .awake) catch {};
     }
     if (run_ms == 0) run_ms = t_start.untilNow(io, .awake).toMilliseconds();
+    if (args.live_test) {
+        while (!acq.idle() and !acq.done.load(.acquire)) io.sleep(.fromMilliseconds(5), .awake) catch {};
+        std.debug.print("live test: {d} steps run, {d} commands applied, {d} failed, longest apply {d} us\n", .{ next_step, acq.applied.load(.acquire), acq.failed.load(.acquire), acq.max_apply_us.load(.monotonic) });
+        if (next_step < steps.len or acq.failed.load(.acquire) != 0) live_ok = false;
+    }
     const failed = acq.done.load(.acquire);
     acq.join();
     // Drain what the thread committed before it stopped.
@@ -242,7 +317,7 @@ pub fn main(init: std.process.Init) !u8 {
     }
     const nominal = layout.hw_clock_hz / layout.sample_rate;
     const tstep_ok = tstep_max == 0 or (@as(f64, @floatFromInt(tstep_min)) > 0.5 * nominal and @as(f64, @floatFromInt(tstep_max)) < 1.5 * nominal);
-    const clean = rec_ok and dropped == 0 and gaps == 0 and bad == 0 and overflow == 0 and gap_blocks == 0 and tstep_ok;
+    const clean = live_ok and rec_ok and dropped == 0 and gaps == 0 and bad == 0 and overflow == 0 and gap_blocks == 0 and tstep_ok;
     std.debug.print("{s}\n", .{if (clean) "CLEAN" else "PROBLEMS (see counters above)"});
     return if (clean) 0 else 1;
 }

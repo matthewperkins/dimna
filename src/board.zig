@@ -12,7 +12,8 @@ const std = @import("std");
 const oni = @import("oni.zig");
 const types = @import("types.zig");
 const parser_mod = @import("parser.zig");
-const Rhd2000Registers = @import("registers.zig").Rhd2000Registers;
+const registers = @import("registers.zig");
+const Rhd2000Registers = registers.Rhd2000Registers;
 const Settings = types.Settings;
 const Health = types.Health;
 const Block = types.Block;
@@ -165,6 +166,12 @@ pub const Board = struct {
     ttl_out: u16 = 0,
     dac_route: [8]?DacRoute = @splat(null),
     bno_warned: bool = false,
+    /// AuxCmd3 banks holding the running register-config lists: [normal, fast settle]. Live
+    /// amplifier changes upload into the idle pair (1/2 <-> 3/4) and then switch to it.
+    reg_banks: [2]u32 = .{ 1, 2 },
+    /// What AuxCmd3 banks 0..4 hold, as last uploaded (null = unknown), so live changes only
+    /// write the entries that differ. Forgotten on every board reset, to be safe.
+    cmd3_banks: [5]?registers.CommandList = @splat(null),
 
     /// Open the first ONI acquisition board on the FT600 bus, initialize it and scan ports.
     /// Uses default settings; apply others with `applySettings` afterwards (as oers does, so a
@@ -247,6 +254,7 @@ pub const Board = struct {
 
     // ------------------------------------------------------------------ low level
     fn resetBoard(self: *Board) Error!void {
+        self.cmd3_banks = @splat(null);
         try self.io.sleep(.fromMilliseconds(50), .awake);
         try self.ctx.setOptU32(oni.opt.reset, 1);
         try self.ctx.setOptU32(oni.opt.block_read_size, self.settings.usb_block_bytes);
@@ -288,6 +296,24 @@ pub const Board = struct {
     fn uploadCommandList(self: *Board, list: []const i32, slot: AuxSlot, bank: u32) Error!void {
         const base = 0x4000 + (bank << 10) + (@intFromEnum(slot) << 14);
         for (list, 0..) |cmd, i| try self.ctx.writeReg(device_rhythm, base + @as(u32, @intCast(i)), @bitCast(cmd));
+    }
+    /// Uploads an AuxCmd3 list, writing only the entries that differ from what the bank is
+    /// known to hold (all of them if unknown).
+    fn uploadCmd3(self: *Board, list: *const registers.CommandList, bank: u32) Error!usize {
+        const base = 0x4000 + (bank << 10) + (@intFromEnum(AuxSlot.cmd3) << 14);
+        const known = if (self.cmd3_banks[bank]) |*k| (if (k.len == list.len) k else null) else null;
+        // A failed write leaves the bank partly updated: forget what it holds.
+        errdefer self.cmd3_banks[bank] = null;
+        var writes: usize = 0;
+        for (list.slice(), 0..) |cmd, i| {
+            if (known) |k| {
+                if (k.buf[i] == cmd) continue;
+            }
+            try self.ctx.writeReg(device_rhythm, base + @as(u32, @intCast(i)), @bitCast(cmd));
+            writes += 1;
+        }
+        self.cmd3_banks[bank] = list.*;
+        return writes;
     }
     fn selectAuxBank(self: *Board, port: usize, slot: AuxSlot, bank: u32) Error!void {
         const sh: u5 = @intCast(4 * port);
@@ -487,17 +513,89 @@ pub const Board = struct {
         const fast = s.fast_settle;
 
         var l = self.regs.commandListRegisterConfig(true);
-        try self.uploadCommandList(l.slice(), .cmd3, 0);
+        _ = try self.uploadCmd3(&l, 0);
         try self.selectAuxLength(.cmd3, 0, @intCast(l.len - 1));
         l = self.regs.commandListRegisterConfig(false);
-        try self.uploadCommandList(l.slice(), .cmd3, 1);
+        _ = try self.uploadCmd3(&l, 1);
         try self.selectAuxLength(.cmd3, 0, @intCast(l.len - 1));
+        // The spare pair for live changes (`setAmpLive`) gets the same lists now, while idle,
+        // so a live change only has to write the entries that differ.
+        _ = try self.uploadCmd3(&l, 3);
         self.regs.setFastSettle(true);
         l = self.regs.commandListRegisterConfig(false);
-        try self.uploadCommandList(l.slice(), .cmd3, 2);
+        _ = try self.uploadCmd3(&l, 2);
+        _ = try self.uploadCmd3(&l, 4);
         try self.selectAuxLength(.cmd3, 0, @intCast(l.len - 1));
         self.regs.setFastSettle(false);
+        self.reg_banks = .{ 1, 2 };
         try self.selectAuxBankAll(.cmd3, if (fast) 2 else 1);
+    }
+
+    pub const AmpSettings = struct {
+        lower_bandwidth: f64,
+        upper_bandwidth: f64,
+        dsp_enabled: bool,
+        dsp_cutoff: f64,
+        fast_settle: bool,
+    };
+
+    pub fn ampSettings(self: *const Board) AmpSettings {
+        const s = self.settings;
+        return .{ .lower_bandwidth = s.lower_bandwidth, .upper_bandwidth = s.upper_bandwidth, .dsp_enabled = s.dsp_enabled, .dsp_cutoff = s.dsp_cutoff, .fast_settle = s.fast_settle };
+    }
+
+    /// The bandwidths and DSP cutoff the chips actually get (the nearest the hardware can do),
+    /// and when the switch was written.
+    pub const AmpActual = struct {
+        lower: f64,
+        upper: f64,
+        dsp_cutoff: f64,
+        /// Monotonic time at which the bank switch had been written.
+        switched_ns: i96,
+        /// Register writes for the list now in use, before the switch.
+        writes_before_switch: usize,
+    };
+
+    /// Reprograms the amplifier bandwidth, DSP high-pass and fast settle while acquiring,
+    /// without stopping. The idle AuxCmd3 bank pair gets the new register-config list that is
+    /// needed now (normal or fast settle), all four ports switch to it with one register write,
+    /// then the pair's other list is updated. Only entries that differ from the bank's known
+    /// contents are written. The lists have identical structure, so a switch that lands
+    /// mid-cycle only mixes complete old and new register writes for one cycle (60 samples).
+    /// DIFF: stock and oers stop, upload into banks 1/2 and restart (a gap, counter reset).
+    /// Writes: Rhythm aux command RAM (AuxCmd3, idle banks) and AUXCMD_BANK_3. Volatile.
+    pub fn setAmpLive(self: *Board, a: AmpSettings) Error!AmpActual {
+        const s = &self.settings;
+        s.lower_bandwidth = a.lower_bandwidth;
+        s.upper_bandwidth = a.upper_bandwidth;
+        s.dsp_enabled = a.dsp_enabled;
+        s.fast_settle = a.fast_settle;
+        self.regs.defineSampleRate(self.sample_rate);
+        s.dsp_cutoff = self.regs.setDspCutoffFreq(a.dsp_cutoff);
+        const lo = self.regs.setLowerBandwidth(a.lower_bandwidth);
+        const up = self.regs.setUpperBandwidth(a.upper_bandwidth);
+        self.regs.enableDsp(a.dsp_enabled);
+        self.regs.enableAux(s.acquire_aux);
+        var lists: [2]registers.CommandList = undefined;
+        lists[0] = self.regs.commandListRegisterConfig(false);
+        self.regs.setFastSettle(true);
+        lists[1] = self.regs.commandListRegisterConfig(false);
+        self.regs.setFastSettle(false);
+        const next: [2]u32 = if (self.reg_banks[0] == 1) .{ 3, 4 } else .{ 1, 2 };
+        const now: usize = @intFromBool(a.fast_settle);
+        const writes = try self.uploadCmd3(&lists[now], next[now]);
+        self.reg_banks = next;
+        try self.selectRegBank(a.fast_settle);
+        const switched = Io.Clock.awake.now(self.io).nanoseconds;
+        const later = try self.uploadCmd3(&lists[1 - now], next[1 - now]);
+        log.info("amplifier bandwidth now {d:.3}..{d:.1} Hz, DSP {s} {d:.3} Hz, fast settle {s} (banks {d}/{d}, {d}+{d} writes)", .{ lo, up, if (a.dsp_enabled) "on" else "off", s.dsp_cutoff, if (a.fast_settle) "on" else "off", next[0], next[1], writes, later });
+        return .{ .lower = lo, .upper = up, .dsp_cutoff = s.dsp_cutoff, .switched_ns = switched, .writes_before_switch = writes };
+    }
+
+    /// All four ports to the normal or fast-settle bank of the current pair, in one write.
+    fn selectRegBank(self: *Board, fast: bool) Error!void {
+        const b = self.reg_banks[@intFromBool(fast)];
+        try self.rw(reg.auxcmd_bank_1 + @intFromEnum(AuxSlot.cmd3), b * 0x1111, 0xffff);
     }
 
     /// Run `n` frames of the (already started) SPI sequence and collect the aux words.
@@ -962,6 +1060,15 @@ pub const Board = struct {
             .set_ttl_mode => |on| {
                 self.settings.ttl_output_mode = on;
                 try self.setTtlMode(@intFromBool(on));
+            },
+            .set_fast_ttl_settle => |ch| {
+                self.settings.fast_ttl_settle = ch;
+                try self.enableExternalFastSettle(ch != null);
+                try self.setExternalFastSettleChannel(ch orelse 0);
+            },
+            .set_clock_divider => |d| {
+                self.settings.clock_divider = d;
+                try self.setClockDivider(d);
             },
         }
     }

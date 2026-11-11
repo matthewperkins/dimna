@@ -150,4 +150,8 @@ pub const LiveCommand = union(enum) {
     set_noise_slicer: i32,
     /// TTL outputs 1–8 driven by the DAC threshold comparators instead of software.
     set_ttl_mode: bool,
+    /// Amplifier fast settle while this TTL input is high (null = off).
+    set_fast_ttl_settle: ?u8,
+    /// Sync clock-out divider.
+    set_clock_divider: u32,
 };

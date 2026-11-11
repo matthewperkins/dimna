@@ -21,6 +21,7 @@ const builtin = @import("builtin");
 const c = @import("c");
 const types = @import("types.zig");
 const BlockRing = @import("ring.zig").BlockRing;
+const events = @import("events.zig");
 const Block = types.Block;
 const Io = std.Io;
 const Atomic = std.atomic.Value;
@@ -125,6 +126,9 @@ pub const Recorder = struct {
     edge_len: usize = 0,
     wall_offset_ns: i96,
     last_sync: Io.Timestamp,
+
+    /// Events from another thread (e.g. applied settings changes), written to events.tsv.
+    events_in: ?*events.EventQueue = null,
 
     stats: Stats = .{},
     stop_flag: Atomic(bool) = .init(false),
@@ -294,6 +298,7 @@ pub const Recorder = struct {
                 any = true;
                 if (self.sinceSyncMs() >= sync_ms) try self.sync();
             }
+            try self.drainEvents();
             if (self.sinceSyncMs() >= sync_ms) try self.sync();
             if (!any) {
                 if (self.stop_flag.load(.acquire)) break;
@@ -301,6 +306,7 @@ pub const Recorder = struct {
             }
         }
         try self.flushChunk();
+        try self.drainEvents();
         try self.event(self.last_sample_end, "stop", "");
         try self.sync();
         try self.writeMeta(self.last_sample_end);
@@ -408,6 +414,11 @@ pub const Recorder = struct {
     fn syncDir(self: *Recorder) !void {
         const f: Io.File = .{ .handle = self.dir.handle, .flags = .{ .nonblocking = false } };
         try f.sync(self.io);
+    }
+
+    fn drainEvents(self: *Recorder) !void {
+        const q = self.events_in orelse return;
+        while (q.pop()) |e| try self.event(e.sample, e.kind(), e.text());
     }
 
     /// Appends an event line. Tabs and newlines in `text` become spaces.

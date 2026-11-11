@@ -27,6 +27,25 @@ The acquisition thread runs SCHED_FIFO (needs rtprio, e.g. the `realtime` group)
 memory. It never waits on readers: the recorder and other readers take blocks from a
 preallocated ring (30 s when recording).
 
+## Changing settings while acquiring
+
+`Acquisition.applySettings` sorts a change (`acquisition.classify`):
+
+- **Outputs and indicators** (LEDs, DAC routing and high-pass, TTL out and mode, noise slicer,
+  fast TTL settle, clock divider): register writes applied by the acquisition thread between
+  blocks. The data stream is untouched.
+- **Amplifier bandwidth, DSP high-pass, fast settle:** gap-free. The idle AuxCmd3 bank pair
+  (1/2 <-> 3/4) gets the new register-config list, then all four ports switch with one
+  register write. Only the list entries that differ are written (a bandwidth change is 2-6
+  writes, about 5 ms). Not done by stock or oers, which stop and restart.
+- **Sample rate, AUX/ADC, 16-channel mode, cable delays, USB block size:** need a restart, and
+  are refused while recording.
+
+Each applied change goes into the recording's `events.tsv`, stamped with the estimated
+sample at which it reached the board. The estimate is a lower bound: the effect shows in the
+data within about 10 ms after it. `oez-headless --live-test --record DIR` runs a scheduled test
+(refused restart, LEDs on/off, 300 Hz high-pass on/off, 1 kHz low-pass on/off).
+
 ## Recording format (v1)
 
 One folder per recording, `ROOT/YYYY-MM-DD_HH-MM-SS/`. All binary files are little-endian and

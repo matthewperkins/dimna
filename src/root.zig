@@ -8,6 +8,7 @@ pub const board = @import("board.zig");
 pub const ring = @import("ring.zig");
 pub const acquisition = @import("acquisition.zig");
 pub const record = @import("record.zig");
+pub const events = @import("events.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());
