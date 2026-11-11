@@ -430,7 +430,13 @@ pub const Gpu = struct {
         }
     }
 
-    pub const DrawResult = enum { presented, out_of_date };
+    pub const DrawResult = enum {
+        presented,
+        /// The swapchain no longer fits the window: call `resize`.
+        out_of_date,
+        /// No swapchain image was free; nothing was drawn. Try again shortly.
+        busy,
+    };
 
     /// Draws one frame of traces and presents it. `before_present` runs right before the
     /// frame is handed to the compositor (frame callback and presentation feedback requests
@@ -442,7 +448,7 @@ pub const Gpu = struct {
             error.OutOfDateKHR => return .out_of_date,
             else => return e,
         };
-        if (acquired.result == .not_ready or acquired.result == .timeout) return .out_of_date;
+        if (acquired.result == .not_ready or acquired.result == .timeout) return .busy;
         try dev.resetFences(&[_]vk.Fence{self.in_flight});
 
         const cmd = self.cmd;

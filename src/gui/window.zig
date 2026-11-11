@@ -54,6 +54,17 @@ pub const Presented = struct {
     refresh_ns: u32,
 };
 
+const Output = struct {
+    window: *Window,
+    output: ?*wl.Output = null,
+    name_buf: [32]u8 = undefined,
+    name_len: usize = 0,
+
+    pub fn name(self: *const Output) []const u8 {
+        return self.name_buf[0..self.name_len];
+    }
+};
+
 const FeedbackSlot = struct {
     window: *Window,
     tag: u64 = 0,
@@ -71,6 +82,12 @@ pub const Window = struct {
     gestures: ?*zwp.PointerGesturesV1 = null,
     pinch: ?*zwp.PointerGesturePinchV1 = null,
     presentation: ?*wp.Presentation = null,
+    tearing_manager: ?*wp.TearingControlManagerV1 = null,
+    tearing: ?*wp.TearingControlV1 = null,
+    content_type_manager: ?*wp.ContentTypeManagerV1 = null,
+    /// Monitors, with their connector names (DP-1, ...).
+    outputs: [8]Output = undefined,
+    num_outputs: usize = 0,
     /// clockid_t of presentation timestamps (1 = CLOCK_MONOTONIC), -1 until known.
     presentation_clock: i64 = -1,
 
@@ -103,7 +120,10 @@ pub const Window = struct {
         errdefer display.disconnect();
         self.* = .{ .display = display, .registry = try display.getRegistry() };
         for (&self.feedback) |*f| f.* = .{ .window = self };
+        for (&self.outputs) |*o| o.* = .{ .window = self };
         self.registry.setListener(*Window, onRegistry, self);
+        if (display.roundtrip() != .SUCCESS) return error.WaylandRoundtrip;
+        // A second round trip delivers the outputs' names.
         if (display.roundtrip() != .SUCCESS) return error.WaylandRoundtrip;
         const compositor = self.compositor orelse return error.NoCompositor;
         const wm_base = self.wm_base orelse return error.NoXdgShell;
@@ -136,6 +156,37 @@ pub const Window = struct {
         self.xdg_surface.destroy();
         self.surface.destroy();
         self.display.disconnect();
+    }
+
+    /// Makes the window fullscreen on the monitor with this connector name (e.g. "DP-2").
+    /// Returns false if there is no such monitor. Takes effect with the next configure.
+    pub fn fullscreenOn(self: *Window, monitor: []const u8) bool {
+        for (self.outputs[0..self.num_outputs]) |*o| {
+            if (std.ascii.eqlIgnoreCase(o.name(), monitor)) {
+                self.toplevel.setFullscreen(o.output);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// Declares the surface as latency-critical ("game" content). Hyprland's
+    /// `render.direct_scanout = 2` scans out only such fullscreen surfaces directly.
+    pub fn declareLowLatency(self: *Window) bool {
+        const m = self.content_type_manager orelse return false;
+        const ct = m.getSurfaceContentType(self.surface) catch return false;
+        ct.setContentType(.game);
+        return true;
+    }
+
+    /// Tells the compositor this surface prefers immediate (tearing) presentation over
+    /// waiting for the refresh. The compositor decides (Hyprland: needs
+    /// `general.allow_tearing` and a fullscreen window). Returns false if unsupported.
+    pub fn preferTearing(self: *Window) bool {
+        const m = self.tearing_manager orelse return false;
+        if (self.tearing == null) self.tearing = m.getTearingControl(self.surface) catch return false;
+        self.tearing.?.setPresentationHint(.async);
+        return true;
     }
 
     pub fn setTitle(self: *Window, title: [:0]const u8) void {
@@ -213,9 +264,33 @@ pub const Window = struct {
                     self.presentation = registry.bind(g.name, wp.Presentation, 1) catch null;
                 } else if (std.mem.eql(u8, name, std.mem.span(zwp.PointerGesturesV1.interface.name))) {
                     self.gestures = registry.bind(g.name, zwp.PointerGesturesV1, 1) catch null;
+                } else if (std.mem.eql(u8, name, std.mem.span(wp.ContentTypeManagerV1.interface.name))) {
+                    self.content_type_manager = registry.bind(g.name, wp.ContentTypeManagerV1, 1) catch null;
+                } else if (std.mem.eql(u8, name, std.mem.span(wp.TearingControlManagerV1.interface.name))) {
+                    self.tearing_manager = registry.bind(g.name, wp.TearingControlManagerV1, 1) catch null;
+                } else if (std.mem.eql(u8, name, std.mem.span(wl.Output.interface.name))) {
+                    if (g.version >= 4 and self.num_outputs < self.outputs.len) {
+                        const o = &self.outputs[self.num_outputs];
+                        o.output = registry.bind(g.name, wl.Output, 4) catch null;
+                        if (o.output) |out| {
+                            out.setListener(*Output, onOutput, o);
+                            self.num_outputs += 1;
+                        }
+                    }
                 }
             },
             .global_remove => {},
+        }
+    }
+
+    fn onOutput(_: *wl.Output, event: wl.Output.Event, o: *Output) void {
+        switch (event) {
+            .name => |n| {
+                const text = std.mem.span(n.name);
+                o.name_len = @min(text.len, o.name_buf.len);
+                @memcpy(o.name_buf[0..o.name_len], text[0..o.name_len]);
+            },
+            else => {},
         }
     }
 

@@ -53,10 +53,16 @@ pub fn build(b: *std.Build) void {
     scanner.addSystemProtocol("unstable/pointer-gestures/pointer-gestures-unstable-v1.xml");
     scanner.generate("wl_compositor", 4);
     scanner.generate("wl_seat", 5);
-    scanner.generate("wl_output", 2); // referenced by surface and presentation events
+    scanner.generate("wl_output", 4); // v4 gives the connector name (DP-2), to pick a monitor
     scanner.generate("xdg_wm_base", 2);
     scanner.generate("wp_presentation", 1);
     scanner.generate("zwp_pointer_gestures_v1", 1);
+    scanner.addSystemProtocol("staging/tearing-control/tearing-control-v1.xml");
+    scanner.generate("wp_tearing_control_manager_v1", 1);
+    scanner.addSystemProtocol("staging/content-type/content-type-v1.xml");
+    scanner.generate("wp_content_type_manager_v1", 1);
+    scanner.addSystemProtocol("staging/drm-lease/drm-lease-v1.xml");
+    scanner.generate("wp_drm_lease_device_v1", 1);
     const wayland = b.createModule(.{ .root_source_file = scanner.result });
 
     // Vulkan bindings are generated from the system's registry (vulkan-headers).
