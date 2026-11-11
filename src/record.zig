@@ -68,6 +68,7 @@ pub const Info = struct {
     gateware: [4]u32,
     board_id: u32,
     cable_delay: [4]i32,
+    board_kind: []const u8 = "Open Ephys acquisition board (ECP5, FT600, ONI)",
     software: []const u8 = "oez 0.0.0",
 };
 
@@ -548,7 +549,9 @@ fn writeToml(w: *Io.Writer, r: *const Recorder, final_end: ?i64) !void {
     }
 
     const fw = r.info.gateware;
-    try w.print("\n[board]\nkind = \"Open Ephys acquisition board (ECP5, FT600, ONI)\"\ngateware = \"{d}.{d}.{d}\"\nboard_id = 0x{x}\ncable_delay = [{d}, {d}, {d}, {d}]\n", .{ fw[0], fw[1], fw[2], r.info.board_id, r.info.cable_delay[0], r.info.cable_delay[1], r.info.cable_delay[2], r.info.cable_delay[3] });
+    try w.writeAll("\n[board]\nkind = ");
+    try tomlStr(w, r.info.board_kind);
+    try w.print("\ngateware = \"{d}.{d}.{d}\"\nboard_id = 0x{x}\ncable_delay = [{d}, {d}, {d}, {d}]\n", .{ fw[0], fw[1], fw[2], r.info.board_id, r.info.cable_delay[0], r.info.cable_delay[1], r.info.cable_delay[2], r.info.cable_delay[3] });
     try w.print("\n[settings]\nlower_bandwidth_hz = {f}\nupper_bandwidth_hz = {f}\ndsp_enabled = {}\ndsp_cutoff_hz = {f}\nacquire_aux = {}\nacquire_adc = {}\nfast_settle = {}\nleds = {}\nusb_block_bytes = {d}\nblock_samples = {d}\n", .{ fmtFloat(st.lower_bandwidth), fmtFloat(st.upper_bandwidth), st.dsp_enabled, fmtFloat(st.dsp_cutoff), st.acquire_aux, st.acquire_adc, st.fast_settle, st.leds, st.usb_block_bytes, st.block_samples });
 
     if (r.first_sample) |fs| try w.print("\n[start]\nfirst_sample = {d}\n", .{fs});

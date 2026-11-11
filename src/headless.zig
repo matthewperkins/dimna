@@ -2,6 +2,10 @@
 //!
 //!   oez-headless [--seconds S] [--16ch A1,B1] [--aux] [--adc] [--leds] [--rate HZ] [--block N]
 //!                [--record ROOT] [--live-test] [--driver d3xx|usb] [--usb-block BYTES]
+//!                [--sim 32,16]
+//!
+//! --sim runs from simulated headstages (channels each) instead of the board: no hardware is
+//! touched, and the acquisition thread does not ask for real-time priority.
 //!
 //! --usb-block sets how many bytes liboni fetches at a time (default 8192, about 1.4 ms at 46
 //! channels). Nothing reaches the pipeline until a block is complete, so smaller means lower
@@ -42,6 +46,9 @@ const Args = struct {
     live_test: bool = false,
     driver: oez.board.Driver = .usb,
     settings: oez.types.Settings = .{},
+    /// Simulated headstages (channels each) instead of the board.
+    sim: [8]usize = @splat(0),
+    num_sim: usize = 0,
 };
 
 fn parseArgs(args: []const [:0]const u8) !Args {
@@ -75,6 +82,17 @@ fn parseArgs(args: []const [:0]const u8) !Args {
                 log.err("--driver: '{s}' is not d3xx or usb", .{name});
                 return error.BadArgs;
             };
+        } else if (std.mem.eql(u8, arg, "--sim")) {
+            var it = std.mem.tokenizeScalar(u8, try next(args, &i, arg), ',');
+            while (it.next()) |n| {
+                const ch = std.fmt.parseInt(usize, n, 10) catch 0;
+                if ((ch != 16 and ch != 32 and ch != 64) or a.num_sim == a.sim.len) {
+                    log.err("--sim: give up to 8 headstages of 16, 32 or 64 channels, e.g. 32,16", .{});
+                    return error.BadArgs;
+                }
+                a.sim[a.num_sim] = ch;
+                a.num_sim += 1;
+            }
         } else if (std.mem.eql(u8, arg, "--live-test")) {
             a.live_test = true;
         } else if (std.mem.eql(u8, arg, "--aux")) {
@@ -107,23 +125,32 @@ pub fn main(init: std.process.Init) !u8 {
     const gpa = init.gpa;
     const args = parseArgs(try init.minimal.args.toSlice(init.arena.allocator())) catch return 2;
 
-    var dirbuf: [std.fs.max_path_bytes:0]u8 = undefined;
-    if (args.driver == .d3xx) {
-        if (oez.oni.configureDriverSearch(io, init.environ_map, &dirbuf)) |d| {
-            log.info("using libonidriver_ft600.so from {s}", .{d});
-        } else log.info("libonidriver_ft600.so not found in known locations; trying the default library path", .{});
-    }
-
-    if (!oez.acquisition.lockMemory()) log.warn("mlockall failed; pages may be swapped out", .{});
-
-    var board = Board.open(io, args.driver) catch |e| {
-        log.err("could not open the board: {t} (liboni: {s})", .{ e, oez.oni.errorStr(oez.oni.lastError()) });
-        return 1;
+    var board: ?Board = null;
+    defer if (board) |*b| b.close();
+    var sim: ?oez.sim.Sim = null;
+    defer if (sim) |*sm| sm.deinit();
+    const source: oez.source.Source = if (args.num_sim > 0) blk: {
+        sim = try oez.sim.Sim.init(gpa, io, args.sim[0..args.num_sim]);
+        try sim.?.applySettings(args.settings);
+        log.info("simulated board: {d} headstages, {d} units", .{ args.num_sim, sim.?.units.len });
+        break :blk .{ .sim = &sim.? };
+    } else blk: {
+        var dirbuf: [std.fs.max_path_bytes:0]u8 = undefined;
+        if (args.driver == .d3xx) {
+            if (oez.oni.configureDriverSearch(io, init.environ_map, &dirbuf)) |d| {
+                log.info("using libonidriver_ft600.so from {s}", .{d});
+            } else log.info("libonidriver_ft600.so not found in known locations; trying the default library path", .{});
+        }
+        if (!oez.acquisition.lockMemory()) log.warn("mlockall failed; pages may be swapped out", .{});
+        board = Board.open(io, args.driver) catch |e| {
+            log.err("could not open the board: {t} (liboni: {s})", .{ e, oez.oni.errorStr(oez.oni.lastError()) });
+            return 1;
+        };
+        try board.?.applySettings(args.settings);
+        break :blk .{ .board = &board.? };
     };
-    defer board.close();
-    try board.applySettings(args.settings);
 
-    const layout = board.layout();
+    const layout = source.layout();
     for (layout.headstageSlice()) |h| {
         log.info("headstage {s}: {s}, {d} ch from channel {d}", .{ oez.types.headstage_names[h.slot], h.chip, h.num_channels, h.first_channel });
     }
@@ -141,17 +168,18 @@ pub fn main(init: std.process.Init) !u8 {
     if (args.record_root) |root| {
         rec = oez.record.Recorder.create(gpa, io, &ring, root, .{
             .layout = layout,
-            .settings = board.settings,
-            .gateware = board.fw,
-            .board_id = board.device_id,
-            .cable_delay = board.cable_delay,
+            .settings = source.settings(),
+            .gateware = if (board) |b| b.fw else @splat(0),
+            .board_id = if (board) |b| b.device_id else 0,
+            .cable_delay = if (board) |b| b.cable_delay else @splat(0),
+            .board_kind = if (board != null) "Open Ephys acquisition board (ECP5, FT600, ONI)" else "simulated",
         }) catch |e| {
             log.err("could not create the recording under '{s}': {t}", .{ root, e });
             return 1;
         };
     }
     var health: oez.types.Health = .{};
-    var acq: oez.acquisition.Acquisition = .{ .io = io, .board = &board, .ring = &ring, .health = &health, .scratch = try .init(gpa, nch, bs) };
+    var acq: oez.acquisition.Acquisition = .{ .io = io, .source = source, .ring = &ring, .health = &health, .scratch = try .init(gpa, nch, bs) };
     defer acq.scratch.deinit(gpa);
 
     std.posix.sigaction(.INT, &.{ .handler = .{ .handler = onSigint }, .mask = std.posix.sigemptyset(), .flags = 0 }, null);

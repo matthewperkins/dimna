@@ -1,4 +1,4 @@
-//! The acquisition thread: owns the board while running, reads blocks straight into a ring
+//! The acquisition thread: owns the source (the board or the simulator) while running, reads blocks straight into a ring
 //! slot and commits them. It never waits on a consumer. If the ring is full the block is read
 //! into a scratch block and counted as `ring_overflow` (data lost to the pipeline, loudly);
 //! the board keeps being drained so its DRAM buffer never fills.
@@ -15,6 +15,7 @@ const board_mod = @import("board.zig");
 const events = @import("events.zig");
 const Board = board_mod.Board;
 const BlockRing = @import("ring.zig").BlockRing;
+const Source = @import("source.zig").Source;
 const LiveCommand = types.LiveCommand;
 const Settings = types.Settings;
 const Atomic = std.atomic.Value;
@@ -63,7 +64,7 @@ pub const ApplyError = error{
 
 pub const Acquisition = struct {
     io: std.Io,
-    board: *Board,
+    source: Source,
     ring: *BlockRing,
     health: *types.Health,
     scratch: types.Block,
@@ -90,10 +91,10 @@ pub const Acquisition = struct {
 
     /// Starts the board and the thread. `self` must stay at a fixed address until `join`.
     pub fn start(self: *Acquisition) !void {
-        self.requested = self.board.settings;
-        try self.board.start(self.health);
+        self.requested = self.source.settings();
+        try self.source.start(self.health);
         self.thread = std.Thread.spawn(.{}, run, .{self}) catch |e| {
-            self.board.stop() catch {};
+            self.source.stop() catch {};
             return e;
         };
         self.thread.?.setName(self.io, "acquisition") catch {};
@@ -104,7 +105,7 @@ pub const Acquisition = struct {
         self.stop_flag.store(true, .release);
         if (self.thread) |t| t.join();
         self.thread = null;
-        self.board.stop() catch |e| log.warn("board stop failed: {t}", .{e});
+        self.source.stop() catch |e| log.warn("stopping the source failed: {t}", .{e});
     }
 
     /// Queues one command for the acquisition thread.
@@ -140,13 +141,13 @@ pub const Acquisition = struct {
     }
 
     fn run(self: *Acquisition) void {
-        self.realtime.store(setRealtime(70), .release);
+        if (self.source.wantsRealtime()) self.realtime.store(setRealtime(70), .release);
         defer self.done.store(true, .release);
         var next_sample: i64 = 0;
         while (!self.stop_flag.load(.acquire)) {
             const slot = self.ring.writeSlot();
             const blk = slot orelse &self.scratch;
-            self.board.readBlock(blk) catch |e| {
+            self.source.readBlock(blk) catch |e| {
                 self.failure = e;
                 log.err("acquisition stopped by a read error: {t}", .{e});
                 return;
@@ -164,7 +165,7 @@ pub const Acquisition = struct {
     /// over USB were all taken before that write, so the estimate is not early.)
     fn apply(self: *Acquisition, cmd: Command, next_sample: i64) void {
         const t0 = std.Io.Clock.awake.now(self.io);
-        const rate = self.board.sample_rate;
+        const rate = self.source.sampleRate();
         const at = struct {
             fn f(first: i64, from: i96, to: i96, fs: f64) i64 {
                 return first + @as(i64, @intFromFloat(@round(@as(f64, @floatFromInt(to - from)) * 1e-9 * fs)));
@@ -173,7 +174,7 @@ pub const Acquisition = struct {
         var ev: events.Event = undefined;
         const ok = switch (cmd) {
             .amp => |a| blk: {
-                const actual = self.board.setAmpLive(a) catch |e| {
+                const actual = self.source.setAmpLive(a, t0.nanoseconds) catch |e| {
                     ev = .init(at(next_sample, t0.nanoseconds, std.Io.Clock.awake.now(self.io).nanoseconds, rate), "amplifier_failed", "{t}", .{e});
                     break :blk false;
                 };
@@ -181,7 +182,7 @@ pub const Acquisition = struct {
                 break :blk true;
             },
             .live => |l| blk: {
-                const ok = if (self.board.live(l)) true else |e| fail: {
+                const ok = if (self.source.live(l)) true else |e| fail: {
                     ev = .init(at(next_sample, t0.nanoseconds, std.Io.Clock.awake.now(self.io).nanoseconds, rate), "output_failed", "{t} {t}", .{ std.meta.activeTag(l), e });
                     break :fail false;
                 };

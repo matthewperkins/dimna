@@ -97,7 +97,144 @@ pub const BlockRing = struct {
     }
 };
 
+/// A reader that never holds the producer back (for displays): it copies each block out and
+/// then checks that the producer did not start reusing the slot meanwhile. When it has fallen
+/// a whole ring behind it skips ahead and counts the blocks it lost. Not registered with the
+/// ring, so any number may exist; each belongs to one thread.
+pub const LossyReader = struct {
+    ring: *BlockRing,
+    /// Position of the next block to read (same numbering as the ring's head).
+    pos: usize,
+    lost: u64 = 0,
+
+    /// Starts at the newest block.
+    pub fn init(ring: *BlockRing) LossyReader {
+        return .{ .ring = ring, .pos = ring.head.load(.acquire) };
+    }
+
+    /// Copies the next block into `out` (which must have the ring's block shape). Returns
+    /// false when there is nothing new.
+    pub fn next(self: *LossyReader, out: *Block) bool {
+        const cap = self.ring.slots.len;
+        while (true) {
+            const h = self.ring.head.load(.acquire);
+            if (self.pos == h) return false;
+            // The producer fills the slot of position p + cap while head == p + cap, so
+            // position p is intact only while head - p < cap.
+            if (h -% self.pos >= cap) {
+                const to = h -% cap / 2;
+                self.lost += to -% self.pos;
+                self.pos = to;
+                continue;
+            }
+            const src = &self.ring.slots[self.pos & self.ring.mask];
+            // These may be torn if the slot is being rewritten; the check below rejects that
+            // case, the clamp keeps the copy in bounds meanwhile.
+            const n = @min(src.len, src.capacity, out.capacity);
+            out.first_sample = src.first_sample;
+            out.acquired_ns = src.acquired_ns;
+            out.len = n;
+            @memcpy(out.data[0 .. n * out.num_channels], src.data[0 .. n * out.num_channels]);
+            @memcpy(out.hw_time[0..n], src.hw_time[0..n]);
+            @memcpy(out.ttl[0..n], src.ttl[0..n]);
+            if (self.ring.head.load(.acquire) -% self.pos >= cap) continue; // overwritten: skip ahead
+            self.pos +%= 1;
+            return true;
+        }
+    }
+};
+
 const testing = std.testing;
+
+test "lossy reader follows, and skips ahead when a ring behind" {
+    var r = try BlockRing.init(testing.allocator, 4, 1, 1);
+    defer r.deinit(testing.allocator);
+    var out = try Block.init(testing.allocator, 1, 1);
+    defer out.deinit(testing.allocator);
+    var rd = LossyReader.init(&r);
+    try testing.expect(!rd.next(&out));
+    // No gating reader is attached, so the producer never waits.
+    for (0..3) |i| {
+        const b = r.writeSlot().?;
+        b.first_sample = @intCast(i);
+        b.len = 1;
+        r.commit();
+    }
+    for (0..3) |i| {
+        try testing.expect(rd.next(&out));
+        try testing.expectEqual(@as(i64, @intCast(i)), out.first_sample);
+    }
+    try testing.expect(!rd.next(&out));
+    for (3..13) |i| {
+        const b = r.writeSlot().?;
+        b.first_sample = @intCast(i);
+        b.len = 1;
+        r.commit();
+    }
+    // Ten blocks behind a ring of four: jumps to two behind the head (position 11).
+    try testing.expect(rd.next(&out));
+    try testing.expectEqual(@as(i64, 11), out.first_sample);
+    try testing.expectEqual(@as(u64, 8), rd.lost);
+    try testing.expect(rd.next(&out));
+    try testing.expectEqual(@as(i64, 12), out.first_sample);
+    try testing.expect(!rd.next(&out));
+}
+
+test "lossy reader never returns a torn block while the producer laps it" {
+    const nch = 8;
+    const bs = 16;
+    var r = try BlockRing.init(testing.allocator, 4, nch, bs);
+    defer r.deinit(testing.allocator);
+    const n_blocks = 300_000;
+    const Producer = struct {
+        fn run(ring: *BlockRing) void {
+            var i: i64 = 0;
+            while (i < n_blocks) : (i += 1) {
+                const b = ring.writeSlot().?;
+                b.first_sample = i;
+                b.len = bs;
+                // Every value in the block is derived from its number.
+                @memset(b.data, @truncate(i));
+                @memset(b.ttl, @truncate(@as(u64, @intCast(i))));
+                ring.commit();
+            }
+        }
+    };
+    var out = try Block.init(testing.allocator, nch, bs);
+    defer out.deinit(testing.allocator);
+    var rd = LossyReader.init(&r);
+    const t = try std.Thread.spawn(.{}, Producer.run, .{&r});
+    var got: u64 = 0;
+    var last: i64 = -1;
+    var torn: u64 = 0;
+    while (last < n_blocks - 1) {
+        if (!rd.next(&out)) {
+            if (r.head.load(.acquire) == n_blocks and rd.pos == n_blocks) break;
+            std.atomic.spinLoopHint();
+            continue;
+        }
+        got += 1;
+        if (out.first_sample <= last or out.len != bs) torn += 1;
+        last = out.first_sample;
+        const want: i16 = @truncate(out.first_sample);
+        for (out.data) |v| {
+            if (v != want) {
+                torn += 1;
+                break;
+            }
+        }
+        for (out.ttl) |v| {
+            if (v != @as(u16, @truncate(@as(u64, @intCast(out.first_sample))))) {
+                torn += 1;
+                break;
+            }
+        }
+    }
+    t.join();
+    try testing.expectEqual(@as(u64, 0), torn);
+    try testing.expect(got > 0);
+    try testing.expectEqual(@as(u64, n_blocks), got + rd.lost);
+}
 
 test "ring preserves order and reports full and empty" {
     var r = try BlockRing.init(testing.allocator, 3, 2, 4);

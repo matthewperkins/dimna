@@ -3,6 +3,15 @@
     .version = "0.0.0",
     .fingerprint = 0x149052cf29e0c493,
     .minimum_zig_version = "0.17.1",
-    .dependencies = .{},
+    .dependencies = .{
+        .wayland = .{
+            .url = "git+https://codeberg.org/ifreund/zig-wayland#94db7ba4e0a6b4780a16dbc74c7a2c88f1ebf502",
+            .hash = "wayland-0.8.0-dev-lQa1kuf8AQCeoam8G-XPyaIYvIOk3_wgsspwi4nT_L5q",
+        },
+        .vulkan = .{
+            .url = "git+https://github.com/Snektron/vulkan-zig#6727ebe2c764eb621a2b56c460b4acded72e76fd",
+            .hash = "vulkan-0.0.0-r7Ytx_KJAwA4dG8cx7pUBhfdqz80XWCV7xsCFHCA1upR",
+        },
+    },
     .paths = .{ "build.zig", "build.zig.zon", "src", "vendor" },
 }
