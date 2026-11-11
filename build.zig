@@ -53,6 +53,7 @@ pub fn build(b: *std.Build) void {
     scanner.addSystemProtocol("unstable/pointer-gestures/pointer-gestures-unstable-v1.xml");
     scanner.generate("wl_compositor", 4);
     scanner.generate("wl_seat", 5);
+    scanner.generate("wl_output", 2); // referenced by surface and presentation events
     scanner.generate("xdg_wm_base", 2);
     scanner.generate("wp_presentation", 1);
     scanner.generate("zwp_pointer_gestures_v1", 1);
