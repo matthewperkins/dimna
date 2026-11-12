@@ -63,7 +63,13 @@ pub const TraceParams = extern struct {
     future: f32 = 0,
     /// Brightness, 0..1.
     gain: f32 = 1,
+    /// Where the panel's row factors start in `Gpu.row_gains`.
+    gain_base: u32 = 0,
 };
+
+/// Row factors per panel in `Gpu.row_gains` (matches the shader's limit).
+pub const max_rows = 256;
+pub const max_gain_panels = 16;
 
 /// A rectangle of the display, in pixels.
 pub const PixelRect = struct { x: u32, y: u32, w: u32, h: u32 };
@@ -120,6 +126,12 @@ pub const Gpu = struct {
     text_buf: vk.Buffer = .null,
     text_mem: vk.DeviceMemory = .null,
     text_vertices: []font.Vertex = &.{},
+
+    /// A factor on the vertical scale for every row of every panel (1 = the panel's own
+    /// scale): panel `i`'s rows start at `i * max_rows`. Mapped; the shader reads it.
+    gain_buf: vk.Buffer = .null,
+    gain_mem: vk.DeviceMemory = .null,
+    row_gains: []f32 = &.{},
 
     /// Sample history: `hist_cap` samples of `nch` interleaved int16, a ring indexed by
     /// absolute sample number.
@@ -400,6 +412,11 @@ pub const Gpu = struct {
             dev.destroyBuffer(self.hist_buf, null);
             dev.freeMemory(self.hist_mem, null);
         }
+        if (self.gain_buf != .null) {
+            dev.unmapMemory(self.gain_mem);
+            dev.destroyBuffer(self.gain_buf, null);
+            dev.freeMemory(self.gain_mem, null);
+        }
         if (self.text_buf != .null) {
             dev.unmapMemory(self.text_mem);
             dev.destroyBuffer(self.text_buf, null);
@@ -436,13 +453,11 @@ pub const Gpu = struct {
     fn createPipeline(self: *Gpu) !void {
         const dev = self.dev;
         self.set_layout = try dev.createDescriptorSetLayout(&.{
-            .binding_count = 1,
-            .p_bindings = &[_]vk.DescriptorSetLayoutBinding{.{
-                .binding = 0,
-                .descriptor_type = .storage_buffer,
-                .descriptor_count = 1,
-                .stage_flags = .{ .vertex = true },
-            }},
+            .binding_count = 2,
+            .p_bindings = &[_]vk.DescriptorSetLayoutBinding{
+                .{ .binding = 0, .descriptor_type = .storage_buffer, .descriptor_count = 1, .stage_flags = .{ .vertex = true } },
+                .{ .binding = 1, .descriptor_type = .storage_buffer, .descriptor_count = 1, .stage_flags = .{ .vertex = true } },
+            },
         }, null);
         self.pipeline_layout = try dev.createPipelineLayout(&.{
             .set_layout_count = 1,
@@ -453,11 +468,31 @@ pub const Gpu = struct {
         self.desc_pool = try dev.createDescriptorPool(&.{
             .max_sets = 1,
             .pool_size_count = 1,
-            .p_pool_sizes = &[_]vk.DescriptorPoolSize{.{ .type = .storage_buffer, .descriptor_count = 1 }},
+            .p_pool_sizes = &[_]vk.DescriptorPoolSize{.{ .type = .storage_buffer, .descriptor_count = 2 }},
         }, null);
         var sets: [1]vk.DescriptorSet = undefined;
         try dev.allocateDescriptorSets(&.{ .descriptor_pool = self.desc_pool, .descriptor_set_count = 1, .p_set_layouts = &[_]vk.DescriptorSetLayout{self.set_layout} }, &sets);
         self.desc_set = sets[0];
+
+        // The row factors: small, mapped for good, all 1 to start with.
+        const gain_count = max_rows * max_gain_panels;
+        self.gain_buf = try dev.createBuffer(&.{ .size = gain_count * @sizeOf(f32), .usage = .{ .storage_buffer = true }, .sharing_mode = .exclusive }, null);
+        const greq = dev.getBufferMemoryRequirements(self.gain_buf);
+        self.gain_mem = try dev.allocateMemory(&.{ .allocation_size = greq.size, .memory_type_index = self.findMemoryType(greq.memory_type_bits, .{ .host_visible = true, .host_coherent = true }) orelse return error.NoHostVisibleMemory }, null);
+        try dev.bindBufferMemory(self.gain_buf, self.gain_mem, 0);
+        const gptr: [*]f32 = @ptrCast(@alignCast((try dev.mapMemory(self.gain_mem, 0, vk.WHOLE_SIZE, .{})) orelse return error.MapFailed));
+        self.row_gains = gptr[0..gain_count];
+        @memset(self.row_gains, 1.0);
+        dev.updateDescriptorSets(&[_]vk.WriteDescriptorSet{.{
+            .dst_set = self.desc_set,
+            .dst_binding = 1,
+            .dst_array_element = 0,
+            .descriptor_count = 1,
+            .descriptor_type = .storage_buffer,
+            .p_image_info = undefined,
+            .p_buffer_info = &[_]vk.DescriptorBufferInfo{.{ .buffer = self.gain_buf, .offset = 0, .range = vk.WHOLE_SIZE }},
+            .p_texel_buffer_view = undefined,
+        }}, null);
 
         const vert_code align(4) = @embedFile("traces.vert.spv").*;
         const frag_code align(4) = @embedFile("traces.frag.spv").*;

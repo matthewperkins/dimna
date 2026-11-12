@@ -125,6 +125,10 @@ rect = [0.0, 0.75, 1.0, 0.25]
 Without `[[panel]]` tables there is one panel per headstage, side by side. Wheel (Y scale),
 Shift+wheel or pinch (time base) and the keys `- = [ ] r` act on the panel under the pointer,
 marked by a bar along its top; `q` quits.
+Ctrl+wheel scales only the row under the pointer; that row's label then shows its own
+scale in amber. The plain wheel still moves every row, keeping such a row's ratio, and `r`
+clears it. (Per-row scales are not saved in the config.)
+
 Keys go by what they are labelled in your keyboard layout (so on Dvorak, `r` is the key
 marked r), and reach oEZ while its window has the keyboard focus (with Hyprland's
 `follow_mouse = 1`, while the pointer is over it). `OEZ_KEY_DEBUG=1` logs focus changes and

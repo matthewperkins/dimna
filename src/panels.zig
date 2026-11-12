@@ -22,6 +22,8 @@ const types = @import("types.zig");
 const toml = @import("toml.zig");
 
 pub const max_panels = 16;
+/// Rows that can have a vertical scale of their own (see `Panel.row_gain`).
+pub const max_rows = 256;
 
 pub const Kind = enum { electrode, aux, adc };
 
@@ -58,6 +60,8 @@ pub const Panel = struct {
     pre_ms: f64 = 10,
     post_ms: f64 = 40,
     overlay: u32 = 10,
+    /// A factor on `scale` for single rows (Ctrl+wheel over a row); 1 = the panel's scale.
+    row_gain: [max_rows]f32 = @splat(1),
     /// Display filter (electrodes only; never applied to what is recorded): whether the
     /// panel shows its channels band-passed, and the band's corners in Hz (0 = that side
     /// off). 4th-order Butterworth each side, see `dsp.Band`.
@@ -82,6 +86,25 @@ pub const Panel = struct {
     }
 
     /// The first history column the panel draws: its filtered copy or its channels.
+    /// Units per row of one row.
+    pub fn rowScale(self: *const Panel, row: usize) f64 {
+        return self.scale * (if (row < max_rows) self.row_gain[row] else 1.0);
+    }
+
+    /// Scales one row alone by `factor`, within the limits of the scale.
+    pub fn scaleRow(self: *Panel, row: usize, factor: f64) void {
+        if (row >= max_rows or row >= self.rows) return;
+        const lim = self.scaleLimits();
+        const target = std.math.clamp(self.rowScale(row) * factor, lim[0], lim[1]);
+        self.row_gain[row] = @floatCast(target / self.scale);
+    }
+
+    /// The row at a height given as a fraction of the display, if it is in the panel.
+    pub fn rowAt(self: *const Panel, fy: f64) ?usize {
+        if (fy < self.y or fy >= self.y + self.h or self.rows == 0) return null;
+        return @min(self.rows - 1, @as(usize, @intFromFloat((fy - self.y) / self.h * @as(f64, @floatFromInt(self.rows)))));
+    }
+
     pub fn drawColumn(self: *const Panel) u32 {
         return if (self.filtered and self.kind == .electrode) self.slot else self.first_ch;
     }
@@ -441,6 +464,25 @@ test "triggered panels from the config" {
     try testing.expectEqual(10, set.items[1].pre_ms);
     try testing.expectEqual(40, set.items[1].post_ms);
     try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"A1\"\nrect = [0,0,1,1]\ntrigger = 9"), &l));
+}
+
+test "one row scaled on its own" {
+    const l = testLayout();
+    var set = default(&l);
+    const p = &set.items[0];
+    try testing.expectEqual(0, p.rowAt(0.01).?);
+    try testing.expectEqual(15, p.rowAt(0.999).?);
+    try testing.expectEqual(8, p.rowAt(0.53).?);
+    try testing.expectEqual(null, p.rowAt(1.2));
+    p.scaleRow(8, 0.5);
+    try testing.expectApproxEqAbs(200.0, p.rowScale(8), 1e-3);
+    try testing.expectEqual(400, p.rowScale(7));
+    // The panel's scale moves every row, keeping the row's ratio.
+    p.scale = 800;
+    try testing.expectApproxEqAbs(400.0, p.rowScale(8), 1e-3);
+    // Limits apply to the row's own scale.
+    p.scaleRow(8, 1e-6);
+    try testing.expectApproxEqAbs(5.0, p.rowScale(8), 1e-3);
 }
 
 test "sweep mode: per panel or for all, with a shorter longest time base" {

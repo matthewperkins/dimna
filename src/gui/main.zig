@@ -27,12 +27,13 @@
 //!   of once per refresh just before it.
 //!
 //! --script feeds synthetic input for tests, as "SECONDS:STEP;SECONDS:STEP;...", where STEP is
-//! wheel=N, hwheel=N (axis units, 15 = one click), pinch=F (scale factor), or keys such as
+//! wheel=N, hwheel=N, cwheel=N (Ctrl+wheel; axis units, 15 = one click), pointer=FX,FY, pinch=F (scale factor), or keys such as
 //! "]]==" (any of [ ] - = r m f t 1-8 , . ' q; ';' separates steps, so the high corner can only be
 //! stepped up by script). It goes through the same path as real input.
 //!
 //! Without --sim it opens the board. Controls:
 //!   wheel / two-finger scroll      Y scale (µV per row)
+//!   Ctrl+wheel                     Y scale of the row under the pointer alone
 //!   Shift+wheel, sideways scroll   time base
 //!   touchpad pinch                 time base
 //!   - =   [ ]                      Y scale, time base by keys;  r resets;  q or Esc quits
@@ -143,7 +144,11 @@ fn runScript(script: []const u8, pos: *usize, elapsed_s: f64, in: *Input, displa
         const at = std.fmt.parseFloat(f64, step[0..colon]) catch 0;
         if (at > elapsed_s) return;
         const what = step[colon + 1 ..];
-        if (std.mem.startsWith(u8, what, "wheel=")) {
+        if (std.mem.startsWith(u8, what, "cwheel=")) {
+            // Ctrl+wheel.
+            in.scroll_y += std.fmt.parseFloat(f64, what[7..]) catch 0;
+            in.ctrl = true;
+        } else if (std.mem.startsWith(u8, what, "wheel=")) {
             in.scroll_y += std.fmt.parseFloat(f64, what[6..]) catch 0;
         } else if (std.mem.startsWith(u8, what, "hwheel=")) {
             in.scroll_x += std.fmt.parseFloat(f64, what[7..]) catch 0;
@@ -157,6 +162,8 @@ fn runScript(script: []const u8, pos: *usize, elapsed_s: f64, in: *Input, displa
             const fx = std.fmt.parseFloat(f64, it.next() orelse "0") catch 0;
             const fy = std.fmt.parseFloat(f64, it.next() orelse "0") catch 0;
             if (display.set.at(fx, fy)) |i| display.scripted_target = i;
+            display.pointer_fy = fy;
+            display.scripted_pointer = true;
         } else for (what) |ch| {
             if (in.num_keys == in.keys.len) break;
             in.keys[in.num_keys] = switch (ch) {
@@ -372,6 +379,9 @@ const Display = struct {
     target: usize = 0,
     /// Set by a test script (`panel=`, `pointer=`); then it overrides the pointer.
     scripted_target: ?usize = null,
+    /// Where the pointer is, as a fraction of the display's height (for the row under it).
+    pointer_fy: f64 = 0,
+    scripted_pointer: bool = false,
     /// The triggers of each panel's TTL line (used by panels in triggered mode).
     triggers: [panels_mod.max_panels]oez.sweeps.Triggers = @splat(.{}),
 
@@ -389,6 +399,7 @@ const Display = struct {
 
     /// Points input at the panel under the pointer (fractions of the display).
     fn pointAt(self: *Display, fx: f64, fy: f64) void {
+        if (!self.scripted_pointer) self.pointer_fy = fy;
         if (self.scripted_target) |t| {
             self.target = t;
         } else if (self.set.at(fx, fy)) |t| self.target = t;
@@ -411,7 +422,12 @@ const Display = struct {
             sx += sy;
             sy = 0;
         }
-        if (sy != 0) p.scale *= @exp(sy * per_unit);
+        if (sy != 0) {
+            // Ctrl: the row under the pointer alone.
+            if (in.ctrl) {
+                if (p.rowAt(self.pointer_fy)) |row| p.scaleRow(row, @exp(sy * per_unit));
+            } else p.scale *= @exp(sy * per_unit);
+        }
         // The time base; in triggered mode, the window around the trigger.
         var zoom: f64 = 1;
         if (sx != 0) zoom *= @exp(sx * per_unit);
@@ -432,6 +448,7 @@ const Display = struct {
             .r => {
                 p.span_s = self.initial.items[self.target].span_s;
                 p.scale = self.initial.items[self.target].scale;
+                p.row_gain = self.initial.items[self.target].row_gain;
                 p.mode = self.initial.items[self.target].mode;
                 p.trig_line = self.initial.items[self.target].trig_line;
                 p.pre_ms = self.initial.items[self.target].pre_ms;
@@ -487,7 +504,10 @@ const Display = struct {
                 .lsb_per_row = @floatCast(p.scale / p.unitsPerLsb()),
                 .half_px = 1.5 / @as(f32, @floatFromInt(r.h)),
                 .phase = @floatCast(phase),
+                .gain_base = @intCast(i * gpu_mod.max_rows),
             };
+            // The rows' own scales, for the shader.
+            if (gpu.row_gains.len >= (i + 1) * gpu_mod.max_rows) @memcpy(gpu.row_gains[i * gpu_mod.max_rows ..][0..gpu_mod.max_rows], &p.row_gain);
             const rect: gpu_mod.PixelRect = .{ .x = r.x, .y = r.y, .w = r.w, .h = r.h };
             var shown_sweeps: usize = 0;
             if (p.mode == .triggered) {
@@ -583,7 +603,14 @@ const Display = struct {
                 const y = py + (@as(f32, @floatFromInt(row)) + 0.5) * row_h - 0.5 * line_h;
                 if (y < title_y + line_h + 3) continue;
                 var label_buf: [16]u8 = undefined;
-                _ = batch.label(px + 5, y, rowLabel(&label_buf, p, row, layout), dim);
+                const after = batch.label(px + 5, y, rowLabel(&label_buf, p, row, layout), dim);
+                // A row with a scale of its own says so.
+                if (row < panels_mod.max_rows and p.row_gain[row] != 1) {
+                    var own: Panel = p.*;
+                    own.scale = p.rowScale(row);
+                    var own_buf: [24]u8 = undefined;
+                    _ = batch.label(after + 4, y, fmtScale(&own_buf, &own), .{ 255, 205, 120, 255 });
+                }
             }
         }
         if (status.valid and line_h > 0) {

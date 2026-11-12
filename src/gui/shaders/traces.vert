@@ -6,6 +6,8 @@
 // are absolute sample numbers modulo the ring's capacity (a power of two).
 
 layout(set = 0, binding = 0) readonly buffer History { uint w[]; } hist;
+// Per-row factors on the vertical scale (1 = the panel's own), `max_rows` per panel.
+layout(set = 0, binding = 1) readonly buffer RowGains { float g[]; } gains;
 
 layout(push_constant) uniform Params {
     uint nch;          // channels per sample in the history
@@ -22,6 +24,7 @@ layout(push_constant) uniform Params {
     float future;      // samples at the right end of the window that do not exist yet (a
                        // triggered sweep still filling); those columns are not drawn
     float gain;        // brightness (older overlaid sweeps are dimmer)
+    uint gain_base;    // where the panel's row factors start in `gains`
 } p;
 
 layout(location = 0) out vec3 colour;
@@ -78,8 +81,9 @@ void main() {
     float row_h = 2.0 / float(p.rows);
     float centre = -1.0 + (float(row) + 0.5) * row_h;
     // Positive is up; a trace may reach 1.5 rows from its centre before it is clipped.
-    float lo = clamp(mn / p.lsb_per_row, -1.5, 1.5);
-    float hi = clamp(mx / p.lsb_per_row, -1.5, 1.5);
+    float per_row = p.lsb_per_row * gains.g[p.gain_base + min(row, 255u)];
+    float lo = clamp(mn / per_row, -1.5, 1.5);
+    float hi = clamp(mx / per_row, -1.5, 1.5);
     float y = top ? centre - hi * row_h - p.half_px : centre - lo * row_h + p.half_px;
     float x = -1.0 + 2.0 * (float(col) + 0.5) / float(p.cols);
     gl_Position = vec4(x, y, 0.0, 1.0);
