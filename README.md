@@ -179,6 +179,10 @@ the acquisition ring, so it does not depend on the display. On the board: about 
 reported, of which about 5 ms waits in oEZ's queue and about 10 ms is what the device
 (PipeWire at a 128-frame quantum, and the sound card) says is still to be played; a few
 gaps in the first seconds while the clock servo settles, then about one in 10 s.
+The queue's margin adapts: a gap raises it by 1 ms, 30 s without one lowers it by 0.5 ms,
+so latency settles at what the machine's timing needs. The once-a-second log line gives
+the margin, the longest wait between blocks and the oldest block the feeder met, for
+finding the cause when gaps do happen.
 `--no-audio` or `audio = false` turns it off; `volume_db = -6` sets the starting volume.
 
 **Slope trigger (spikes).** A triggered panel of electrodes can start its sweeps where one

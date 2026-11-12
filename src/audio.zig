@@ -125,8 +125,42 @@ pub const NoiseEstimator = struct {
 
     fn medianSigma(v: []f32) f64 {
         if (v.len == 0) return 0;
-        std.mem.sort(f32, v, {}, std.sort.asc(f32));
-        return @as(f64, v[v.len / 2]) / 0.6745;
+        return @as(f64, select(v, v.len / 2)) / 0.6745;
+    }
+
+    /// The value that would be at index `k` if `v` were sorted (it reorders `v`). By
+    /// partitioning around a pivot and keeping only the side that holds `k`, which takes a
+    /// fraction of the time of sorting: this runs on the audio feeder's thread, where a
+    /// full sort of 30,000 values was an 11 ms pause and so a gap in the sound.
+    fn select(v: []f32, k: usize) f32 {
+        var lo: usize = 0;
+        var hi: usize = v.len - 1;
+        while (lo < hi) {
+            // Median of three as the pivot: no bad case for sorted or constant input.
+            const mid = lo + (hi - lo) / 2;
+            if (v[mid] < v[lo]) std.mem.swap(f32, &v[mid], &v[lo]);
+            if (v[hi] < v[lo]) std.mem.swap(f32, &v[hi], &v[lo]);
+            if (v[hi] < v[mid]) std.mem.swap(f32, &v[hi], &v[mid]);
+            const pivot = v[mid];
+            var i = lo;
+            var j = hi;
+            while (i <= j) {
+                while (v[i] < pivot) i += 1;
+                while (v[j] > pivot) j -= 1;
+                if (i <= j) {
+                    std.mem.swap(f32, &v[i], &v[j]);
+                    i += 1;
+                    if (j == 0) break;
+                    j -= 1;
+                }
+            }
+            if (k <= j) {
+                hi = j;
+            } else if (k >= i) {
+                lo = i;
+            } else return v[k];
+        }
+        return v[k];
     }
 
     fn twoPass(self: *NoiseEstimator) f64 {
@@ -622,4 +656,26 @@ test "a common average reference takes the shared part out of the monitor" {
         while (i < out.items.len) : (i += 2) peak.* = @max(peak.*, @abs(out.items[i]));
     }
     try testing.expect(peaks[1] < 0.2 * peaks[0]);
+}
+
+test "select finds what sorting would, on awkward inputs too" {
+    var rng = std.Random.DefaultPrng.init(42);
+    var buf: [1001]f32 = undefined;
+    var sorted: [1001]f32 = undefined;
+    for (0..40) |round| {
+        const n: usize = 1 + rng.random().uintLessThan(usize, buf.len);
+        for (buf[0..n], 0..) |*x, i| x.* = switch (round % 4) {
+            0 => rng.random().float(f32),
+            1 => @floatFromInt(i), // already sorted
+            2 => @floatFromInt(n - i), // reversed
+            else => @floatFromInt(rng.random().uintLessThan(u8, 3)), // many equal values
+        };
+        @memcpy(sorted[0..n], buf[0..n]);
+        std.mem.sort(f32, sorted[0..n], {}, std.sort.asc(f32));
+        for ([_]usize{ 0, n / 2, n - 1 }) |k| {
+            var work: [1001]f32 = undefined;
+            @memcpy(work[0..n], buf[0..n]);
+            try testing.expectEqual(sorted[k], NoiseEstimator.select(work[0..n], k));
+        }
+    }
 }

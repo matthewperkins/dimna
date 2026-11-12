@@ -10,7 +10,9 @@
 //! The board's clock and the sound card's differ slightly, so the feeder trims the
 //! resampling ratio to keep the queue just above empty: it steers on the least that was
 //! left after any period in the last 100 ms (what protects against late input), towards
-//! `margin_ms`. If the queue ever holds much more than that (a stall upstream, start-up),
+//! a margin. The margin itself adapts: each gap in the sound raises it by 1 ms (input came
+//! later than it allowed for), and 30 s without one lowers it by 0.5 ms, between 1.5 and
+//! 25 ms. So latency settles at what this machine's timing needs, instead of gaps going on. If the queue ever holds much more than that (a stall upstream, start-up),
 //! a block's output is dropped instead of letting latency sit high for a minute.
 //!
 //! Latency, as reported: what waits in the queue (about 5 ms: the margin, a period, and
@@ -42,6 +44,14 @@ pub const Shared = struct {
     /// Its two main parts: what waits in our queue, and what the device says it holds.
     queue_us: Atomic(u32) = .init(0),
     device_us: Atomic(u32) = .init(0),
+    /// The margin the feeder is keeping in the queue at the moment (it grows when gaps
+    /// happen, see `feed`), in microseconds.
+    margin_us: Atomic(u32) = .init(0),
+    /// For finding what causes gaps; each is the largest since it was last read (swap 0):
+    /// the longest wait between two blocks reaching the feeder, and the oldest a block
+    /// was (since it was acquired) when the feeder got to it.
+    max_block_gap_us: Atomic(u32) = .init(0),
+    max_block_age_us: Atomic(u32) = .init(0),
     /// Held noise sigma of the first channel, in hundredths of a sample unit; 0 while it
     /// is being measured.
     held_sigma_c: Atomic(u32) = .init(0),
@@ -98,7 +108,9 @@ const Fifo = struct {
     }
 };
 
-const margin_ms = 1.5;
+/// The least kept in the queue when all is quiet, and the most the feeder will go to.
+const margin_min_ms = 1.5;
+const margin_max_ms = 25.0;
 
 pub const AudioOut = struct {
     gpa: std.mem.Allocator,
@@ -119,6 +131,8 @@ pub const AudioOut = struct {
     fill: Atomic(u32) = .init(0),
     device_delay: Atomic(u32) = .init(0),
     active: Atomic(bool) = .init(false),
+    /// The queue has been filled to its margin at least once since the monitor came on.
+    primed: Atomic(bool) = .init(false),
     feeder: ?std.Thread = null,
     output: ?std.Thread = null,
 
@@ -197,7 +211,9 @@ pub const AudioOut = struct {
             self.fill.store(@intCast(avail), .monotonic);
             const got = self.fifo.pop(buf[0 .. @min(avail, self.period) * 2]);
             @memset(buf[got..], 0);
-            if (got < buf.len and self.active.load(.monotonic)) _ = self.shared.underruns.fetchAdd(1, .monotonic);
+            // A gap only counts once sound has started arriving (not the silence before
+            // the first block, or while the monitor is off).
+            if (got < buf.len and self.active.load(.monotonic) and self.primed.load(.monotonic)) _ = self.shared.underruns.fetchAdd(1, .monotonic);
             const wrote = alsa.snd_pcm_writei(self.pcm, buf.ptr, self.period);
             if (wrote < 0) {
                 // An xrun or a suspended device: start again.
@@ -233,6 +249,13 @@ pub const AudioOut = struct {
         var seen: u32 = 0;
         var integ: f64 = 0;
         var last_ctl = nowNs();
+        // The margin adapts: every gap means input came later than the margin allowed
+        // for, so it grows by 1 ms; after 30 s without one it comes back down by 0.5 ms.
+        // Latency follows what the machine can actually deliver, without gaps going on.
+        var margin_ms: f64 = margin_min_ms;
+        var seen_underruns = self.shared.underruns.load(.monotonic);
+        var quiet_ticks: u32 = 0;
+        var last_block = nowNs();
         const ratio = self.fs_out / self.fs_in;
         while (!self.stop_flag.load(.acquire)) {
             if (!reader.next(&blk)) {
@@ -240,10 +263,19 @@ pub const AudioOut = struct {
                 continue;
             }
             if (blk.len == 0) continue;
+            {
+                const t = nowNs();
+                _ = self.shared.max_block_gap_us.fetchMax(@intCast(@min(@divTrunc(t - last_block, 1000), std.math.maxInt(u32))), .monotonic);
+                _ = self.shared.max_block_age_us.fetchMax(@intCast(std.math.clamp(@divTrunc(t - blk.acquired_ns, 1000), 0, std.math.maxInt(u32))), .monotonic);
+                last_block = t;
+            }
             self.shared.read(&settings, &seen);
             const on = settings.enabled and settings.num_channels > 0;
             self.active.store(on, .monotonic);
-            if (!on) continue;
+            if (!on) {
+                self.primed.store(false, .monotonic);
+                continue;
+            }
             if (self.shared.recalibrate.swap(false, .acq_rel)) monitor.recalibrate();
             mixed.clearRetainingCapacity();
             try monitor.process(&settings, blk.samples(), self.nch, &mixed);
@@ -253,6 +285,19 @@ pub const AudioOut = struct {
             const now = nowNs();
             if (now - last_ctl > 100 * std.time.ns_per_ms) {
                 last_ctl = now;
+                const underruns = self.shared.underruns.load(.monotonic);
+                if (underruns != seen_underruns) {
+                    seen_underruns = underruns;
+                    margin_ms = @min(margin_ms + 1.0, margin_max_ms);
+                    quiet_ticks = 0;
+                } else {
+                    quiet_ticks += 1;
+                    if (quiet_ticks >= 300) {
+                        quiet_ticks = 0;
+                        margin_ms = @max(margin_min_ms, margin_ms - 0.5);
+                    }
+                }
+                self.shared.margin_us.store(@intFromFloat(margin_ms * 1000), .monotonic);
                 const least = self.min_fill.swap(std.math.maxInt(u32), .monotonic);
                 if (least != std.math.maxInt(u32)) {
                     const margin = margin_ms * 1e-3 * self.fs_out;
@@ -277,6 +322,7 @@ pub const AudioOut = struct {
                 continue;
             }
             const n = self.fifo.push(out.items);
+            if (!self.primed.load(.monotonic) and self.fifo.used() / 2 > @as(usize, @intFromFloat(margin_ms * 1e-3 * self.fs_out)) + self.period) self.primed.store(true, .monotonic);
             if (n < out.items.len) _ = self.shared.dropped.fetchAdd(1, .monotonic);
         }
     }

@@ -1837,10 +1837,13 @@ pub fn main(init: std.process.Init) !u8 {
             });
             status = .{ .valid = lat_n > 0, .latency_ms = avg, .fps = frames, .lost = reader.lost, .recording = status.recording, .rec_seconds = status.rec_seconds };
             snap_dirty = true;
-            if (audio_dev != null) log.info("  audio: {d:.1} ms (queue {d:.1}, device {d:.1}), gaps {d}, dropped {d}, noise {d:.1} uV{s}", .{
+            if (audio_dev != null) log.info("  audio: {d:.1} ms (queue {d:.1}, device {d:.1}, margin {d:.1}; longest wait for a block {d:.1}, oldest block {d:.1}), gaps {d}, dropped {d}, noise {d:.1} uV{s}", .{
                 @as(f64, @floatFromInt(audio_shared.latency_us.load(.monotonic))) / 1000.0,
                 @as(f64, @floatFromInt(audio_shared.queue_us.load(.monotonic))) / 1000.0,
                 @as(f64, @floatFromInt(audio_shared.device_us.load(.monotonic))) / 1000.0,
+                @as(f64, @floatFromInt(audio_shared.margin_us.load(.monotonic))) / 1000.0,
+                @as(f64, @floatFromInt(audio_shared.max_block_gap_us.swap(0, .monotonic))) / 1000.0,
+                @as(f64, @floatFromInt(audio_shared.max_block_age_us.swap(0, .monotonic))) / 1000.0,
                 audio_shared.underruns.load(.monotonic),
                 audio_shared.dropped.load(.monotonic),
                 @as(f64, @floatFromInt(audio_shared.held_sigma_c.load(.monotonic))) / 100.0 * oez.types.electrode_uv_per_bit,
