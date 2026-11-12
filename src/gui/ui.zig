@@ -10,6 +10,7 @@ pub const Colour = font.Colour;
 pub const text_bright: Colour = .{ 225, 230, 240, 255 };
 pub const text_dim: Colour = .{ 150, 160, 178, 255 };
 pub const text_warn: Colour = .{ 255, 190, 90, 255 };
+pub const text_rec: Colour = .{ 255, 96, 96, 255 };
 const button_idle: Colour = .{ 38, 43, 54, 255 };
 const button_hover: Colour = .{ 56, 64, 82, 255 };
 const button_on: Colour = .{ 52, 96, 170, 255 };

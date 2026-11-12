@@ -80,7 +80,8 @@
 //!
 //! Config file: $XDG_CONFIG_HOME/oez/config.toml (default ~/.config/oez); command-line options
 //! win. Top-level keys: monitor = "DP-2", tearing = true, free_ms = 2, margin_ms = 3,
-//! font = "sans-serif" (a fontconfig name), font_px = 14. Panels:
+//! font = "sans-serif" (a fontconfig name), font_px = 14, record_dir = "~/oez-recordings"
+//! (a session folder per recording beneath it; Record is in the control window). Panels:
 //! one [[panel]] table each (see src/panels.zig), for example
 //!
 //!   [[panel]]
@@ -123,6 +124,8 @@ const Args = struct {
     /// Connector of a monitor to drive directly, with no compositor.
     direct: []const u8 = "",
     tearing: bool = false,
+    /// Where recordings go: one session folder per recording beneath it.
+    record_dir: []const u8 = "~/oez-recordings",
     /// The control window (a second, ordinary window with the panels' settings).
     control: bool = true,
     /// All panels in sweep mode (see `panels.Mode`).
@@ -217,6 +220,8 @@ fn applyConfig(a: *Args, doc: oez.toml.Document) void {
             a.font = e.value.string;
         } else if (std.mem.eql(u8, e.key, "font_px") and e.value == .number and e.value.number >= 6 and e.value.number <= 64) {
             a.font_px = @intFromFloat(e.value.number);
+        } else if (std.mem.eql(u8, e.key, "record_dir") and e.value == .string) {
+            a.record_dir = e.value.string;
         } else if (std.mem.eql(u8, e.key, "control") and e.value == .boolean) {
             a.control = e.value.boolean;
         } else if (std.mem.eql(u8, e.key, "mode")) {
@@ -416,7 +421,7 @@ const Display = struct {
     /// Applies an edit from the control window. True means quit.
     fn applyEdit(self: *Display, edit: control.Edit) bool {
         if (edit.action == .quit) return true;
-        if (edit.panel >= self.set.len) return false;
+        if (edit.action == .record or edit.panel >= self.set.len) return false;
         const p = &self.set.items[edit.panel];
         switch (edit.action) {
             .scale => |f| p.scale *= f,
@@ -432,7 +437,7 @@ const Display = struct {
             .trig_line => |l| p.trig_line = l,
             .overlay => |n| p.overlay = n,
             .reset => self.reset(edit.panel),
-            .quit => {},
+            .quit, .record => {},
         }
         p.clamp();
         return false;
@@ -642,7 +647,15 @@ const Display = struct {
             else
                 std.fmt.bufPrint(&buf, "{d:.1} ms   {d} fps", .{ status.latency_ms, status.fps })) catch "";
             const w = batch.font.width(text);
-            _ = batch.label(@as(f32, @floatFromInt(width)) - w - 8, @as(f32, @floatFromInt(height)) - line_h - 6, text, if (status.lost > 0) .{ 255, 190, 90, 255 } else dim);
+            const x = @as(f32, @floatFromInt(width)) - w - 8;
+            const y = @as(f32, @floatFromInt(height)) - line_h - 6;
+            _ = batch.label(x, y, text, if (status.lost > 0) .{ 255, 190, 90, 255 } else dim);
+            if (status.recording) {
+                var clock_buf: [16]u8 = undefined;
+                var rec_buf: [32]u8 = undefined;
+                const rec_text = std.fmt.bufPrint(&rec_buf, "REC {s}", .{control.fmtClock(&clock_buf, status.rec_seconds)}) catch "REC";
+                _ = batch.label(x - batch.font.width(rec_text) - 14, y, rec_text, .{ 255, 96, 96, 255 });
+            }
         }
         if (self.set.len > 1) {
             const r = self.set.items[self.target].pixelRect(width, height);
@@ -895,7 +908,9 @@ pub fn main(init: std.process.Init) !u8 {
     log.info("{d} channels ({d} electrode) at {d} Hz", .{ nch, layout.num_electrodes, fs });
 
     // ---- acquisition into the ring ----
-    const slots: usize = @intFromFloat(@ceil(2.0 * fs / @as(f64, @floatFromInt(bs))));
+    // 30 s of blocks: what the recorder may fall behind (a stalled disk) before samples are
+    // lost. The display reads it without holding anything back.
+    const slots: usize = @intFromFloat(@ceil(30.0 * fs / @as(f64, @floatFromInt(bs))));
     var ring = try oez.ring.BlockRing.init(gpa, slots, nch, bs);
     defer ring.deinit(gpa);
     var health: oez.types.Health = .{};
@@ -960,6 +975,22 @@ pub fn main(init: std.process.Init) !u8 {
     };
     var snap_dirty = true;
     var snap_target: usize = 0;
+
+    // Recording: started and stopped from the control window.
+    var record_dir_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const record_dir: []const u8 = if (std.mem.startsWith(u8, args.record_dir, "~/"))
+        (std.fmt.bufPrint(&record_dir_buf, "{s}/{s}", .{ if (std.c.getenv("HOME")) |h| std.mem.span(h) else ".", args.record_dir[2..] }) catch args.record_dir)
+    else
+        args.record_dir;
+    var rec: ?*oez.record.Recorder = null;
+    var rec_start_ns: i128 = 0;
+    var rec_published_ns: i128 = 0;
+    var rec_status: control.RecStatus = .{};
+    // However the loop ends, a recording in progress is closed properly.
+    defer if (rec) |r| {
+        const sum = r.finish();
+        if (sum.failure) |err| log.err("recording failed: {t}", .{err});
+    };
 
     var newest: i64 = 0;
     var newest_acquired_ns: i128 = 0;
@@ -1043,8 +1074,74 @@ pub fn main(init: std.process.Init) !u8 {
         while (shared.pop()) |e| {
             if (display.applyEdit(e)) quit = true;
             snap_dirty = true;
+            if (e.action == .record) {
+                if (e.action.record and rec == null) {
+                    // Changes applied before this recording are not its events.
+                    while (acq.events.pop()) |_| {}
+                    if (oez.record.Recorder.create(gpa, io, &ring, record_dir, .{
+                        .layout = layout,
+                        .settings = source.settings(),
+                        .gateware = if (board) |b| b.fw else @splat(0),
+                        .board_id = if (board) |b| b.device_id else 0,
+                        .cable_delay = if (board) |b| b.cable_delay else @splat(0),
+                        .board_kind = if (board != null) "Open Ephys acquisition board (ECP5, FT600, ONI)" else "simulated",
+                        .session = true,
+                    })) |r| {
+                        r.events_in = &acq.events;
+                        if (r.start()) |_| {
+                            rec = r;
+                            rec_start_ns = nowNs(io);
+                            rec_status = .{ .state = .recording };
+                            // The session folder is the parent of ephys/.
+                            const session = std.fs.path.dirname(r.path) orelse r.path;
+                            rec_status.path_len = @min(session.len, rec_status.path_buf.len);
+                            @memcpy(rec_status.path_buf[0..rec_status.path_len], session[0..rec_status.path_len]);
+                        } else |err| {
+                            _ = r.finish();
+                            rec_status.state = .failed;
+                            rec_status.setNote("could not start the recorder: {t}", .{err});
+                        }
+                    } else |err| {
+                        rec_status.state = .failed;
+                        rec_status.setNote("could not create a recording under {s}: {t}", .{ record_dir, err });
+                        log.err("could not create a recording under {s}: {t}", .{ record_dir, err });
+                    }
+                } else if (!e.action.record) {
+                    if (rec) |r| {
+                        if (rec_status.state == .recording) {
+                            r.requestStop();
+                            rec_status.state = .stopping;
+                        }
+                    }
+                }
+            }
         }
         if (quit) break;
+        // The recorder has finished (asked to, or because writing failed): close it.
+        if (rec) |r| {
+            if (r.done.load(.acquire)) {
+                const sum = r.finish();
+                rec = null;
+                snap_dirty = true;
+                rec_status.samples = sum.samples;
+                rec_status.gaps = sum.gaps;
+                if (sum.failure) |err| {
+                    rec_status.state = .failed;
+                    rec_status.setNote("recording failed: {t}; what was written before is intact", .{err});
+                } else {
+                    rec_status.state = .idle;
+                    var clock_buf: [16]u8 = undefined;
+                    rec_status.setNote("last recording: {s}, {d} samples, {d} gaps", .{ control.fmtClock(&clock_buf, @as(f64, @floatFromInt(sum.samples)) / fs), sum.samples, sum.gaps });
+                }
+            }
+        }
+        // While recording, the control window's counts move four times a second.
+        if (rec != null and nowNs(io) - rec_published_ns > 250 * std.time.ns_per_ms) {
+            rec_published_ns = nowNs(io);
+            snap_dirty = true;
+        }
+        status.recording = rec != null;
+        if (rec != null) status.rec_seconds = @as(f64, @floatFromInt(nowNs(io) - rec_start_ns)) / 1e9;
         if (input.num_keys > 0 or input.scroll_x != 0 or input.scroll_y != 0 or input.pinch != 1 or display.target != snap_target) snap_dirty = true;
         if (snap_dirty and control_thread != null) {
             snap_dirty = false;
@@ -1055,6 +1152,16 @@ pub fn main(init: std.process.Init) !u8 {
                 .status = status,
                 .ring_overflow = acq.ring_overflow.load(.monotonic),
                 .seconds = @as(f64, @floatFromInt(nowNs(io) - t_start)) / 1e9,
+                .rec = blk: {
+                    if (rec) |r| {
+                        rec_status.seconds = status.rec_seconds;
+                        rec_status.samples = r.stats.samples.load(.monotonic);
+                        rec_status.bytes = r.stats.bytes.load(.monotonic);
+                        rec_status.gaps = r.stats.gaps.load(.monotonic);
+                        rec_status.behind_s = @as(f64, @floatFromInt(r.backlog() * bs)) / fs;
+                    }
+                    break :blk rec_status;
+                },
             });
         }
         // A panel's corners changed: filter its recent past again.
@@ -1208,7 +1315,7 @@ pub fn main(init: std.process.Init) !u8 {
                 reader.lost,     acq.ring_overflow.load(.monotonic), display.target + 1, tp.span_s, tp.scale, gpu.extent.width,
                 gpu.extent.height,
             });
-            status = .{ .valid = lat_n > 0, .latency_ms = avg, .fps = frames, .lost = reader.lost };
+            status = .{ .valid = lat_n > 0, .latency_ms = avg, .fps = frames, .lost = reader.lost, .recording = status.recording, .rec_seconds = status.rec_seconds };
             snap_dirty = true;
             on_time_frames = 0;
             late_frames_now = 0;

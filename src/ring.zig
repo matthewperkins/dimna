@@ -3,6 +3,10 @@
 //! sees every block, reads it in place and releases it. A slot is reused only after all
 //! attached readers released it. A reader that fails (e.g. the recorder on a disk error)
 //! detaches, so it can never stall acquisition. No allocation and no locks after `init`.
+//!
+//! Readers can come and go while the producer runs (`addConsumer`, `detach`, `free`): the
+//! recorder attaches when a recording starts and leaves when it ends. One thread at a time
+//! does the attaching and freeing.
 
 const std = @import("std");
 const Block = @import("types.zig").Block;
@@ -12,7 +16,10 @@ pub const max_consumers = 4;
 
 const Tail = struct {
     pos: Atomic(usize) align(std.atomic.cache_line) = .init(0),
+    /// While true the producer does not reuse slots this reader has not released.
     attached: Atomic(bool) = .init(false),
+    /// Taken by `addConsumer` until `free` (only the attaching thread looks at it).
+    owned: bool = false,
 };
 
 pub const BlockRing = struct {
@@ -21,7 +28,6 @@ pub const BlockRing = struct {
     /// Next slot the producer commits (monotonic, wraps via `mask`).
     head: Atomic(usize) align(std.atomic.cache_line) = .init(0),
     tails: [max_consumers]Tail = @splat(.{}),
-    num_consumers: usize = 0,
 
     /// `n_slots` is rounded up to a power of two.
     pub fn init(gpa: std.mem.Allocator, n_slots: usize, num_channels: usize, block_samples: usize) !BlockRing {
@@ -52,19 +58,43 @@ pub const BlockRing = struct {
         return self.slots.len;
     }
 
-    /// Registers a reader starting at the current head. Call before the producer starts.
-    pub fn addConsumer(self: *BlockRing) usize {
-        std.debug.assert(self.num_consumers < max_consumers);
-        const id = self.num_consumers;
-        self.num_consumers += 1;
-        self.tails[id].pos.store(self.head.load(.acquire), .release);
-        self.tails[id].attached.store(true, .release);
-        return id;
+    /// Registers a reader that starts with the next block committed (or one of the last
+    /// few, if the producer commits meanwhile: it starts at a block boundary either way and
+    /// misses nothing after it). The producer may be running. Null if all `max_consumers`
+    /// places are taken.
+    pub fn addConsumer(self: *BlockRing) ?usize {
+        for (&self.tails, 0..) |*t, id| {
+            if (t.owned) continue;
+            t.owned = true;
+            // The position first: once `attached` is seen, the producer honours it. Blocks
+            // committed between the two stores are simply this reader's first ones (their
+            // slots are far from being reused).
+            t.pos.store(self.head.load(.acquire), .release);
+            t.attached.store(true, .release);
+            return id;
+        }
+        return null;
     }
 
     /// Stops reader `id` from holding slots back. It must not read afterwards.
     pub fn detach(self: *BlockRing, id: usize) void {
         self.tails[id].attached.store(false, .release);
+    }
+
+    /// Gives reader `id`'s place back for a later `addConsumer`, once its thread is done.
+    pub fn free(self: *BlockRing, id: usize) void {
+        self.tails[id].attached.store(false, .release);
+        self.tails[id].owned = false;
+    }
+
+    /// The position of the next block reader `id` will read (compare with `headPosition`).
+    pub fn position(self: *const BlockRing, id: usize) usize {
+        return self.tails[id].pos.load(.acquire);
+    }
+
+    /// The position of the next block the producer will commit.
+    pub fn headPosition(self: *const BlockRing) usize {
+        return self.head.load(.acquire);
     }
 
     /// Blocks committed but not yet released by reader `id`.
@@ -76,7 +106,7 @@ pub const BlockRing = struct {
     /// The slot to fill next, or null if some attached reader still holds it.
     pub fn writeSlot(self: *BlockRing) ?*Block {
         const h = self.head.load(.monotonic);
-        for (self.tails[0..self.num_consumers]) |*t| {
+        for (&self.tails) |*t| {
             if (t.attached.load(.acquire) and h -% t.pos.load(.acquire) >= self.slots.len) return null;
         }
         return &self.slots[h & self.mask];
@@ -239,7 +269,7 @@ test "lossy reader never returns a torn block while the producer laps it" {
 test "ring preserves order and reports full and empty" {
     var r = try BlockRing.init(testing.allocator, 3, 2, 4);
     defer r.deinit(testing.allocator);
-    const c = r.addConsumer();
+    const c = r.addConsumer().?;
     try testing.expectEqual(4, r.capacity());
     try testing.expectEqual(null, r.readSlot(c));
     for (0..4) |i| {
@@ -262,8 +292,8 @@ test "ring preserves order and reports full and empty" {
 test "slowest reader gates the producer; a detached reader does not" {
     var r = try BlockRing.init(testing.allocator, 2, 1, 1);
     defer r.deinit(testing.allocator);
-    const fast = r.addConsumer();
-    const slow = r.addConsumer();
+    const fast = r.addConsumer().?;
+    const slow = r.addConsumer().?;
     for (0..2) |_| {
         _ = r.writeSlot().?;
         r.commit();
@@ -277,8 +307,8 @@ test "slowest reader gates the producer; a detached reader does not" {
 test "ring hands blocks across threads in order to two readers" {
     var r = try BlockRing.init(testing.allocator, 8, 1, 1);
     defer r.deinit(testing.allocator);
-    const a = r.addConsumer();
-    const b = r.addConsumer();
+    const a = r.addConsumer().?;
+    const b = r.addConsumer().?;
     const n = 200_000;
     const Producer = struct {
         fn run(ring: *BlockRing) void {
@@ -313,4 +343,42 @@ test "ring hands blocks across threads in order to two readers" {
     tp.join();
     tb.join();
     try testing.expect(ok_a and ok_b);
+}
+
+test "a reader attaches while blocks flow, sees every block from then on, and its place is reused" {
+    var r = try BlockRing.init(testing.allocator, 8, 1, 1);
+    defer r.deinit(testing.allocator);
+    // Nobody attached: the producer runs freely, round and round.
+    for (0..20) |i| {
+        const b = r.writeSlot().?;
+        b.first_sample = @intCast(i);
+        b.len = 1;
+        r.commit();
+    }
+    const id = r.addConsumer().?;
+    try testing.expectEqual(null, r.readSlot(id));
+    for (20..24) |i| {
+        const b = r.writeSlot().?;
+        b.first_sample = @intCast(i);
+        b.len = 1;
+        r.commit();
+    }
+    for (20..24) |i| {
+        try testing.expectEqual(@as(i64, @intCast(i)), r.readSlot(id).?.first_sample);
+        r.release(id);
+    }
+    try testing.expectEqual(r.headPosition(), r.position(id));
+    // All places taken, then one given back.
+    var others: [max_consumers - 1]usize = undefined;
+    for (&others) |*o| o.* = r.addConsumer().?;
+    try testing.expectEqual(null, r.addConsumer());
+    r.free(id);
+    try testing.expectEqual(id, r.addConsumer().?);
+    // A freed or detached reader no longer gates the producer.
+    for (others) |o| r.free(o);
+    r.detach(id);
+    for (0..30) |_| {
+        _ = r.writeSlot().?;
+        r.commit();
+    }
 }

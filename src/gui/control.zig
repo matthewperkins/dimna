@@ -28,7 +28,44 @@ pub const Status = struct {
     fps: u64 = 0,
     /// Blocks the display missed (the recording does not depend on these).
     lost: u64 = 0,
+    recording: bool = false,
+    rec_seconds: f64 = 0,
 };
+
+/// The recording, as the control window shows it.
+pub const RecStatus = struct {
+    pub const State = enum { idle, recording, stopping, failed };
+    state: State = .idle,
+    seconds: f64 = 0,
+    samples: u64 = 0,
+    bytes: u64 = 0,
+    /// How far the recorder is behind acquisition, in seconds of signal.
+    behind_s: f64 = 0,
+    gaps: u64 = 0,
+    /// The session folder (while recording, and of the last recording afterwards).
+    path_buf: [200]u8 = undefined,
+    path_len: usize = 0,
+    /// Why the last attempt failed, or how the last recording ended.
+    note_buf: [160]u8 = undefined,
+    note_len: usize = 0,
+
+    pub fn path(self: *const RecStatus) []const u8 {
+        return self.path_buf[0..self.path_len];
+    }
+    pub fn note(self: *const RecStatus) []const u8 {
+        return self.note_buf[0..self.note_len];
+    }
+    pub fn setNote(self: *RecStatus, comptime fmt: []const u8, args: anytype) void {
+        const text: []const u8 = std.fmt.bufPrint(&self.note_buf, fmt, args) catch "";
+        self.note_len = text.len;
+    }
+};
+
+/// "1:05" or "1:02:03".
+pub fn fmtClock(buf: []u8, seconds: f64) []const u8 {
+    const s: u64 = @intFromFloat(@max(0, seconds));
+    return (if (s >= 3600) std.fmt.bufPrint(buf, "{d}:{d:0>2}:{d:0>2}", .{ s / 3600, s / 60 % 60, s % 60 }) else std.fmt.bufPrint(buf, "{d}:{d:0>2}", .{ s / 60, s % 60 })) catch "";
+}
 
 /// A change to one panel, asked for by the control window.
 pub const Action = union(enum) {
@@ -42,6 +79,8 @@ pub const Action = union(enum) {
     trig_line: u8,
     overlay: u32,
     reset,
+    /// Start (true) or stop a recording.
+    record: bool,
     quit,
 };
 
@@ -54,6 +93,7 @@ pub const Snapshot = struct {
     status: Status = .{},
     ring_overflow: u64 = 0,
     seconds: f64 = 0,
+    rec: RecStatus = .{},
 };
 
 pub const Shared = struct {
@@ -232,6 +272,32 @@ fn build(ui: *ui_mod.Ui, cfg: *const Config, snap: *const Snapshot, shared: *Sha
     ui.x = @max(ui.x, ui.width - 70);
     if (ui.button("Quit", false)) shared.push(.{ .action = .quit });
     ui.newline();
+    ui.separator();
+
+    // Recording.
+    const rec = &snap.rec;
+    switch (rec.state) {
+        .idle, .failed => if (ui.button("Record", false)) shared.push(.{ .action = .{ .record = true } }),
+        .recording => if (ui.button("Stop recording", true)) shared.push(.{ .action = .{ .record = false } }),
+        .stopping => ui.text("finishing the recording", ui_mod.text_dim),
+    }
+    if (rec.state == .recording or rec.state == .stopping) {
+        var clock_buf: [16]u8 = undefined;
+        ui.text(std.fmt.bufPrint(&buf, "REC {s}   {d:.2} GB   {d:.1} M samples", .{ fmtClock(&clock_buf, rec.seconds), @as(f64, @floatFromInt(rec.bytes)) / 1e9, @as(f64, @floatFromInt(rec.samples)) / 1e6 }) catch "", ui_mod.text_rec);
+        if (rec.behind_s > 1.0) ui.text(std.fmt.bufPrint(&buf, "disk is {d:.1} s behind", .{rec.behind_s}) catch "", ui_mod.text_warn);
+        if (rec.gaps > 0) ui.text(std.fmt.bufPrint(&buf, "{d} gaps", .{rec.gaps}) catch "", ui_mod.text_warn);
+    } else if (rec.state == .failed) {
+        ui.text("RECORDING FAILED", ui_mod.text_warn);
+    } else ui.text("not recording", ui_mod.text_dim);
+    ui.newline();
+    if (rec.note_len > 0) {
+        ui.text(rec.note(), if (rec.state == .failed) ui_mod.text_warn else ui_mod.text_dim);
+        ui.newline();
+    }
+    if (rec.path_len > 0) {
+        ui.text(rec.path(), ui_mod.text_dim);
+        ui.newline();
+    }
     ui.separator();
 
     for (snap.set.items[0..snap.set.len], 0..) |*p, i| {

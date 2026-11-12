@@ -163,7 +163,7 @@ pub fn main(init: std.process.Init) !u8 {
     const slots: usize = @intFromFloat(@ceil(ring_s * layout.sample_rate / @as(f64, @floatFromInt(bs))));
     var ring = try oez.ring.BlockRing.init(gpa, slots, nch, bs);
     defer ring.deinit(gpa);
-    const me = ring.addConsumer();
+    const me = ring.addConsumer().?;
     var rec: ?*oez.record.Recorder = null;
     if (args.record_root) |root| {
         rec = oez.record.Recorder.create(gpa, io, &ring, root, .{

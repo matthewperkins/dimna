@@ -195,8 +195,30 @@ stops; a Hyprland rule places it:
     hl.window_rule({ name = "oez-control", match = { class = "^oez-control$" },
                      workspace = "1", float = true, move = "966 51", size = "938 561" })
 
-With it open on the board (tearing on DP-2): 2.4 to 2.5 ms, as without. It does not start
-or stop recording yet: the recorder still has to learn to attach to a running acquisition.
+With it open on the board (tearing on DP-2): 2.4 to 2.5 ms, as without.
+
+**Recording.** Record / Stop recording in the control window. Acquisition and the display
+carry on throughout; each press of Record makes a new session (no restart of oEZ). While
+recording, the control window shows the time, size, how far the disk is behind and any
+gaps, and the neural display shows "REC" with the time beside its latency read-out. A
+recording that fails (disk full, say) is shown as failed; acquisition is not affected and
+what was written before stays valid. Quitting while recording closes the recording
+properly first.
+
+Sessions go under `record_dir` (config; default `~/oez-recordings`):
+
+    ~/oez-recordings/
+      2026-11-12_14-03-22/        one session = one press of Record
+        ephys/                    the recording (format below)
+        video/                    by convention: what the camera recorder writes
+      current -> 2026-11-12_14-03-22    link to the newest session
+
+`current` is repointed (atomically) whenever a recording starts, so other programs can
+write beside the ephys data without being told the folder's name:
+
+    ./record.sh --out-root "$(realpath ~/oez-recordings/current)/video"
+
+Start the oEZ recording first, so every camera trigger edge is in its TTL files.
 
 **Latency** (sample arriving to its frame on screen, Hyprland 0.57.2, NVIDIA, 60 Hz):
 

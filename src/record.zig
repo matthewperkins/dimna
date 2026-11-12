@@ -70,6 +70,10 @@ pub const Info = struct {
     cable_delay: [4]i32,
     board_kind: []const u8 = "Open Ephys acquisition board (ECP5, FT600, ONI)",
     software: []const u8 = "oez 0.0.0",
+    /// Session layout: the files go into `<root>/<date_time>/ephys/` (so videos and notes of
+    /// the same take can sit beside them), and `<root>/current` is made a link to the
+    /// session folder. Otherwise the files go straight into `<root>/<date_time>/`.
+    session: bool = false,
 };
 
 pub const Stats = struct {
@@ -86,6 +90,21 @@ pub const Stats = struct {
 const chunk_seconds = 0.1;
 const sync_ms = 1000;
 const max_pending_edges = 1 << 16;
+
+/// Makes `<root>/current` a link to the session folder `name`, replacing an older link in
+/// one step (a link under a temporary name, renamed over it). Best effort: a recording is
+/// not refused because the link could not be made.
+fn pointCurrent(root_dir: Io.Dir, name: []const u8) void {
+    const linux = std.os.linux;
+    var target_buf: [128]u8 = undefined;
+    const target = std.fmt.bufPrintSentinel(&target_buf, "{s}", .{name}, 0) catch return;
+    _ = linux.unlinkat(root_dir.handle, ".current.new", 0);
+    if (linux.errno(linux.symlinkat(target, root_dir.handle, ".current.new")) != .SUCCESS or
+        linux.errno(linux.renameat(root_dir.handle, ".current.new", root_dir.handle, "current")) != .SUCCESS)
+    {
+        log.warn("could not point the 'current' link at {s}", .{name});
+    }
+}
 
 pub const Recorder = struct {
     gpa: std.mem.Allocator,
@@ -138,7 +157,8 @@ pub const Recorder = struct {
     thread: ?std.Thread = null,
 
     /// Creates `<root>/<local date_time>/` and its files, and writes the first meta.toml.
-    /// Registers a ring reader, so call it before acquisition starts.
+    /// Registers a ring reader: the recording starts with the next block acquired, whether
+    /// or not acquisition is already running.
     pub fn create(gpa: std.mem.Allocator, io: Io, ring: *BlockRing, root: []const u8, info: Info) !*Recorder {
         const nch = info.layout.numChannels();
         const bs = ring.slots[0].capacity;
@@ -166,13 +186,17 @@ pub const Recorder = struct {
             };
             break;
         }
+        var sub_buf: [96]u8 = undefined;
+        const sub: []const u8 = if (info.session) try std.fmt.bufPrint(&sub_buf, "{s}/ephys", .{final_name}) else final_name;
+        if (info.session) try root_dir.createDir(io, sub, .default_dir);
         // `iterate` gives a real descriptor (not O_PATH), which fsync needs (`syncDir`).
-        var dir = try root_dir.openDir(io, final_name, .{ .iterate = true });
+        var dir = try root_dir.openDir(io, sub, .{ .iterate = true });
         errdefer dir.close(io);
         const root_abs = try Io.Dir.cwd().realPathFileAlloc(io, root, gpa);
         defer gpa.free(root_abs);
-        const path = try std.fmt.allocPrint(gpa, "{s}/{s}", .{ root_abs, final_name });
+        const path = try std.fmt.allocPrint(gpa, "{s}/{s}", .{ root_abs, sub });
         errdefer gpa.free(path);
+        if (info.session) pointCurrent(root_dir, final_name);
 
         var files: [5]Io.File = undefined;
         const names = [5][]const u8{ "samples.i16", "index.bin", "ttl_sample.i64", "ttl_word.u16", "events.tsv" };
@@ -221,7 +245,7 @@ pub const Recorder = struct {
         try self.writeMeta(null);
         try self.syncDir();
         // Last: once registered, the ring holds blocks for this reader.
-        self.consumer = ring.addConsumer();
+        self.consumer = ring.addConsumer() orelse return error.TooManyRingReaders;
         log.info("recording to {s}", .{path});
         return self;
     }
@@ -241,13 +265,20 @@ pub const Recorder = struct {
         failure: ?anyerror,
     };
 
-    /// Asks the thread to finish: it drains the ring (the producer must have stopped first),
-    /// writes the last chunk, syncs and writes the final meta.toml. Then frees everything and
-    /// returns the final counts.
+    /// Asks the thread to finish without waiting for it: it records up to the last block
+    /// acquired at the moment it notices, writes the last chunk, syncs and writes the final
+    /// meta.toml. `done` turns true when it has; then call `finish`, which no longer waits.
+    pub fn requestStop(self: *Recorder) void {
+        self.stop_flag.store(true, .release);
+    }
+
+    /// Stops the recording as `requestStop` does and waits for it. Acquisition may carry
+    /// on or have stopped. Then frees everything and returns the final counts.
     pub fn finish(self: *Recorder) Summary {
         self.stop_flag.store(true, .release);
         if (self.thread) |t| t.join();
         self.thread = null;
+        self.ring.free(self.consumer);
         const st = &self.stats;
         const summary: Summary = .{
             .samples = st.samples.load(.monotonic),
@@ -287,24 +318,31 @@ pub const Recorder = struct {
             self.ring.detach(self.consumer);
             return;
         };
+        // Done: stop holding blocks back (acquisition may be carrying on).
+        self.ring.detach(self.consumer);
     }
 
     fn loop(self: *Recorder) !void {
-        try self.event(0, "start", "");
+        // Once asked to stop: the ring position the recording ends before.
+        var end: ?usize = null;
         while (true) {
+            if (end == null and self.stop_flag.load(.acquire)) end = self.ring.headPosition();
             var any = false;
             while (self.ring.readSlot(self.consumer)) |b| {
+                if (end) |e| {
+                    if (self.ring.position(self.consumer) == e) break;
+                }
                 try self.consume(b);
                 self.ring.release(self.consumer);
                 any = true;
                 if (self.sinceSyncMs() >= sync_ms) try self.sync();
             }
             try self.drainEvents();
-            if (self.sinceSyncMs() >= sync_ms) try self.sync();
-            if (!any) {
-                if (self.stop_flag.load(.acquire)) break;
-                try self.io.sleep(.fromMilliseconds(2), .awake);
+            if (end) |e| {
+                if (self.ring.position(self.consumer) == e) break;
             }
+            if (self.sinceSyncMs() >= sync_ms) try self.sync();
+            if (!any) try self.io.sleep(.fromMilliseconds(2), .awake);
         }
         try self.flushChunk();
         try self.drainEvents();
@@ -321,7 +359,10 @@ pub const Recorder = struct {
 
     fn consume(self: *Recorder, b: *const Block) !void {
         if (b.len == 0) return;
-        if (self.first_sample == null) self.first_sample = b.first_sample;
+        if (self.first_sample == null) {
+            self.first_sample = b.first_sample;
+            try self.event(b.first_sample, "start", "");
+        }
         const gap = if (self.next_expected) |e| b.first_sample != e else false;
         if (gap) {
             try self.flushChunk();
