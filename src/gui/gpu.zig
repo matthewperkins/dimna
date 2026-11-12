@@ -8,6 +8,7 @@
 
 const std = @import("std");
 const vk = @import("vulkan");
+const font = @import("font.zig");
 const log = std.log.scoped(.gpu);
 
 extern fn vkGetInstanceProcAddr(instance: ?vk.Instance, name: [*:0]const u8) vk.PfnVoidFunction;
@@ -98,6 +99,21 @@ pub const Gpu = struct {
     pipeline: vk.Pipeline = .null,
     desc_pool: vk.DescriptorPool = .null,
     desc_set: vk.DescriptorSet = .null,
+
+    // Text and solid rectangles (`shaders/text.vert`): the glyph atlas, and a vertex buffer
+    // that each frame's quads are copied into.
+    text_set_layout: vk.DescriptorSetLayout = .null,
+    text_layout: vk.PipelineLayout = .null,
+    text_pipeline: vk.Pipeline = .null,
+    text_pool: vk.DescriptorPool = .null,
+    text_set: vk.DescriptorSet = .null,
+    atlas_image: vk.Image = .null,
+    atlas_mem: vk.DeviceMemory = .null,
+    atlas_view: vk.ImageView = .null,
+    sampler: vk.Sampler = .null,
+    text_buf: vk.Buffer = .null,
+    text_mem: vk.DeviceMemory = .null,
+    text_vertices: []font.Vertex = &.{},
 
     /// Sample history: `hist_cap` samples of `nch` interleaved int16, a ring indexed by
     /// absolute sample number.
@@ -378,6 +394,19 @@ pub const Gpu = struct {
             dev.destroyBuffer(self.hist_buf, null);
             dev.freeMemory(self.hist_mem, null);
         }
+        if (self.text_buf != .null) {
+            dev.unmapMemory(self.text_mem);
+            dev.destroyBuffer(self.text_buf, null);
+            dev.freeMemory(self.text_mem, null);
+            dev.destroySampler(self.sampler, null);
+            dev.destroyImageView(self.atlas_view, null);
+            dev.destroyImage(self.atlas_image, null);
+            dev.freeMemory(self.atlas_mem, null);
+            dev.destroyPipeline(self.text_pipeline, null);
+            dev.destroyPipelineLayout(self.text_layout, null);
+            dev.destroyDescriptorPool(self.text_pool, null);
+            dev.destroyDescriptorSetLayout(self.text_set_layout, null);
+        }
         dev.destroyPipeline(self.pipeline, null);
         dev.destroyPipelineLayout(self.pipeline_layout, null);
         dev.destroyDescriptorPool(self.desc_pool, null);
@@ -475,6 +504,207 @@ pub const Gpu = struct {
         var pipelines: [1]vk.Pipeline = undefined;
         _ = try dev.createGraphicsPipelines(.null, &info, null, &pipelines);
         self.pipeline = pipelines[0];
+    }
+
+    /// Sets up text drawing: uploads the glyph atlas (`size` x `size` coverage bytes) and
+    /// makes room for `max_vertices` vertices per frame. Call once before drawing text.
+    pub fn createText(self: *Gpu, atlas: []const u8, size: u32, max_vertices: usize) !void {
+        const dev = self.dev;
+        const host: vk.MemoryPropertyFlags = .{ .host_visible = true, .host_coherent = true };
+
+        // The atlas image, filled through a staging buffer.
+        self.atlas_image = try dev.createImage(&.{
+            .image_type = .@"2d",
+            .format = .r8_unorm,
+            .extent = .{ .width = size, .height = size, .depth = 1 },
+            .mip_levels = 1,
+            .array_layers = 1,
+            .samples = .{ .@"1" = true },
+            .tiling = .optimal,
+            .usage = .{ .sampled = true, .transfer_dst = true },
+            .sharing_mode = .exclusive,
+            .initial_layout = .undefined,
+        }, null);
+        const ireq = dev.getImageMemoryRequirements(self.atlas_image);
+        self.atlas_mem = try dev.allocateMemory(&.{ .allocation_size = ireq.size, .memory_type_index = self.findMemoryType(ireq.memory_type_bits, .{ .device_local = true }) orelse return error.NoImageMemory }, null);
+        try dev.bindImageMemory(self.atlas_image, self.atlas_mem, 0);
+
+        const staging = try dev.createBuffer(&.{ .size = atlas.len, .usage = .{ .transfer_src = true }, .sharing_mode = .exclusive }, null);
+        defer dev.destroyBuffer(staging, null);
+        const sreq = dev.getBufferMemoryRequirements(staging);
+        const smem = try dev.allocateMemory(&.{ .allocation_size = sreq.size, .memory_type_index = self.findMemoryType(sreq.memory_type_bits, host) orelse return error.NoHostVisibleMemory }, null);
+        defer dev.freeMemory(smem, null);
+        try dev.bindBufferMemory(staging, smem, 0);
+        const sptr: [*]u8 = @ptrCast((try dev.mapMemory(smem, 0, vk.WHOLE_SIZE, .{})) orelse return error.MapFailed);
+        @memcpy(sptr[0..atlas.len], atlas);
+        dev.unmapMemory(smem);
+
+        const range: vk.ImageSubresourceRange = .{ .aspect_mask = .{ .color = true }, .base_mip_level = 0, .level_count = 1, .base_array_layer = 0, .layer_count = 1 };
+        const cmd = self.cmd;
+        try dev.resetCommandBuffer(cmd, .{});
+        try dev.beginCommandBuffer(cmd, &.{ .flags = .{ .one_time_submit = true } });
+        dev.cmdPipelineBarrier(cmd, .{ .top_of_pipe = true }, .{ .transfer = true }, .{}, null, null, &[_]vk.ImageMemoryBarrier{.{
+            .src_access_mask = .{},
+            .dst_access_mask = .{ .transfer_write = true },
+            .old_layout = .undefined,
+            .new_layout = .transfer_dst_optimal,
+            .src_queue_family_index = vk.QUEUE_FAMILY_IGNORED,
+            .dst_queue_family_index = vk.QUEUE_FAMILY_IGNORED,
+            .image = self.atlas_image,
+            .subresource_range = range,
+        }});
+        dev.cmdCopyBufferToImage(cmd, staging, self.atlas_image, .transfer_dst_optimal, &[_]vk.BufferImageCopy{.{
+            .buffer_offset = 0,
+            .buffer_row_length = 0,
+            .buffer_image_height = 0,
+            .image_subresource = .{ .aspect_mask = .{ .color = true }, .mip_level = 0, .base_array_layer = 0, .layer_count = 1 },
+            .image_offset = .{ .x = 0, .y = 0, .z = 0 },
+            .image_extent = .{ .width = size, .height = size, .depth = 1 },
+        }});
+        dev.cmdPipelineBarrier(cmd, .{ .transfer = true }, .{ .fragment_shader = true }, .{}, null, null, &[_]vk.ImageMemoryBarrier{.{
+            .src_access_mask = .{ .transfer_write = true },
+            .dst_access_mask = .{ .shader_read = true },
+            .old_layout = .transfer_dst_optimal,
+            .new_layout = .shader_read_only_optimal,
+            .src_queue_family_index = vk.QUEUE_FAMILY_IGNORED,
+            .dst_queue_family_index = vk.QUEUE_FAMILY_IGNORED,
+            .image = self.atlas_image,
+            .subresource_range = range,
+        }});
+        try dev.endCommandBuffer(cmd);
+        try dev.queueSubmit(self.queue, &[_]vk.SubmitInfo{.{ .command_buffer_count = 1, .p_command_buffers = &[_]vk.CommandBuffer{cmd} }}, .null);
+        try dev.queueWaitIdle(self.queue);
+
+        self.atlas_view = try dev.createImageView(&.{
+            .image = self.atlas_image,
+            .view_type = .@"2d",
+            .format = .r8_unorm,
+            .components = .{ .r = .identity, .g = .identity, .b = .identity, .a = .identity },
+            .subresource_range = range,
+        }, null);
+        // Glyph quads sit on whole pixels, so texels map one to one.
+        self.sampler = try dev.createSampler(&.{
+            .mag_filter = .nearest,
+            .min_filter = .nearest,
+            .mipmap_mode = .nearest,
+            .address_mode_u = .clamp_to_edge,
+            .address_mode_v = .clamp_to_edge,
+            .address_mode_w = .clamp_to_edge,
+            .mip_lod_bias = 0,
+            .anisotropy_enable = .false,
+            .max_anisotropy = 1,
+            .compare_enable = .false,
+            .compare_op = .always,
+            .min_lod = 0,
+            .max_lod = 0,
+            .border_color = .float_transparent_black,
+            .unnormalized_coordinates = .false,
+        }, null);
+
+        // The vertex buffer, mapped for good.
+        const vbytes: vk.DeviceSize = max_vertices * @sizeOf(font.Vertex);
+        self.text_buf = try dev.createBuffer(&.{ .size = vbytes, .usage = .{ .vertex_buffer = true }, .sharing_mode = .exclusive }, null);
+        const vreq = dev.getBufferMemoryRequirements(self.text_buf);
+        self.text_mem = try dev.allocateMemory(&.{ .allocation_size = vreq.size, .memory_type_index = self.findMemoryType(vreq.memory_type_bits, host) orelse return error.NoHostVisibleMemory }, null);
+        try dev.bindBufferMemory(self.text_buf, self.text_mem, 0);
+        const vptr: [*]font.Vertex = @ptrCast(@alignCast((try dev.mapMemory(self.text_mem, 0, vk.WHOLE_SIZE, .{})) orelse return error.MapFailed));
+        self.text_vertices = vptr[0..max_vertices];
+
+        self.text_set_layout = try dev.createDescriptorSetLayout(&.{
+            .binding_count = 1,
+            .p_bindings = &[_]vk.DescriptorSetLayoutBinding{.{
+                .binding = 0,
+                .descriptor_type = .combined_image_sampler,
+                .descriptor_count = 1,
+                .stage_flags = .{ .fragment = true },
+            }},
+        }, null);
+        self.text_layout = try dev.createPipelineLayout(&.{
+            .set_layout_count = 1,
+            .p_set_layouts = &[_]vk.DescriptorSetLayout{self.text_set_layout},
+            .push_constant_range_count = 1,
+            .p_push_constant_ranges = &[_]vk.PushConstantRange{.{ .stage_flags = .{ .vertex = true }, .offset = 0, .size = 8 }},
+        }, null);
+        self.text_pool = try dev.createDescriptorPool(&.{
+            .max_sets = 1,
+            .pool_size_count = 1,
+            .p_pool_sizes = &[_]vk.DescriptorPoolSize{.{ .type = .combined_image_sampler, .descriptor_count = 1 }},
+        }, null);
+        var sets: [1]vk.DescriptorSet = undefined;
+        try dev.allocateDescriptorSets(&.{ .descriptor_pool = self.text_pool, .descriptor_set_count = 1, .p_set_layouts = &[_]vk.DescriptorSetLayout{self.text_set_layout} }, &sets);
+        self.text_set = sets[0];
+        dev.updateDescriptorSets(&[_]vk.WriteDescriptorSet{.{
+            .dst_set = self.text_set,
+            .dst_binding = 0,
+            .dst_array_element = 0,
+            .descriptor_count = 1,
+            .descriptor_type = .combined_image_sampler,
+            .p_image_info = &[_]vk.DescriptorImageInfo{.{ .sampler = self.sampler, .image_view = self.atlas_view, .image_layout = .shader_read_only_optimal }},
+            .p_buffer_info = undefined,
+            .p_texel_buffer_view = undefined,
+        }}, null);
+
+        const vert_code align(4) = @embedFile("text.vert.spv").*;
+        const frag_code align(4) = @embedFile("text.frag.spv").*;
+        const vert = try dev.createShaderModule(&.{ .code_size = vert_code.len, .p_code = @ptrCast(&vert_code) }, null);
+        defer dev.destroyShaderModule(vert, null);
+        const frag = try dev.createShaderModule(&.{ .code_size = frag_code.len, .p_code = @ptrCast(&frag_code) }, null);
+        defer dev.destroyShaderModule(frag, null);
+        const stages = [_]vk.PipelineShaderStageCreateInfo{
+            .{ .stage = .{ .vertex = true }, .module = vert, .p_name = "main" },
+            .{ .stage = .{ .fragment = true }, .module = frag, .p_name = "main" },
+        };
+        const dynamic = [_]vk.DynamicState{ .viewport, .scissor };
+        const blend_attachment = [_]vk.PipelineColorBlendAttachmentState{.{
+            .blend_enable = .true,
+            .src_color_blend_factor = .src_alpha,
+            .dst_color_blend_factor = .one_minus_src_alpha,
+            .color_blend_op = .add,
+            .src_alpha_blend_factor = .one,
+            .dst_alpha_blend_factor = .one,
+            .alpha_blend_op = .add,
+            .color_write_mask = .{ .r = true, .g = true, .b = true, .a = true },
+        }};
+        const bindings = [_]vk.VertexInputBindingDescription{.{ .binding = 0, .stride = @sizeOf(font.Vertex), .input_rate = .vertex }};
+        const attributes = [_]vk.VertexInputAttributeDescription{
+            .{ .location = 0, .binding = 0, .format = .r32g32_sfloat, .offset = @offsetOf(font.Vertex, "pos") },
+            .{ .location = 1, .binding = 0, .format = .r32g32_sfloat, .offset = @offsetOf(font.Vertex, "uv") },
+            .{ .location = 2, .binding = 0, .format = .r8g8b8a8_unorm, .offset = @offsetOf(font.Vertex, "colour") },
+        };
+        const info = [_]vk.GraphicsPipelineCreateInfo{.{
+            .stage_count = stages.len,
+            .p_stages = &stages,
+            .p_vertex_input_state = &.{
+                .vertex_binding_description_count = bindings.len,
+                .p_vertex_binding_descriptions = &bindings,
+                .vertex_attribute_description_count = attributes.len,
+                .p_vertex_attribute_descriptions = &attributes,
+            },
+            .p_input_assembly_state = &.{ .topology = .triangle_list, .primitive_restart_enable = .false },
+            .p_viewport_state = &.{ .viewport_count = 1, .scissor_count = 1 },
+            .p_rasterization_state = &.{
+                .depth_clamp_enable = .false,
+                .rasterizer_discard_enable = .false,
+                .polygon_mode = .fill,
+                .cull_mode = .{},
+                .front_face = .counter_clockwise,
+                .depth_bias_enable = .false,
+                .depth_bias_constant_factor = 0,
+                .depth_bias_clamp = 0,
+                .depth_bias_slope_factor = 0,
+                .line_width = 1,
+            },
+            .p_multisample_state = &.{ .rasterization_samples = .{ .@"1" = true }, .sample_shading_enable = .false, .min_sample_shading = 1, .alpha_to_coverage_enable = .false, .alpha_to_one_enable = .false },
+            .p_color_blend_state = &.{ .logic_op_enable = .false, .logic_op = .copy, .attachment_count = 1, .p_attachments = &blend_attachment, .blend_constants = .{ 0, 0, 0, 0 } },
+            .p_dynamic_state = &.{ .dynamic_state_count = dynamic.len, .p_dynamic_states = &dynamic },
+            .layout = self.text_layout,
+            .render_pass = self.render_pass,
+            .subpass = 0,
+            .base_pipeline_index = -1,
+        }};
+        var pipelines: [1]vk.Pipeline = undefined;
+        _ = try dev.createGraphicsPipelines(.null, &info, null, &pipelines);
+        self.text_pipeline = pipelines[0];
     }
 
     fn findMemoryType(self: *const Gpu, type_bits: u32, flags: vk.MemoryPropertyFlags) ?u32 {
@@ -635,11 +865,12 @@ pub const Gpu = struct {
         busy,
     };
 
-    /// Draws one frame (each panel in its own viewport, then the fills) and presents it.
+    /// Draws one frame (each panel in its own viewport, then the fills, then `text`: quads
+    /// from a `font.Batch`, over everything) and presents it.
     /// `before_present` runs right before the frame is handed to the compositor (frame
     /// callback and presentation feedback requests must be made then, so they attach to
     /// this frame's commit).
-    pub fn draw(self: *Gpu, panels: []const PanelDraw, fills: []const Fill, context: anytype, comptime before_present: fn (@TypeOf(context)) void) !DrawResult {
+    pub fn draw(self: *Gpu, panels: []const PanelDraw, fills: []const Fill, text: []const font.Vertex, context: anytype, comptime before_present: fn (@TypeOf(context)) void) !DrawResult {
         const dev = self.dev;
         _ = try dev.waitForFences(&[_]vk.Fence{self.in_flight}, .true, std.math.maxInt(u64));
         const acquired = dev.acquireNextImageKHR(self.swapchain, 0, self.image_available, .null) catch |e| switch (e) {
@@ -679,6 +910,19 @@ pub const Gpu = struct {
                 &[_]vk.ClearAttachment{.{ .aspect_mask = .{ .color = true }, .color_attachment = 0, .clear_value = .{ .color = .{ .float_32 = f.colour } } }},
                 &[_]vk.ClearRect{.{ .rect = r, .base_array_layer = 0, .layer_count = 1 }},
             );
+        }
+        // The previous frame is finished (the fence above), so the vertex buffer is free.
+        const ntext = @min(text.len, self.text_vertices.len);
+        if (ntext > 0) {
+            @memcpy(self.text_vertices[0..ntext], text[0..ntext]);
+            dev.cmdBindPipeline(cmd, .graphics, self.text_pipeline);
+            dev.cmdBindDescriptorSets(cmd, .graphics, self.text_layout, 0, &[_]vk.DescriptorSet{self.text_set}, null);
+            dev.cmdSetViewport(cmd, 0, &[_]vk.Viewport{.{ .x = 0, .y = 0, .width = @floatFromInt(self.extent.width), .height = @floatFromInt(self.extent.height), .min_depth = 0, .max_depth = 1 }});
+            dev.cmdSetScissor(cmd, 0, &[_]vk.Rect2D{area});
+            const size = [2]f32{ @floatFromInt(self.extent.width), @floatFromInt(self.extent.height) };
+            dev.cmdPushConstants(cmd, self.text_layout, .{ .vertex = true }, 0, 8, @ptrCast(&size));
+            dev.cmdBindVertexBuffers(cmd, 0, &[_]vk.Buffer{self.text_buf}, &[_]vk.DeviceSize{0});
+            dev.cmdDraw(cmd, @intCast(ntext), 1, 0, 0);
         }
         dev.cmdEndRenderPass(cmd);
         try dev.endCommandBuffer(cmd);

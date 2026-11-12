@@ -84,8 +84,21 @@ pub fn build(b: *std.Build) void {
     });
     gui_mod.linkSystemLibrary("wayland-client", .{});
     gui_mod.linkSystemLibrary("vulkan", .{});
+    // Text: fontconfig finds the font, FreeType rasterizes it.
+    gui_mod.linkSystemLibrary("freetype2", .{});
+    gui_mod.linkSystemLibrary("fontconfig", .{});
+    const gui_c = b.addTranslateC(.{ .root_source_file = b.path("src/gui/c.h"), .target = target, .optimize = optimize });
+    {
+        // FreeType's headers live in their own directory; ask pkg-config where.
+        const flags = b.run(&.{ "pkg-config", "--cflags-only-I", "freetype2", "fontconfig" });
+        var it = std.mem.tokenizeAny(u8, flags, " \n");
+        while (it.next()) |f| {
+            if (std.mem.startsWith(u8, f, "-I")) gui_c.addIncludePath(.{ .cwd_relative = f[2..] });
+        }
+    }
+    gui_mod.addImport("gui_c", gui_c.createModule());
     // Shaders: GLSL compiled to SPIR-V by glslc (shaderc) and embedded.
-    inline for (.{ "traces.vert", "traces.frag" }) |name| {
+    inline for (.{ "traces.vert", "traces.frag", "text.vert", "text.frag" }) |name| {
         const glslc = b.addSystemCommand(&.{ "glslc", "--target-env=vulkan1.2", "-O", "-o" });
         const spv = glslc.addOutputFileArg(name ++ ".spv");
         glslc.addFileArg(b.path("src/gui/shaders/" ++ name));

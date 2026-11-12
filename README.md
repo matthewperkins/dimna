@@ -10,6 +10,9 @@ Zig 0.17.1 (pinned in `build.zig.zon`).
     zig build --release=safe     # zig-out/bin/oez-headless (safety checks stay on)
     zig build test               # unit tests
 
+The display also needs the Wayland and Vulkan development files, `glslc`, and FreeType and
+fontconfig (text).
+
 liboni is vendored (`vendor/liboni`, MIT) and built in. Two patches are carried in
 `onidriverloader.c`: a driver search directory (from oers) and a driver compiled into the
 program (`oni_register_builtin_driver`).
@@ -96,6 +99,8 @@ Config: `~/.config/oez/config.toml` (command-line options win).
 ```toml
 monitor = "DP-2"      # fullscreen on this monitor: the neural display
 tearing = true        # show each frame at once (see below)
+font = "sans-serif"   # optional: a fontconfig name
+font_px = 14          # optional: text size in pixels
 
 [[panel]]
 name = "Port B"
@@ -116,6 +121,14 @@ rect = [0.0, 0.75, 1.0, 0.25]
 Without `[[panel]]` tables there is one panel per headstage, side by side. Wheel (Y scale),
 Shift+wheel or pinch (time base) and the keys `- = [ ] r` act on the panel under the pointer,
 marked by a bar along its top; `q` quits.
+
+Each panel is titled with its name, time base and scale per row, and its rows are labelled
+(the electrode's number on its headstage, AUXn, ADCn; thinned when rows are shorter than a
+line of text). The bottom right corner shows the latency and frame rate of the last second,
+and in amber how many blocks the display skipped, if any (the recording never depends on
+the display). Text is drawn by oEZ itself (`src/gui/font.zig`: FreeType into one atlas,
+quads in the same render pass), since nothing else may be on the monitor while tearing; it
+made no measurable difference to the latency (2.6 ms with and without, same session).
 
 **Latency** (sample arriving to its frame on screen, Hyprland 0.57.2, NVIDIA, 60 Hz):
 

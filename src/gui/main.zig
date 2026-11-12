@@ -67,7 +67,8 @@
 //! queues frames under direct scanout (33.6 ms).
 //!
 //! Config file: $XDG_CONFIG_HOME/oez/config.toml (default ~/.config/oez); command-line options
-//! win. Top-level keys: monitor = "DP-2", tearing = true, free_ms = 2, margin_ms = 3. Panels:
+//! win. Top-level keys: monitor = "DP-2", tearing = true, free_ms = 2, margin_ms = 3,
+//! font = "sans-serif" (a fontconfig name), font_px = 14. Panels:
 //! one [[panel]] table each (see src/panels.zig), for example
 //!
 //!   [[panel]]
@@ -85,6 +86,7 @@ const oez = @import("oez");
 const Window = @import("window.zig").Window;
 const gpu_mod = @import("gpu.zig");
 const Gpu = gpu_mod.Gpu;
+const font = @import("font.zig");
 const Io = std.Io;
 const log = std.log.scoped(.oez);
 
@@ -106,6 +108,9 @@ const Args = struct {
     tearing: bool = false,
     /// Free-running: least interval between frames in ms; negative = paced to the refresh.
     free_ms: f64 = -1,
+    /// Font for labels: a fontconfig name and a size in pixels.
+    font: []const u8 = "sans-serif",
+    font_px: u32 = 14,
     /// The parsed config file (panels are read from it once the channel layout is known).
     doc: oez.toml.Document = .{ .entries = &.{} },
 };
@@ -174,6 +179,10 @@ fn applyConfig(a: *Args, doc: oez.toml.Document) void {
             a.margin_ms = e.value.number;
         } else if (std.mem.eql(u8, e.key, "free_ms") and e.value == .number) {
             a.free_ms = e.value.number;
+        } else if (std.mem.eql(u8, e.key, "font") and e.value == .string) {
+            a.font = e.value.string;
+        } else if (std.mem.eql(u8, e.key, "font_px") and e.value == .number and e.value.number >= 6 and e.value.number <= 64) {
+            a.font_px = @intFromFloat(e.value.number);
         } else if (std.mem.eql(u8, e.key, "tearing") and e.value == .boolean) {
             a.tearing = e.value.boolean;
             if (a.tearing) a.present = .immediate;
@@ -261,6 +270,51 @@ fn parseArgs(args: []const [:0]const u8, doc: oez.toml.Document) !Args {
     return a;
 }
 
+/// What the corner read-out shows; refreshed once a second.
+const Status = struct {
+    valid: bool = false,
+    latency_ms: f64 = 0,
+    fps: u64 = 0,
+    /// Blocks the display missed (the recording does not depend on these).
+    lost: u64 = 0,
+};
+
+const max_text_vertices = 24 * 1024;
+
+/// "500 ms" or "2.00 s".
+fn fmtSpan(buf: []u8, s: f64) []const u8 {
+    return (if (s < 0.9995) std.fmt.bufPrint(buf, "{d:.0} ms", .{s * 1000}) else std.fmt.bufPrint(buf, "{d:.2} s", .{s})) catch "";
+}
+
+/// A panel's scale per row with a unit that keeps the number readable: "400 µV", "1.50 mV",
+/// "250 mV", "5.00 V".
+fn fmtScale(buf: []u8, p: *const Panel) []const u8 {
+    const v = p.scale;
+    return (if (p.kind == .electrode)
+        (if (v < 999.5) std.fmt.bufPrint(buf, "{d:.0} µV", .{v}) else std.fmt.bufPrint(buf, "{d:.2} mV", .{v / 1000}))
+    else
+        (if (v < 0.9995) std.fmt.bufPrint(buf, "{d:.0} mV", .{v * 1000}) else std.fmt.bufPrint(buf, "{d:.2} V", .{v}))) catch "";
+}
+
+/// The label of one row: the electrode's number on its headstage (with the headstage's name
+/// when the panel spans more than one), or AUXn / ADCn.
+fn rowLabel(buf: []u8, p: *const Panel, row: u32, layout: *const oez.types.Layout) []const u8 {
+    const ch = p.first_ch + row;
+    switch (p.kind) {
+        .electrode => {
+            for (layout.headstageSlice()) |h| {
+                if (ch < h.first_channel or ch >= h.first_channel + h.num_channels) continue;
+                const n = ch - h.first_channel + 1;
+                const within = p.first_ch >= h.first_channel and p.first_ch + p.rows <= h.first_channel + h.num_channels;
+                return (if (within) std.fmt.bufPrint(buf, "{d}", .{n}) else std.fmt.bufPrint(buf, "{s}-{d}", .{ oez.types.headstage_names[h.slot], n })) catch "";
+            }
+            return std.fmt.bufPrint(buf, "{d}", .{ch + 1}) catch "";
+        },
+        .aux => return std.fmt.bufPrint(buf, "AUX{d}", .{row + 1}) catch "",
+        .adc => return std.fmt.bufPrint(buf, "ADC{d}", .{row + 1}) catch "",
+    }
+}
+
 /// The panels of the display, and which one input goes to.
 const Display = struct {
     set: panels_mod.Set,
@@ -318,11 +372,19 @@ const Display = struct {
         return quit;
     }
 
-    /// What to draw: each panel's traces, then dividers and a bar marking the target panel.
-    fn frame(self: *const Display, gpu: *const Gpu, nch: usize, fs: f64, newest: i64, draws: *[panels_mod.max_panels]gpu_mod.PanelDraw, fills: *[3 * panels_mod.max_panels]gpu_mod.Fill) struct { draws: []const gpu_mod.PanelDraw, fills: []const gpu_mod.Fill } {
+    /// What to draw: each panel's traces, then dividers and a bar marking the target panel,
+    /// and into `batch` the text: each panel's title (name, time base, scale per row), its
+    /// row labels, and the status read-out in the bottom right corner.
+    fn frame(self: *const Display, gpu: *const Gpu, layout: *const oez.types.Layout, newest: i64, status: Status, batch: *font.Batch, draws: *[panels_mod.max_panels]gpu_mod.PanelDraw, fills: *[3 * panels_mod.max_panels]gpu_mod.Fill) struct { draws: []const gpu_mod.PanelDraw, fills: []const gpu_mod.Fill, text: []const font.Vertex } {
         const width = gpu.extent.width;
         const height = gpu.extent.height;
+        const nch = layout.numChannels();
+        const fs = layout.sample_rate;
         var nf: usize = 0;
+        batch.clear();
+        const line_h = @round(batch.font.line_height);
+        const bright: font.Colour = .{ 225, 230, 240, 255 };
+        const dim: font.Colour = .{ 150, 160, 178, 255 };
         for (self.set.items[0..self.set.len], 0..) |*p, i| {
             const r = p.pixelRect(width, height);
             draws[i] = .{
@@ -349,13 +411,42 @@ const Display = struct {
                 fills[nf] = .{ .rect = .{ .x = r.x, .y = r.y, .w = r.w, .h = 1 }, .colour = grey };
                 nf += 1;
             }
+            if (line_h <= 0) continue;
+            // Title, top left.
+            const px: f32 = @floatFromInt(r.x);
+            const py: f32 = @floatFromInt(r.y);
+            const title_y = py + 6;
+            var span_buf: [24]u8 = undefined;
+            var scale_buf: [24]u8 = undefined;
+            var title_buf: [96]u8 = undefined;
+            const title = std.fmt.bufPrint(&title_buf, "{s}   {s}   {s}/row", .{ p.name(), fmtSpan(&span_buf, p.span_s), fmtScale(&scale_buf, p) }) catch "";
+            _ = batch.label(px + 8, title_y, title, bright);
+            // Row labels down the left edge, thinned when rows are shorter than a line.
+            const row_h = @as(f32, @floatFromInt(r.h)) / @as(f32, @floatFromInt(p.rows));
+            const step: u32 = @max(1, @as(u32, @intFromFloat(@ceil((line_h + 3) / row_h))));
+            var row: u32 = 0;
+            while (row < p.rows) : (row += step) {
+                const y = py + (@as(f32, @floatFromInt(row)) + 0.5) * row_h - 0.5 * line_h;
+                if (y < title_y + line_h + 3) continue;
+                var label_buf: [16]u8 = undefined;
+                _ = batch.label(px + 5, y, rowLabel(&label_buf, p, row, layout), dim);
+            }
+        }
+        if (status.valid and line_h > 0) {
+            var buf: [96]u8 = undefined;
+            const text = (if (status.lost > 0)
+                std.fmt.bufPrint(&buf, "{d:.1} ms   {d} fps   display skipped {d} blocks", .{ status.latency_ms, status.fps, status.lost })
+            else
+                std.fmt.bufPrint(&buf, "{d:.1} ms   {d} fps", .{ status.latency_ms, status.fps })) catch "";
+            const w = batch.font.width(text);
+            _ = batch.label(@as(f32, @floatFromInt(width)) - w - 8, @as(f32, @floatFromInt(height)) - line_h - 6, text, if (status.lost > 0) .{ 255, 190, 90, 255 } else dim);
         }
         if (self.set.len > 1) {
             const r = self.set.items[self.target].pixelRect(width, height);
             fills[nf] = .{ .rect = .{ .x = r.x, .y = r.y, .w = r.w, .h = 3 }, .colour = .{ 0.30, 0.55, 0.95, 1.0 } };
             nf += 1;
         }
-        return .{ .draws = draws[0..self.set.len], .fills = fills[0..nf] };
+        return .{ .draws = draws[0..self.set.len], .fills = fills[0..nf], .text = batch.vertices[0..batch.len] };
     }
 };
 
@@ -368,6 +459,39 @@ fn makeDisplay(args: Args, layout: *const oez.types.Layout) ?Display {
     for (set.items[0..set.len], 0..) |*p, i| log.info("panel {d} \"{s}\": {d} {t} channels from channel {d}, {d:.2} s, {d} {s}/row", .{ i + 1, p.name(), p.rows, p.kind, p.first_ch + 1, p.span_s, p.scale, p.unit() });
     return .init(set);
 }
+
+/// Text for the display: the font from the config, its atlas on the GPU, and the batch that
+/// each frame's quads go into. Without a usable font the display runs without text.
+const Text = struct {
+    font: font.Font = .{ .atlas = &.{}, .px = 0 },
+    vertices: []font.Vertex = &.{},
+
+    fn init(self: *Text, gpa: std.mem.Allocator, gpu: *Gpu, args: Args) void {
+        var name_buf: [128]u8 = undefined;
+        const family = std.fmt.bufPrintSentinel(&name_buf, "{s}", .{args.font}, 0) catch "sans-serif";
+        const f = font.Font.init(gpa, family, args.font_px) catch |e| {
+            log.warn("no font '{s}' ({t}): the display has no text", .{ args.font, e });
+            return;
+        };
+        self.font = f;
+        const vertices = gpa.alloc(font.Vertex, max_text_vertices) catch return;
+        gpu.createText(f.atlas, font.atlas_size, max_text_vertices) catch |e| {
+            log.warn("text setup failed ({t}): the display has no text", .{e});
+            gpa.free(vertices);
+            return;
+        };
+        self.vertices = vertices;
+    }
+
+    fn deinit(self: *Text, gpa: std.mem.Allocator) void {
+        gpa.free(self.vertices);
+        if (self.font.atlas.len > 0) self.font.deinit(gpa);
+    }
+
+    fn batch(self: *const Text) font.Batch {
+        return .{ .font = &self.font, .vertices = self.vertices };
+    }
+};
 
 /// The display loop when oez drives the monitor itself (--direct). One frame is in flight at
 /// a time: draw `margin` before a refresh, wait until that frame is on screen, repeat. The
@@ -394,6 +518,11 @@ fn runDirect(io: Io, gpa: std.mem.Allocator, args: Args, layout: oez.types.Layou
     var display = makeDisplay(args, &layout) orelse return 2;
     var draws: [panels_mod.max_panels]gpu_mod.PanelDraw = undefined;
     var fills: [3 * panels_mod.max_panels]gpu_mod.Fill = undefined;
+    var text: Text = .{};
+    text.init(gpa, &gpu, args);
+    defer text.deinit(gpa);
+    var batch = text.batch();
+    var status: Status = .{};
     var newest: i64 = 0;
     var newest_acquired_ns: i128 = 0;
     var in_flight: u64 = 0; // present id awaited, 0 = none
@@ -449,8 +578,8 @@ fn runDirect(io: Io, gpa: std.mem.Allocator, args: Args, layout: oez.types.Layou
                 return 1;
             }
         } else if (newest > 0 and now >= draw_at) {
-            const fr = display.frame(&gpu, nch, fs, newest, &draws, &fills);
-            const result = try gpu.draw(fr.draws, fr.fills, {}, struct {
+            const fr = display.frame(&gpu, &layout, newest, status, &batch, &draws, &fills);
+            const result = try gpu.draw(fr.draws, fr.fills, fr.text, {}, struct {
                 fn f(_: void) void {}
             }.f);
             switch (result) {
@@ -475,6 +604,7 @@ fn runDirect(io: Io, gpa: std.mem.Allocator, args: Args, layout: oez.types.Layou
             log.info("t={d:.0}s {d} fps, latency ms avg {d:.2} min {d:.2} max {d:.2}, refreshes without a new frame {d}, GPU ms per frame avg {d:.2} max {d:.2}, display lost {d} blocks, ring overflow {d}", .{
                 secs, frames, if (frames > 0) lat_sum / @as(f64, @floatFromInt(frames)) else 0, if (frames > 0) lat_min else 0, lat_max, missed, if (frames > 0) render_sum / @as(f64, @floatFromInt(frames)) else 0, render_max, reader.lost, acq.ring_overflow.load(.monotonic),
             });
+            status = .{ .valid = frames > 0, .latency_ms = if (frames > 0) lat_sum / @as(f64, @floatFromInt(frames)) else 0, .fps = frames, .lost = reader.lost };
             if (secs > 1.5) worst_render = @max(worst_render, render_max);
             render_sum = 0;
             render_max = 0;
@@ -587,6 +717,11 @@ pub fn main(init: std.process.Init) !u8 {
     var display = makeDisplay(args, &layout) orelse return 2;
     var draws: [panels_mod.max_panels]gpu_mod.PanelDraw = undefined;
     var fills: [3 * panels_mod.max_panels]gpu_mod.Fill = undefined;
+    var text: Text = .{};
+    text.init(gpa, &gpu, args);
+    defer text.deinit(gpa);
+    var batch = text.batch();
+    var status: Status = .{};
 
     try acq.start();
     defer acq.join();
@@ -764,11 +899,11 @@ pub fn main(init: std.process.Init) !u8 {
                 win.resized = false;
                 n_resize += 1;
             }
-            const fr = display.frame(&gpu, nch, fs, newest, &draws, &fills);
+            const fr = display.frame(&gpu, &layout, newest, status, &batch, &draws, &fills);
             frame_tag += 1;
             frame_acquired[frame_tag % frame_acquired.len] = newest_acquired_ns;
             const Ctx = struct { win: *Window, tag: u64 };
-            const result = try gpu.draw(fr.draws, fr.fills, Ctx{ .win = &win, .tag = frame_tag }, struct {
+            const result = try gpu.draw(fr.draws, fr.fills, fr.text, Ctx{ .win = &win, .tag = frame_tag }, struct {
                 fn f(c: Ctx) void {
                     c.win.beforePresent(c.tag);
                 }
@@ -816,6 +951,7 @@ pub fn main(init: std.process.Init) !u8 {
                 reader.lost,     acq.ring_overflow.load(.monotonic), display.target + 1, tp.span_s, tp.scale, gpu.extent.width,
                 gpu.extent.height,
             });
+            status = .{ .valid = lat_n > 0, .latency_ms = avg, .fps = frames, .lost = reader.lost };
             on_time_frames = 0;
             late_frames_now = 0;
             if (frame_debug) {
