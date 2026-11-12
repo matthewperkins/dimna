@@ -205,6 +205,39 @@ recording that fails (disk full, say) is shown as failed; acquisition is not aff
 what was written before stays valid. Quitting while recording closes the recording
 properly first.
 
+**Board settings.** They start from the config file's `[board]` table (command-line
+options win over it):
+
+```toml
+[board]
+sample_rate = 30000
+lower_hz = 1.0             # amplifier bandwidth, set on the headstage chips
+upper_hz = 7500
+dsp = true                 # the chips' digital high-pass (offset removal)
+dsp_cutoff_hz = 0.5
+half_channels = "A1"       # RHD2132 headstages wired for 16 channels (comma separated)
+aux = false
+adc = true
+leds = false
+```
+
+The control window's Headstages section changes them for the run:
+
+- **Amplifier band and DSP high-pass** apply at once and without a gap, also while
+  recording (the change and the sample where it took effect go into the recording's
+  `events.tsv`). The window shows the values the chips really use.
+- **Sample rate and half-channel mode** change the shape of the data, so they are chosen
+  first and then applied together with "Apply (restarts acquisition)": acquisition stops,
+  the board is reconfigured, and everything that depends on the channel count or rate is
+  rebuilt (the display is blank for a moment and its history starts again). Not offered
+  while recording.
+- **Save as default** writes the settings in use into the config's `[board]` table (only
+  that table is rewritten; the file is replaced by rename, so a config that is a symlink
+  becomes a plain file).
+- **On quitting** (q or Esc on the display, or Quit), if the settings differ from what the
+  config gave at launch, the control window lists the differences and asks: save as
+  default and quit, quit without saving, or cancel. A second q quits without saving.
+
 Sessions go under `record_dir` (config; default `~/oez-recordings`):
 
     ~/oez-recordings/

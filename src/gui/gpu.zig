@@ -764,9 +764,19 @@ pub const Gpu = struct {
     }
 
     /// Creates the sample-history ring: at least `min_samples` samples (rounded up to a
-    /// power of two) of `nch` channels. Call once before drawing.
+    /// power of two) of `nch` channels. Call before drawing, and again when the number of
+    /// channels or the sample rate changes (the old history is dropped).
     pub fn createHistory(self: *Gpu, nch: usize, min_samples: usize) !void {
         const dev = self.dev;
+        if (self.hist_buf != .null) {
+            try dev.deviceWaitIdle();
+            dev.unmapMemory(self.hist_mem);
+            dev.destroyBuffer(self.hist_buf, null);
+            dev.freeMemory(self.hist_mem, null);
+            self.hist_buf = .null;
+            self.hist = &.{};
+            self.hist_cap = 0;
+        }
         const cap = try std.math.ceilPowerOfTwo(usize, min_samples);
         const bytes: vk.DeviceSize = std.mem.alignForward(u64, cap * nch * 2, 4);
         self.hist_buf = try dev.createBuffer(&.{ .size = bytes, .usage = .{ .storage_buffer = true }, .sharing_mode = .exclusive }, null);

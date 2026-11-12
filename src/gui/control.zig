@@ -61,6 +61,72 @@ pub const RecStatus = struct {
     }
 };
 
+/// The board's settings, as the control window shows them.
+pub const BoardStatus = struct {
+    settings: oez.types.Settings = .{},
+    /// What the chips actually do for the requested values (they offer steps).
+    lower_actual: f64 = 0,
+    upper_actual: f64 = 0,
+    dsp_actual: f64 = 0,
+    /// Sample rate and half-channel choices made but not applied yet (they restart
+    /// acquisition); equal to `settings` when there are none.
+    pending: oez.types.Settings = .{},
+    /// The connected headstages, for the half-channel choice.
+    headstages: [8]Headstage = undefined,
+    num_headstages: usize = 0,
+    /// The settings in use differ from the config file's.
+    unsaved: bool = false,
+    /// Why the last change was not made.
+    note_buf: [120]u8 = undefined,
+    note_len: usize = 0,
+
+    pub const Headstage = struct { slot: u8, rhd2132: bool };
+
+    pub fn restartPending(self: *const BoardStatus) bool {
+        return self.pending.sample_rate != self.settings.sample_rate or !std.mem.eql(bool, &self.pending.rhd2132_16ch, &self.settings.rhd2132_16ch);
+    }
+
+    pub fn setNote(self: *BoardStatus, comptime fmt: []const u8, args: anytype) void {
+        const text: []const u8 = std.fmt.bufPrint(&self.note_buf, fmt, args) catch "";
+        self.note_len = text.len;
+    }
+};
+
+/// A change to the board's settings.
+pub const BoardAction = union(enum) {
+    dsp: bool,
+    /// One step up (true) or down through the values offered.
+    dsp_cutoff: bool,
+    lower: bool,
+    upper: bool,
+    /// Choices that need a restart: collected, then applied together with `apply`.
+    rate: bool,
+    /// Toggle half-channel mode of the headstage in this slot.
+    half: u8,
+    apply,
+    /// Write the settings in use to the config file's [board] table.
+    save,
+};
+
+/// The answer to "the board settings changed; save them?" on quitting.
+pub const QuitAnswer = enum { save, discard, cancel };
+
+/// Shown instead of the controls when quitting with changed board settings.
+pub const QuitPrompt = struct {
+    active: bool = false,
+    lines: [12][64]u8 = undefined,
+    lens: [12]usize = @splat(0),
+    count: usize = 0,
+    /// The config file the settings would be saved to.
+    path_buf: [200]u8 = undefined,
+    path_len: usize = 0,
+};
+
+/// "0.58 Hz", "300 Hz", "7.60 kHz".
+pub fn fmtHz(buf: []u8, hz: f64) []const u8 {
+    return (if (hz >= 1000) std.fmt.bufPrint(buf, "{d:.2} kHz", .{hz / 1000}) else if (hz >= 100) std.fmt.bufPrint(buf, "{d:.0} Hz", .{hz}) else std.fmt.bufPrint(buf, "{d:.2} Hz", .{hz})) catch "";
+}
+
 /// "1:05" or "1:02:03".
 pub fn fmtClock(buf: []u8, seconds: f64) []const u8 {
     const s: u64 = @intFromFloat(@max(0, seconds));
@@ -81,6 +147,8 @@ pub const Action = union(enum) {
     reset,
     /// Start (true) or stop a recording.
     record: bool,
+    board: BoardAction,
+    quit_answer: QuitAnswer,
     quit,
 };
 
@@ -94,6 +162,11 @@ pub const Snapshot = struct {
     ring_overflow: u64 = 0,
     seconds: f64 = 0,
     rec: RecStatus = .{},
+    board: BoardStatus = .{},
+    quit_prompt: QuitPrompt = .{},
+    /// One line about the source ("Open Ephys acquisition board   56 channels at 30000 Hz").
+    about_buf: [160]u8 = undefined,
+    about_len: usize = 0,
 };
 
 pub const Shared = struct {
@@ -104,6 +177,8 @@ pub const Shared = struct {
     tail: Atomic(usize) = .init(0),
     /// Set by the display thread to end the control thread.
     stop: Atomic(bool) = .init(false),
+    /// Set by the control thread when its window is gone.
+    closed: Atomic(bool) = .init(false),
 
     /// Display thread: makes `snap` the current snapshot.
     pub fn publish(self: *Shared, snap: *const Snapshot) void {
@@ -157,9 +232,6 @@ pub const Config = struct {
     display_gpu: *const gpu_mod.Gpu,
     font_buf: [128:0]u8 = @splat(0),
     font_px: u32 = 14,
-    /// One line about the source ("Open Ephys acquisition board, 56 channels at 30 kHz").
-    about_buf: [160]u8 = undefined,
-    about_len: usize = 0,
 };
 
 pub fn spawn(cfg: *Config) ?std.Thread {
@@ -170,6 +242,7 @@ pub fn spawn(cfg: *Config) ?std.Thread {
 }
 
 fn run(cfg: *Config) void {
+    defer cfg.shared.closed.store(true, .release);
     loop(cfg) catch |e| log.warn("the control window stopped: {t} (the display and its keys carry on)", .{e});
 }
 
@@ -258,10 +331,30 @@ fn nowSeconds() f64 {
 fn build(ui: *ui_mod.Ui, cfg: *const Config, snap: *const Snapshot, shared: *Shared) void {
     var buf: [160]u8 = undefined;
     const step_up = 1.25;
+    _ = cfg;
 
     ui.text("oEZ", ui_mod.text_bright);
-    ui.text(cfg.about_buf[0..cfg.about_len], ui_mod.text_dim);
+    ui.text(snap.about_buf[0..snap.about_len], ui_mod.text_dim);
     ui.newline();
+
+    if (snap.quit_prompt.active) {
+        // Quitting with board settings that differ from the config: nothing else is shown.
+        const q = &snap.quit_prompt;
+        ui.separator();
+        ui.text("The board settings differ from the config file:", ui_mod.text_bright);
+        ui.newline();
+        for (q.lines[0..q.count], q.lens[0..q.count]) |*line, len| {
+            ui.space(16);
+            ui.text(line[0..len], ui_mod.text_warn);
+            ui.newline();
+        }
+        ui.text(q.path_buf[0..q.path_len], ui_mod.text_dim);
+        ui.newline();
+        if (ui.button("Save as default and quit", true)) shared.push(.{ .action = .{ .quit_answer = .save } });
+        if (ui.button("Quit without saving", false)) shared.push(.{ .action = .{ .quit_answer = .discard } });
+        if (ui.button("Cancel", false)) shared.push(.{ .action = .{ .quit_answer = .cancel } });
+        return;
+    }
 
     const st = snap.status;
     if (st.valid) {
@@ -296,6 +389,61 @@ fn build(ui: *ui_mod.Ui, cfg: *const Config, snap: *const Snapshot, shared: *Sha
     }
     if (rec.path_len > 0) {
         ui.text(rec.path(), ui_mod.text_dim);
+        ui.newline();
+    }
+    ui.separator();
+
+    // The headstage chips: these change what is recorded. Both apply without a gap.
+    const bd = &snap.board;
+    var hz_buf: [24]u8 = undefined;
+    ui.text("Headstages", ui_mod.text_bright);
+    ui.text("(these change what is recorded)", ui_mod.text_dim);
+    ui.newline();
+    ui.text("amplifier band", ui_mod.text_dim);
+    ui.column(120);
+    const dlo = ui.stepper("from", fmtHz(&hz_buf, bd.lower_actual), 80);
+    if (dlo != 0) shared.push(.{ .action = .{ .board = .{ .lower = dlo > 0 } } });
+    const dhi = ui.stepper("to", fmtHz(&hz_buf, bd.upper_actual), 80);
+    if (dhi != 0) shared.push(.{ .action = .{ .board = .{ .upper = dhi > 0 } } });
+    ui.newline();
+    ui.text("DSP high-pass", ui_mod.text_dim);
+    ui.column(120);
+    if (ui.button("off", !bd.settings.dsp_enabled) and bd.settings.dsp_enabled) shared.push(.{ .action = .{ .board = .{ .dsp = false } } });
+    if (ui.button("on", bd.settings.dsp_enabled) and !bd.settings.dsp_enabled) shared.push(.{ .action = .{ .board = .{ .dsp = true } } });
+    if (bd.settings.dsp_enabled) {
+        ui.space(14);
+        const dc = ui.stepper("cutoff", fmtHz(&hz_buf, bd.dsp_actual), 80);
+        if (dc != 0) shared.push(.{ .action = .{ .board = .{ .dsp_cutoff = dc > 0 } } });
+    }
+    ui.newline();
+    // Sample rate and half-channel mode change the shape of the data: chosen here, then
+    // applied together by restarting acquisition (not while recording).
+    ui.text("sample rate", ui_mod.text_dim);
+    ui.column(120);
+    const dr = ui.stepper("", std.fmt.bufPrint(&buf, "{d} Hz", .{bd.pending.sample_rate}) catch "", 80);
+    if (dr != 0) shared.push(.{ .action = .{ .board = .{ .rate = dr > 0 } } });
+    for (bd.headstages[0..bd.num_headstages]) |h| {
+        if (!h.rhd2132) continue;
+        const half = bd.pending.rhd2132_16ch[h.slot];
+        ui.text(oez.types.headstage_names[h.slot], ui_mod.text_dim);
+        if (ui.button("32 ch", !half) and half) shared.push(.{ .action = .{ .board = .{ .half = h.slot } } });
+        if (ui.button("16 of 32", half) and !half) shared.push(.{ .action = .{ .board = .{ .half = h.slot } } });
+        ui.space(8);
+    }
+    ui.newline();
+    if (bd.restartPending()) {
+        if (rec.state == .idle or rec.state == .failed) {
+            if (ui.button("Apply (restarts acquisition)", true)) shared.push(.{ .action = .{ .board = .apply } });
+        } else ui.text("sample rate and channels can change once the recording is stopped", ui_mod.text_warn);
+        ui.newline();
+    }
+    if (bd.unsaved) {
+        if (ui.button("Save as default", false)) shared.push(.{ .action = .{ .board = .save } });
+        ui.text("these settings differ from the config file", ui_mod.text_dim);
+        ui.newline();
+    }
+    if (bd.note_len > 0) {
+        ui.text(bd.note_buf[0..bd.note_len], ui_mod.text_warn);
         ui.newline();
     }
     ui.separator();

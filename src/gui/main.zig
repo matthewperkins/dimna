@@ -207,7 +207,7 @@ fn applyConfig(a: *Args, doc: oez.toml.Document) void {
     a.doc = doc;
     for (doc.entries) |e| {
         if (e.table.len != 0) {
-            if (!std.mem.eql(u8, e.table, "panel")) log.warn("config line {d}: unknown table [{s}]", .{ e.line, e.table });
+            if (!std.mem.eql(u8, e.table, "panel") and !std.mem.eql(u8, e.table, "board")) log.warn("config line {d}: unknown table [{s}]", .{ e.line, e.table });
             continue;
         }
         if (std.mem.eql(u8, e.key, "monitor") and e.value == .string) {
@@ -236,6 +236,11 @@ fn applyConfig(a: *Args, doc: oez.toml.Document) void {
 fn parseArgs(args: []const [:0]const u8, doc: oez.toml.Document) !Args {
     var a: Args = .{};
     applyConfig(&a, doc);
+    // The [board] table; command-line options below win over it.
+    oez.board_config.read(doc, &a.settings) catch {
+        log.err("config: {s}", .{oez.board_config.error_message});
+        return error.BadArgs;
+    };
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
@@ -421,7 +426,7 @@ const Display = struct {
     /// Applies an edit from the control window. True means quit.
     fn applyEdit(self: *Display, edit: control.Edit) bool {
         if (edit.action == .quit) return true;
-        if (edit.action == .record or edit.panel >= self.set.len) return false;
+        if (edit.action == .record or edit.action == .board or edit.action == .quit_answer or edit.panel >= self.set.len) return false;
         const p = &self.set.items[edit.panel];
         switch (edit.action) {
             .scale => |f| p.scale *= f,
@@ -437,7 +442,7 @@ const Display = struct {
             .trig_line => |l| p.trig_line = l,
             .overlay => |n| p.overlay = n,
             .reset => self.reset(edit.panel),
-            .quit, .record => {},
+            .quit, .record, .board, .quit_answer => {},
         }
         p.clamp();
         return false;
@@ -680,6 +685,48 @@ fn makeDisplay(args: Args, layout: *const oez.types.Layout) ?Display {
     return .init(set);
 }
 
+/// Blocks in the acquisition ring: 30 s of signal, which is how far the recorder may fall
+/// behind (a stalled disk) before samples are lost. The display holds nothing back.
+fn ringSlots(fs: f64, block_samples: usize) usize {
+    return @intFromFloat(@ceil(30.0 * fs / @as(f64, @floatFromInt(block_samples))));
+}
+
+/// Gives a stopped source new settings.
+fn applyToSource(source: oez.source.Source, settings: oez.types.Settings) !void {
+    switch (source) {
+        .board => |b| try b.applySettings(settings),
+        .sim => |s| try s.applySettings(settings),
+    }
+}
+
+/// Writes `settings` into the config file's [board] table, leaving the rest of the file
+/// as it is (a new file if there is none). Written beside the file and renamed over it.
+fn saveBoard(io: Io, gpa: std.mem.Allocator, config_path: []const u8, settings: *const oez.types.Settings) !void {
+    const dir_path = std.fs.path.dirname(config_path) orelse ".";
+    const name = std.fs.path.basename(config_path);
+    try Io.Dir.cwd().createDirPath(io, dir_path);
+    var dir = try Io.Dir.cwd().openDir(io, dir_path, .{});
+    defer dir.close(io);
+    const old: []const u8 = dir.readFileAlloc(io, name, gpa, .limited(1 << 20)) catch |e| switch (e) {
+        error.FileNotFound => try gpa.dupe(u8, ""),
+        else => return e,
+    };
+    defer gpa.free(old);
+    var table_buf: [512]u8 = undefined;
+    const new = try oez.board_config.replaceTable(gpa, old, oez.board_config.render(&table_buf, settings));
+    defer gpa.free(new);
+    var tmp_buf: [80]u8 = undefined;
+    const tmp = try std.fmt.bufPrint(&tmp_buf, ".{s}.tmp", .{name});
+    var f = try dir.createFile(io, tmp, .{});
+    {
+        errdefer f.close(io);
+        try f.writeStreamingAll(io, new);
+        try f.sync(io);
+    }
+    f.close(io);
+    try Io.Dir.rename(dir, tmp, dir, name, io);
+}
+
 /// Text for the display: the font from the config, its atlas on the GPU, and the batch that
 /// each frame's quads go into. Without a usable font the display runs without text.
 const Text = struct {
@@ -901,17 +948,17 @@ pub fn main(init: std.process.Init) !u8 {
         try board.?.applySettings(args.settings);
         break :blk .{ .board = &board.? };
     };
-    const layout = source.layout();
-    const nch = layout.numChannels();
-    const fs = layout.sample_rate;
-    const bs = source.settings().block_samples;
+    // These change when acquisition is restarted with another rate or channel set.
+    var layout = source.layout();
+    var nch = layout.numChannels();
+    var fs = layout.sample_rate;
+    var bs = source.settings().block_samples;
     log.info("{d} channels ({d} electrode) at {d} Hz", .{ nch, layout.num_electrodes, fs });
 
     // ---- acquisition into the ring ----
     // 30 s of blocks: what the recorder may fall behind (a stalled disk) before samples are
     // lost. The display reads it without holding anything back.
-    const slots: usize = @intFromFloat(@ceil(30.0 * fs / @as(f64, @floatFromInt(bs))));
-    var ring = try oez.ring.BlockRing.init(gpa, slots, nch, bs);
+    var ring = try oez.ring.BlockRing.init(gpa, ringSlots(fs, bs), nch, bs);
     defer ring.deinit(gpa);
     var health: oez.types.Health = .{};
     var acq: oez.acquisition.Acquisition = .{ .io = io, .source = source, .ring = &ring, .health = &health, .scratch = try .init(gpa, nch, bs) };
@@ -942,7 +989,7 @@ pub fn main(init: std.process.Init) !u8 {
     defer gpu.deinit();
     var display = makeDisplay(args, &layout) orelse return 2;
     // The longest time base plus a margin, so new samples never overwrite what is drawn.
-    const history_samples: usize = @intFromFloat((Panel.span_max + 2.0) * fs);
+    var history_samples: usize = @intFromFloat((Panel.span_max + 2.0) * fs);
     var feed = try oez.feed.Feed.init(gpa, &layout, &display.set, history_samples);
     defer feed.deinit(gpa);
     display.initial = display.set;
@@ -965,8 +1012,6 @@ pub fn main(init: std.process.Init) !u8 {
     if (args.control) {
         const n = @min(args.font.len, control_cfg.font_buf.len);
         @memcpy(control_cfg.font_buf[0..n], args.font[0..n]);
-        const about: []const u8 = std.fmt.bufPrint(&control_cfg.about_buf, "{s}   {d} channels ({d} electrode) at {d} Hz", .{ if (sim != null) "simulated board" else "Open Ephys acquisition board", nch, layout.num_electrodes, fs }) catch "";
-        control_cfg.about_len = about.len;
         control_thread = control.spawn(&control_cfg);
     }
     defer if (control_thread) |t| {
@@ -986,6 +1031,18 @@ pub fn main(init: std.process.Init) !u8 {
     var rec_start_ns: i128 = 0;
     var rec_published_ns: i128 = 0;
     var rec_status: control.RecStatus = .{};
+    var board_status: control.BoardStatus = .{};
+    // Board settings: what the config (and command line) gave at launch, to tell whether
+    // they were changed; and the rate and channel choices waiting for a restart.
+    var saved_settings = acq.requested;
+    var pending = acq.requested;
+    var restart_asked = false;
+    var quit_prompt: control.QuitPrompt = .{};
+    {
+        const n = @min(config_path.len, quit_prompt.path_buf.len);
+        @memcpy(quit_prompt.path_buf[0..n], config_path[0..n]);
+        quit_prompt.path_len = n;
+    }
     // However the loop ends, a recording in progress is closed properly.
     defer if (rec) |r| {
         const sum = r.finish();
@@ -1068,12 +1125,49 @@ pub fn main(init: std.process.Init) !u8 {
         if (args.script.len > 0) runScript(args.script, &script_pos, @as(f64, @floatFromInt(nowNs(io) - t_start)) / 1e9, &input, &display);
         // Input goes to the panel under the pointer.
         display.pointAt(input.pointer_x / @as(f64, @floatFromInt(@max(win.width, 1))), input.pointer_y / @as(f64, @floatFromInt(@max(win.height, 1))));
-        if (display.applyInput(input)) break;
+        // Quitting (q or Esc here, Quit in the control window) asks first if the board
+        // settings were changed; a second request quits.
+        var quit = display.applyInput(input);
+        var quit_answer: ?control.QuitAnswer = null;
         // What was clicked in the control window.
-        var quit = false;
         while (shared.pop()) |e| {
+            if (e.action == .quit_answer) quit_answer = e.action.quit_answer;
             if (display.applyEdit(e)) quit = true;
             snap_dirty = true;
+            if (e.action == .board) {
+                // Headstage filters: applied without a gap, also while recording (the
+                // change is then written to the recording's events).
+                var want = acq.requested;
+                const bc = oez.board_config;
+                board_status.note_len = 0;
+                switch (e.action.board) {
+                    .dsp => |on| want.dsp_enabled = on,
+                    .dsp_cutoff => |up| want.dsp_cutoff = bc.stepDsp(fs, want.dsp_cutoff, up),
+                    .lower => |up| want.lower_bandwidth = bc.step(f64, &bc.lower_steps, want.lower_bandwidth, up),
+                    .upper => |up| want.upper_bandwidth = bc.step(f64, &bc.upper_steps, want.upper_bandwidth, up),
+                    .rate => |up| pending.sample_rate = bc.step(u32, &bc.sample_rates, pending.sample_rate, up),
+                    .half => |slot| if (slot < pending.rhd2132_16ch.len) {
+                        pending.rhd2132_16ch[slot] = !pending.rhd2132_16ch[slot];
+                    },
+                    .apply => restart_asked = true,
+                    .save => if (saveBoard(io, gpa, config_path, &acq.requested)) |_| {
+                        saved_settings = acq.requested;
+                        board_status.setNote("saved to {s}", .{config_path});
+                    } else |err| board_status.setNote("could not save to {s}: {t}", .{ config_path, err }),
+                }
+                if (want.lower_bandwidth >= want.upper_bandwidth) {
+                    board_status.setNote("the band's lower edge must stay below its upper edge", .{});
+                } else if (acq.applySettings(want, rec != null)) |_| {
+                    // The live values carry over into what a restart will apply.
+                    const rate = pending.sample_rate;
+                    const half = pending.rhd2132_16ch;
+                    pending = want;
+                    pending.sample_rate = rate;
+                    pending.rhd2132_16ch = half;
+                } else |err| {
+                    board_status.setNote("not applied: {t}", .{err});
+                }
+            }
             if (e.action == .record) {
                 if (e.action.record and rec == null) {
                     // Changes applied before this recording are not its events.
@@ -1116,7 +1210,99 @@ pub fn main(init: std.process.Init) !u8 {
                 }
             }
         }
-        if (quit) break;
+        if (quit_answer) |answer| {
+            if (quit_prompt.active) switch (answer) {
+                .save => if (saveBoard(io, gpa, config_path, &acq.requested)) |_| {
+                    log.info("board settings saved to {s}", .{config_path});
+                    break;
+                } else |err| {
+                    board_status.setNote("could not save to {s}: {t}", .{ config_path, err });
+                    quit_prompt.active = false;
+                },
+                .discard => break,
+                .cancel => quit_prompt.active = false,
+            };
+            snap_dirty = true;
+        }
+        if (quit) {
+            const changed = oez.board_config.diff(&saved_settings, &acq.requested, &quit_prompt.lines, &quit_prompt.lens);
+            if (changed > 0 and !quit_prompt.active and control_thread != null and !shared.closed.load(.acquire)) {
+                quit_prompt.active = true;
+                quit_prompt.count = changed;
+                snap_dirty = true;
+            } else break;
+        }
+        // Sample rate or channel set: stop, reconfigure the board, and start again with
+        // everything that depends on the shape of the data rebuilt.
+        if (restart_asked) {
+            restart_asked = false;
+            snap_dirty = true;
+            if (rec != null) {
+                board_status.setNote("stop the recording first: this changes the shape of the data", .{});
+            } else {
+                acq.join();
+                const before = source.settings();
+                applyToSource(source, pending) catch |err| {
+                    log.err("the board refused the new settings ({t}); going back", .{err});
+                    board_status.setNote("the board refused the new settings: {t}", .{err});
+                    pending = before;
+                    try applyToSource(source, before);
+                };
+                layout = source.layout();
+                nch = layout.numChannels();
+                fs = layout.sample_rate;
+                bs = source.settings().block_samples;
+                log.info("restarted: {d} channels ({d} electrode) at {d} Hz", .{ nch, layout.num_electrodes, fs });
+                // New first, then swap, so a failure leaves nothing half torn down.
+                const new_ring = try oez.ring.BlockRing.init(gpa, ringSlots(fs, bs), nch, bs);
+                ring.deinit(gpa);
+                ring = new_ring;
+                const new_scratch = try oez.types.Block.init(gpa, nch, bs);
+                acq.scratch.deinit(gpa);
+                acq = .{ .io = io, .source = source, .ring = &ring, .health = &health, .scratch = new_scratch };
+                const new_blk = try oez.types.Block.init(gpa, nch, bs);
+                blk.deinit(gpa);
+                blk = new_blk;
+                reader = oez.ring.LossyReader.init(&ring);
+                // The panels again from the config (their sources may have moved), keeping
+                // what was set by hand where the panels still correspond.
+                const old_set = display.set;
+                var new_display = makeDisplay(args, &layout) orelse Display.init(panels_mod.default(&layout));
+                if (new_display.set.len == old_set.len) {
+                    for (new_display.set.slice(), old_set.items[0..old_set.len]) |*p, *o| {
+                        if (p.kind != o.kind) continue;
+                        p.span_s = o.span_s;
+                        p.scale = o.scale;
+                        p.mode = o.mode;
+                        p.filtered = o.filtered;
+                        p.band_low_hz = o.band_low_hz;
+                        p.band_high_hz = o.band_high_hz;
+                        p.trig_line = o.trig_line;
+                        p.pre_ms = o.pre_ms;
+                        p.post_ms = o.post_ms;
+                        p.overlay = o.overlay;
+                    }
+                }
+                history_samples = @intFromFloat((Panel.span_max + 2.0) * fs);
+                const new_feed = try oez.feed.Feed.init(gpa, &layout, &new_display.set, history_samples);
+                feed.deinit(gpa);
+                feed = new_feed;
+                const config_set = new_display.initial;
+                new_display.initial = new_display.set;
+                // `r` goes back to the config's values, with the new slots.
+                for (new_display.initial.slice(), config_set.items[0..config_set.len], new_display.set.items[0..new_display.set.len]) |*i, *c, *p| {
+                    i.* = c.*;
+                    i.slot = p.slot;
+                }
+                display = new_display;
+                try gpu.createHistory(feed.width, history_samples);
+                newest = 0;
+                newest_acquired_ns = 0;
+                drawn_newest = 0;
+                try acq.start();
+                pending = acq.requested;
+            }
+        }
         // The recorder has finished (asked to, or because writing failed): close it.
         if (rec) |r| {
             if (r.done.load(.acquire)) {
@@ -1152,6 +1338,31 @@ pub fn main(init: std.process.Init) !u8 {
                 .status = status,
                 .ring_overflow = acq.ring_overflow.load(.monotonic),
                 .seconds = @as(f64, @floatFromInt(nowNs(io) - t_start)) / 1e9,
+                .quit_prompt = quit_prompt,
+                .about_buf = about: {
+                    var b: [160]u8 = undefined;
+                    _ = std.fmt.bufPrint(&b, "{s}   {d} channels ({d} electrode) at {d} Hz", .{ if (sim != null) "simulated board" else "Open Ephys acquisition board", nch, layout.num_electrodes, fs }) catch "";
+                    break :about b;
+                },
+                .about_len = std.fmt.count("{s}   {d} channels ({d} electrode) at {d} Hz", .{ if (sim != null) "simulated board" else "Open Ephys acquisition board", nch, layout.num_electrodes, fs }),
+                .board = blk: {
+                    // What the chips do for the values asked for.
+                    var reg = oez.registers.Rhd2000Registers.init(fs);
+                    board_status.settings = acq.requested;
+                    board_status.lower_actual = reg.setLowerBandwidth(acq.requested.lower_bandwidth);
+                    board_status.upper_actual = reg.setUpperBandwidth(acq.requested.upper_bandwidth);
+                    board_status.dsp_actual = reg.setDspCutoffFreq(acq.requested.dsp_cutoff);
+                    board_status.pending = pending;
+                    var lines: [12][64]u8 = undefined;
+                    var lens: [12]usize = undefined;
+                    board_status.unsaved = oez.board_config.diff(&saved_settings, &acq.requested, &lines, &lens) > 0;
+                    board_status.num_headstages = 0;
+                    for (layout.headstageSlice()) |h| {
+                        board_status.headstages[board_status.num_headstages] = .{ .slot = @intCast(h.slot), .rhd2132 = std.mem.eql(u8, h.chip, "RHD2132") };
+                        board_status.num_headstages += 1;
+                    }
+                    break :blk board_status;
+                },
                 .rec = blk: {
                     if (rec) |r| {
                         rec_status.seconds = status.rec_seconds;
