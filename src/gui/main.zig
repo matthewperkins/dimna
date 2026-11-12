@@ -270,6 +270,7 @@ fn runDirect(io: Io, gpa: std.mem.Allocator, args: Args, layout: oez.types.Layou
         return 1;
     };
     defer gpu.deinit();
+    gpu.wait_render = true;
     try gpu.createHistory(nch, @intFromFloat((View.span_max + 2.0) * fs));
     try gpu.resize(0, 0);
     const period: i128 = gpu.refresh_period_ns;
@@ -297,6 +298,9 @@ fn runDirect(io: Io, gpa: std.mem.Allocator, args: Args, layout: oez.types.Layou
     var lat_min: f64 = std.math.inf(f64);
     var lat_max: f64 = 0;
     var missed: u64 = 0; // refreshes that passed without a new frame
+    var render_sum: f64 = 0; // GPU time per frame, ms
+    var render_max: f64 = 0;
+    var worst_render: f64 = 0;
     var total_frames: u64 = 0;
     var total_missed: u64 = 0;
     var total_lat: f64 = 0;
@@ -325,7 +329,8 @@ fn runDirect(io: Io, gpa: std.mem.Allocator, args: Args, layout: oez.types.Layou
                 frames += 1;
                 if (last_flip != 0 and now - last_flip > period + @divTrunc(period, 2)) missed += @intCast(@divTrunc(now - last_flip + @divTrunc(period, 2), period) - 1);
                 last_flip = now;
-                draw_at = now + period - margin;
+                // Finished (not just started) `margin` before the next refresh.
+                draw_at = now + period - margin - gpu.renderEstimateNs();
                 in_flight = 0;
             } else if (now - in_flight_since > 2 * std.time.ns_per_s) {
                 log.err("a frame was not shown within 2 s; giving up", .{});
@@ -351,6 +356,9 @@ fn runDirect(io: Io, gpa: std.mem.Allocator, args: Args, layout: oez.types.Layou
                     in_flight = gpu.present_id;
                     in_flight_acquired = newest_acquired_ns;
                     in_flight_since = now;
+                    const r = @as(f64, @floatFromInt(gpu.last_render_ns)) / 1e6;
+                    render_sum += r;
+                    render_max = @max(render_max, r);
                 },
                 .out_of_date => try gpu.resize(0, 0),
                 .busy => {},
@@ -362,9 +370,12 @@ fn runDirect(io: Io, gpa: std.mem.Allocator, args: Args, layout: oez.types.Layou
 
         if (now >= next_report) {
             const secs = @as(f64, @floatFromInt(now - t_start)) / 1e9;
-            log.info("t={d:.0}s {d} fps, latency ms avg {d:.2} min {d:.2} max {d:.2}, refreshes without a new frame {d}, display lost {d} blocks, ring overflow {d}", .{
-                secs, frames, if (frames > 0) lat_sum / @as(f64, @floatFromInt(frames)) else 0, if (frames > 0) lat_min else 0, lat_max, missed, reader.lost, acq.ring_overflow.load(.monotonic),
+            log.info("t={d:.0}s {d} fps, latency ms avg {d:.2} min {d:.2} max {d:.2}, refreshes without a new frame {d}, GPU ms per frame avg {d:.2} max {d:.2}, display lost {d} blocks, ring overflow {d}", .{
+                secs, frames, if (frames > 0) lat_sum / @as(f64, @floatFromInt(frames)) else 0, if (frames > 0) lat_min else 0, lat_max, missed, if (frames > 0) render_sum / @as(f64, @floatFromInt(frames)) else 0, render_max, reader.lost, acq.ring_overflow.load(.monotonic),
             });
+            if (secs > 1.5) worst_render = @max(worst_render, render_max);
+            render_sum = 0;
+            render_max = 0;
             if (secs > 1.5) {
                 total_frames += frames;
                 total_missed += missed;
@@ -380,7 +391,7 @@ fn runDirect(io: Io, gpa: std.mem.Allocator, args: Args, layout: oez.types.Layou
         }
         if (args.seconds > 0 and @as(f64, @floatFromInt(now - t_start)) >= args.seconds * 1e9) break;
     }
-    if (total_frames > 0) log.info("direct on {s}, margin {d:.2} ms: {d} frames, latency avg {d:.2} ms, worst {d:.2} ms, refreshes without a new frame {d}", .{ args.direct, margin_ms, total_frames, total_lat / @as(f64, @floatFromInt(total_frames)), worst, total_missed });
+    if (total_frames > 0) log.info("direct on {s}, margin {d:.2} ms: {d} frames, latency avg {d:.2} ms, worst {d:.2} ms, refreshes without a new frame {d}, slowest GPU frame {d:.2} ms", .{ args.direct, margin_ms, total_frames, total_lat / @as(f64, @floatFromInt(total_frames)), worst, total_missed, worst_render });
     if (acq.done.load(.acquire)) {
         log.err("acquisition ended early: {t}", .{acq.failure orelse error.Unknown});
         return 1;
@@ -509,6 +520,11 @@ pub fn main(init: std.process.Init) !u8 {
     var late_frames_now: u64 = 0;
     var clean_seconds: u32 = 0;
 
+    // Diagnostics only: time the GPU per frame (it delays presenting, see gpu.zig).
+    gpu.wait_render = frame_debug;
+    var render_sum: f64 = 0;
+    var render_max: f64 = 0;
+    var render_n: f64 = 0;
     var n_out_of_date: u64 = 0;
     var n_busy: u64 = 0;
     var n_resize: u64 = 0;
@@ -658,6 +674,12 @@ pub fn main(init: std.process.Init) !u8 {
                 }
             }.f);
             const done = nowNs(io);
+            if (gpu.wait_render) {
+                const r = @as(f64, @floatFromInt(gpu.last_render_ns)) / 1e6;
+                render_sum += r;
+                render_max = @max(render_max, r);
+                render_n += 1;
+            }
             frame_timing[frame_tag % frame_timing.len] = .{
                 .wake_late_ms = @as(f64, @floatFromInt(now - draw_at)) / 1e6,
                 .draw_ms = @as(f64, @floatFromInt(done - now)) / 1e6,
@@ -695,7 +717,12 @@ pub fn main(init: std.process.Init) !u8 {
             });
             on_time_frames = 0;
             late_frames_now = 0;
-            if (frame_debug) log.info("  draw results so far: out of date {d}, busy {d}, swapchain rebuilds {d}", .{ n_out_of_date, n_busy, n_resize });
+            if (frame_debug) {
+                log.info("  GPU time per frame: avg {d:.2} ms, max {d:.2} ms; draw results so far: out of date {d}, busy {d}, swapchain rebuilds {d}", .{ if (render_n > 0) render_sum / render_n else 0, render_max, n_out_of_date, n_busy, n_resize });
+                render_sum = 0;
+                render_max = 0;
+                render_n = 0;
+            }
             const refresh_ms_now = @as(f64, @floatFromInt(refresh_ns)) / 1e6;
             // A change of regime moves every frame by a refresh: that is not lateness.
             if (lat_n > 0 and refresh_ms_now > 0 and @abs(lat_min - best_ms) > 0.6 * refresh_ms_now) {

@@ -106,6 +106,19 @@ pub const Gpu = struct {
     /// The monitor's refresh period in ns.
     refresh_period_ns: u64 = 0,
     present_id: u64 = 0,
+    /// With `wait_render`, `draw` waits for the GPU to finish the frame before presenting it,
+    /// and records how long that took. A frame is only worth presenting just before a refresh if it is
+    /// finished by then, and how long the GPU takes is not constant: at this light load the
+    /// card drops to a low power state after a few seconds (measured: 450 MHz of 3105 MHz;
+    /// the time per frame rose from 0.37 ms to 1.5 ms, peaks 3.8 ms). Callers start each
+    /// frame earlier by `renderEstimateNs`. (VK_NV_low_latency2's "boost" was tried to keep
+    /// the clocks up and made no difference.)
+    /// Set in direct display mode (and for diagnostics). Under a compositor it only costs
+    /// latency: the compositor shows the frame a refresh later whenever it was finished.
+    wait_render: bool = false,
+    last_render_ns: u64 = 0,
+    recent_render_ns: [64]u64 = @splat(0),
+    render_index: usize = 0,
 
     pub fn init(gpa: std.mem.Allocator, target: Target, mode: PresentMode) !Gpu {
         const vkb = vk.BaseWrapper.load(vkGetInstanceProcAddr);
@@ -243,9 +256,16 @@ pub const Gpu = struct {
         const priority = [_]f32{1.0};
         // Direct display: present ids and waiting for a present tell when a frame reached
         // the screen (the role presentation feedback has on Wayland).
-        const wayland_dev_exts = [_][*:0]const u8{"VK_KHR_swapchain"};
-        const direct_dev_exts = [_][*:0]const u8{ "VK_KHR_swapchain", "VK_KHR_present_id", "VK_KHR_present_wait" };
-        const device_exts: []const [*:0]const u8 = if (target == .direct) &direct_dev_exts else &wayland_dev_exts;
+        var ext_buf: [4][*:0]const u8 = undefined;
+        var ext_n: usize = 0;
+        ext_buf[ext_n] = "VK_KHR_swapchain";
+        ext_n += 1;
+        if (target == .direct) {
+            ext_buf[ext_n] = "VK_KHR_present_id";
+            ext_buf[ext_n + 1] = "VK_KHR_present_wait";
+            ext_n += 2;
+        }
+        const device_exts: []const [*:0]const u8 = ext_buf[0..ext_n];
         var wait_feature: vk.PhysicalDevicePresentWaitFeaturesKHR = .{ .present_wait = .true };
         var id_feature: vk.PhysicalDevicePresentIdFeaturesKHR = .{ .present_id = .true, .p_next = &wait_feature };
         const device_handle = instance.createDevice(pdev, &.{
@@ -571,6 +591,14 @@ pub const Gpu = struct {
         }
     }
 
+    /// How long before its deadline a frame should be started so the GPU is done in time:
+    /// the longest of the last 64 frames, plus a quarter and 0.2 ms.
+    pub fn renderEstimateNs(self: *const Gpu) u64 {
+        var worst: u64 = 0;
+        for (self.recent_render_ns) |r| worst = @max(worst, r);
+        return worst + worst / 4 + 200_000;
+    }
+
     /// Direct display: waits up to `timeout_ns` for the frame with present id `id` (the value
     /// of `present_id` after its `draw`) to reach the screen. True once it has.
     pub fn waitPresented(self: *Gpu, id: u64, timeout_ns: u64) !bool {
@@ -634,6 +662,16 @@ pub const Gpu = struct {
             .p_signal_semaphores = &[_]vk.Semaphore{self.render_done},
         }}, self.in_flight);
 
+        if (self.wait_render) {
+            var ts: linux.timespec = undefined;
+            _ = linux.clock_gettime(.MONOTONIC, &ts);
+            const t0 = @as(i128, ts.sec) * 1_000_000_000 + ts.nsec;
+            _ = try dev.waitForFences(&[_]vk.Fence{self.in_flight}, .true, std.math.maxInt(u64));
+            _ = linux.clock_gettime(.MONOTONIC, &ts);
+            self.last_render_ns = @intCast(@as(i128, ts.sec) * 1_000_000_000 + ts.nsec - t0);
+            self.recent_render_ns[self.render_index % self.recent_render_ns.len] = self.last_render_ns;
+            self.render_index += 1;
+        }
         before_present(context);
         self.present_id += 1;
         const ids = [_]u64{self.present_id};
