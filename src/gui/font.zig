@@ -12,6 +12,8 @@ const log = std.log.scoped(.font);
 pub const atlas_size = 512;
 const first_cp = 32;
 const last_cp = 255;
+/// A few characters beyond Latin-1 that labels use: sigma, en dash, right arrow, a note.
+const extra_cps = [_]u21{ 0x03C3, 0x2013, 0x2192, 0x266A };
 const white_block = 4;
 
 pub const Vertex = extern struct {
@@ -37,7 +39,7 @@ const Glyph = struct {
 pub const Font = struct {
     /// Coverage, `atlas_size` x `atlas_size`.
     atlas: []u8,
-    glyphs: [last_cp - first_cp + 1]Glyph = @splat(.{}),
+    glyphs: [last_cp - first_cp + 1 + extra_cps.len]Glyph = @splat(.{}),
     /// Pixels from the top of a line to its baseline, and the line height.
     ascent: f32 = 0,
     line_height: f32 = 0,
@@ -76,8 +78,11 @@ pub const Font = struct {
         var pen_x: usize = white_block + 1;
         var pen_y: usize = 1;
         var shelf_h: usize = white_block;
-        var cp: u32 = first_cp;
-        while (cp <= last_cp) : (cp += 1) {
+        var index: usize = 0;
+        while (index < font.glyphs.len) : (index += 1) {
+            const cp: u32 = if (index <= last_cp - first_cp) @intCast(first_cp + index) else extra_cps[index - (last_cp - first_cp + 1)];
+            // A character the font lacks stays empty (it is then drawn as "?").
+            if (c.FT_Get_Char_Index(face, cp) == 0) continue;
             if (c.FT_Load_Char(face, cp, c.FT_LOAD_RENDER) != 0) continue;
             const slot = face.*.glyph;
             const bm = slot.*.bitmap;
@@ -96,7 +101,7 @@ pub const Font = struct {
                 const src: [*]const u8 = bm.buffer + row * @as(usize, @intCast(bm.pitch));
                 @memcpy(atlas[(pen_y + row) * atlas_size + pen_x ..][0..w], src[0..w]);
             }
-            font.glyphs[cp - first_cp] = .{
+            font.glyphs[index] = .{
                 .x = @intCast(pen_x),
                 .y = @intCast(pen_y),
                 .w = @intCast(w),
@@ -117,8 +122,12 @@ pub const Font = struct {
     }
 
     fn glyph(self: *const Font, cp: u21) *const Glyph {
-        const i: u32 = if (cp >= first_cp and cp <= last_cp) cp - first_cp else '?' - first_cp;
-        return &self.glyphs[i];
+        if (cp >= first_cp and cp <= last_cp) return &self.glyphs[cp - first_cp];
+        for (extra_cps, 0..) |extra, k| {
+            const g = &self.glyphs[last_cp - first_cp + 1 + k];
+            if (extra == cp and g.advance > 0) return g;
+        }
+        return &self.glyphs['?' - first_cp];
     }
 
     /// Width of `text` (UTF-8) in pixels.
@@ -164,6 +173,27 @@ pub const Batch = struct {
         v[3] = v[0];
         v[4] = v[2];
         v[5] = .{ .pos = .{ x0, y1 }, .uv = .{ uv0[0], uv1[1] }, .colour = colour };
+        self.len += 6;
+    }
+
+    /// A straight line from (x0, y0) to (x1, y1), `width` pixels thick.
+    pub fn line(self: *Batch, x0: f32, y0: f32, x1: f32, y1: f32, width: f32, colour: Colour) void {
+        if (self.len + 6 > self.vertices.len) return;
+        const dx = x1 - x0;
+        const dy = y1 - y0;
+        const length = @sqrt(dx * dx + dy * dy);
+        if (length < 1e-4) return;
+        // Half the width, across the line.
+        const nx = -dy / length * width * 0.5;
+        const ny = dx / length * width * 0.5;
+        const t = (@as(f32, white_block) / 2.0) / atlas_size;
+        const v = self.vertices[self.len..][0..6];
+        v[0] = .{ .pos = .{ x0 + nx, y0 + ny }, .uv = .{ t, t }, .colour = colour };
+        v[1] = .{ .pos = .{ x1 + nx, y1 + ny }, .uv = .{ t, t }, .colour = colour };
+        v[2] = .{ .pos = .{ x1 - nx, y1 - ny }, .uv = .{ t, t }, .colour = colour };
+        v[3] = v[0];
+        v[4] = v[2];
+        v[5] = .{ .pos = .{ x0 - nx, y0 - ny }, .uv = .{ t, t }, .colour = colour };
         self.len += 6;
     }
 

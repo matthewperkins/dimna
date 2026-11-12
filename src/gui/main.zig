@@ -116,6 +116,7 @@ const fmtScale = format.fmtScale;
 const control = @import("control.zig");
 const audio_out = @import("audio_out.zig");
 const notes_mod = @import("notes.zig");
+const tiles_mod = @import("tiles.zig");
 const Status = control.Status;
 const Io = std.Io;
 const log = std.log.scoped(.oez);
@@ -138,6 +139,8 @@ const Args = struct {
     tearing: bool = false,
     /// Where recordings go: one session folder per recording beneath it.
     record_dir: []const u8 = "~/oez-recordings",
+    /// The spike tiles (a third window).
+    tiles: bool = true,
     /// The spike audio monitor.
     audio: bool = true,
     volume_db: f64 = -6,
@@ -272,6 +275,8 @@ fn applyConfig(a: *Args, doc: oez.toml.Document) void {
             a.font = e.value.string;
         } else if (std.mem.eql(u8, e.key, "font_px") and e.value == .number and e.value.number >= 6 and e.value.number <= 64) {
             a.font_px = @intFromFloat(e.value.number);
+        } else if (std.mem.eql(u8, e.key, "tiles") and e.value == .boolean) {
+            a.tiles = e.value.boolean;
         } else if (std.mem.eql(u8, e.key, "audio") and e.value == .boolean) {
             a.audio = e.value.boolean;
         } else if (std.mem.eql(u8, e.key, "volume_db") and e.value == .number) {
@@ -320,6 +325,8 @@ fn parseArgs(args: []const [:0]const u8, doc: oez.toml.Document) !Args {
         } else if (std.mem.eql(u8, arg, "--tearing")) {
             a.tearing = true;
             a.present = .immediate;
+        } else if (std.mem.eql(u8, arg, "--no-tiles")) {
+            a.tiles = false;
         } else if (std.mem.eql(u8, arg, "--no-audio")) {
             a.audio = false;
         } else if (std.mem.eql(u8, arg, "--no-control")) {
@@ -510,6 +517,29 @@ const Display = struct {
             return n;
         }
         return 0;
+    }
+
+    /// What the spike tiles need to know: the channels listened to, and the panels'
+    /// common average references (a channel takes the first panel's that subtracts from
+    /// it).
+    fn tileConfig(self: *const Display) tiles_mod.Config {
+        var cfg: tiles_mod.Config = .{ .listening = self.audio.channels, .num_listening = if (self.audio.enabled) self.audio.num_channels else 0 };
+        for (self.set.items[0..self.set.len], 0..) |*p, g| {
+            if (!p.carActive() or g >= oez.spikes.Car.max_groups) continue;
+            var n: usize = 0;
+            for (0..p.rows) |r| {
+                if (!p.car_ref.has(r) or n == oez.spikes.Car.max_ref) continue;
+                cfg.car.ref[g][n] = p.first_ch + @as(u32, @intCast(r));
+                n += 1;
+            }
+            cfg.car.ref_len[g] = @intCast(n);
+            for (0..p.rows) |r| {
+                const ch = p.first_ch + r;
+                if (p.car_sub.has(r) and ch < cfg.car.group_of.len and cfg.car.group_of[ch] < 0) cfg.car.group_of[ch] = @intCast(g);
+            }
+            cfg.use_car = true;
+        }
+        return cfg;
     }
 
     /// Brings the audio's references in line with the panels'. A change is a different
@@ -1446,6 +1476,13 @@ pub fn main(init: std.process.Init) !u8 {
     var audio_dev: ?*audio_out.AudioOut = if (args.audio) audio_out.AudioOut.start(gpa, &audio_shared, &ring, fs, nch, bs) else null;
     defer if (audio_dev) |a| a.stop();
 
+    // The spike tiles (their own window and thread, see tiles.zig).
+    var tiles_shared: tiles_mod.Shared = .{};
+    tiles_shared.publish(&display.tileConfig());
+    var tiles_win: ?*tiles_mod.Tiles = if (args.tiles) tiles_mod.Tiles.start(gpa, &tiles_shared, &ring, &layout, bs, &gpu, args.font, args.font_px) else null;
+    defer if (tiles_win) |t| t.stop();
+    var tiles_published_ns: i128 = 0;
+
     var saved_settings = acq.requested;
     var pending = acq.requested;
     var restart_asked = false;
@@ -1762,6 +1799,12 @@ pub fn main(init: std.process.Init) !u8 {
             notes.dirty = false;
             snap_dirty = true;
         }
+        // A click on a spike tile listens to its channel, as a click on a row does.
+        while (tiles_shared.clicks.pop()) |c| display.listenClick(c.channel, c.add);
+        if (tiles_win != null and nowNs(io) - tiles_published_ns > 200 * std.time.ns_per_ms) {
+            tiles_published_ns = nowNs(io);
+            tiles_shared.publish(&display.tileConfig());
+        }
         display.refreshAudioCar();
         if (display.audio_dirty) {
             display.audio_dirty = false;
@@ -1834,7 +1877,9 @@ pub fn main(init: std.process.Init) !u8 {
                 if (rv) |*r| r.deinit();
                 rv = null;
                 review_dir_len = 0;
-                // The audio threads read the ring that is about to be replaced.
+                // The tiles and the audio threads read the ring that is about to be replaced.
+                if (tiles_win) |t| t.stop();
+                tiles_win = null;
                 if (audio_dev) |a| a.stop();
                 audio_dev = null;
                 acq.join();
@@ -1923,6 +1968,7 @@ pub fn main(init: std.process.Init) !u8 {
                     break :new_display_audio;
                 }
                 if (args.audio) audio_dev = audio_out.AudioOut.start(gpa, &audio_shared, &ring, fs, nch, bs);
+                if (args.tiles) tiles_win = tiles_mod.Tiles.start(gpa, &tiles_shared, &ring, &layout, bs, &gpu, args.font, args.font_px);
             }
         }
         // The recorder has finished (asked to, or because writing failed): close it.

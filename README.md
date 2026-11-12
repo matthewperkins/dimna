@@ -151,6 +151,24 @@ as usual. Edges are found on the display thread from the digital words of each b
 with slow triggers fewer are overlaid. After a filter corner change, only the recent past
 is refiltered, so older overlaid sweeps keep the old corners until they are replaced.
 
+**Spike tiles.** A third window (class `oez-tiles`) with one tile per electrode: the
+channel's last spike waveforms on top of each other (the newest brightest), its threshold
+as a red line, its noise sigma in µV and its firing rate. Click a tile to listen to that
+channel, Ctrl+click to add or remove it; tiles listened to are drawn in the display's
+"listening" yellow with a frame.
+
+Detection (`src/spikes.zig`) is the slope trigger's, for every electrode at once: 300 Hz
+to 6 kHz, a threshold 4.5 sigma below zero with sigma from a running median (spikes
+hardly move it), each crossing aligned on the trough that follows, 1 ms dead time. It
+takes the panels' common average references. A large spike can make the band-pass ring
+across the threshold once more; such small waveforms are kept too. The tile window is a
+thread of its own with its own reader on the acquisition ring (`src/gui/tiles.zig`), so
+it never holds the display or acquisition back. `--no-tiles` or `tiles = false` leaves it
+out. A Hyprland rule keeps it off the neural display's monitor:
+
+    hl.window_rule({ name = "oez-tiles", match = { class = "^oez-tiles$" },
+                     workspace = "1", float = true, move = "966 624", size = "938 560" })
+
 **Spike audio.** oEZ plays the channels you choose through the default sound device.
 Click an electrode row on the display to listen to it; Ctrl+click adds or removes a
 channel (up to 8, spread across the stereo field). The rows listened to have a bright
