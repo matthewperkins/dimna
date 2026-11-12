@@ -155,6 +155,9 @@ pub const Recorder = struct {
     notes_in: ?*events.EventQueue = null,
 
     stats: Stats = .{},
+    /// The first sample in samples.i16, for readers on other threads (review); the lowest
+    /// i64 until the first block has arrived.
+    first_sample_shared: Atomic(i64) = .init(std.math.minInt(i64)),
     stop_flag: Atomic(bool) = .init(false),
     done: Atomic(bool) = .init(false),
     failure: ?anyerror = null,
@@ -365,6 +368,7 @@ pub const Recorder = struct {
         if (b.len == 0) return;
         if (self.first_sample == null) {
             self.first_sample = b.first_sample;
+            self.first_sample_shared.store(b.first_sample, .release);
             try self.event(b.first_sample, "start", "");
         }
         const gap = if (self.next_expected) |e| b.first_sample != e else false;

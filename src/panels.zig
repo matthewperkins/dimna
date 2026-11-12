@@ -184,6 +184,21 @@ pub const Panel = struct {
         }
     }
 
+    /// A number that changes whenever what the panel's slot holds changes (filter, rows,
+    /// reference): for noticing that something made from it is out of date.
+    pub fn signalSignature(self: *const Panel) u64 {
+        var h = std.hash.Wyhash.init(0);
+        h.update(std.mem.asBytes(&self.filtered));
+        h.update(std.mem.asBytes(&self.band_low_hz));
+        h.update(std.mem.asBytes(&self.band_high_hz));
+        h.update(std.mem.asBytes(&self.raw_rows.bits));
+        h.update(std.mem.asBytes(&self.hidden.bits));
+        h.update(std.mem.asBytes(&self.car));
+        h.update(std.mem.asBytes(&self.car_ref.bits));
+        h.update(std.mem.asBytes(&self.car_sub.bits));
+        return h.final();
+    }
+
     /// Switches between TTL and slope triggering, each with its own window.
     pub fn setTrigSource(self: *Panel, source: TrigSource) void {
         if (source == self.trig_source or (source == .channel and self.kind != .electrode)) return;

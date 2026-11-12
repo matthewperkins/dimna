@@ -27,7 +27,7 @@
 //!   of once per refresh just before it.
 //!
 //! --script feeds synthetic input for tests, as "SECONDS:STEP;SECONDS:STEP;...", where STEP is
-//! wheel=N, hwheel=N, cwheel=N (Ctrl+wheel; axis units, 15 = one click), pointer=FX,FY, click, cclick, type=TEXT, enter, esc, tab, backspace, pinch=F (scale factor), or keys such as
+//! wheel=N, hwheel=N, cwheel=N (Ctrl+wheel; axis units, 15 = one click), pointer=FX,FY, click, cclick, type=TEXT, enter, esc, tab, backspace, space, left, right, pgup, pgdn, home, end, pinch=F (scale factor), or keys such as
 //! "]]==" (any of [ ] - = r m f t 1-8 , . ' q; ';' separates steps, so the high corner can only be
 //! stepped up by script). It goes through the same path as real input.
 //!
@@ -43,6 +43,11 @@
 //!                                  s switches to spikes on the row under the pointer (a slope
 //!                                  trigger; click another row to move it) and back,
 //!                                  [ ] and Shift+wheel zoom the window around the trigger
+//!   Space                          freeze: look at what just went by. Then, or at once:
+//!   Left / Right, PgUp / PgDn      go back and forth (a tenth of the window, a whole window)
+//!   Home / End                     the start of the recording / back to live
+//!                                  (scroll-back review: from the recording's file while
+//!                                  recording, else the last half minute)
 //!   /                              type a note (Enter saves, Esc drops, Tab keeps it as a draft);
 //!                                  ` stamps a draft; 1-9 stamp the config's preset notes
 //!   click a row                    listen to that channel (Ctrl+click adds or removes one)
@@ -193,6 +198,18 @@ fn runScript(script: []const u8, pos: *usize, elapsed_s: f64, in: *Input, displa
         } else if (std.mem.eql(u8, what, "enter") or std.mem.eql(u8, what, "esc") or std.mem.eql(u8, what, "tab") or std.mem.eql(u8, what, "backspace")) {
             if (in.num_keys < in.keys.len) {
                 in.keys[in.num_keys] = if (what[0] == 'e' and what[1] == 'n') .enter else if (what[0] == 'e') .escape else if (what[0] == 't') .tab else .backspace;
+                in.num_keys += 1;
+            }
+        } else if (std.mem.eql(u8, what, "space") or std.mem.eql(u8, what, "home") or std.mem.eql(u8, what, "end") or std.mem.eql(u8, what, "pgup") or std.mem.eql(u8, what, "pgdn") or std.mem.eql(u8, what, "left") or std.mem.eql(u8, what, "right")) {
+            if (in.num_keys < in.keys.len) {
+                in.keys[in.num_keys] = switch (what[0]) {
+                    's' => .space,
+                    'h' => .home,
+                    'e' => .end,
+                    'l' => .left,
+                    'r' => .right,
+                    else => if (what[2] == 'u') .page_up else .page_down,
+                };
                 in.num_keys += 1;
             }
         } else if (std.mem.eql(u8, what, "click")) {
@@ -395,6 +412,17 @@ fn channelName(buf: []u8, layout: *const oez.types.Layout, ch: u32) []const u8 {
     }
     return std.fmt.bufPrint(buf, "ch {d}", .{ch + 1}) catch "";
 }
+
+/// The display in scroll-back review: where it is looking.
+const ReviewView = struct {
+    /// The sample at the right edge of every panel in review.
+    end: i64,
+    /// Drawn from the review history (the recording's file) instead of the live one.
+    from_file: bool,
+    /// The stretch needed is there to draw.
+    ready: bool,
+    behind_s: f64,
+};
 
 /// What triggers a panel's sweeps: "TTL2", or "row 5 falling -62 µV".
 fn trigText(buf: []u8, p: *const Panel) []const u8 {
@@ -600,7 +628,7 @@ const Display = struct {
             self.audio_dirty = true;
             return false;
         }
-        if (edit.action == .record or edit.action == .board or edit.action == .quit_answer or edit.action == .note_preset or edit.action == .save_view or edit.panel >= self.set.len) return false;
+        if (edit.action == .record or edit.action == .board or edit.action == .quit_answer or edit.action == .note_preset or edit.action == .save_view or edit.action == .review or edit.panel >= self.set.len) return false;
         const p = &self.set.items[edit.panel];
         switch (edit.action) {
             .scale => |f| p.scale *= f,
@@ -637,7 +665,7 @@ const Display = struct {
             .trig_holdoff => |up| p.trig_holdoff_ms = oez.board_config.step(f64, &.{ 0, 1, 2, 5, 10, 20, 50, 100, 200, 500 }, p.trig_holdoff_ms, up),
             .overlay => |n| p.overlay = n,
             .reset => self.reset(edit.panel),
-            .quit, .record, .board, .quit_answer, .audio, .note_preset, .save_view => {},
+            .quit, .record, .board, .quit_answer, .audio, .note_preset, .save_view, .review => {},
         }
         p.clamp();
         return false;
@@ -718,7 +746,7 @@ const Display = struct {
     /// What to draw: each panel's traces, then dividers and a bar marking the target panel,
     /// and into `batch` the text: each panel's title (name, time base, scale per row), its
     /// row labels, and the status read-out in the bottom right corner.
-    fn frame(self: *const Display, gpu: *const Gpu, layout: *const oez.types.Layout, newest: i64, status: Status, notes: *const notes_mod.Notes, batch: *font.Batch, draws: *[max_draws]gpu_mod.PanelDraw, fills: *[max_fills]gpu_mod.Fill) struct { draws: []const gpu_mod.PanelDraw, fills: []const gpu_mod.Fill, text: []const font.Vertex } {
+    fn frame(self: *const Display, gpu: *const Gpu, layout: *const oez.types.Layout, newest: i64, review: ?ReviewView, status: Status, notes: *const notes_mod.Notes, batch: *font.Batch, draws: *[max_draws]gpu_mod.PanelDraw, fills: *[max_fills]gpu_mod.Fill) struct { draws: []const gpu_mod.PanelDraw, fills: []const gpu_mod.Fill, text: []const font.Vertex } {
         const width = gpu.extent.width;
         const height = gpu.extent.height;
         const nch = gpu.nch;
@@ -733,14 +761,19 @@ const Display = struct {
             const r = p.pixelRect(width, height);
             // Sweep: a whole number of samples per pass, so the picture stands still.
             const span: f64 = if (p.mode == .sweep) @max(1, @round(p.span_s * fs)) else p.span_s * fs;
-            const phase: f64 = if (p.mode == .sweep) @floatFromInt(@mod(newest, @as(i64, @intFromFloat(span)))) else -1;
+            // In review a panel shows a fixed stretch that ends at the review position
+            // (triggered panels stay live: their sweeps are about now).
+            const in_review = review != null and p.mode != .triggered;
+            const t_end: i64 = if (in_review) review.?.end else newest;
+            const sweeping = p.mode == .sweep and !in_review;
+            const phase: f64 = if (sweeping) @floatFromInt(@mod(t_end, @as(i64, @intFromFloat(span)))) else -1;
             const px: f32 = @floatFromInt(r.x);
             const py: f32 = @floatFromInt(r.y);
             const shown = p.shownRows();
             var params: gpu_mod.TraceParams = .{
                 .nch = @intCast(nch),
                 .cap_mask = @intCast(gpu.hist_cap - 1),
-                .newest = @truncate(@as(u64, @bitCast(newest))),
+                .newest = @truncate(@as(u64, @bitCast(t_end))),
                 .first_ch = p.drawColumn(),
                 .cols = r.w,
                 .rows = shown,
@@ -802,23 +835,23 @@ const Display = struct {
                     if (shown_sweeps > 0 and x1 > x0) batch.rect(x0, py, x1 - x0, @floatFromInt(r.h), .{ 90, 150, 255, 34 });
                 }
                 batch.rect(@round(x0), py, 1, @floatFromInt(r.h), .{ 200, 210, 230, 150 });
-            } else if (nd < draws.len) {
-                draws[nd] = .{ .rect = rect, .params = params };
+            } else if (nd < draws.len and !(in_review and !review.?.ready)) {
+                draws[nd] = .{ .rect = rect, .params = params, .review = in_review and review.?.from_file };
                 nd += 1;
             }
             if (p.mode != .triggered and span >= 1) {
                 // Notes: a line where each was stamped, with its text beside it.
                 const w: f64 = @floatFromInt(r.w);
                 const span_i: i64 = @intFromFloat(span);
-                const pass_start: i64 = if (p.mode == .sweep) newest - @as(i64, @intFromFloat(phase)) else newest - span_i;
+                const pass_start: i64 = if (sweeping) t_end - @as(i64, @intFromFloat(phase)) else t_end - span_i;
                 var k: usize = 0;
                 while (notes.recentNote(k)) |note| : (k += 1) {
                     const at = note.sample;
                     if (at < pass_start - span_i) break;
                     // This pass (or, scrolling, the window); else the previous pass, where
                     // the cursor has not yet gone over it.
-                    const from: i64 = if (at >= pass_start) pass_start else if (p.mode == .sweep and at >= pass_start - span_i + (newest - pass_start)) pass_start - span_i else continue;
-                    if (at > newest) continue;
+                    const from: i64 = if (at >= pass_start) pass_start else if (sweeping and at >= pass_start - span_i + (t_end - pass_start)) pass_start - span_i else continue;
+                    if (at > t_end) continue;
                     const x = px + @as(f32, @floatCast(w * @as(f64, @floatFromInt(at - from)) / span));
                     batch.rect(@round(x), py, 1, @floatFromInt(r.h), .{ 255, 205, 120, 190 });
                     if (line_h > 0 and x + 60 < px + @as(f32, @floatCast(w))) _ = batch.label(x + 5, py + line_h + 12, note.text()[0..@min(note.len, 40)], .{ 255, 225, 150, 255 });
@@ -826,31 +859,31 @@ const Display = struct {
             }
             if (p.tint_line != 0 and p.mode != .triggered and span >= 1) {
                 // A tint over the panel wherever its tint line was high. Scrolling: time
-                // runs to `newest` at the right edge. Sweep: this pass left of the cursor,
+                // runs to the newest sample at the right edge. Sweep: this pass left of the cursor,
                 // the previous pass right of it.
                 const pulses = &self.pulses[i];
                 const w: f64 = @floatFromInt(r.w);
                 const tint: font.Colour = .{ 90, 150, 255, 30 };
                 const span_i: i64 = @intFromFloat(span);
-                const pass_start: i64 = if (p.mode == .sweep) newest - @as(i64, @intFromFloat(phase)) else newest - span_i;
+                const pass_start: i64 = if (sweeping) t_end - @as(i64, @intFromFloat(phase)) else t_end - span_i;
                 var k: usize = 0;
                 while (pulses.recent(k)) |pulse| : (k += 1) {
                     const t0 = pulse.t0;
-                    const t1 = pulse.fall orelse newest;
-                    if (t1 < newest - 2 * span_i) break;
+                    const t1 = pulse.fall orelse t_end;
+                    if (t1 < t_end - 2 * span_i) break;
                     // The stretch of the pulse in this pass (or, scrolling, in the window).
                     const a0 = @max(t0, pass_start);
-                    const a1 = @min(t1, newest);
+                    const a1 = @min(t1, t_end);
                     if (a1 > a0) batch.rect(px + @as(f32, @floatCast(w * @as(f64, @floatFromInt(a0 - pass_start)) / span)), py, @floatCast(@max(1.0, w * @as(f64, @floatFromInt(a1 - a0)) / span)), @floatFromInt(r.h), tint);
                     if (p.mode != .sweep) continue;
                     // And in the previous pass, as far as the cursor has not overwritten it.
                     const prev = pass_start - span_i;
-                    const b0 = @max(t0, prev + (newest - pass_start));
+                    const b0 = @max(t0, prev + (t_end - pass_start));
                     const b1 = @min(t1, pass_start);
                     if (b1 > b0) batch.rect(px + @as(f32, @floatCast(w * @as(f64, @floatFromInt(b0 - prev)) / span)), py, @floatCast(@max(1.0, w * @as(f64, @floatFromInt(b1 - b0)) / span)), @floatFromInt(r.h), tint);
                 }
             }
-            if (p.mode == .sweep) {
+            if (sweeping) {
                 // The cursor: a line where the newest sample is, and a blank stretch ahead.
                 const cx: u32 = @min(r.w - 1, @as(u32, @intFromFloat(phase / span * @as(f64, @floatFromInt(r.w)))));
                 fills[nf] = .{ .rect = .{ .x = r.x + cx, .y = r.y, .w = @min(10, r.w - cx), .h = r.h }, .colour = .{ 0.04, 0.045, 0.055, 1.0 } };
@@ -879,9 +912,9 @@ const Display = struct {
                 std.fmt.bufPrint(&title_buf, "{s}   {s}   -{d:.1}/+{d:.1} ms   {s}/row{s}   {d} sweeps{s}", .{ p.name(), trigText(&trig_buf, p), p.pre_ms, p.post_ms, fmtScale(&scale_buf, p), fmtBand(&band_buf, p), shown_sweeps, if (shown_sweeps == 0) " (waiting for a trigger)" else "" }) catch ""
             else
 if (p.kind == .ttl)
-                std.fmt.bufPrint(&title_buf, "{s}   {s}{s}", .{ p.name(), fmtSpan(&span_buf, p.span_s), if (p.mode == .sweep) "   sweep" else "" }) catch ""
+                std.fmt.bufPrint(&title_buf, "{s}   {s}{s}", .{ p.name(), fmtSpan(&span_buf, p.span_s), if (in_review) "   review" else if (p.mode == .sweep) "   sweep" else "" }) catch ""
             else
-                std.fmt.bufPrint(&title_buf, "{s}   {s}   {s}/row{s}{s}", .{ p.name(), fmtSpan(&span_buf, p.span_s), fmtScale(&scale_buf, p), fmtBand(&band_buf, p), if (p.mode == .sweep) "   sweep" else "" }) catch "";
+                std.fmt.bufPrint(&title_buf, "{s}   {s}   {s}/row{s}{s}", .{ p.name(), fmtSpan(&span_buf, p.span_s), fmtScale(&scale_buf, p), fmtBand(&band_buf, p), if (in_review) "   review" else if (p.mode == .sweep) "   sweep" else "" }) catch "";
             // A lane strip is short: its title goes to the right, clear of the lane labels.
             _ = batch.label(if (p.kind == .ttl) px + @as(f32, @floatFromInt(r.w)) - batch.font.width(title) - 8 else px + 8, title_y, title, bright);
             if (p.mode == .triggered) {
@@ -922,6 +955,18 @@ if (p.kind == .ttl)
                     var own_buf: [24]u8 = undefined;
                     _ = batch.label(after + 4, y, fmtScale(&own_buf, &own), .{ 255, 205, 120, 255 });
                 }
+            }
+        }
+        if (review) |v| {
+            if (line_h > 0) {
+                // Unmistakable: this is not what the electrodes see now.
+                var buf: [120]u8 = undefined;
+                var clock_buf: [16]u8 = undefined;
+                const text = std.fmt.bufPrint(&buf, "REVIEW   {d:.1} s behind live   at {s}{s}   End = live", .{ v.behind_s, control.fmtClock(&clock_buf, @as(f64, @floatFromInt(v.end)) / layout.sample_rate), if (v.ready) "" else "   (reading)" }) catch "REVIEW";
+                const tw = batch.font.width(text);
+                const x = (@as(f32, @floatFromInt(width)) - tw) / 2;
+                batch.rect(x - 10, 4, tw + 20, line_h + 10, .{ 150, 90, 10, 235 });
+                _ = batch.text(x, 9, text, .{ 255, 240, 200, 255 });
             }
         }
         if (notes.editing and line_h > 0) {
@@ -1171,7 +1216,7 @@ fn runDirect(io: Io, gpa: std.mem.Allocator, args: Args, layout: oez.types.Layou
                 return 1;
             }
         } else if (newest > 0 and now >= draw_at) {
-            const fr = display.frame(&gpu, &layout, newest, status, &notes, &batch, &draws, &fills);
+            const fr = display.frame(&gpu, &layout, newest, null, status, &notes, &batch, &draws, &fills);
             const result = try gpu.draw(fr.draws, fr.fills, fr.text, {}, struct {
                 fn f(_: void) void {}
             }.f);
@@ -1300,7 +1345,9 @@ pub fn main(init: std.process.Init) !u8 {
 
     // ---- window and renderer ----
     var win: Window = undefined;
-    try win.init("oEZ", "oez");
+    // OEZ_APP_ID gives test runs a window class of their own (so compositor rules for the
+    // real display do not apply to them).
+    try win.init("oEZ", if (std.c.getenv("OEZ_APP_ID")) |v| std.mem.span(v) else "oez");
     defer win.deinit();
     const fullscreen = args.monitor.len > 0;
     if (fullscreen) {
@@ -1370,6 +1417,22 @@ pub fn main(init: std.process.Init) !u8 {
     defer gpa.free(view_saved);
     var view_saved_len: usize = 0;
     if (renderViews(view_saved, &display.set)) |rendered| view_saved_len = rendered.len;
+    // Scroll-back review (see review.zig): where the display is looking when it is not
+    // looking at now. From the recording's file while there is one; else a freeze of the
+    // last seconds the live history still holds.
+    var rv: ?oez.review.Review = null;
+    defer if (rv) |*r| r.deinit();
+    var reviewing = false;
+    var review_from_file = false;
+    var review_ready = false;
+    // The right edge asked for, and the one drawn (the last the history was ready for).
+    var view_end: i64 = 0;
+    var shown_end: i64 = 0;
+    var review_first: i64 = 0;
+    var review_file_end: i64 = 0;
+    var review_dir_buf: [std.fs.max_path_bytes]u8 = undefined;
+    var review_dir_len: usize = 0;
+    var review_cmds: [16]control.ReviewAction = undefined;
     // Notes on their way into the recording (display thread to recorder thread).
     var note_queue: oez.events.EventQueue = .{};
     var board_status: control.BoardStatus = .{};
@@ -1478,6 +1541,24 @@ pub fn main(init: std.process.Init) !u8 {
         // newest sample acquired plus the time since.
         const note_stamp: i64 = newest + if (newest_acquired_ns != 0) @as(i64, @intFromFloat(@as(f64, @floatFromInt(nowNs(io) - newest_acquired_ns)) * 1e-9 * fs)) else 0;
         notes.handle(&input, note_stamp, if (rec != null) rec_status.path() else "");
+        // Review keys (what is left of them after a note took its own).
+        var num_review_cmds: usize = 0;
+        for (input.keys[0..input.num_keys]) |k| {
+            const cmd: control.ReviewAction = switch (k) {
+                .space => .toggle,
+                .left => .back,
+                .right => .forward,
+                .page_up => .page_back,
+                .page_down => .page_forward,
+                .home => .start,
+                .end => .live,
+                else => continue,
+            };
+            if (num_review_cmds < review_cmds.len) {
+                review_cmds[num_review_cmds] = cmd;
+                num_review_cmds += 1;
+            }
+        }
         // Quitting (q or Esc here, Quit in the control window) asks first if the board
         // settings were changed; a second request quits.
         var quit = display.applyInput(input);
@@ -1485,6 +1566,10 @@ pub fn main(init: std.process.Init) !u8 {
         // What was clicked in the control window.
         while (shared.pop()) |e| {
             if (e.action == .quit_answer) quit_answer = e.action.quit_answer;
+            if (e.action == .review and num_review_cmds < review_cmds.len) {
+                review_cmds[num_review_cmds] = e.action.review;
+                num_review_cmds += 1;
+            }
             if (e.action == .save_view) {
                 if (renderViews(view_now, &display.set)) |rendered| {
                     if (writeAtomic(io, views_path, rendered)) |_| {
@@ -1533,6 +1618,8 @@ pub fn main(init: std.process.Init) !u8 {
             }
             if (e.action == .record) {
                 if (e.action.record and rec == null) {
+                    // Review of an earlier recording ends where a new one begins.
+                    reviewing = false;
                     // Changes applied before this recording are not its events.
                     while (acq.events.pop()) |_| {}
                     while (note_queue.pop()) |_| {}
@@ -1578,6 +1665,92 @@ pub fn main(init: std.process.Init) !u8 {
                         }
                     }
                 }
+            }
+        }
+        // ---- scroll-back review ----
+        {
+            // The longest stretch a panel in review shows, and one step of the keys.
+            var longest: i64 = 0;
+            for (display.set.items[0..display.set.len]) |*p| {
+                if (p.mode != .triggered) longest = @max(longest, @as(i64, @intFromFloat(@ceil(p.span_s * fs))) + 2);
+            }
+            if (longest == 0) longest = @intFromFloat(2 * fs);
+            const tp = &display.set.items[display.target];
+            const window: i64 = if (tp.mode != .triggered) @intFromFloat(tp.span_s * fs) else longest;
+            for (review_cmds[0..num_review_cmds]) |cmd| {
+                snap_dirty = true;
+                if (cmd == .live or (cmd == .toggle and reviewing)) {
+                    reviewing = false;
+                    continue;
+                }
+                if (!reviewing) {
+                    // Enter where the display is now. From the file if one is being written.
+                    reviewing = true;
+                    view_end = newest;
+                    shown_end = newest;
+                    review_ready = false;
+                    review_from_file = false;
+                    if (rec) |r| {
+                        const first = r.first_sample_shared.load(.acquire);
+                        if (first != std.math.minInt(i64)) from_file: {
+                            if (rv == null) {
+                                gpu.createReview() catch |err| {
+                                    log.warn("no memory for the review history ({t}); review is limited to the last seconds", .{err});
+                                    break :from_file;
+                                };
+                                rv = oez.review.Review.init(gpa, &layout, &display.set, gpu.rev, gpu.hist_cap) catch break :from_file;
+                            }
+                            if (!rv.?.isOpen() or !std.mem.eql(u8, review_dir_buf[0..review_dir_len], r.path)) {
+                                rv.?.open(r.path, first) catch |err| {
+                                    log.warn("review cannot read the recording ({t}); limited to the last seconds", .{err});
+                                    break :from_file;
+                                };
+                                review_dir_len = @min(r.path.len, review_dir_buf.len);
+                                @memcpy(review_dir_buf[0..review_dir_len], r.path[0..review_dir_len]);
+                            }
+                            review_first = first;
+                            review_from_file = true;
+                        }
+                    }
+                }
+                switch (cmd) {
+                    .back => view_end -= @max(1, @divTrunc(window, 10)),
+                    .forward => view_end += @max(1, @divTrunc(window, 10)),
+                    .page_back => view_end -= @max(1, @divTrunc(window * 9, 10)),
+                    .page_forward => view_end += @max(1, @divTrunc(window * 9, 10)),
+                    .start => view_end = std.math.minInt(i64) / 2,
+                    .toggle, .live => {},
+                }
+            }
+            if (reviewing and review_from_file) {
+                const r = &rv.?;
+                // The file grows while the recording runs.
+                if (rec) |live_rec| review_file_end = review_first + @as(i64, @intCast(live_rec.stats.samples.load(.monotonic)));
+                view_end = std.math.clamp(view_end, @min(review_first + longest, review_file_end), review_file_end);
+                var ok = true;
+                r.follow(&display.set) catch {
+                    ok = false;
+                };
+                // A bounded amount per turn of the loop: a long jump fills over a few frames.
+                const covered = if (ok) r.fill(view_end - longest, view_end, review_file_end, 30000) catch |err| blk: {
+                    log.warn("review stopped: {t}", .{err});
+                    ok = false;
+                    break :blk false;
+                } else false;
+                if (!ok) {
+                    reviewing = false;
+                } else {
+                    if (covered) shown_end = view_end;
+                    review_ready = r.holds(shown_end - longest, shown_end, review_file_end);
+                }
+            } else if (reviewing) {
+                // The live history: a freeze, for as long as the samples are still there.
+                const oldest = newest - @as(i64, @intCast(gpu.hist_cap)) + @as(i64, @intFromFloat(fs));
+                view_end = @min(view_end, newest);
+                if (view_end - longest < oldest) view_end = oldest + longest;
+                if (view_end >= newest and newest - oldest <= longest) reviewing = false;
+                shown_end = view_end;
+                review_ready = true;
             }
         }
         // Notes saved this turn go into the recording, if there is one.
@@ -1656,6 +1829,11 @@ pub fn main(init: std.process.Init) !u8 {
             if (rec != null) {
                 board_status.setNote("stop the recording first: this changes the shape of the data", .{});
             } else {
+                // Review looks into a history that is about to be replaced.
+                reviewing = false;
+                if (rv) |*r| r.deinit();
+                rv = null;
+                review_dir_len = 0;
                 // The audio threads read the ring that is about to be replaced.
                 if (audio_dev) |a| a.stop();
                 audio_dev = null;
@@ -1766,7 +1944,7 @@ pub fn main(init: std.process.Init) !u8 {
             }
         }
         // While recording, the control window's counts move four times a second.
-        if (rec != null and nowNs(io) - rec_published_ns > 250 * std.time.ns_per_ms) {
+        if ((rec != null or reviewing) and nowNs(io) - rec_published_ns > 250 * std.time.ns_per_ms) {
             rec_published_ns = nowNs(io);
             snap_dirty = true;
         }
@@ -1783,6 +1961,13 @@ pub fn main(init: std.process.Init) !u8 {
                 .ring_overflow = acq.ring_overflow.load(.monotonic),
                 .seconds = @as(f64, @floatFromInt(nowNs(io) - t_start)) / 1e9,
                 .quit_prompt = quit_prompt,
+                .review = .{
+                    .active = reviewing,
+                    .behind_s = @as(f64, @floatFromInt(newest - shown_end)) / fs,
+                    .at_s = @as(f64, @floatFromInt(shown_end)) / fs,
+                    .from_file = review_from_file,
+                    .loading = reviewing and !review_ready,
+                },
                 .view_unsaved = if (renderViews(view_now, &display.set)) |rendered| !std.mem.eql(u8, rendered, view_saved[0..view_saved_len]) else false,
                 .notes = blk: {
                     var st: control.NotesStatus = .{ .editing = notes.editing, .num_drafts = notes.num_drafts, .total = notes.total };
@@ -1952,7 +2137,7 @@ pub fn main(init: std.process.Init) !u8 {
                 win.resized = false;
                 n_resize += 1;
             }
-            const fr = display.frame(&gpu, &layout, newest, status, &notes, &batch, &draws, &fills);
+            const fr = display.frame(&gpu, &layout, newest, if (reviewing) ReviewView{ .end = shown_end, .from_file = review_from_file, .ready = review_ready, .behind_s = @as(f64, @floatFromInt(newest - shown_end)) / fs } else null, status, &notes, &batch, &draws, &fills);
             frame_tag += 1;
             frame_acquired[frame_tag % frame_acquired.len] = newest_acquired_ns;
             const Ctx = struct { win: *Window, tag: u64 };

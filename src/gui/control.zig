@@ -61,6 +61,20 @@ pub const RecStatus = struct {
     }
 };
 
+/// Scroll-back review, as the control window shows it.
+pub const ReviewStatus = struct {
+    active: bool = false,
+    /// How far the view's right edge is behind the newest sample, and where it is in the
+    /// run, in seconds.
+    behind_s: f64 = 0,
+    at_s: f64 = 0,
+    /// Reading from the recording's file (else: the last seconds the display holds).
+    from_file: bool = false,
+    loading: bool = false,
+};
+
+pub const ReviewAction = enum { toggle, back, forward, page_back, page_forward, start, live };
+
 /// Notes, as the control window shows them.
 pub const NotesStatus = struct {
     pub const Line = struct {
@@ -217,6 +231,7 @@ pub const Action = union(enum) {
     audio: AudioAction,
     /// Stamp this preset note (1 to 9) now.
     note_preset: u8,
+    review: ReviewAction,
     /// Write the panels' settings to the view file.
     save_view,
     quit_answer: QuitAnswer,
@@ -236,6 +251,7 @@ pub const Snapshot = struct {
     board: BoardStatus = .{},
     audio: AudioStatus = .{},
     notes: NotesStatus = .{},
+    review: ReviewStatus = .{},
     /// The panels' settings differ from the view file (or, with none, from launch).
     view_unsaved: bool = false,
     quit_prompt: QuitPrompt = .{},
@@ -325,7 +341,10 @@ fn loop(cfg: *Config) !void {
     const gpa = cfg.gpa;
     const shared = cfg.shared;
     var win: Window = undefined;
-    try win.init("oEZ control", "oez-control");
+    // OEZ_APP_ID gives test runs a window class of their own.
+    var class_buf: [64]u8 = undefined;
+    const class = std.fmt.bufPrintSentinel(&class_buf, "{s}-control", .{if (std.c.getenv("OEZ_APP_ID")) |v| std.mem.span(v) else "oez"}, 0) catch "oez-control";
+    try win.init("oEZ control", class);
     defer win.deinit();
     var gpu = try gpu_mod.Gpu.init(gpa, .{ .wayland = .{ .display = win.display, .surface = win.surface } }, .fifo, cfg.display_gpu);
     defer gpu.deinit();
@@ -468,6 +487,24 @@ fn build(ui: *ui_mod.Ui, cfg: *const Config, snap: *const Snapshot, shared: *Sha
         ui.text(rec.path(), ui_mod.text_dim);
         ui.newline();
     }
+    ui.separator();
+
+    // Scroll-back review.
+    const rv = &snap.review;
+    ui.text("Review", ui_mod.text_bright);
+    ui.column(64);
+    if (ui.button("start", false)) shared.push(.{ .action = .{ .review = .start } });
+    if (ui.button("<< window", false)) shared.push(.{ .action = .{ .review = .page_back } });
+    if (ui.button("<", false)) shared.push(.{ .action = .{ .review = .back } });
+    if (ui.button(if (rv.active) "frozen" else "freeze", rv.active)) shared.push(.{ .action = .{ .review = .toggle } });
+    if (ui.button(">", false)) shared.push(.{ .action = .{ .review = .forward } });
+    if (ui.button("window >>", false)) shared.push(.{ .action = .{ .review = .page_forward } });
+    if (ui.button("LIVE", !rv.active) and rv.active) shared.push(.{ .action = .{ .review = .live } });
+    if (rv.active) {
+        var c1: [16]u8 = undefined;
+        ui.text(std.fmt.bufPrint(&buf, "{d:.1} s behind, at {s}{s}{s}", .{ rv.behind_s, fmtClock(&c1, rv.at_s), if (rv.from_file) "" else " (last seconds only: not recording)", if (rv.loading) " ..." else "" }) catch "", ui_mod.text_warn);
+    }
+    ui.newline();
     ui.separator();
 
     // Notes.

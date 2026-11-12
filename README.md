@@ -332,6 +332,37 @@ recording that fails (disk full, say) is shown as failed; acquisition is not aff
 what was written before stays valid. Quitting while recording closes the recording
 properly first.
 
+**Scroll-back review.** Look at what went by without stopping anything: acquisition, the
+recording and the sound carry on, and the live display's own history keeps filling, so
+going back to live is instant.
+
+| key | |
+|---|---|
+| Space | freeze where the display is (again: back to live) |
+| Left / Right | back and forth by a tenth of the window |
+| PgUp / PgDn | by a whole window |
+| Home | the start of the recording |
+| End | back to live |
+
+The control window's Review row has the same as buttons. While in review an amber badge
+across the top says so, how far behind live the view is, and where in the run it is;
+each panel's title says "review" too. Triggered panels stay live.
+
+- **While recording**, review reads the recording's own `samples.i16` and TTL edge files
+  back (`src/review.zig`), through a feed set up exactly as the live one, into a second
+  history on the GPU (as large as the live one, made on first use). So the whole session
+  is there, filtered, referenced and laid out as the live display would show it, with
+  the TTL lanes and note markers. Only what a move newly exposes is read; a filter or
+  row change redoes the stretch.
+- **Without a recording** it is a freeze of the last half minute that the live history
+  still holds; it ends by itself when that has scrolled away.
+
+Limits for now: the window is as long as a live one (20 s at most; no overview of a whole
+session yet); the newest second of TTL edges may not be in the file yet; the tint is not
+drawn for stretches older than the last 512 pulses; after lost blocks (gaps in the
+recording) later samples would be shown early by the length of the gap; no dragging with
+the mouse yet.
+
 **Notes.** On the neural display, `/` opens a note stamped at that moment; type, and
 Enter (or `\`) saves it, Esc drops it. While a note is open every key is its text, so no
 shortcut fires (q does not quit). Tab keeps the text as a draft instead, and `` ` `` stamps

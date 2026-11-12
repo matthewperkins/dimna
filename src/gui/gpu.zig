@@ -75,7 +75,12 @@ pub const max_gain_panels = 16;
 pub const PixelRect = struct { x: u32, y: u32, w: u32, h: u32 };
 
 /// One panel of traces: where on the display, and what to draw there.
-pub const PanelDraw = struct { rect: PixelRect, params: TraceParams };
+pub const PanelDraw = struct {
+    rect: PixelRect,
+    params: TraceParams,
+    /// Draw from the review history instead of the live one.
+    review: bool = false,
+};
 
 /// A solid rectangle (dividers, markers), drawn over the panels.
 pub const Fill = struct { rect: PixelRect, colour: [4]f32 };
@@ -113,6 +118,13 @@ pub const Gpu = struct {
     pipeline: vk.Pipeline = .null,
     desc_pool: vk.DescriptorPool = .null,
     desc_set: vk.DescriptorSet = .null,
+    /// The same, with the review history in place of the live one.
+    rev_set: vk.DescriptorSet = .null,
+    /// The review history: the same shape as the live one, made when review is first
+    /// used (`createReview`), filled by `review.zig`.
+    rev_buf: vk.Buffer = .null,
+    rev_mem: vk.DeviceMemory = .null,
+    rev: []i16 = &.{},
 
     // Text and solid rectangles (`shaders/text.vert`): the glyph atlas, and a vertex buffer
     // that each frame's quads are copied into.
@@ -418,6 +430,7 @@ pub const Gpu = struct {
             dev.destroyBuffer(self.hist_buf, null);
             dev.freeMemory(self.hist_mem, null);
         }
+        self.destroyReview();
         if (self.gain_buf != .null) {
             dev.unmapMemory(self.gain_mem);
             dev.destroyBuffer(self.gain_buf, null);
@@ -474,13 +487,14 @@ pub const Gpu = struct {
             .p_push_constant_ranges = &[_]vk.PushConstantRange{.{ .stage_flags = .{ .vertex = true }, .offset = 0, .size = @sizeOf(TraceParams) }},
         }, null);
         self.desc_pool = try dev.createDescriptorPool(&.{
-            .max_sets = 1,
+            .max_sets = 2,
             .pool_size_count = 1,
-            .p_pool_sizes = &[_]vk.DescriptorPoolSize{.{ .type = .storage_buffer, .descriptor_count = 2 }},
+            .p_pool_sizes = &[_]vk.DescriptorPoolSize{.{ .type = .storage_buffer, .descriptor_count = 4 }},
         }, null);
-        var sets: [1]vk.DescriptorSet = undefined;
-        try dev.allocateDescriptorSets(&.{ .descriptor_pool = self.desc_pool, .descriptor_set_count = 1, .p_set_layouts = &[_]vk.DescriptorSetLayout{self.set_layout} }, &sets);
+        var sets: [2]vk.DescriptorSet = undefined;
+        try dev.allocateDescriptorSets(&.{ .descriptor_pool = self.desc_pool, .descriptor_set_count = 2, .p_set_layouts = &[_]vk.DescriptorSetLayout{ self.set_layout, self.set_layout } }, &sets);
         self.desc_set = sets[0];
+        self.rev_set = sets[1];
 
         // The row factors: small, mapped for good, all 1 to start with.
         const gain_count = max_rows * max_gain_panels;
@@ -770,6 +784,8 @@ pub const Gpu = struct {
         const dev = self.dev;
         if (self.hist_buf != .null) {
             try dev.deviceWaitIdle();
+            // The review history has the live one's shape: it goes too.
+            self.destroyReview();
             dev.unmapMemory(self.hist_mem);
             dev.destroyBuffer(self.hist_buf, null);
             dev.freeMemory(self.hist_mem, null);
@@ -811,6 +827,47 @@ pub const Gpu = struct {
             .p_texel_buffer_view = undefined,
         }}, null);
         log.info("sample history: {d} samples x {d} channels ({d:.1} MB, {s})", .{ cap, nch, @as(f64, @floatFromInt(bytes)) / 1e6, if (self.hist_device_local) "on the card" else "host memory" });
+    }
+
+    /// Makes the review history (once): the live one's size and shape.
+    pub fn createReview(self: *Gpu) !void {
+        if (self.rev_buf != .null or self.hist_cap == 0) return;
+        const dev = self.dev;
+        const bytes: vk.DeviceSize = std.mem.alignForward(u64, self.hist_cap * self.nch * 2, 4);
+        const buf = try dev.createBuffer(&.{ .size = bytes, .usage = .{ .storage_buffer = true }, .sharing_mode = .exclusive }, null);
+        errdefer dev.destroyBuffer(buf, null);
+        const req = dev.getBufferMemoryRequirements(buf);
+        const host: vk.MemoryPropertyFlags = .{ .host_visible = true, .host_coherent = true };
+        // As for the live history: on the card if that memory can be mapped, else host.
+        var mem: vk.DeviceMemory = .null;
+        if (self.findMemoryType(req.memory_type_bits, host.merge(.{ .device_local = true }))) |t| {
+            mem = dev.allocateMemory(&.{ .allocation_size = req.size, .memory_type_index = t }, null) catch .null;
+        }
+        if (mem == .null) mem = try dev.allocateMemory(&.{ .allocation_size = req.size, .memory_type_index = self.findMemoryType(req.memory_type_bits, host) orelse return error.NoHostVisibleMemory }, null);
+        errdefer dev.freeMemory(mem, null);
+        try dev.bindBufferMemory(buf, mem, 0);
+        const ptr = (try dev.mapMemory(mem, 0, vk.WHOLE_SIZE, .{})) orelse return error.MapFailed;
+        const p: [*]i16 = @ptrCast(@alignCast(ptr));
+        self.rev = p[0 .. self.hist_cap * self.nch];
+        @memset(self.rev, 0);
+        self.rev_buf = buf;
+        self.rev_mem = mem;
+        const writes = [_]vk.WriteDescriptorSet{
+            .{ .dst_set = self.rev_set, .dst_binding = 0, .dst_array_element = 0, .descriptor_count = 1, .descriptor_type = .storage_buffer, .p_image_info = undefined, .p_buffer_info = &[_]vk.DescriptorBufferInfo{.{ .buffer = buf, .offset = 0, .range = vk.WHOLE_SIZE }}, .p_texel_buffer_view = undefined },
+            .{ .dst_set = self.rev_set, .dst_binding = 1, .dst_array_element = 0, .descriptor_count = 1, .descriptor_type = .storage_buffer, .p_image_info = undefined, .p_buffer_info = &[_]vk.DescriptorBufferInfo{.{ .buffer = self.gain_buf, .offset = 0, .range = vk.WHOLE_SIZE }}, .p_texel_buffer_view = undefined },
+        };
+        dev.updateDescriptorSets(&writes, null);
+        log.info("review history: {d:.1} MB", .{@as(f64, @floatFromInt(bytes)) / 1e6});
+    }
+
+    pub fn destroyReview(self: *Gpu) void {
+        if (self.rev_buf == .null) return;
+        self.dev.deviceWaitIdle() catch {};
+        self.dev.unmapMemory(self.rev_mem);
+        self.dev.destroyBuffer(self.rev_buf, null);
+        self.dev.freeMemory(self.rev_mem, null);
+        self.rev_buf = .null;
+        self.rev = &.{};
     }
 
     /// Writes `count` samples (interleaved, `nch` each) at absolute sample number `first`.
@@ -952,10 +1009,16 @@ pub const Gpu = struct {
         }, .@"inline");
         if (self.hist_cap > 0 and panels.len > 0) {
             dev.cmdBindPipeline(cmd, .graphics, self.pipeline);
-            dev.cmdBindDescriptorSets(cmd, .graphics, self.pipeline_layout, 0, &[_]vk.DescriptorSet{self.desc_set}, null);
+            var bound_review: ?bool = null;
             for (panels) |pd| {
                 const r = self.clip(pd.rect) orelse continue;
                 if (pd.params.rows == 0 or pd.params.cols == 0) continue;
+                // The live history, or the review one for a panel in review.
+                const from_review = pd.review and self.rev_buf != .null;
+                if (bound_review != from_review) {
+                    dev.cmdBindDescriptorSets(cmd, .graphics, self.pipeline_layout, 0, &[_]vk.DescriptorSet{if (from_review) self.rev_set else self.desc_set}, null);
+                    bound_review = from_review;
+                }
                 dev.cmdSetViewport(cmd, 0, &[_]vk.Viewport{.{ .x = @floatFromInt(r.offset.x), .y = @floatFromInt(r.offset.y), .width = @floatFromInt(r.extent.width), .height = @floatFromInt(r.extent.height), .min_depth = 0, .max_depth = 1 }});
                 dev.cmdSetScissor(cmd, 0, &[_]vk.Rect2D{r});
                 dev.cmdPushConstants(cmd, self.pipeline_layout, .{ .vertex = true }, 0, @sizeOf(TraceParams), @ptrCast(&pd.params));

@@ -133,6 +133,13 @@ pub const Feed = struct {
         return self;
     }
 
+    /// Forgets the filters' states: the next block is taken as the start of a signal (each
+    /// filter settles on its first sample). For feeding a stretch from somewhere else in
+    /// a recording.
+    pub fn restart(self: *Feed) void {
+        self.started = false;
+    }
+
     pub fn deinit(self: *Feed, gpa: std.mem.Allocator) void {
         for (self.slots[0..self.num_slots]) |s| gpa.free(s.states);
         gpa.free(self.row_buf);
