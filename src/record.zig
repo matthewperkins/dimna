@@ -74,6 +74,8 @@ pub const Info = struct {
     /// the same take can sit beside them), and `<root>/current` is made a link to the
     /// session folder. Otherwise the files go straight into `<root>/<date_time>/`.
     session: bool = false,
+    /// What the TTL input lines are connected to ("" = not named), written to meta.toml.
+    ttl_names: [8][]const u8 = @splat(""),
 };
 
 pub const Stats = struct {
@@ -595,6 +597,12 @@ fn writeToml(w: *Io.Writer, r: *const Recorder, final_end: ?i64) !void {
     try w.print("\ngateware = \"{d}.{d}.{d}\"\nboard_id = 0x{x}\ncable_delay = [{d}, {d}, {d}, {d}]\n", .{ fw[0], fw[1], fw[2], r.info.board_id, r.info.cable_delay[0], r.info.cable_delay[1], r.info.cable_delay[2], r.info.cable_delay[3] });
     try w.print("\n[settings]\nlower_bandwidth_hz = {f}\nupper_bandwidth_hz = {f}\ndsp_enabled = {}\ndsp_cutoff_hz = {f}\nacquire_aux = {}\nacquire_adc = {}\nfast_settle = {}\nleds = {}\nusb_block_bytes = {d}\nblock_samples = {d}\n", .{ fmtFloat(st.lower_bandwidth), fmtFloat(st.upper_bandwidth), st.dsp_enabled, fmtFloat(st.dsp_cutoff), st.acquire_aux, st.acquire_adc, st.fast_settle, st.leds, st.usb_block_bytes, st.block_samples });
 
+    try w.writeAll("\n# What the TTL input lines carry, line 1 first (\"\" = not named).\n[ttl]\nline_names = [");
+    for (r.info.ttl_names, 0..) |name, i| {
+        if (i > 0) try w.writeAll(", ");
+        try tomlStr(w, name);
+    }
+    try w.writeAll("]\n");
     if (r.first_sample) |fs| try w.print("\n[start]\nfirst_sample = {d}\n", .{fs});
     if (final_end) |end| {
         var lt_name: [64]u8 = undefined;

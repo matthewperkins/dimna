@@ -13,57 +13,66 @@ pub const Sweep = struct {
     fall: ?i64 = null,
 };
 
-pub const Triggers = struct {
-    /// TTL line, 1-based (line 1 is bit 0 of the digital word).
-    line: u8 = 2,
-    /// The last `max_sweeps` triggers, oldest first from `head`.
-    list: [max_sweeps]Sweep = undefined,
-    head: usize = 0,
-    len: usize = 0,
-    /// Triggers seen since `reset`.
-    count: u64 = 0,
-    high: bool = false,
-    started: bool = false,
+/// The triggers of triggered-sweep panels.
+pub const Triggers = List(max_sweeps);
+/// The pulses of a line shown as a tint over a panel (many more can be in view).
+pub const Pulses = List(512);
 
-    pub fn reset(self: *Triggers, line: u8) void {
-        self.* = .{ .line = line };
-    }
+pub fn List(comptime cap: usize) type {
+    return struct {
+        const Self = @This();
 
-    /// Looks for edges in the digital words of a block that starts at sample `first`.
-    pub fn feed(self: *Triggers, first: i64, words: []const u16) void {
-        if (self.line < 1 or self.line > 16) return;
-        const mask = @as(u16, 1) << @intCast(self.line - 1);
-        for (words, 0..) |w, i| {
-            const high = w & mask != 0;
-            if (!self.started) {
-                // A line that is already high when we start looking is not an edge.
-                self.started = true;
-                self.high = high;
-                continue;
-            }
-            if (high == self.high) continue;
-            self.high = high;
-            const n = first + @as(i64, @intCast(i));
-            if (high) {
-                if (self.len == max_sweeps) {
-                    self.head = (self.head + 1) % max_sweeps;
-                    self.len -= 1;
+        /// TTL line, 1-based (line 1 is bit 0 of the digital word).
+        line: u8 = 2,
+        /// The last `cap` triggers, oldest first from `head`.
+        list: [cap]Sweep = undefined,
+        head: usize = 0,
+        len: usize = 0,
+        /// Triggers seen since `reset`.
+        count: u64 = 0,
+        high: bool = false,
+        started: bool = false,
+
+        pub fn reset(self: *Self, line: u8) void {
+            self.* = .{ .line = line };
+        }
+
+        /// Looks for edges in the digital words of a block that starts at sample `first`.
+        pub fn feed(self: *Self, first: i64, words: []const u16) void {
+            if (self.line < 1 or self.line > 16) return;
+            const mask = @as(u16, 1) << @intCast(self.line - 1);
+            for (words, 0..) |w, i| {
+                const high = w & mask != 0;
+                if (!self.started) {
+                    // A line that is already high when we start looking is not an edge.
+                    self.started = true;
+                    self.high = high;
+                    continue;
                 }
-                self.list[(self.head + self.len) % max_sweeps] = .{ .t0 = n };
-                self.len += 1;
-                self.count += 1;
-            } else if (self.len > 0) {
-                self.list[(self.head + self.len - 1) % max_sweeps].fall = n;
+                if (high == self.high) continue;
+                self.high = high;
+                const n = first + @as(i64, @intCast(i));
+                if (high) {
+                    if (self.len == cap) {
+                        self.head = (self.head + 1) % cap;
+                        self.len -= 1;
+                    }
+                    self.list[(self.head + self.len) % cap] = .{ .t0 = n };
+                    self.len += 1;
+                    self.count += 1;
+                } else if (self.len > 0) {
+                    self.list[(self.head + self.len - 1) % cap].fall = n;
+                }
             }
         }
-    }
 
-    /// The `i`-th most recent trigger (0 = newest), if there are that many.
-    pub fn recent(self: *const Triggers, i: usize) ?Sweep {
-        if (i >= self.len) return null;
-        return self.list[(self.head + self.len - 1 - i) % max_sweeps];
-    }
-};
+        /// The `i`-th most recent trigger (0 = newest), if there are that many.
+        pub fn recent(self: *const Self, i: usize) ?Sweep {
+            if (i >= self.len) return null;
+            return self.list[(self.head + self.len - 1 - i) % cap];
+        }
+    };
+}
 
 const testing = std.testing;
 

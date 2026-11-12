@@ -4,6 +4,7 @@
 //! came, then for every electrode panel a band-passed copy of its channels (the panel's
 //! "slot"). A panel draws either its channels or its slot, so switching between raw and
 //! filtered is instant, and two panels can show the same channels with different bands.
+//! A TTL panel's slot holds its input lines as square waves, one column per line.
 //!
 //! Filtering happens here, on the display's thread, as blocks arrive: a few million biquad
 //! steps a second. It never touches acquisition or what is recorded.
@@ -29,7 +30,16 @@ const Slot = struct {
     states: []dsp.Band.State,
 };
 
+const TtlSlot = struct {
+    column: usize,
+    /// Bit masks of the lines, in row order.
+    masks: [8]u16,
+    rows: usize,
+};
+
 pub const Feed = struct {
+    ttl_slots: [panels.max_panels]TtlSlot = undefined,
+    num_ttl_slots: usize = 0,
     nch: usize,
     width: usize,
     fs: f64,
@@ -56,6 +66,15 @@ pub const Feed = struct {
         errdefer self.deinit(gpa);
         @memset(self.raw, 0);
         for (set.slice(), 0..) |*p, i| {
+            if (p.kind == .ttl) {
+                var slot: TtlSlot = .{ .column = self.width, .masks = @splat(0), .rows = p.rows };
+                for (0..p.rows) |r| slot.masks[r] = @as(u16, 1) << @intCast(std.math.clamp(p.ttl_lines[r], 1, 16) - 1);
+                p.slot = @intCast(self.width);
+                self.ttl_slots[self.num_ttl_slots] = slot;
+                self.num_ttl_slots += 1;
+                self.width += p.rows;
+                continue;
+            }
             if (p.kind != .electrode) continue;
             const states = try gpa.alloc(dsp.Band.State, p.rows);
             @memset(states, @splat(.{}));
@@ -83,8 +102,9 @@ pub const Feed = struct {
     }
 
     /// The history rows for a block of raw samples (`nch` interleaved) that starts at sample
-    /// number `first`. The result is valid until the next call.
-    pub fn rows(self: *Feed, gpa: std.mem.Allocator, first: i64, samples: []const i16) ![]const i16 {
+    /// number `first`, with its digital input words `ttl` (one per sample). The result is
+    /// valid until the next call.
+    pub fn rows(self: *Feed, gpa: std.mem.Allocator, first: i64, samples: []const i16, ttl: []const u16) ![]const i16 {
         const nch = self.nch;
         const width = self.width;
         const count = samples.len / nch;
@@ -118,6 +138,13 @@ pub const Feed = struct {
                 const col = s.column + r;
                 for (0..count) |i| out[i * width + col] = dsp.toI16(s.band.step(&st, @floatFromInt(samples[i * nch + ch])));
                 st_ptr.* = st;
+            }
+        }
+        for (self.ttl_slots[0..self.num_ttl_slots]) |*s| {
+            for (0..s.rows) |r| {
+                const bit = s.masks[r];
+                const col = s.column + r;
+                for (0..count) |i| out[i * width + col] = if (i < ttl.len and ttl[i] & bit != 0) panels.ttl_level else -panels.ttl_level;
             }
         }
         self.newest = first + @as(i64, @intCast(count));
@@ -198,7 +225,7 @@ test "rows carry raw channels and each electrode panel's filtered copy; refilter
             block[i * 3 + 1] = @intFromFloat(3000.0 * @sin(2.0 * std.math.pi * 20.0 * t));
             block[i * 3 + 2] = @intCast(@mod(n + @as(i64, @intCast(i)), 1000));
         }
-        const out = try feed.rows(gpa, n, &block);
+        const out = try feed.rows(gpa, n, &block, &.{});
         for (0..256) |i| {
             const pos: usize = @intCast(@mod(n + @as(i64, @intCast(i)), cap));
             @memcpy(hist[pos * feed.width ..][0..feed.width], out[i * feed.width ..][0..feed.width]);
@@ -247,6 +274,6 @@ test "rows carry raw channels and each electrode panel's filtered copy; refilter
         block[i * 3 + 1] = 0;
         block[i * 3 + 2] = 0;
     }
-    const out = try feed.rows(gpa, newest, &block);
+    const out = try feed.rows(gpa, newest, &block, &.{});
     try testing.expect(out[3] > 7950 and out[3] < 8050);
 }

@@ -3,7 +3,7 @@
 //!
 //!   [[panel]]
 //!   name = "Port B"
-//!   source = "B1"                 # a headstage (A1..D2), "electrodes", "aux" or "adc"
+//!   source = "B1"                 # a headstage (A1..D2), "electrodes", "aux", "adc" or "ttl"
 //!   rect = [0.0, 0.0, 0.5, 1.0]   # x, y, width, height as fractions of the display
 //!   span_s = 2.0                  # optional: time across the panel
 //!   scale = 400                   # optional: µV per row (V per row for aux and adc)
@@ -12,10 +12,18 @@
 //!   pre_ms = 10                   # optional: time shown before the trigger
 //!   post_ms = 40                  # optional: and after it
 //!   sweeps = 10                   # optional: how many sweeps are overlaid
+//!   lines = [1, 2]                # optional, source "ttl": which input lines (default all 8)
+//!   tint = 2                      # optional: shade the panel while this TTL line is high
 //!   band = [300, 6000]            # optional, electrodes: show band-passed, corners in Hz
 //!                                 # (0 leaves a side out: [10, 0] is a 10 Hz high-pass)
 //!
 //! With no [[panel]] in the config there is one panel per headstage, side by side.
+//!
+//! TTL lines can be named, for the lanes' labels and the recording's meta.toml:
+//!
+//!   [ttl]
+//!   line1 = "camera"
+//!   line2 = "laser"
 
 const std = @import("std");
 const types = @import("types.zig");
@@ -24,8 +32,11 @@ const toml = @import("toml.zig");
 pub const max_panels = 16;
 /// Rows that can have a vertical scale of their own (see `Panel.row_gain`).
 pub const max_rows = 256;
+/// A TTL lane's low and high levels in the display's sample history are -/+ this.
+pub const ttl_level = 1000.0;
 
-pub const Kind = enum { electrode, aux, adc };
+/// `ttl`: the digital input lines as square-wave lanes, one row per line.
+pub const Kind = enum { electrode, aux, adc, ttl };
 
 /// How a panel shows time. `scroll` (the default): the newest sample is at the right edge
 /// and the traces move left. `sweep`: the traces stand still and a cursor moves left to
@@ -62,6 +73,10 @@ pub const Panel = struct {
     overlay: u32 = 10,
     /// A factor on `scale` for single rows (Ctrl+wheel over a row); 1 = the panel's scale.
     row_gain: [max_rows]f32 = @splat(1),
+    /// Source "ttl": the input lines shown, 1-based, one per row.
+    ttl_lines: [8]u8 = .{ 1, 2, 3, 4, 5, 6, 7, 8 },
+    /// A TTL line (1-based) whose high state is shown as a tint over the whole panel, or 0.
+    tint_line: u8 = 0,
     /// Display filter (electrodes only; never applied to what is recorded): whether the
     /// panel shows its channels band-passed, and the band's corners in Hz (0 = that side
     /// off). 4th-order Butterworth each side, see `dsp.Band`.
@@ -82,6 +97,7 @@ pub const Panel = struct {
             .electrode => types.electrode_uv_per_bit,
             .aux => types.aux_v_per_bit,
             .adc => types.adc_v_per_bit,
+            .ttl => 1.0,
         };
     }
 
@@ -106,7 +122,7 @@ pub const Panel = struct {
     }
 
     pub fn drawColumn(self: *const Panel) u32 {
-        return if (self.filtered and self.kind == .electrode) self.slot else self.first_ch;
+        return if ((self.filtered and self.kind == .electrode) or self.kind == .ttl) self.slot else self.first_ch;
     }
 
     /// The corners offered when stepping with keys (0 = that side off).
@@ -147,7 +163,11 @@ pub const Panel = struct {
     }
 
     pub fn unit(self: *const Panel) []const u8 {
-        return if (self.kind == .electrode) "uV" else "V";
+        return switch (self.kind) {
+            .electrode => "uV",
+            .ttl => "",
+            else => "V",
+        };
     }
 
     pub const span_min = 0.05;
@@ -157,7 +177,11 @@ pub const Panel = struct {
     pub const sweep_span_max = 10.0;
 
     pub fn scaleLimits(self: *const Panel) [2]f64 {
-        return if (self.kind == .electrode) .{ 5.0, 20000.0 } else .{ 0.001, 20.0 };
+        return switch (self.kind) {
+            .electrode => .{ 5.0, 20000.0 },
+            .ttl => .{ ttl_level * 2.2, ttl_level * 20 },
+            else => .{ 0.001, 20.0 },
+        };
     }
 
     pub fn defaultScale(kind: Kind) f64 {
@@ -166,6 +190,8 @@ pub const Panel = struct {
             // AUX is stored about its 1.2255 V mid-point and spans ±1.2 V; the ADCs span ±5 V.
             .aux => 1.0,
             .adc => 5.0,
+            // A lane's swing (2 * ttl_level) is 0.6 of its row.
+            .ttl => ttl_level * 2 / 0.6,
         };
     }
 
@@ -201,6 +227,24 @@ pub const Panel = struct {
 pub const Set = struct {
     items: [max_panels]Panel = undefined,
     len: usize = 0,
+    /// Names of the TTL input lines from the config's [ttl] table ("" = not named).
+    ttl_name_buf: [8][24]u8 = undefined,
+    ttl_name_len: [8]usize = @splat(0),
+
+    pub fn ttlName(self: *const Set, line: usize) []const u8 {
+        if (line < 1 or line > 8) return "";
+        return self.ttl_name_buf[line - 1][0..self.ttl_name_len[line - 1]];
+    }
+
+    fn readTtlNames(self: *Set, doc: toml.Document) void {
+        for (0..8) |i| {
+            var key_buf: [8]u8 = undefined;
+            const key = std.fmt.bufPrint(&key_buf, "line{d}", .{i + 1}) catch continue;
+            const name = doc.string("ttl", 0, key) orelse continue;
+            self.ttl_name_len[i] = @min(name.len, self.ttl_name_buf[i].len);
+            @memcpy(self.ttl_name_buf[i][0..self.ttl_name_len[i]], name[0..self.ttl_name_len[i]]);
+        }
+    }
 
     pub fn slice(self: *Set) []Panel {
         return self.items[0..self.len];
@@ -236,6 +280,7 @@ fn resolve(source: []const u8, layout: *const types.Layout) ?Source {
     if (std.ascii.eqlIgnoreCase(source, "electrodes")) return .{ .kind = .electrode, .first = 0, .rows = layout.num_electrodes };
     if (std.ascii.eqlIgnoreCase(source, "aux")) return .{ .kind = .aux, .first = layout.num_electrodes, .rows = layout.num_aux };
     if (std.ascii.eqlIgnoreCase(source, "adc")) return .{ .kind = .adc, .first = layout.num_electrodes + layout.num_aux, .rows = layout.num_adc };
+    if (std.ascii.eqlIgnoreCase(source, "ttl")) return .{ .kind = .ttl, .first = 0, .rows = 8 };
     for (layout.headstageSlice()) |h| {
         if (std.ascii.eqlIgnoreCase(source, types.headstage_names[h.slot])) return .{ .kind = .electrode, .first = h.first_channel, .rows = h.num_channels };
     }
@@ -283,14 +328,17 @@ pub fn fromConfig(doc: toml.Document, layout: *const types.Layout) Error!Set {
     const count = doc.count("panel");
     if (count == 0) {
         default_mode = (try parseMode(doc.get("", 0, "mode"), "mode", 0)) orelse .scroll;
-        return default(layout);
+        var set = default(layout);
+        set.readTtlNames(doc);
+        return set;
     }
     if (count > max_panels) return fail("{d} panels; at most {d}", .{ count, max_panels });
     var set: Set = .{};
+    set.readTtlNames(doc);
     const all_mode = try parseMode(doc.get("", 0, "mode"), "mode", 0);
     for (0..count) |i| {
-        const source = doc.string("panel", i, "source") orelse return fail("panel {d}: no source (a headstage such as \"A1\", \"electrodes\", \"aux\" or \"adc\")", .{i + 1});
-        const src = resolve(source, layout) orelse return fail("panel {d}: source \"{s}\" is not a connected headstage, \"electrodes\", \"aux\" or \"adc\"", .{ i + 1, source });
+        const source = doc.string("panel", i, "source") orelse return fail("panel {d}: no source (a headstage such as \"A1\", \"electrodes\", \"aux\", \"adc\" or \"ttl\")", .{i + 1});
+        const src = resolve(source, layout) orelse return fail("panel {d}: source \"{s}\" is not a connected headstage, \"electrodes\", \"aux\", \"adc\" or \"ttl\"", .{ i + 1, source });
         if (src.rows == 0) return fail("panel {d}: source \"{s}\" has no channels (aux and adc must be acquired)", .{ i + 1, source });
         const rect = doc.numbers("panel", i, "rect") orelse return fail("panel {d}: no rect = [x, y, width, height]", .{i + 1});
         if (rect.len != 4) return fail("panel {d}: rect needs 4 numbers, has {d}", .{ i + 1, rect.len });
@@ -308,6 +356,20 @@ pub fn fromConfig(doc: toml.Document, layout: *const types.Layout) Error!Set {
             .scale = doc.number("panel", i, "scale") orelse Panel.defaultScale(src.kind),
             .mode = (try parseMode(doc.get("panel", i, "mode"), "panel", i + 1)) orelse all_mode orelse .scroll,
         };
+        if (doc.get("panel", i, "lines")) |v| {
+            const lines: []const f64 = if (v == .numbers) v.numbers else &.{};
+            if (src.kind != .ttl) return fail("panel {d}: lines is for source \"ttl\"", .{i + 1});
+            if (lines.len < 1 or lines.len > 8) return fail("panel {d}: lines needs 1 to 8 TTL line numbers", .{i + 1});
+            for (lines, 0..) |l, k| {
+                if (l < 1 or l > 8 or l != @floor(l)) return fail("panel {d}: lines are TTL input lines, 1 to 8", .{i + 1});
+                p.ttl_lines[k] = @intFromFloat(l);
+            }
+            p.rows = @intCast(lines.len);
+        }
+        if (doc.number("panel", i, "tint")) |v| {
+            if (v < 1 or v > 8 or v != @floor(v)) return fail("panel {d}: tint is a TTL input line, 1 to 8", .{i + 1});
+            p.tint_line = @intFromFloat(v);
+        }
         if (doc.number("panel", i, "trigger")) |v| {
             if (v < 1 or v > 8 or v != @floor(v)) return fail("panel {d}: trigger is a TTL input line, 1 to 8", .{i + 1});
             p.trig_line = @intFromFloat(v);
@@ -483,6 +545,40 @@ test "one row scaled on its own" {
     // Limits apply to the row's own scale.
     p.scaleRow(8, 1e-6);
     try testing.expectApproxEqAbs(5.0, p.rowScale(8), 1e-3);
+}
+
+test "TTL lanes, line names and a tint from the config" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const l = testLayout();
+    var set = try fromConfig(try toml.parse(a,
+        \\[ttl]
+        \\line1 = "camera"
+        \\line2 = "laser"
+        \\[[panel]]
+        \\source = "A1"
+        \\rect = [0, 0, 1, 0.8]
+        \\tint = 2
+        \\[[panel]]
+        \\source = "ttl"
+        \\rect = [0, 0.8, 1, 0.1]
+        \\lines = [2, 1]
+        \\[[panel]]
+        \\source = "ttl"
+        \\rect = [0, 0.9, 1, 0.1]
+    ), &l);
+    try testing.expectEqual(2, set.items[0].tint_line);
+    try testing.expectEqual(Kind.ttl, set.items[1].kind);
+    try testing.expectEqual(2, set.items[1].rows);
+    try testing.expectEqual(2, set.items[1].ttl_lines[0]);
+    try testing.expectEqual(1, set.items[1].ttl_lines[1]);
+    try testing.expectEqual(8, set.items[2].rows);
+    try testing.expectEqualStrings("camera", set.ttlName(1));
+    try testing.expectEqualStrings("laser", set.ttlName(2));
+    try testing.expectEqualStrings("", set.ttlName(3));
+    try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"ttl\"\nrect = [0,0,1,1]\nlines = [0, 9]"), &l));
+    try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"A1\"\nrect = [0,0,1,1]\nlines = [1]"), &l));
 }
 
 test "sweep mode: per panel or for all, with a shorter longest time base" {

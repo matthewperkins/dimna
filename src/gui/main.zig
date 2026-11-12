@@ -207,7 +207,7 @@ fn applyConfig(a: *Args, doc: oez.toml.Document) void {
     a.doc = doc;
     for (doc.entries) |e| {
         if (e.table.len != 0) {
-            if (!std.mem.eql(u8, e.table, "panel") and !std.mem.eql(u8, e.table, "board")) log.warn("config line {d}: unknown table [{s}]", .{ e.line, e.table });
+            if (!std.mem.eql(u8, e.table, "panel") and !std.mem.eql(u8, e.table, "board") and !std.mem.eql(u8, e.table, "ttl")) log.warn("config line {d}: unknown table [{s}]", .{ e.line, e.table });
             continue;
         }
         if (std.mem.eql(u8, e.key, "monitor") and e.value == .string) {
@@ -354,9 +354,14 @@ fn refilterSamples(set: *const panels_mod.Set, fs: f64) usize {
 
 /// The label of one row: the electrode's number on its headstage (with the headstage's name
 /// when the panel spans more than one), or AUXn / ADCn.
-fn rowLabel(buf: []u8, p: *const Panel, row: u32, layout: *const oez.types.Layout) []const u8 {
+fn rowLabel(buf: []u8, p: *const Panel, row: u32, layout: *const oez.types.Layout, set: *const panels_mod.Set) []const u8 {
     const ch = p.first_ch + row;
     switch (p.kind) {
+        .ttl => {
+            const line = p.ttl_lines[@min(row, 7)];
+            const name = set.ttlName(line);
+            return if (name.len > 0) name else std.fmt.bufPrint(buf, "TTL{d}", .{line}) catch "";
+        },
         .electrode => {
             for (layout.headstageSlice()) |h| {
                 if (ch < h.first_channel or ch >= h.first_channel + h.num_channels) continue;
@@ -386,11 +391,17 @@ const Display = struct {
     /// The triggers of each panel's TTL line (used by panels in triggered mode).
     triggers: [panels_mod.max_panels]oez.sweeps.Triggers = @splat(.{}),
 
+    /// The pulses of each panel's tint line (see `Panel.tint_line`).
+    pulses: [panels_mod.max_panels]oez.sweeps.Pulses = @splat(.{}),
+
     /// Looks for trigger edges in the digital words of a block starting at sample `first`.
     fn feedTtl(self: *Display, first: i64, words: []const u16) void {
-        for (self.set.items[0..self.set.len], self.triggers[0..self.set.len]) |*p, *t| {
+        for (self.set.items[0..self.set.len], self.triggers[0..self.set.len], self.pulses[0..self.set.len]) |*p, *t, *pl| {
             if (t.line != p.trig_line) t.reset(p.trig_line);
             t.feed(first, words);
+            if (p.tint_line == 0) continue;
+            if (pl.line != p.tint_line) pl.reset(p.tint_line);
+            pl.feed(first, words);
         }
     }
 
@@ -583,6 +594,32 @@ const Display = struct {
                 draws[nd] = .{ .rect = rect, .params = params };
                 nd += 1;
             }
+            if (p.tint_line != 0 and p.mode != .triggered and span >= 1) {
+                // A tint over the panel wherever its tint line was high. Scrolling: time
+                // runs to `newest` at the right edge. Sweep: this pass left of the cursor,
+                // the previous pass right of it.
+                const pulses = &self.pulses[i];
+                const w: f64 = @floatFromInt(r.w);
+                const tint: font.Colour = .{ 90, 150, 255, 30 };
+                const span_i: i64 = @intFromFloat(span);
+                const pass_start: i64 = if (p.mode == .sweep) newest - @as(i64, @intFromFloat(phase)) else newest - span_i;
+                var k: usize = 0;
+                while (pulses.recent(k)) |pulse| : (k += 1) {
+                    const t0 = pulse.t0;
+                    const t1 = pulse.fall orelse newest;
+                    if (t1 < newest - 2 * span_i) break;
+                    // The stretch of the pulse in this pass (or, scrolling, in the window).
+                    const a0 = @max(t0, pass_start);
+                    const a1 = @min(t1, newest);
+                    if (a1 > a0) batch.rect(px + @as(f32, @floatCast(w * @as(f64, @floatFromInt(a0 - pass_start)) / span)), py, @floatCast(@max(1.0, w * @as(f64, @floatFromInt(a1 - a0)) / span)), @floatFromInt(r.h), tint);
+                    if (p.mode != .sweep) continue;
+                    // And in the previous pass, as far as the cursor has not overwritten it.
+                    const prev = pass_start - span_i;
+                    const b0 = @max(t0, prev + (newest - pass_start));
+                    const b1 = @min(t1, pass_start);
+                    if (b1 > b0) batch.rect(px + @as(f32, @floatCast(w * @as(f64, @floatFromInt(b0 - prev)) / span)), py, @floatCast(@max(1.0, w * @as(f64, @floatFromInt(b1 - b0)) / span)), @floatFromInt(r.h), tint);
+                }
+            }
             if (p.mode == .sweep) {
                 // The cursor: a line where the newest sample is, and a blank stretch ahead.
                 const cx: u32 = @min(r.w - 1, @as(u32, @intFromFloat(phase / span * @as(f64, @floatFromInt(r.w)))));
@@ -610,8 +647,12 @@ const Display = struct {
             const title = if (p.mode == .triggered)
                 std.fmt.bufPrint(&title_buf, "{s}   TTL{d}   -{d:.1}/+{d:.1} ms   {s}/row{s}   {d} sweeps{s}", .{ p.name(), p.trig_line, p.pre_ms, p.post_ms, fmtScale(&scale_buf, p), fmtBand(&band_buf, p), shown_sweeps, if (shown_sweeps == 0) " (waiting for a trigger)" else "" }) catch ""
             else
+if (p.kind == .ttl)
+                std.fmt.bufPrint(&title_buf, "{s}   {s}{s}", .{ p.name(), fmtSpan(&span_buf, p.span_s), if (p.mode == .sweep) "   sweep" else "" }) catch ""
+            else
                 std.fmt.bufPrint(&title_buf, "{s}   {s}   {s}/row{s}{s}", .{ p.name(), fmtSpan(&span_buf, p.span_s), fmtScale(&scale_buf, p), fmtBand(&band_buf, p), if (p.mode == .sweep) "   sweep" else "" }) catch "";
-            _ = batch.label(px + 8, title_y, title, bright);
+            // A lane strip is short: its title goes to the right, clear of the lane labels.
+            _ = batch.label(if (p.kind == .ttl) px + @as(f32, @floatFromInt(r.w)) - batch.font.width(title) - 8 else px + 8, title_y, title, bright);
             if (p.mode == .triggered) {
                 // The time axis along the bottom: the ends of the window and the trigger.
                 const bottom = py + @as(f32, @floatFromInt(r.h)) - line_h - 4;
@@ -633,9 +674,9 @@ const Display = struct {
             var row: u32 = 0;
             while (row < p.rows) : (row += step) {
                 const y = py + (@as(f32, @floatFromInt(row)) + 0.5) * row_h - 0.5 * line_h;
-                if (y < title_y + line_h + 3) continue;
+                if (p.kind != .ttl and y < title_y + line_h + 3) continue;
                 var label_buf: [16]u8 = undefined;
-                const after = batch.label(px + 5, y, rowLabel(&label_buf, p, row, layout), dim);
+                const after = batch.label(px + 5, y, rowLabel(&label_buf, p, row, layout, &self.set), dim);
                 // A row with a scale of its own says so.
                 if (row < panels_mod.max_rows and p.row_gain[row] != 1) {
                     var own: Panel = p.*;
@@ -820,7 +861,7 @@ fn runDirect(io: Io, gpa: std.mem.Allocator, args: Args, layout: oez.types.Layou
     while (!acq.done.load(.acquire)) {
         while (reader.next(blk)) {
             if (blk.len == 0) continue;
-            gpu.writeSamples(blk.first_sample, try feed.rows(gpa, blk.first_sample, blk.samples()));
+            gpu.writeSamples(blk.first_sample, try feed.rows(gpa, blk.first_sample, blk.samples(), blk.ttl[0..blk.len]));
             display.feedTtl(blk.first_sample, blk.ttl[0..blk.len]);
             newest = blk.first_sample + @as(i64, @intCast(blk.len));
             newest_acquired_ns = blk.acquired_ns;
@@ -1115,7 +1156,7 @@ pub fn main(init: std.process.Init) !u8 {
         // New samples into the GPU's history.
         while (reader.next(&blk)) {
             if (blk.len == 0) continue;
-            gpu.writeSamples(blk.first_sample, try feed.rows(gpa, blk.first_sample, blk.samples()));
+            gpu.writeSamples(blk.first_sample, try feed.rows(gpa, blk.first_sample, blk.samples(), blk.ttl[0..blk.len]));
             display.feedTtl(blk.first_sample, blk.ttl[0..blk.len]);
             newest = blk.first_sample + @as(i64, @intCast(blk.len));
             newest_acquired_ns = blk.acquired_ns;
@@ -1180,6 +1221,11 @@ pub fn main(init: std.process.Init) !u8 {
                         .cable_delay = if (board) |b| b.cable_delay else @splat(0),
                         .board_kind = if (board != null) "Open Ephys acquisition board (ECP5, FT600, ONI)" else "simulated",
                         .session = true,
+                        .ttl_names = names: {
+                            var names: [8][]const u8 = undefined;
+                            for (&names, 1..) |*n, line| n.* = display.set.ttlName(line);
+                            break :names names;
+                        },
                     })) |r| {
                         r.events_in = &acq.events;
                         if (r.start()) |_| {

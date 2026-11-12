@@ -145,6 +145,28 @@ as usual. Edges are found on the display thread from the digital words of each b
 with slow triggers fewer are overlaid. After a filter corner change, only the recent past
 is refiltered, so older overlaid sweeps keep the old corners until they are replaced.
 
+**TTL lanes and tint.** A panel with `source = "ttl"` shows the digital input lines as
+square-wave lanes, one row per line (`lines = [1, 2]` picks them; all 8 otherwise). It is
+drawn from the same sample history as the traces, so it scrolls, sweeps and zooms with
+them. Lines can be named in the config; the names label the lanes and are written to each
+recording's `meta.toml` (`[ttl] line_names`):
+
+```toml
+[ttl]
+line1 = "camera"
+line2 = "laser"
+
+[[panel]]
+name = "TTL"
+source = "ttl"
+lines = [1, 2]
+rect = [0.0, 0.9, 1.0, 0.1]
+```
+
+Any panel can also be shaded while one line is high: `tint = 2` in its `[[panel]]` table.
+It is off unless asked for, and meant for a slow line such as the laser (a 60 Hz camera
+trigger would stripe the whole panel). Up to 512 pulses are kept per panel.
+
 **Display filter.** Each electrode panel can show its channels band-passed: a 4th-order
 Butterworth high-pass and low-pass with the panel's own corners (`band = [low, high]`; a 0
 leaves that side out, so `[10, 0]` is a 10 Hz high-pass). `f` switches the panel under the

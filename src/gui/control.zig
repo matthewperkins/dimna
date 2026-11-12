@@ -455,6 +455,7 @@ fn build(ui: *ui_mod.Ui, cfg: *const Config, snap: *const Snapshot, shared: *Sha
             .electrode => "electrode",
             .aux => "AUX",
             .adc => "ADC",
+            .ttl => "TTL",
         } }) catch "", ui_mod.text_dim);
         ui.x = @max(ui.x, ui.width - 78);
         if (ui.button("reset", false)) shared.push(.{ .panel = i, .action = .reset });
@@ -473,9 +474,11 @@ fn build(ui: *ui_mod.Ui, cfg: *const Config, snap: *const Snapshot, shared: *Sha
             format.fmtSpan(&value_buf, p.span_s);
         const dt = ui.stepper(if (p.mode == .triggered) "window" else "time", time_text, 130);
         if (dt != 0) shared.push(.{ .panel = i, .action = .{ .zoom = if (dt > 0) step_up else 1.0 / step_up } });
-        var scale_buf: [32]u8 = undefined;
-        const ds = ui.stepper("scale", std.fmt.bufPrint(&buf, "{s}/row", .{format.fmtScale(&scale_buf, p)}) catch "", 110);
-        if (ds != 0) shared.push(.{ .panel = i, .action = .{ .scale = if (ds > 0) step_up else 1.0 / step_up } });
+        if (p.kind != .ttl) {
+            var scale_buf: [32]u8 = undefined;
+            const ds = ui.stepper("scale", std.fmt.bufPrint(&buf, "{s}/row", .{format.fmtScale(&scale_buf, p)}) catch "", 110);
+            if (ds != 0) shared.push(.{ .panel = i, .action = .{ .scale = if (ds > 0) step_up else 1.0 / step_up } });
+        }
         ui.newline();
 
         if (p.kind == .electrode) {

@@ -12,6 +12,7 @@ pub fn fmtSpan(buf: []u8, s: f64) []const u8 {
 /// "250 mV", "5.00 V".
 pub fn fmtScale(buf: []u8, p: *const Panel) []const u8 {
     const v = p.scale;
+    if (p.kind == .ttl) return "";
     return (if (p.kind == .electrode)
         (if (v < 999.5) std.fmt.bufPrint(buf, "{d:.0} µV", .{v}) else std.fmt.bufPrint(buf, "{d:.2} mV", .{v / 1000}))
     else
