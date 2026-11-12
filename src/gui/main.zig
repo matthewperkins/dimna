@@ -10,10 +10,21 @@
 //!   no input in this mode yet: it runs for --seconds (default 20) or until Ctrl+C, and
 //!   --script changes the view. Margin 1.5 ms unless --margin-ms.
 //! --monitor makes the window fullscreen on that monitor (the neural display).
-//! --tearing asks the compositor to show frames at once instead of at the refresh (it needs
-//!   a fullscreen window and Hyprland's general.allow_tearing); implies --present immediate.
+//! --tearing asks the compositor to show each frame at once, mid-scan, instead of at the
+//!   refresh; implies --present immediate and --free 2. The lowest latency under a compositor:
+//!   1.6 ms from a sample's arrival to the flip (measured, Hyprland 0.57.2), and since a new
+//!   frame is flipped every 3 ms, every scan line shows data at most a few ms old (with
+//!   refresh-locked frames the bottom of the screen is a whole refresh staler than the top).
+//!   Hyprland tears only when all of these hold:
+//!     general.allow_tearing = true                     (config)
+//!     the window is fullscreen                          (--monitor)
+//!     the window asks for it (done here) or has a window rule `immediate = true`
+//!     cursor.no_hardware_cursors = 1                    (config: no tearing while a hardware
+//!                                                        cursor is visible on that monitor)
+//!   `hyprctl monitors` shows activelyTearing and tearingBlockedBy. ("next frame is not torn"
+//!   is listed whenever a frame is not being torn at that instant; it is not a blocker.)
 //! --free MS draws whenever new samples have arrived, at most every MS milliseconds, instead
-//!   of once per refresh just before it. The way to draw when tearing.
+//!   of once per refresh just before it.
 //!
 //! --script feeds synthetic input for tests, as "SECONDS:STEP;SECONDS:STEP;...", where STEP is
 //! wheel=N, hwheel=N (axis units, 15 = one click), pinch=F (scale factor), or keys such as
@@ -52,11 +63,12 @@
 //! best latency of the last seconds, so it works in either regime) and then returns;
 //! --margin-ms fixes it. Direct scanout needs Hyprland's render.direct_scanout = 1, or = 2
 //! (only surfaces declared as game content, which oez does) and a fullscreen window
-//! (--monitor, or `monitor` in the config file). Tearing was tried: Hyprland would not tear
-//! here, and free-running (--free) queues frames under direct scanout (33.6 ms).
+//! (--monitor, or `monitor` in the config file). Free-running (--free) without tearing
+//! queues frames under direct scanout (33.6 ms).
 //!
 //! Config file: $XDG_CONFIG_HOME/oez/config.toml (default ~/.config/oez), flat `key = value`
-//! lines; command-line options win. Keys: monitor = "DP-2".
+//! lines; command-line options win. Keys: monitor = "DP-2", tearing = true, free_ms = 2,
+//! margin_ms = 3.
 
 const std = @import("std");
 const oez = @import("oez");
@@ -138,6 +150,11 @@ fn applyConfig(a: *Args, text: []const u8) void {
             a.monitor = value;
         } else if (std.mem.eql(u8, key, "margin_ms")) {
             a.margin_ms = std.fmt.parseFloat(f64, value) catch a.margin_ms;
+        } else if (std.mem.eql(u8, key, "free_ms")) {
+            a.free_ms = std.fmt.parseFloat(f64, value) catch a.free_ms;
+        } else if (std.mem.eql(u8, key, "tearing")) {
+            a.tearing = std.mem.eql(u8, value, "true");
+            if (a.tearing) a.present = .immediate;
         } else log.warn("config: unknown key '{s}'", .{key});
     }
 }
@@ -217,6 +234,8 @@ fn parseArgs(args: []const [:0]const u8, config: []const u8) !Args {
             return error.BadArgs;
         }
     }
+    // Tearing shows frames as they are presented, so draw as samples arrive.
+    if (a.tearing and a.free_ms < 0) a.free_ms = 2;
     return a;
 }
 
