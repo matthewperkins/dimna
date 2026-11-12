@@ -217,6 +217,8 @@ pub const Action = union(enum) {
     audio: AudioAction,
     /// Stamp this preset note (1 to 9) now.
     note_preset: u8,
+    /// Write the panels' settings to the view file.
+    save_view,
     quit_answer: QuitAnswer,
     quit,
 };
@@ -234,6 +236,8 @@ pub const Snapshot = struct {
     board: BoardStatus = .{},
     audio: AudioStatus = .{},
     notes: NotesStatus = .{},
+    /// The panels' settings differ from the view file (or, with none, from launch).
+    view_unsaved: bool = false,
     quit_prompt: QuitPrompt = .{},
     /// One line about the source ("Open Ephys acquisition board   56 channels at 30000 Hz").
     about_buf: [160]u8 = undefined,
@@ -412,7 +416,7 @@ fn build(ui: *ui_mod.Ui, cfg: *const Config, snap: *const Snapshot, shared: *Sha
         // Quitting with board settings that differ from the config: nothing else is shown.
         const q = &snap.quit_prompt;
         ui.separator();
-        ui.text("The board settings differ from the config file:", ui_mod.text_bright);
+        ui.text("Settings changed since they were last saved:", ui_mod.text_bright);
         ui.newline();
         for (q.lines[0..q.count], q.lens[0..q.count]) |*line, len| {
             ui.space(16);
@@ -433,7 +437,9 @@ fn build(ui: *ui_mod.Ui, cfg: *const Config, snap: *const Snapshot, shared: *Sha
     } else ui.text("starting", ui_mod.text_dim);
     if (st.lost > 0) ui.text(std.fmt.bufPrint(&buf, "display skipped {d} blocks", .{st.lost}) catch "", ui_mod.text_warn);
     if (snap.ring_overflow > 0) ui.text(std.fmt.bufPrint(&buf, "ACQUISITION RING OVERFLOW {d}", .{snap.ring_overflow}) catch "", ui_mod.text_warn);
-    ui.x = @max(ui.x, ui.width - 70);
+    ui.x = @max(ui.x, ui.width - 170);
+    // Lit while the panels' settings differ from what is saved.
+    if (ui.button("Save view", snap.view_unsaved)) shared.push(.{ .action = .save_view });
     if (ui.button("Quit", false)) shared.push(.{ .action = .quit });
     ui.newline();
     ui.separator();

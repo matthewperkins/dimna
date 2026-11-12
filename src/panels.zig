@@ -452,6 +452,103 @@ fn parseMode(value: ?toml.Value, what: []const u8, n: usize) Error!?Mode {
     return if (n == 0) fail("{s} must be \"scroll\", \"sweep\" or \"triggered\"", .{what}) else fail("{s} {d}: mode must be \"scroll\", \"sweep\" or \"triggered\"", .{ what, n });
 }
 
+/// Applies the settings keys of table `table`'s `i`-th element to a panel: the keys a
+/// `[[panel]]` of the config and a `[[view]]` of the view file share (everything but the
+/// panel's source, place and name).
+fn applyKeys(p: *Panel, doc: toml.Document, table: []const u8, i: usize) Error!void {
+    if (doc.number(table, i, "span_s")) |v| p.span_s = v;
+    if (doc.number(table, i, "scale")) |v| p.scale = v;
+    if (try parseMode(doc.get(table, i, "mode"), "panel", i + 1)) |m| p.mode = m;
+    if (doc.string(table, i, "trigger_source")) |v| {
+        if (std.mem.eql(u8, v, "ttl")) p.setTrigSource(.ttl) else if (std.mem.eql(u8, v, "spikes")) p.setTrigSource(.channel) else return fail("panel {d}: trigger_source must be \"ttl\" or \"spikes\"", .{i + 1});
+    }
+    if (doc.number(table, i, "tint")) |v| {
+        if (v < 1 or v > 8 or v != @floor(v)) return fail("panel {d}: tint is a TTL input line, 1 to 8", .{i + 1});
+        p.tint_line = @intFromFloat(v);
+    }
+    if (doc.number(table, i, "trigger")) |v| {
+        if (v < 1 or v > 8 or v != @floor(v)) return fail("panel {d}: trigger is a TTL input line, 1 to 8", .{i + 1});
+        p.trig_line = @intFromFloat(v);
+    }
+    if (doc.number(table, i, "trigger_channel")) |v| {
+        if (p.kind != .electrode) return fail("panel {d}: trigger_channel is for electrode panels", .{i + 1});
+        if (v < 1 or v > @as(f64, @floatFromInt(p.rows)) or v != @floor(v)) return fail("panel {d}: trigger_channel is a row of the panel, 1 to {d}", .{ i + 1, p.rows });
+        p.setTrigSource(.channel);
+        p.trig_row = @intFromFloat(v - 1);
+    }
+    if (doc.number(table, i, "level_uv")) |v| {
+        p.trig_auto = false;
+        p.trig_level_uv = v;
+    }
+    if (doc.boolean(table, i, "level_auto")) |on| p.trig_auto = on;
+    if (doc.string(table, i, "slope")) |v| {
+        if (std.mem.eql(u8, v, "rising")) p.trig_rising = true else if (!std.mem.eql(u8, v, "falling")) return fail("panel {d}: slope must be \"falling\" or \"rising\"", .{i + 1});
+    }
+    if (doc.number(table, i, "holdoff_ms")) |v| p.trig_holdoff_ms = v;
+    if (doc.number(table, i, "pre_ms")) |v| p.pre_ms = v;
+    if (doc.number(table, i, "post_ms")) |v| p.post_ms = v;
+    if (doc.number(table, i, "sweeps")) |v| p.overlay = @intFromFloat(std.math.clamp(v, 1, 1000));
+    if (doc.boolean(table, i, "car")) |on| {
+        if (on and p.kind != .electrode) return fail("panel {d}: car is for electrode panels", .{i + 1});
+        p.car = on;
+        p.car_ref = .all(p.rows);
+        p.car_sub = .all(p.rows);
+    }
+    inline for (.{ "car_ref", "car_subtract" }) |key| {
+        if (doc.get(table, i, key)) |v| {
+            const list: []const f64 = if (v == .numbers) v.numbers else &.{};
+            if (p.kind != .electrode) return fail("panel {d}: {s} is for electrode panels", .{ i + 1, key });
+            var rows: RowSet = .{};
+            for (list) |n| {
+                if (n < 1 or n > @as(f64, @floatFromInt(p.rows)) or n != @floor(n)) return fail("panel {d}: {s} lists rows of the panel, 1 to {d}", .{ i + 1, key, p.rows });
+                rows.set(@intFromFloat(n - 1), true);
+            }
+            if (comptime std.mem.eql(u8, key, "car_ref")) p.car_ref = rows else p.car_sub = rows;
+            // Naming rows turns the reference on unless `car = false` says otherwise.
+            if (doc.boolean(table, i, "car") == null) p.car = true;
+            if (doc.get(table, i, if (comptime std.mem.eql(u8, key, "car_ref")) "car_subtract" else "car_ref") == null and doc.boolean(table, i, "car") == null) {
+                if (comptime std.mem.eql(u8, key, "car_ref")) p.car_sub = .all(p.rows) else p.car_ref = .all(p.rows);
+            }
+        }
+    }
+    inline for (.{ "raw_rows", "hide" }) |key| {
+        if (doc.get(table, i, key)) |v| {
+            const list: []const f64 = if (v == .numbers) v.numbers else &.{};
+            if (p.kind != .electrode) return fail("panel {d}: {s} is for electrode panels", .{ i + 1, key });
+            var rows: RowSet = .{};
+            for (list) |n| {
+                if (n < 1 or n > @as(f64, @floatFromInt(p.rows)) or n != @floor(n)) return fail("panel {d}: {s} lists rows of the panel, 1 to {d}", .{ i + 1, key, p.rows });
+                rows.set(@intFromFloat(n - 1), true);
+            }
+            if (comptime std.mem.eql(u8, key, "hide")) p.hidden = rows else p.raw_rows = rows;
+        }
+    }
+    if (doc.number(table, i, "raw_scale")) |v| {
+        // The raw rows' own scale, as a factor on the panel's.
+        const lim = p.scaleLimits();
+        for (0..@min(p.rows, max_rows)) |r| {
+            if (p.raw_rows.has(r)) p.row_gain[r] = @floatCast(std.math.clamp(v, lim[0], lim[1]) / p.scale);
+        }
+    }
+    if (doc.get(table, i, "band")) |v| {
+        const band: []const f64 = if (v == .numbers) v.numbers else &.{};
+        if (band.len != 2 or band[0] < 0 or band[1] < 0 or (band[1] != 0 and band[1] <= band[0]))
+            return fail("panel {d}: band needs [low, high] in Hz, low below high (0 leaves a side out)", .{i + 1});
+        if (p.kind != .electrode) return fail("panel {d}: band is for electrodes; aux and adc are drawn as they are", .{i + 1});
+        p.filtered = true;
+        p.band_low_hz = band[0];
+        p.band_high_hz = band[1];
+    }
+    if (doc.boolean(table, i, "filtered")) |on| p.filtered = on and p.kind == .electrode;
+    if (doc.numbers(table, i, "row_scale")) |list| {
+        // Every row's own scale, in the panel's unit, in order.
+        const lim = p.scaleLimits();
+        for (list, 0..) |v, r| {
+            if (r < @min(p.rows, max_rows)) p.row_gain[r] = @floatCast(std.math.clamp(v, lim[0], lim[1]) / p.scale);
+        }
+    }
+}
+
 /// The panels of the config (`[[panel]]` tables), or the default layout if it has none.
 pub fn fromConfig(doc: toml.Document, layout: *const types.Layout) Error!Set {
     const count = doc.count("panel");
@@ -481,9 +578,9 @@ pub fn fromConfig(doc: toml.Document, layout: *const types.Layout) Error!Set {
             .kind = src.kind,
             .first_ch = @intCast(src.first),
             .rows = @intCast(src.rows),
-            .span_s = doc.number("panel", i, "span_s") orelse 2.0,
-            .scale = doc.number("panel", i, "scale") orelse Panel.defaultScale(src.kind),
-            .mode = (try parseMode(doc.get("panel", i, "mode"), "panel", i + 1)) orelse all_mode orelse .scroll,
+            .span_s = 2.0,
+            .scale = Panel.defaultScale(src.kind),
+            .mode = all_mode orelse .scroll,
         };
         if (doc.get("panel", i, "lines")) |v| {
             const lines: []const f64 = if (v == .numbers) v.numbers else &.{};
@@ -495,82 +592,7 @@ pub fn fromConfig(doc: toml.Document, layout: *const types.Layout) Error!Set {
             }
             p.rows = @intCast(lines.len);
         }
-        if (doc.number("panel", i, "tint")) |v| {
-            if (v < 1 or v > 8 or v != @floor(v)) return fail("panel {d}: tint is a TTL input line, 1 to 8", .{i + 1});
-            p.tint_line = @intFromFloat(v);
-        }
-        if (doc.number("panel", i, "trigger")) |v| {
-            if (v < 1 or v > 8 or v != @floor(v)) return fail("panel {d}: trigger is a TTL input line, 1 to 8", .{i + 1});
-            p.trig_line = @intFromFloat(v);
-        }
-        if (doc.number("panel", i, "trigger_channel")) |v| {
-            if (src.kind != .electrode) return fail("panel {d}: trigger_channel is for electrode panels", .{i + 1});
-            if (v < 1 or v > @as(f64, @floatFromInt(src.rows)) or v != @floor(v)) return fail("panel {d}: trigger_channel is a row of the panel, 1 to {d}", .{ i + 1, src.rows });
-            p.setTrigSource(.channel);
-            p.trig_row = @intFromFloat(v - 1);
-        }
-        if (doc.number("panel", i, "level_uv")) |v| {
-            p.trig_auto = false;
-            p.trig_level_uv = v;
-        }
-        if (doc.string("panel", i, "slope")) |v| {
-            if (std.mem.eql(u8, v, "rising")) p.trig_rising = true else if (!std.mem.eql(u8, v, "falling")) return fail("panel {d}: slope must be \"falling\" or \"rising\"", .{i + 1});
-        }
-        if (doc.number("panel", i, "holdoff_ms")) |v| p.trig_holdoff_ms = v;
-        if (doc.number("panel", i, "pre_ms")) |v| p.pre_ms = v;
-        if (doc.number("panel", i, "post_ms")) |v| p.post_ms = v;
-        if (doc.number("panel", i, "sweeps")) |v| p.overlay = @intFromFloat(std.math.clamp(v, 1, 1000));
-        if (doc.boolean("panel", i, "car")) |on| {
-            if (on and src.kind != .electrode) return fail("panel {d}: car is for electrode panels", .{i + 1});
-            p.car = on;
-            p.car_ref = .all(p.rows);
-            p.car_sub = .all(p.rows);
-        }
-        inline for (.{ "car_ref", "car_subtract" }) |key| {
-            if (doc.get("panel", i, key)) |v| {
-                const list: []const f64 = if (v == .numbers) v.numbers else &.{};
-                if (src.kind != .electrode) return fail("panel {d}: {s} is for electrode panels", .{ i + 1, key });
-                var rows: RowSet = .{};
-                for (list) |n| {
-                    if (n < 1 or n > @as(f64, @floatFromInt(p.rows)) or n != @floor(n)) return fail("panel {d}: {s} lists rows of the panel, 1 to {d}", .{ i + 1, key, p.rows });
-                    rows.set(@intFromFloat(n - 1), true);
-                }
-                if (comptime std.mem.eql(u8, key, "car_ref")) p.car_ref = rows else p.car_sub = rows;
-                // Naming rows turns the reference on unless `car = false` says otherwise.
-                if (doc.boolean("panel", i, "car") == null) p.car = true;
-                if (doc.get("panel", i, if (comptime std.mem.eql(u8, key, "car_ref")) "car_subtract" else "car_ref") == null and doc.boolean("panel", i, "car") == null) {
-                    if (comptime std.mem.eql(u8, key, "car_ref")) p.car_sub = .all(p.rows) else p.car_ref = .all(p.rows);
-                }
-            }
-        }
-        inline for (.{ "raw_rows", "hide" }) |key| {
-            if (doc.get("panel", i, key)) |v| {
-                const list: []const f64 = if (v == .numbers) v.numbers else &.{};
-                if (src.kind != .electrode) return fail("panel {d}: {s} is for electrode panels", .{ i + 1, key });
-                var rows: RowSet = .{};
-                for (list) |n| {
-                    if (n < 1 or n > @as(f64, @floatFromInt(p.rows)) or n != @floor(n)) return fail("panel {d}: {s} lists rows of the panel, 1 to {d}", .{ i + 1, key, p.rows });
-                    rows.set(@intFromFloat(n - 1), true);
-                }
-                if (comptime std.mem.eql(u8, key, "hide")) p.hidden = rows else p.raw_rows = rows;
-            }
-        }
-        if (doc.number("panel", i, "raw_scale")) |v| {
-            // The raw rows' own scale, as a factor on the panel's.
-            const lim = p.scaleLimits();
-            for (0..@min(p.rows, max_rows)) |r| {
-                if (p.raw_rows.has(r)) p.row_gain[r] = @floatCast(std.math.clamp(v, lim[0], lim[1]) / p.scale);
-            }
-        }
-        if (doc.get("panel", i, "band")) |v| {
-            const band: []const f64 = if (v == .numbers) v.numbers else &.{};
-            if (band.len != 2 or band[0] < 0 or band[1] < 0 or (band[1] != 0 and band[1] <= band[0]))
-                return fail("panel {d}: band needs [low, high] in Hz, low below high (0 leaves a side out)", .{i + 1});
-            if (src.kind != .electrode) return fail("panel {d}: band is for electrodes; aux and adc are drawn as they are", .{i + 1});
-            p.filtered = true;
-            p.band_low_hz = band[0];
-            p.band_high_hz = band[1];
-        }
+        try applyKeys(&p, doc, "panel", i);
         p.setName(doc.string("panel", i, "name") orelse source);
         p.clamp();
         set.items[i] = p;
@@ -909,4 +931,146 @@ test "config mistakes are explained" {
     l.num_adc = 0;
     try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"adc\"\nrect = [0,0,1,1]"), &l));
     try testing.expect(std.mem.indexOf(u8, error_message, "acquired") != null);
+}
+
+/// Applies a view file (`[[view]]` tables, each naming a panel) on top of the panels from
+/// the config: the settings last saved from the control window. A view whose panel is
+/// not there any more is skipped. Returns how many were applied.
+pub fn applyViews(set: *Set, doc: toml.Document) Error!usize {
+    var applied: usize = 0;
+    for (0..doc.count("view")) |i| {
+        const name = doc.string("view", i, "name") orelse continue;
+        for (set.slice()) |*p| {
+            if (!std.mem.eql(u8, p.name(), name)) continue;
+            // A view saved for another shape of the panel (other rows) does not fit.
+            if (doc.number("view", i, "rows")) |rows| {
+                if (rows != @as(f64, @floatFromInt(p.rows))) break;
+            }
+            try applyKeys(p, doc, "view", i);
+            p.clamp();
+            applied += 1;
+            break;
+        }
+    }
+    return applied;
+}
+
+fn writeRows(w: *std.Io.Writer, key: []const u8, rows: *const RowSet, n: usize) !void {
+    try w.print("{s} = [", .{key});
+    var first = true;
+    for (0..@min(n, max_rows)) |r| {
+        if (!rows.has(r)) continue;
+        try w.print("{s}{d}", .{ if (first) "" else ", ", r + 1 });
+        first = false;
+    }
+    try w.writeAll("]\n");
+}
+
+/// Writes the panels' settings as a view file.
+pub fn renderViews(w: *std.Io.Writer, set: *const Set) !void {
+    try w.writeAll("# oEZ view settings, written by \"Save view\" in the control window and applied on top\n# of config.toml at launch (panels are matched by name). Delete the file to go back to\n# the config's own settings.\n");
+    for (set.items[0..set.len]) |*p| {
+        try w.print("\n[[view]]\nname = \"{s}\"\nrows = {d}\nspan_s = {d}\nscale = {d}\nmode = \"{t}\"\n", .{ p.name(), p.rows, p.span_s, p.scale, p.mode });
+        if (p.tint_line != 0) try w.print("tint = {d}\n", .{p.tint_line});
+        try w.print("trigger = {d}\nsweeps = {d}\n", .{ p.trig_line, p.overlay });
+        if (p.kind == .electrode) {
+            try w.print("trigger_source = \"{s}\"\n", .{if (p.trig_source == .channel) "spikes" else "ttl"});
+            if (p.trig_source == .channel) try w.print("trigger_channel = {d}\n", .{p.trig_row + 1});
+            try w.print("level_uv = {d}\nlevel_auto = {}\n", .{ p.trig_level_uv, p.trig_auto });
+            try w.print("slope = \"{s}\"\nholdoff_ms = {d}\n", .{ if (p.trig_rising) "rising" else "falling", p.trig_holdoff_ms });
+        }
+        try w.print("pre_ms = {d}\npost_ms = {d}\n", .{ p.pre_ms, p.post_ms });
+        if (p.kind == .electrode) {
+            try w.print("band = [{d}, {d}]\nfiltered = {}\n", .{ p.band_low_hz, p.band_high_hz, p.filtered });
+            try writeRows(w, "raw_rows", &p.raw_rows, p.rows);
+            try writeRows(w, "hide", &p.hidden, p.rows);
+            try w.print("car = {}\n", .{p.car});
+            try writeRows(w, "car_ref", &p.car_ref, p.rows);
+            try writeRows(w, "car_subtract", &p.car_sub, p.rows);
+        }
+        var own = false;
+        for (0..@min(p.rows, max_rows)) |r| own = own or p.row_gain[r] != 1;
+        if (own) {
+            try w.writeAll("row_scale = [");
+            for (0..@min(p.rows, max_rows)) |r| try w.print("{s}{d}", .{ if (r == 0) "" else ", ", p.rowScale(r) });
+            try w.writeAll("]\n");
+        }
+    }
+}
+
+test "a view file brings back what the control window had set" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const l = testLayout();
+    const config =
+        \\[[panel]]
+        \\name = "Port A"
+        \\source = "A1"
+        \\rect = [0, 0, 0.5, 1]
+        \\[[panel]]
+        \\name = "Port B"
+        \\source = "B1"
+        \\rect = [0.5, 0, 0.5, 1]
+        \\hide = [16]
+        \\[[panel]]
+        \\name = "ADC"
+        \\source = "adc"
+        \\rect = [0, 0.9, 1, 0.1]
+    ;
+    var set = try fromConfig(try toml.parse(a, config), &l);
+    // What a session might do in the control window.
+    const pa = &set.items[0];
+    pa.mode = .triggered;
+    pa.setTrigSource(.channel);
+    pa.trig_row = 4;
+    pa.trig_auto = false;
+    pa.trig_level_uv = -75;
+    pa.post_ms = 3.5;
+    pa.span_s = 0.5;
+    const pb = &set.items[1];
+    pb.scale = 250;
+    pb.filtered = true;
+    pb.band_low_hz = 10;
+    pb.band_high_hz = 0;
+    pb.raw_rows.set(8, true);
+    pb.hidden = .{}; // row 16 shown again, although the config hides it
+    pb.hidden.set(12, true);
+    pb.setCar(true);
+    pb.car_ref.set(0, false);
+    pb.scaleRow(8, 4.0);
+    set.items[2].scale = 2.5;
+    set.items[2].tint_line = 2;
+
+    var buf: [16 * 1024]u8 = undefined;
+    var w: std.Io.Writer = .fixed(&buf);
+    try renderViews(&w, &set);
+    // A fresh launch: the config, then the view file on top.
+    var again = try fromConfig(try toml.parse(a, config), &l);
+    try testing.expectEqual(3, try applyViews(&again, try toml.parse(a, w.buffered())));
+    const qa = &again.items[0];
+    try testing.expectEqual(Mode.triggered, qa.mode);
+    try testing.expectEqual(TrigSource.channel, qa.trig_source);
+    try testing.expectEqual(4, qa.trig_row);
+    try testing.expect(!qa.trig_auto);
+    try testing.expectEqual(-75, qa.trig_level_uv);
+    try testing.expectEqual(3.5, qa.post_ms);
+    try testing.expectEqual(0.5, qa.span_s);
+    const qb = &again.items[1];
+    try testing.expectEqual(250, qb.scale);
+    try testing.expect(qb.filtered and qb.band_low_hz == 10 and qb.band_high_hz == 0);
+    try testing.expect(qb.raw_rows.has(8) and !qb.raw_rows.has(7));
+    try testing.expect(qb.hidden.has(12) and !qb.hidden.has(15));
+    try testing.expect(qb.car and !qb.car_ref.has(0) and qb.car_ref.has(1) and qb.car_sub.has(0));
+    try testing.expectApproxEqAbs(1000.0, qb.rowScale(8), 0.01);
+    try testing.expectEqual(250, qb.rowScale(7));
+    try testing.expectEqual(2.5, again.items[2].scale);
+    try testing.expectEqual(2, again.items[2].tint_line);
+    // Saving again gives the same file: nothing is lost on the way.
+    var buf2: [16 * 1024]u8 = undefined;
+    var w2: std.Io.Writer = .fixed(&buf2);
+    try renderViews(&w2, &again);
+    try testing.expectEqualStrings(w.buffered(), w2.buffered());
+    // A view for a panel that is gone, or of another size, is skipped.
+    try testing.expectEqual(0, try applyViews(&again, try toml.parse(a, "[[view]]\nname = \"Port C\"\nscale = 1\n[[view]]\nname = \"Port A\"\nrows = 32\nscale = 1")));
 }

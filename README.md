@@ -356,6 +356,15 @@ font covers Latin-1, so other characters are stored as typed but drawn as "?".
 Digits that have a preset no longer pick a triggered panel's TTL line (the control
 window's stepper does that).
 
+**Saving the view.** `config.toml` is the rig's setup, written by hand, and oEZ never
+rewrites its panels. What you set in the control window or with keys and wheel (scale,
+time base, mode, filter and corners, rows raw or hidden, per-row scales, CAR and its
+rows, trigger settings, tint) is kept in a second file beside it, `views.toml`, written
+by "Save view" in the control window (lit while there is something unsaved) and applied
+on top of the config at launch. Panels are matched by name; a view for a panel that is
+gone or has another number of rows is skipped. Delete `views.toml` to go back to the
+config alone. Quitting with unsaved view changes asks, together with the board settings.
+
 **Board settings.** They start from the config file's `[board]` table (command-line
 options win over it):
 

@@ -145,6 +145,9 @@ const Args = struct {
     /// Font for labels: a fontconfig name and a size in pixels.
     font: []const u8 = "sans-serif",
     font_px: u32 = 14,
+    /// The view file (panel settings saved from the control window), applied on top of the
+    /// config's panels.
+    views_doc: oez.toml.Document = .{ .entries = &.{} },
     /// The parsed config file (panels are read from it once the channel layout is known).
     doc: oez.toml.Document = .{ .entries = &.{} },
 };
@@ -597,7 +600,7 @@ const Display = struct {
             self.audio_dirty = true;
             return false;
         }
-        if (edit.action == .record or edit.action == .board or edit.action == .quit_answer or edit.action == .note_preset or edit.panel >= self.set.len) return false;
+        if (edit.action == .record or edit.action == .board or edit.action == .quit_answer or edit.action == .note_preset or edit.action == .save_view or edit.panel >= self.set.len) return false;
         const p = &self.set.items[edit.panel];
         switch (edit.action) {
             .scale => |f| p.scale *= f,
@@ -634,7 +637,7 @@ const Display = struct {
             .trig_holdoff => |up| p.trig_holdoff_ms = oez.board_config.step(f64, &.{ 0, 1, 2, 5, 10, 20, 50, 100, 200, 500 }, p.trig_holdoff_ms, up),
             .overlay => |n| p.overlay = n,
             .reset => self.reset(edit.panel),
-            .quit, .record, .board, .quit_answer, .audio, .note_preset => {},
+            .quit, .record, .board, .quit_answer, .audio, .note_preset, .save_view => {},
         }
         p.clamp();
         return false;
@@ -960,6 +963,11 @@ fn makeDisplay(args: Args, layout: *const oez.types.Layout) ?Display {
         log.err("config: {s}", .{panels_mod.error_message});
         return null;
     };
+    const applied = panels_mod.applyViews(&set, args.views_doc) catch blk: {
+        log.warn("view file: {s}; the rest of it is ignored", .{panels_mod.error_message});
+        break :blk 0;
+    };
+    if (applied > 0) log.info("view file: settings for {d} panels", .{applied});
     if (args.sweep) for (set.slice()) |*p| {
         p.mode = .sweep;
         p.clamp();
@@ -972,6 +980,33 @@ fn makeDisplay(args: Args, layout: *const oez.types.Layout) ?Display {
 /// behind (a stalled disk) before samples are lost. The display holds nothing back.
 fn ringSlots(fs: f64, block_samples: usize) usize {
     return @intFromFloat(@ceil(30.0 * fs / @as(f64, @floatFromInt(block_samples))));
+}
+
+/// The panels' settings as the text of a view file, in `buf`; null if it does not fit.
+fn renderViews(buf: []u8, set: *const panels_mod.Set) ?[]const u8 {
+    var w: Io.Writer = .fixed(buf);
+    panels_mod.renderViews(&w, set) catch return null;
+    return w.buffered();
+}
+
+/// Writes `text` to the file at `path`: beside it under a temporary name, synced, then
+/// renamed over it, so the file is never seen half written.
+fn writeAtomic(io: Io, path: []const u8, text: []const u8) !void {
+    const dir_path = std.fs.path.dirname(path) orelse ".";
+    const name = std.fs.path.basename(path);
+    try Io.Dir.cwd().createDirPath(io, dir_path);
+    var dir = try Io.Dir.cwd().openDir(io, dir_path, .{});
+    defer dir.close(io);
+    var tmp_buf: [80]u8 = undefined;
+    const tmp = try std.fmt.bufPrint(&tmp_buf, ".{s}.tmp", .{name});
+    var f = try dir.createFile(io, tmp, .{});
+    {
+        errdefer f.close(io);
+        try f.writeStreamingAll(io, text);
+        try f.sync(io);
+    }
+    f.close(io);
+    try Io.Dir.rename(dir, tmp, dir, name, io);
 }
 
 /// Gives a stopped source new settings.
@@ -1210,7 +1245,16 @@ pub fn main(init: std.process.Init) !u8 {
         log.err("{s}: syntax error on line {d}", .{ config_path, oez.toml.error_line });
         return 2;
     };
-    const args = parseArgs(argv, doc) catch return 2;
+    var args = parseArgs(argv, doc) catch return 2;
+    // The view file sits beside the config.
+    var views_path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const views_path = std.fmt.bufPrint(&views_path_buf, "{s}/views.toml", .{std.fs.path.dirname(config_path) orelse "."}) catch "";
+    const views_text: []const u8 = Io.Dir.cwd().readFileAlloc(io, views_path, init.arena.allocator(), .limited(1 << 18)) catch "";
+    if (views_text.len > 0) {
+        if (oez.toml.parse(init.arena.allocator(), views_text)) |vd| {
+            args.views_doc = vd;
+        } else |_| log.warn("{s}: syntax error on line {d}; the view file is ignored", .{ views_path, oez.toml.error_line });
+    }
 
     // ---- the source: simulator or board ----
     var board: ?oez.board.Board = null;
@@ -1318,6 +1362,14 @@ pub fn main(init: std.process.Init) !u8 {
     var rec_start_ns: i128 = 0;
     var rec_published_ns: i128 = 0;
     var rec_status: control.RecStatus = .{};
+    // The panels' settings as a view file: as they are now, and as last saved (at launch:
+    // as loaded), to tell whether there is something to save.
+    const view_now = try gpa.alloc(u8, 96 * 1024);
+    defer gpa.free(view_now);
+    const view_saved = try gpa.alloc(u8, 96 * 1024);
+    defer gpa.free(view_saved);
+    var view_saved_len: usize = 0;
+    if (renderViews(view_saved, &display.set)) |rendered| view_saved_len = rendered.len;
     // Notes on their way into the recording (display thread to recorder thread).
     var note_queue: oez.events.EventQueue = .{};
     var board_status: control.BoardStatus = .{};
@@ -1433,6 +1485,15 @@ pub fn main(init: std.process.Init) !u8 {
         // What was clicked in the control window.
         while (shared.pop()) |e| {
             if (e.action == .quit_answer) quit_answer = e.action.quit_answer;
+            if (e.action == .save_view) {
+                if (renderViews(view_now, &display.set)) |rendered| {
+                    if (writeAtomic(io, views_path, rendered)) |_| {
+                        @memcpy(view_saved[0..rendered.len], rendered);
+                        view_saved_len = rendered.len;
+                        board_status.setNote("view saved to {s}", .{views_path});
+                    } else |err| board_status.setNote("could not save {s}: {t}", .{ views_path, err });
+                } else board_status.setNote("the view is too large to save", .{});
+            }
             if (e.action == .note_preset) notes.stampPreset(e.action.note_preset, note_stamp, if (rec != null) rec_status.path() else "");
             if (display.applyEdit(e)) quit = true;
             snap_dirty = true;
@@ -1540,11 +1601,30 @@ pub fn main(init: std.process.Init) !u8 {
         }
         if (quit_answer) |answer| {
             if (quit_prompt.active) switch (answer) {
-                .save => if (saveBoard(io, gpa, config_path, &acq.requested)) |_| {
-                    log.info("board settings saved to {s}", .{config_path});
-                    break;
-                } else |err| {
-                    board_status.setNote("could not save to {s}: {t}", .{ config_path, err });
+                .save => {
+                    // Whichever of the two changed.
+                    var failed = false;
+                    var lines: [12][64]u8 = undefined;
+                    var lens: [12]usize = undefined;
+                    if (oez.board_config.diff(&saved_settings, &acq.requested, &lines, &lens) > 0) {
+                        if (saveBoard(io, gpa, config_path, &acq.requested)) |_| {
+                            log.info("board settings saved to {s}", .{config_path});
+                        } else |err| {
+                            board_status.setNote("could not save to {s}: {t}", .{ config_path, err });
+                            failed = true;
+                        }
+                    }
+                    if (renderViews(view_now, &display.set)) |rendered| {
+                        if (!std.mem.eql(u8, rendered, view_saved[0..view_saved_len])) {
+                            if (writeAtomic(io, views_path, rendered)) |_| {
+                                log.info("view saved to {s}", .{views_path});
+                            } else |err| {
+                                board_status.setNote("could not save {s}: {t}", .{ views_path, err });
+                                failed = true;
+                            }
+                        }
+                    }
+                    if (!failed) break;
                     quit_prompt.active = false;
                 },
                 .discard => break,
@@ -1553,7 +1633,15 @@ pub fn main(init: std.process.Init) !u8 {
             snap_dirty = true;
         }
         if (quit) {
-            const changed = oez.board_config.diff(&saved_settings, &acq.requested, &quit_prompt.lines, &quit_prompt.lens);
+            var changed = oez.board_config.diff(&saved_settings, &acq.requested, &quit_prompt.lines, &quit_prompt.lens);
+            // And the panels' settings, as one line.
+            if (renderViews(view_now, &display.set)) |rendered| {
+                if (!std.mem.eql(u8, rendered, view_saved[0..view_saved_len]) and changed < quit_prompt.lines.len) {
+                    const line: []const u8 = std.fmt.bufPrint(&quit_prompt.lines[changed], "panel views (saved to views.toml)", .{}) catch "";
+                    quit_prompt.lens[changed] = line.len;
+                    changed += 1;
+                }
+            }
             if (changed > 0 and !quit_prompt.active and control_thread != null and !shared.closed.load(.acquire)) {
                 quit_prompt.active = true;
                 quit_prompt.count = changed;
@@ -1695,6 +1783,7 @@ pub fn main(init: std.process.Init) !u8 {
                 .ring_overflow = acq.ring_overflow.load(.monotonic),
                 .seconds = @as(f64, @floatFromInt(nowNs(io) - t_start)) / 1e9,
                 .quit_prompt = quit_prompt,
+                .view_unsaved = if (renderViews(view_now, &display.set)) |rendered| !std.mem.eql(u8, rendered, view_saved[0..view_saved_len]) else false,
                 .notes = blk: {
                     var st: control.NotesStatus = .{ .editing = notes.editing, .num_drafts = notes.num_drafts, .total = notes.total };
                     for (&st.recent, 0..) |*line, k| {
