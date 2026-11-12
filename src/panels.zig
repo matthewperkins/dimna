@@ -7,6 +7,7 @@
 //!   rect = [0.0, 0.0, 0.5, 1.0]   # x, y, width, height as fractions of the display
 //!   span_s = 2.0                  # optional: time across the panel
 //!   scale = 400                   # optional: µV per row (V per row for aux and adc)
+//!   mode = "sweep"                # optional: see `Mode`; a top-level `mode` sets all panels
 //!
 //! With no [[panel]] in the config there is one panel per headstage, side by side.
 
@@ -17,6 +18,11 @@ const toml = @import("toml.zig");
 pub const max_panels = 16;
 
 pub const Kind = enum { electrode, aux, adc };
+
+/// How a panel shows time. `scroll` (the default): the newest sample is at the right edge
+/// and the traces move left. `sweep`: the traces stand still and a cursor moves left to
+/// right, overwriting the previous pass (as oers and the stock LFP viewer draw).
+pub const Mode = enum { scroll, sweep };
 
 pub const Rect = struct { x: u32, y: u32, w: u32, h: u32 };
 
@@ -36,6 +42,7 @@ pub const Panel = struct {
     span_s: f64,
     /// Units per row: µV for electrodes, V for aux and adc.
     scale: f64,
+    mode: Mode = .scroll,
 
     pub fn name(self: *const Panel) []const u8 {
         return self.name_buf[0..self.name_len];
@@ -56,6 +63,9 @@ pub const Panel = struct {
 
     pub const span_min = 0.05;
     pub const span_max = 20.0;
+    /// In sweep mode a column can be up to two spans old, and the sample history on the
+    /// GPU holds `span_max` + 2 s at least.
+    pub const sweep_span_max = 10.0;
 
     pub fn scaleLimits(self: *const Panel) [2]f64 {
         return if (self.kind == .electrode) .{ 5.0, 20000.0 } else .{ 0.001, 20.0 };
@@ -72,7 +82,8 @@ pub const Panel = struct {
 
     pub fn clamp(self: *Panel) void {
         const lim = self.scaleLimits();
-        self.span_s = std.math.clamp(self.span_s, span_min, span_max);
+        const longest: f64 = if (self.mode == .sweep) sweep_span_max else span_max;
+        self.span_s = std.math.clamp(self.span_s, span_min, longest);
         self.scale = std.math.clamp(self.scale, lim[0], lim[1]);
     }
 
@@ -138,10 +149,14 @@ fn resolve(source: []const u8, layout: *const types.Layout) ?Source {
     return null;
 }
 
+/// The mode of the panels of the default layout (set from a top-level `mode`).
+var default_mode: Mode = .scroll;
+
 /// One panel per headstage, side by side in headstage order.
 pub fn default(layout: *const types.Layout) Set {
     var set: Set = .{};
     const n = @min(layout.num_headstages, max_panels);
+    const mode = default_mode;
     for (layout.headstageSlice()[0..n], 0..) |h, i| {
         var p: Panel = .{
             .x = @as(f64, @floatFromInt(i)) / @as(f64, @floatFromInt(n)),
@@ -153,6 +168,7 @@ pub fn default(layout: *const types.Layout) Set {
             .rows = @intCast(h.num_channels),
             .span_s = 2.0,
             .scale = Panel.defaultScale(.electrode),
+            .mode = mode,
         };
         p.setName(types.headstage_names[h.slot]);
         set.items[i] = p;
@@ -161,12 +177,24 @@ pub fn default(layout: *const types.Layout) Set {
     return set;
 }
 
+fn parseMode(value: ?toml.Value, what: []const u8, n: usize) Error!?Mode {
+    const v = value orelse return null;
+    if (v == .string) {
+        if (std.meta.stringToEnum(Mode, v.string)) |m| return m;
+    }
+    return if (n == 0) fail("{s} must be \"scroll\" or \"sweep\"", .{what}) else fail("{s} {d}: mode must be \"scroll\" or \"sweep\"", .{ what, n });
+}
+
 /// The panels of the config (`[[panel]]` tables), or the default layout if it has none.
 pub fn fromConfig(doc: toml.Document, layout: *const types.Layout) Error!Set {
     const count = doc.count("panel");
-    if (count == 0) return default(layout);
+    if (count == 0) {
+        default_mode = (try parseMode(doc.get("", 0, "mode"), "mode", 0)) orelse .scroll;
+        return default(layout);
+    }
     if (count > max_panels) return fail("{d} panels; at most {d}", .{ count, max_panels });
     var set: Set = .{};
+    const all_mode = try parseMode(doc.get("", 0, "mode"), "mode", 0);
     for (0..count) |i| {
         const source = doc.string("panel", i, "source") orelse return fail("panel {d}: no source (a headstage such as \"A1\", \"electrodes\", \"aux\" or \"adc\")", .{i + 1});
         const src = resolve(source, layout) orelse return fail("panel {d}: source \"{s}\" is not a connected headstage, \"electrodes\", \"aux\" or \"adc\"", .{ i + 1, source });
@@ -185,6 +213,7 @@ pub fn fromConfig(doc: toml.Document, layout: *const types.Layout) Error!Set {
             .rows = @intCast(src.rows),
             .span_s = doc.number("panel", i, "span_s") orelse 2.0,
             .scale = doc.number("panel", i, "scale") orelse Panel.defaultScale(src.kind),
+            .mode = (try parseMode(doc.get("panel", i, "mode"), "panel", i + 1)) orelse all_mode orelse .scroll,
         };
         p.setName(doc.string("panel", i, "name") orelse source);
         p.clamp();
@@ -257,6 +286,34 @@ test "panels from the config" {
     try testing.expectEqual(5.0, p[2].scale);
     try testing.expectEqualStrings("V", p[2].unit());
     try testing.expectEqual(2, set.at(0.3, 0.9).?);
+    try testing.expectEqual(Mode.scroll, p[0].mode);
+}
+
+test "sweep mode: per panel or for all, with a shorter longest time base" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const l = testLayout();
+    var set = try fromConfig(try toml.parse(a,
+        \\mode = "sweep"
+        \\[[panel]]
+        \\source = "A1"
+        \\rect = [0, 0, 0.5, 1]
+        \\span_s = 18
+        \\[[panel]]
+        \\source = "B1"
+        \\rect = [0.5, 0, 0.5, 1]
+        \\mode = "scroll"
+        \\span_s = 18
+    ), &l);
+    try testing.expectEqual(Mode.sweep, set.items[0].mode);
+    try testing.expectEqual(Panel.sweep_span_max, set.items[0].span_s);
+    try testing.expectEqual(Mode.scroll, set.items[1].mode);
+    try testing.expectEqual(18, set.items[1].span_s);
+    set = try fromConfig(try toml.parse(a, "mode = \"sweep\""), &l);
+    try testing.expectEqual(Mode.sweep, set.items[0].mode);
+    try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"A1\"\nrect = [0,0,1,1]\nmode = \"wipe\""), &l));
+    try testing.expect(std.mem.indexOf(u8, error_message, "sweep") != null);
 }
 
 test "config mistakes are explained" {

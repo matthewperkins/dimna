@@ -57,6 +57,8 @@ pub const TraceParams = extern struct {
     span: f32,
     lsb_per_row: f32,
     half_px: f32,
+    /// Negative: scroll. Else sweep mode: samples since the current pass began.
+    phase: f32 = -1,
 };
 
 /// A rectangle of the display, in pixels.

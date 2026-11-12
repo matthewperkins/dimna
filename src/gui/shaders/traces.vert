@@ -17,6 +17,8 @@ layout(push_constant) uniform Params {
     float span;        // samples across the window
     float lsb_per_row; // sample units per row height
     float half_px;     // half the line thickness, in NDC y
+    float phase;       // < 0: scroll (newest at the right edge). >= 0: sweep; samples since
+                       // the current pass began, the write cursor's place in the window
 } p;
 
 layout(location = 0) out vec3 colour;
@@ -45,6 +47,11 @@ void main() {
 
     float per_col = p.span / float(p.cols);
     float fa = -p.span + per_col * float(col);
+    if (p.phase >= 0.0) {
+        // Sweep: columns left of the cursor are from this pass, the rest from the last one.
+        float o = per_col * float(col);
+        fa = o + per_col <= p.phase ? o - p.phase : o - p.phase - p.span;
+    }
     float fb = fa + per_col;
     // The column's ends by interpolation, so traces stay connected when a column holds less
     // than one sample; every whole sample in between.

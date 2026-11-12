@@ -18,6 +18,7 @@ pub const Key = enum(u32) {
     escape = 1,
     q = 16,
     r = 19,
+    m = 50,
     minus = 12,
     equal = 13,
     left_bracket = 26,

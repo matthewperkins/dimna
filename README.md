@@ -108,6 +108,7 @@ source = "B1"                 # a headstage, "electrodes", "aux" or "adc"
 rect = [0.0, 0.0, 0.5, 0.75]  # x, y, width, height as fractions of the display
 span_s = 2.0                  # optional
 scale = 400                   # optional: µV per row (V per row for aux and adc)
+mode = "scroll"               # optional: "scroll" (default) or "sweep"
 
 [[panel]]
 source = "A1"
@@ -121,6 +122,14 @@ rect = [0.0, 0.75, 1.0, 0.25]
 Without `[[panel]]` tables there is one panel per headstage, side by side. Wheel (Y scale),
 Shift+wheel or pinch (time base) and the keys `- = [ ] r` act on the panel under the pointer,
 marked by a bar along its top; `q` quits.
+
+**Sweep mode.** By default traces scroll, with the newest sample at the right edge. In
+sweep mode they stand still and a cursor moves left to right, overwriting the previous pass
+(as oers and the stock LFP viewer draw). Set it per panel with `mode = "sweep"`, for all
+panels with a top-level `mode = "sweep"` or `--sweep`, or flip the panel under the pointer
+with `m`. It is the same drawing with a different choice of samples per column, so the
+latency is the same. Kept simple: the time base is limited to 10 s, and changing it restarts
+the pass from a new origin.
 
 Each panel is titled with its name, time base and scale per row, and its rows are labelled
 (the electrode's number on its headstage, AUXn, ADCn; thinned when rows are shorter than a

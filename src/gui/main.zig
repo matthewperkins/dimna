@@ -28,13 +28,14 @@
 //!
 //! --script feeds synthetic input for tests, as "SECONDS:STEP;SECONDS:STEP;...", where STEP is
 //! wheel=N, hwheel=N (axis units, 15 = one click), pinch=F (scale factor), or keys such as
-//! "]]==" (any of [ ] - = r q). It goes through the same path as real input.
+//! "]]==" (any of [ ] - = r m q). It goes through the same path as real input.
 //!
 //! Without --sim it opens the board. Controls:
 //!   wheel / two-finger scroll      Y scale (µV per row)
 //!   Shift+wheel, sideways scroll   time base
 //!   touchpad pinch                 time base
 //!   - =   [ ]                      Y scale, time base by keys;  r resets;  q or Esc quits
+//!   m                              scroll <-> sweep (traces stand still, a cursor moves across)
 //!
 //! The display reads the acquisition ring with a lossy reader, so it can never hold
 //! acquisition back. Once a second it logs the frame rate and the sample-to-screen latency:
@@ -106,6 +107,8 @@ const Args = struct {
     /// Connector of a monitor to drive directly, with no compositor.
     direct: []const u8 = "",
     tearing: bool = false,
+    /// All panels in sweep mode (see `panels.Mode`).
+    sweep: bool = false,
     /// Free-running: least interval between frames in ms; negative = paced to the refresh.
     free_ms: f64 = -1,
     /// Font for labels: a fontconfig name and a size in pixels.
@@ -156,6 +159,7 @@ fn runScript(script: []const u8, pos: *usize, elapsed_s: f64, in: *Input, displa
                 '-' => .minus,
                 '=' => .equal,
                 'r' => .r,
+                'm' => .m,
                 'q' => .q,
                 else => continue,
             };
@@ -183,6 +187,8 @@ fn applyConfig(a: *Args, doc: oez.toml.Document) void {
             a.font = e.value.string;
         } else if (std.mem.eql(u8, e.key, "font_px") and e.value == .number and e.value.number >= 6 and e.value.number <= 64) {
             a.font_px = @intFromFloat(e.value.number);
+        } else if (std.mem.eql(u8, e.key, "mode")) {
+            // Read with the panels.
         } else if (std.mem.eql(u8, e.key, "tearing") and e.value == .boolean) {
             a.tearing = e.value.boolean;
             if (a.tearing) a.present = .immediate;
@@ -216,6 +222,8 @@ fn parseArgs(args: []const [:0]const u8, doc: oez.toml.Document) !Args {
         } else if (std.mem.eql(u8, arg, "--tearing")) {
             a.tearing = true;
             a.present = .immediate;
+        } else if (std.mem.eql(u8, arg, "--sweep")) {
+            a.sweep = true;
         } else if (std.mem.eql(u8, arg, "--free")) {
             a.free_ms = try std.fmt.parseFloat(f64, try next(args, &i, arg));
         } else if (std.mem.eql(u8, arg, "--script")) {
@@ -280,6 +288,8 @@ const Status = struct {
 };
 
 const max_text_vertices = 24 * 1024;
+/// Per panel: two dividers, the target bar, and the sweep cursor's two.
+const max_fills = 5 * panels_mod.max_panels;
 
 /// "500 ms" or "2.00 s".
 fn fmtSpan(buf: []u8, s: f64) []const u8 {
@@ -365,7 +375,9 @@ const Display = struct {
             .r => {
                 p.span_s = self.initial.items[self.target].span_s;
                 p.scale = self.initial.items[self.target].scale;
+                p.mode = self.initial.items[self.target].mode;
             },
+            .m => p.mode = if (p.mode == .scroll) .sweep else .scroll,
             else => {},
         };
         p.clamp();
@@ -375,7 +387,7 @@ const Display = struct {
     /// What to draw: each panel's traces, then dividers and a bar marking the target panel,
     /// and into `batch` the text: each panel's title (name, time base, scale per row), its
     /// row labels, and the status read-out in the bottom right corner.
-    fn frame(self: *const Display, gpu: *const Gpu, layout: *const oez.types.Layout, newest: i64, status: Status, batch: *font.Batch, draws: *[panels_mod.max_panels]gpu_mod.PanelDraw, fills: *[3 * panels_mod.max_panels]gpu_mod.Fill) struct { draws: []const gpu_mod.PanelDraw, fills: []const gpu_mod.Fill, text: []const font.Vertex } {
+    fn frame(self: *const Display, gpu: *const Gpu, layout: *const oez.types.Layout, newest: i64, status: Status, batch: *font.Batch, draws: *[panels_mod.max_panels]gpu_mod.PanelDraw, fills: *[max_fills]gpu_mod.Fill) struct { draws: []const gpu_mod.PanelDraw, fills: []const gpu_mod.Fill, text: []const font.Vertex } {
         const width = gpu.extent.width;
         const height = gpu.extent.height;
         const nch = layout.numChannels();
@@ -387,6 +399,9 @@ const Display = struct {
         const dim: font.Colour = .{ 150, 160, 178, 255 };
         for (self.set.items[0..self.set.len], 0..) |*p, i| {
             const r = p.pixelRect(width, height);
+            // Sweep: a whole number of samples per pass, so the picture stands still.
+            const span: f64 = if (p.mode == .sweep) @max(1, @round(p.span_s * fs)) else p.span_s * fs;
+            const phase: f64 = if (p.mode == .sweep) @floatFromInt(@mod(newest, @as(i64, @intFromFloat(span)))) else -1;
             draws[i] = .{
                 .rect = .{ .x = r.x, .y = r.y, .w = r.w, .h = r.h },
                 .params = .{
@@ -396,11 +411,19 @@ const Display = struct {
                     .first_ch = p.first_ch,
                     .cols = r.w,
                     .rows = p.rows,
-                    .span = @floatCast(p.span_s * fs),
+                    .span = @floatCast(span),
                     .lsb_per_row = @floatCast(p.scale / p.unitsPerLsb()),
                     .half_px = 1.5 / @as(f32, @floatFromInt(r.h)),
+                    .phase = @floatCast(phase),
                 },
             };
+            if (p.mode == .sweep) {
+                // The cursor: a line where the newest sample is, and a blank stretch ahead.
+                const cx: u32 = @min(r.w - 1, @as(u32, @intFromFloat(phase / span * @as(f64, @floatFromInt(r.w)))));
+                fills[nf] = .{ .rect = .{ .x = r.x + cx, .y = r.y, .w = @min(10, r.w - cx), .h = r.h }, .colour = .{ 0.04, 0.045, 0.055, 1.0 } };
+                fills[nf + 1] = .{ .rect = .{ .x = r.x + cx, .y = r.y, .w = 1, .h = r.h }, .colour = .{ 0.45, 0.48, 0.55, 1.0 } };
+                nf += 2;
+            }
             // A line along the left and top edges that are not the display's own.
             const grey: [4]f32 = .{ 0.22, 0.24, 0.28, 1.0 };
             if (r.x > 0) {
@@ -419,7 +442,7 @@ const Display = struct {
             var span_buf: [24]u8 = undefined;
             var scale_buf: [24]u8 = undefined;
             var title_buf: [96]u8 = undefined;
-            const title = std.fmt.bufPrint(&title_buf, "{s}   {s}   {s}/row", .{ p.name(), fmtSpan(&span_buf, p.span_s), fmtScale(&scale_buf, p) }) catch "";
+            const title = std.fmt.bufPrint(&title_buf, "{s}   {s}   {s}/row{s}", .{ p.name(), fmtSpan(&span_buf, p.span_s), fmtScale(&scale_buf, p), if (p.mode == .sweep) "   sweep" else "" }) catch "";
             _ = batch.label(px + 8, title_y, title, bright);
             // Row labels down the left edge, thinned when rows are shorter than a line.
             const row_h = @as(f32, @floatFromInt(r.h)) / @as(f32, @floatFromInt(p.rows));
@@ -452,9 +475,13 @@ const Display = struct {
 
 /// The panels for this run: from the config, or one per headstage.
 fn makeDisplay(args: Args, layout: *const oez.types.Layout) ?Display {
-    const set = panels_mod.fromConfig(args.doc, layout) catch {
+    var set = panels_mod.fromConfig(args.doc, layout) catch {
         log.err("config: {s}", .{panels_mod.error_message});
         return null;
+    };
+    if (args.sweep) for (set.slice()) |*p| {
+        p.mode = .sweep;
+        p.clamp();
     };
     for (set.items[0..set.len], 0..) |*p, i| log.info("panel {d} \"{s}\": {d} {t} channels from channel {d}, {d:.2} s, {d} {s}/row", .{ i + 1, p.name(), p.rows, p.kind, p.first_ch + 1, p.span_s, p.scale, p.unit() });
     return .init(set);
@@ -517,7 +544,7 @@ fn runDirect(io: Io, gpa: std.mem.Allocator, args: Args, layout: oez.types.Layou
 
     var display = makeDisplay(args, &layout) orelse return 2;
     var draws: [panels_mod.max_panels]gpu_mod.PanelDraw = undefined;
-    var fills: [3 * panels_mod.max_panels]gpu_mod.Fill = undefined;
+    var fills: [max_fills]gpu_mod.Fill = undefined;
     var text: Text = .{};
     text.init(gpa, &gpu, args);
     defer text.deinit(gpa);
@@ -716,7 +743,7 @@ pub fn main(init: std.process.Init) !u8 {
     try gpu.createHistory(nch, @intFromFloat((Panel.span_max + 2.0) * fs));
     var display = makeDisplay(args, &layout) orelse return 2;
     var draws: [panels_mod.max_panels]gpu_mod.PanelDraw = undefined;
-    var fills: [3 * panels_mod.max_panels]gpu_mod.Fill = undefined;
+    var fills: [max_fills]gpu_mod.Fill = undefined;
     var text: Text = .{};
     text.init(gpa, &gpu, args);
     defer text.deinit(gpa);
