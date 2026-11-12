@@ -91,6 +91,8 @@ pub const Gpu = struct {
     queue: vk.Queue,
     queue_family: u32,
     mem_props: vk.PhysicalDeviceMemoryProperties,
+    /// False when the instance belongs to another Gpu (`init`'s `share`).
+    owns_instance: bool = true,
 
     surface_format: vk.SurfaceFormatKHR = undefined,
     present_mode: vk.PresentModeKHR = .fifo_khr,
@@ -163,12 +165,15 @@ pub const Gpu = struct {
     recent_render_ns: [64]u64 = @splat(0),
     render_index: usize = 0,
 
-    pub fn init(gpa: std.mem.Allocator, target: Target, mode: PresentMode) !Gpu {
+    /// `share`: another Gpu whose Vulkan instance this one uses instead of creating its
+    /// own (it must outlive this one). A second window needs this: with two instances in
+    /// one process, NVIDIA's driver crashed in the first once the second was destroyed.
+    pub fn init(gpa: std.mem.Allocator, target: Target, mode: PresentMode, share: ?*const Gpu) !Gpu {
         const vkb = vk.BaseWrapper.load(vkGetInstanceProcAddr);
         const wayland_exts = [_][*:0]const u8{ "VK_KHR_surface", "VK_KHR_wayland_surface" };
         const direct_exts = [_][*:0]const u8{ "VK_KHR_surface", "VK_KHR_display", "VK_EXT_direct_mode_display", "VK_EXT_acquire_drm_display" };
         const instance_exts: []const [*:0]const u8 = if (target == .direct) &direct_exts else &wayland_exts;
-        const instance_handle = try vkb.createInstance(&.{
+        const instance_handle = if (share) |s| s.instance.handle else try vkb.createInstance(&.{
             .p_application_info = &.{
                 .p_application_name = "oez",
                 .application_version = 0,
@@ -179,11 +184,11 @@ pub const Gpu = struct {
             .enabled_extension_count = @intCast(instance_exts.len),
             .pp_enabled_extension_names = instance_exts.ptr,
         }, null);
-        const vki = try gpa.create(vk.InstanceWrapper);
-        errdefer gpa.destroy(vki);
-        vki.* = vk.InstanceWrapper.load(instance_handle, vkb.dispatch.vkGetInstanceProcAddr.?);
+        const vki = if (share) |s| s.vki else try gpa.create(vk.InstanceWrapper);
+        errdefer if (share == null) gpa.destroy(vki);
+        if (share == null) vki.* = vk.InstanceWrapper.load(instance_handle, vkb.dispatch.vkGetInstanceProcAddr.?);
         const instance = vk.InstanceProxy.init(instance_handle, vki);
-        errdefer instance.destroyInstance(null);
+        errdefer if (share == null) instance.destroyInstance(null);
 
         const pdevs = try instance.enumeratePhysicalDevicesAlloc(gpa);
         defer gpa.free(pdevs);
@@ -338,6 +343,7 @@ pub const Gpu = struct {
             .queue = dev.getDeviceQueue(chosen_family, 0),
             .queue_family = chosen_family,
             .mem_props = instance.getPhysicalDeviceMemoryProperties(pdev),
+            .owns_instance = share == null,
             .direct = target == .direct,
             .drm_fd = drm_fd,
             .display = display,
@@ -445,9 +451,11 @@ pub const Gpu = struct {
             self.instance.releaseDisplayEXT(self.pdev, self.display) catch {};
             _ = linux.close(self.drm_fd);
         }
-        self.instance.destroyInstance(null);
         self.gpa.destroy(self.vkd);
-        self.gpa.destroy(self.vki);
+        if (self.owns_instance) {
+            self.instance.destroyInstance(null);
+            self.gpa.destroy(self.vki);
+        }
     }
 
     fn createPipeline(self: *Gpu) !void {

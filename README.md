@@ -177,6 +177,27 @@ the display). Text is drawn by oEZ itself (`src/gui/font.zig`: FreeType into one
 quads in the same render pass), since nothing else may be on the monitor while tearing; it
 made no measurable difference to the latency (2.6 ms with and without, same session).
 
+**Control window.** A second, ordinary window (class `oez-control`) shows the run's
+status (display latency, frame rate, blocks the display skipped, ring overflow) and, for
+every panel, buttons for what the keys do: view (scroll / sweep / triggered), time base or
+trigger window, scale, filter and its corners, trigger line and number of overlaid sweeps,
+reset; and Quit. The wheel over a stepper steps it. `--no-control` or `control = false`
+leaves it out.
+
+It runs on its own thread with its own Wayland connection (`src/gui/control.zig`), and
+shares no lock with the display: the display publishes a snapshot of its panels, the
+control window queues edits, and the display applies them between frames as it does key
+presses. So a slow or hidden control window cannot delay a trace, and closing it leaves the
+display running. Both windows use one Vulkan instance (with two, NVIDIA's driver crashed
+at exit). The control window must not open on the neural display's monitor, or tearing
+stops; a Hyprland rule places it:
+
+    hl.window_rule({ name = "oez-control", match = { class = "^oez-control$" },
+                     workspace = "1", float = true, move = "966 51", size = "938 561" })
+
+With it open on the board (tearing on DP-2): 2.4 to 2.5 ms, as without. It does not start
+or stop recording yet: the recorder still has to learn to attach to a running acquisition.
+
 **Latency** (sample arriving to its frame on screen, Hyprland 0.57.2, NVIDIA, 60 Hz):
 
 | mode | latency |

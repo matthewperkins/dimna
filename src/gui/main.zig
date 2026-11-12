@@ -74,6 +74,10 @@
 //! (--monitor, or `monitor` in the config file). Free-running (--free) without tearing
 //! queues frames under direct scanout (33.6 ms).
 //!
+//! A second window, the control window (class "oez-control"), shows the run's status and
+//! every panel's settings with buttons; see control.zig. --no-control or control = false in
+//! the config leaves it out.
+//!
 //! Config file: $XDG_CONFIG_HOME/oez/config.toml (default ~/.config/oez); command-line options
 //! win. Top-level keys: monitor = "DP-2", tearing = true, free_ms = 2, margin_ms = 3,
 //! font = "sans-serif" (a fontconfig name), font_px = 14. Panels:
@@ -95,6 +99,11 @@ const Window = @import("window.zig").Window;
 const gpu_mod = @import("gpu.zig");
 const Gpu = gpu_mod.Gpu;
 const font = @import("font.zig");
+const format = @import("format.zig");
+const fmtSpan = format.fmtSpan;
+const fmtScale = format.fmtScale;
+const control = @import("control.zig");
+const Status = control.Status;
 const Io = std.Io;
 const log = std.log.scoped(.oez);
 
@@ -114,6 +123,8 @@ const Args = struct {
     /// Connector of a monitor to drive directly, with no compositor.
     direct: []const u8 = "",
     tearing: bool = false,
+    /// The control window (a second, ordinary window with the panels' settings).
+    control: bool = true,
     /// All panels in sweep mode (see `panels.Mode`).
     sweep: bool = false,
     /// Free-running: least interval between frames in ms; negative = paced to the refresh.
@@ -206,6 +217,8 @@ fn applyConfig(a: *Args, doc: oez.toml.Document) void {
             a.font = e.value.string;
         } else if (std.mem.eql(u8, e.key, "font_px") and e.value == .number and e.value.number >= 6 and e.value.number <= 64) {
             a.font_px = @intFromFloat(e.value.number);
+        } else if (std.mem.eql(u8, e.key, "control") and e.value == .boolean) {
+            a.control = e.value.boolean;
         } else if (std.mem.eql(u8, e.key, "mode")) {
             // Read with the panels.
         } else if (std.mem.eql(u8, e.key, "tearing") and e.value == .boolean) {
@@ -241,6 +254,8 @@ fn parseArgs(args: []const [:0]const u8, doc: oez.toml.Document) !Args {
         } else if (std.mem.eql(u8, arg, "--tearing")) {
             a.tearing = true;
             a.present = .immediate;
+        } else if (std.mem.eql(u8, arg, "--no-control")) {
+            a.control = false;
         } else if (std.mem.eql(u8, arg, "--sweep")) {
             a.sweep = true;
         } else if (std.mem.eql(u8, arg, "--free")) {
@@ -297,35 +312,11 @@ fn parseArgs(args: []const [:0]const u8, doc: oez.toml.Document) !Args {
     return a;
 }
 
-/// What the corner read-out shows; refreshed once a second.
-const Status = struct {
-    valid: bool = false,
-    latency_ms: f64 = 0,
-    fps: u64 = 0,
-    /// Blocks the display missed (the recording does not depend on these).
-    lost: u64 = 0,
-};
-
 const max_text_vertices = 24 * 1024;
 /// Per panel: two dividers, the target bar, and the sweep cursor's two.
 const max_fills = 5 * panels_mod.max_panels;
 /// One draw per panel, or per overlaid sweep of a triggered panel.
 const max_draws = panels_mod.max_panels * oez.sweeps.max_sweeps;
-
-/// "500 ms" or "2.00 s".
-fn fmtSpan(buf: []u8, s: f64) []const u8 {
-    return (if (s < 0.9995) std.fmt.bufPrint(buf, "{d:.0} ms", .{s * 1000}) else std.fmt.bufPrint(buf, "{d:.2} s", .{s})) catch "";
-}
-
-/// A panel's scale per row with a unit that keeps the number readable: "400 µV", "1.50 mV",
-/// "250 mV", "5.00 V".
-fn fmtScale(buf: []u8, p: *const Panel) []const u8 {
-    const v = p.scale;
-    return (if (p.kind == .electrode)
-        (if (v < 999.5) std.fmt.bufPrint(buf, "{d:.0} µV", .{v}) else std.fmt.bufPrint(buf, "{d:.2} mV", .{v / 1000}))
-    else
-        (if (v < 0.9995) std.fmt.bufPrint(buf, "{d:.0} mV", .{v * 1000}) else std.fmt.bufPrint(buf, "{d:.2} V", .{v}))) catch "";
-}
 
 /// The display filter for a panel's title: "   300-6000 Hz", "   > 10 Hz", "   < 300 Hz",
 /// or nothing when the panel shows its channels as they are.
@@ -405,6 +396,48 @@ const Display = struct {
         } else if (self.set.at(fx, fy)) |t| self.target = t;
     }
 
+    /// Puts a panel's settings back to what the config gave it.
+    fn reset(self: *Display, index: usize) void {
+        const p = &self.set.items[index];
+        const was = &self.initial.items[index];
+        p.span_s = was.span_s;
+        p.scale = was.scale;
+        p.row_gain = was.row_gain;
+        p.mode = was.mode;
+        p.trig_line = was.trig_line;
+        p.pre_ms = was.pre_ms;
+        p.post_ms = was.post_ms;
+        p.overlay = was.overlay;
+        p.filtered = was.filtered;
+        p.band_low_hz = was.band_low_hz;
+        p.band_high_hz = was.band_high_hz;
+    }
+
+    /// Applies an edit from the control window. True means quit.
+    fn applyEdit(self: *Display, edit: control.Edit) bool {
+        if (edit.action == .quit) return true;
+        if (edit.panel >= self.set.len) return false;
+        const p = &self.set.items[edit.panel];
+        switch (edit.action) {
+            .scale => |f| p.scale *= f,
+            .zoom => |f| if (p.mode == .triggered) {
+                p.pre_ms *= f;
+                p.post_ms *= f;
+            } else {
+                p.span_s *= f;
+            },
+            .mode => |m| p.mode = m,
+            .filter => |on| p.filtered = on and p.kind == .electrode,
+            .corner => |c| p.stepCorner(c.high, c.up),
+            .trig_line => |l| p.trig_line = l,
+            .overlay => |n| p.overlay = n,
+            .reset => self.reset(edit.panel),
+            .quit => {},
+        }
+        p.clamp();
+        return false;
+    }
+
     /// Applies what the user did to the target panel. True means quit.
     fn applyInput(self: *Display, in: Input) bool {
         if (self.scripted_target) |t| self.target = t;
@@ -445,18 +478,7 @@ const Display = struct {
         for (in.keys[0..in.num_keys]) |k| switch (k) {
             .minus => p.scale *= 1.25,
             .equal => p.scale /= 1.25,
-            .r => {
-                p.span_s = self.initial.items[self.target].span_s;
-                p.scale = self.initial.items[self.target].scale;
-                p.row_gain = self.initial.items[self.target].row_gain;
-                p.mode = self.initial.items[self.target].mode;
-                p.trig_line = self.initial.items[self.target].trig_line;
-                p.pre_ms = self.initial.items[self.target].pre_ms;
-                p.post_ms = self.initial.items[self.target].post_ms;
-                p.filtered = self.initial.items[self.target].filtered;
-                p.band_low_hz = self.initial.items[self.target].band_low_hz;
-                p.band_high_hz = self.initial.items[self.target].band_high_hz;
-            },
+            .r => self.reset(self.target),
             .f => p.filtered = p.kind == .electrode and !p.filtered,
             .comma => if (p.filtered) p.stepCorner(false, false),
             .dot => if (p.filtered) p.stepCorner(false, true),
@@ -683,7 +705,7 @@ const Text = struct {
 /// time a frame reached the screen comes from vkWaitForPresentKHR.
 fn runDirect(io: Io, gpa: std.mem.Allocator, args: Args, layout: oez.types.Layout, acq: *oez.acquisition.Acquisition, reader: *oez.ring.LossyReader, blk: *oez.types.Block) !u8 {
     const fs = layout.sample_rate;
-    var gpu = Gpu.init(gpa, .{ .direct = args.direct }, .fifo) catch |e| {
+    var gpu = Gpu.init(gpa, .{ .direct = args.direct }, .fifo, null) catch |e| {
         log.err("direct display on {s} failed: {t}", .{ args.direct, e });
         return 1;
     };
@@ -887,7 +909,7 @@ pub fn main(init: std.process.Init) !u8 {
 
     // ---- window and renderer ----
     var win: Window = undefined;
-    try win.init("oEZ");
+    try win.init("oEZ", "oez");
     defer win.deinit();
     const fullscreen = args.monitor.len > 0;
     if (fullscreen) {
@@ -901,7 +923,7 @@ pub fn main(init: std.process.Init) !u8 {
     }
     _ = win.declareLowLatency();
     if (args.tearing and !win.preferTearing()) log.warn("the compositor has no tearing control; frames will wait for the refresh", .{});
-    var gpu = try Gpu.init(gpa, .{ .wayland = .{ .display = win.display, .surface = win.surface } }, args.present);
+    var gpu = try Gpu.init(gpa, .{ .wayland = .{ .display = win.display, .surface = win.surface } }, args.present, null);
     defer gpu.deinit();
     var display = makeDisplay(args, &layout) orelse return 2;
     // The longest time base plus a margin, so new samples never overwrite what is drawn.
@@ -920,6 +942,24 @@ pub fn main(init: std.process.Init) !u8 {
 
     try acq.start();
     defer acq.join();
+
+    // The control window, on its own thread (see control.zig).
+    var shared: control.Shared = .{};
+    var control_cfg: control.Config = .{ .gpa = gpa, .shared = &shared, .display_gpu = &gpu, .font_px = args.font_px };
+    var control_thread: ?std.Thread = null;
+    if (args.control) {
+        const n = @min(args.font.len, control_cfg.font_buf.len);
+        @memcpy(control_cfg.font_buf[0..n], args.font[0..n]);
+        const about: []const u8 = std.fmt.bufPrint(&control_cfg.about_buf, "{s}   {d} channels ({d} electrode) at {d} Hz", .{ if (sim != null) "simulated board" else "Open Ephys acquisition board", nch, layout.num_electrodes, fs }) catch "";
+        control_cfg.about_len = about.len;
+        control_thread = control.spawn(&control_cfg);
+    }
+    defer if (control_thread) |t| {
+        shared.stop.store(true, .release);
+        t.join();
+    };
+    var snap_dirty = true;
+    var snap_target: usize = 0;
 
     var newest: i64 = 0;
     var newest_acquired_ns: i128 = 0;
@@ -998,6 +1038,25 @@ pub fn main(init: std.process.Init) !u8 {
         // Input goes to the panel under the pointer.
         display.pointAt(input.pointer_x / @as(f64, @floatFromInt(@max(win.width, 1))), input.pointer_y / @as(f64, @floatFromInt(@max(win.height, 1))));
         if (display.applyInput(input)) break;
+        // What was clicked in the control window.
+        var quit = false;
+        while (shared.pop()) |e| {
+            if (display.applyEdit(e)) quit = true;
+            snap_dirty = true;
+        }
+        if (quit) break;
+        if (input.num_keys > 0 or input.scroll_x != 0 or input.scroll_y != 0 or input.pinch != 1 or display.target != snap_target) snap_dirty = true;
+        if (snap_dirty and control_thread != null) {
+            snap_dirty = false;
+            snap_target = display.target;
+            shared.publish(&.{
+                .set = display.set,
+                .target = display.target,
+                .status = status,
+                .ring_overflow = acq.ring_overflow.load(.monotonic),
+                .seconds = @as(f64, @floatFromInt(nowNs(io) - t_start)) / 1e9,
+            });
+        }
         // A panel's corners changed: filter its recent past again.
         if (gpu.hist_cap > 0) _ = feed.sync(&display.set, refilterSamples(&display.set, fs), gpu.hist, gpu.hist_cap);
 
@@ -1150,6 +1209,7 @@ pub fn main(init: std.process.Init) !u8 {
                 gpu.extent.height,
             });
             status = .{ .valid = lat_n > 0, .latency_ms = avg, .fps = frames, .lost = reader.lost };
+            snap_dirty = true;
             on_time_frames = 0;
             late_frames_now = 0;
             if (frame_debug) {

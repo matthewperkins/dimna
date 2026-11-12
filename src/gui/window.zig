@@ -74,6 +74,8 @@ pub const Input = struct {
     pinch: f64 = 1,
     keys: [16]Key = undefined,
     num_keys: usize = 0,
+    /// Presses of the left mouse button.
+    clicks: u32 = 0,
     shift: bool = false,
     ctrl: bool = false,
     pointer_x: f64 = 0,
@@ -156,7 +158,8 @@ pub const Window = struct {
     discarded: u64 = 0,
 
     /// Connects and creates the window. `self` must stay at a fixed address.
-    pub fn init(self: *Window, title: [:0]const u8) !void {
+    /// `app_id` is the window's class for the compositor's rules.
+    pub fn init(self: *Window, title: [:0]const u8, app_id: [:0]const u8) !void {
         const display = try wl.Display.connect(null);
         errdefer display.disconnect();
         self.* = .{ .display = display, .registry = try display.getRegistry() };
@@ -177,7 +180,7 @@ pub const Window = struct {
         self.xdg_surface.setListener(*Window, onXdgSurface, self);
         self.toplevel.setListener(*Window, onToplevel, self);
         self.toplevel.setTitle(title);
-        self.toplevel.setAppId("oez");
+        self.toplevel.setAppId(app_id);
         // The first commit, without a buffer, asks the compositor to configure the window.
         self.surface.commit();
         while (!self.configured) {
@@ -262,6 +265,7 @@ pub const Window = struct {
         self.input.scroll_y = 0;
         self.input.pinch = 1;
         self.input.num_keys = 0;
+        self.input.clicks = 0;
         return in;
     }
 
@@ -439,6 +443,10 @@ pub const Window = struct {
             .motion => |m| {
                 self.input.pointer_x = m.surface_x.toDouble();
                 self.input.pointer_y = m.surface_y.toDouble();
+            },
+            // 0x110 is BTN_LEFT.
+            .button => |b| if (b.button == 0x110 and b.state == .pressed) {
+                self.input.clicks += 1;
             },
             .axis => |a| switch (a.axis) {
                 .vertical_scroll => self.input.scroll_y += a.value.toDouble(),
