@@ -19,6 +19,9 @@ layout(push_constant) uniform Params {
     float half_px;     // half the line thickness, in NDC y
     float phase;       // < 0: scroll (newest at the right edge). >= 0: sweep; samples since
                        // the current pass began, the write cursor's place in the window
+    float future;      // samples at the right end of the window that do not exist yet (a
+                       // triggered sweep still filling); those columns are not drawn
+    float gain;        // brightness (older overlaid sweeps are dimmer)
 } p;
 
 layout(location = 0) out vec3 colour;
@@ -46,6 +49,11 @@ void main() {
     uint ch = p.first_ch + row;
 
     float per_col = p.span / float(p.cols);
+    if (p.future > 0.0) {
+        // Fold the columns that are still in the future onto the last one that exists.
+        float last = floor((p.span - p.future) / per_col) - 1.0;
+        col = uint(clamp(last, 0.0, float(col)));
+    }
     float fa = -p.span + per_col * float(col);
     if (p.phase >= 0.0) {
         // Sweep: columns left of the cursor are from this pass, the rest from the last one.
@@ -77,5 +85,5 @@ void main() {
     gl_Position = vec4(x, y, 0.0, 1.0);
 
     const vec3 palette[4] = vec3[4](vec3(0.55, 0.85, 1.0), vec3(1.0, 0.82, 0.45), vec3(0.6, 1.0, 0.65), vec3(1.0, 0.6, 0.75));
-    colour = palette[ch & 3u];
+    colour = palette[ch & 3u] * p.gain;
 }

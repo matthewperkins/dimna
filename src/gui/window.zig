@@ -23,6 +23,8 @@ pub const Key = enum(u32) {
     r = 'r',
     m = 'm',
     f = 'f',
+    t = 't',
+    /// '1'..'8' are used as numbers (see `digit`).
     comma = ',',
     dot = '.',
     semicolon = ';',

@@ -8,6 +8,10 @@
 //!   span_s = 2.0                  # optional: time across the panel
 //!   scale = 400                   # optional: µV per row (V per row for aux and adc)
 //!   mode = "sweep"                # optional: see `Mode`; a top-level `mode` sets all panels
+//!   trigger = 2                   # optional, with mode = "triggered": the TTL input line
+//!   pre_ms = 10                   # optional: time shown before the trigger
+//!   post_ms = 40                  # optional: and after it
+//!   sweeps = 10                   # optional: how many sweeps are overlaid
 //!   band = [300, 6000]            # optional, electrodes: show band-passed, corners in Hz
 //!                                 # (0 leaves a side out: [10, 0] is a 10 Hz high-pass)
 //!
@@ -24,7 +28,10 @@ pub const Kind = enum { electrode, aux, adc };
 /// How a panel shows time. `scroll` (the default): the newest sample is at the right edge
 /// and the traces move left. `sweep`: the traces stand still and a cursor moves left to
 /// right, overwriting the previous pass (as oers and the stock LFP viewer draw).
-pub const Mode = enum { scroll, sweep };
+/// `triggered`: the panel shows the stretch of signal around each rising edge of a TTL
+/// input line, the last few overlaid with the newest brightest (for opto-tagging: the
+/// laser's TTL as the trigger).
+pub const Mode = enum { scroll, sweep, triggered };
 
 pub const Rect = struct { x: u32, y: u32, w: u32, h: u32 };
 
@@ -45,6 +52,12 @@ pub const Panel = struct {
     /// Units per row: µV for electrodes, V for aux and adc.
     scale: f64,
     mode: Mode = .scroll,
+    /// Triggered mode: the TTL input line (1-based), the window around the trigger in ms,
+    /// and how many sweeps are overlaid.
+    trig_line: u8 = 2,
+    pre_ms: f64 = 10,
+    post_ms: f64 = 40,
+    overlay: u32 = 10,
     /// Display filter (electrodes only; never applied to what is recorded): whether the
     /// panel shows its channels band-passed, and the band's corners in Hz (0 = that side
     /// off). 4th-order Butterworth each side, see `dsp.Band`.
@@ -138,6 +151,10 @@ pub const Panel = struct {
         const longest: f64 = if (self.mode == .sweep) sweep_span_max else span_max;
         self.span_s = std.math.clamp(self.span_s, span_min, longest);
         self.scale = std.math.clamp(self.scale, lim[0], lim[1]);
+        self.pre_ms = std.math.clamp(self.pre_ms, 0, 1000);
+        self.post_ms = std.math.clamp(self.post_ms, 1, 2000);
+        self.overlay = std.math.clamp(self.overlay, 1, @import("sweeps.zig").max_sweeps);
+        self.trig_line = std.math.clamp(self.trig_line, 1, 8);
     }
 
     /// The panel's rectangle in pixels on a display of `width` x `height`. Neighbouring
@@ -235,7 +252,7 @@ fn parseMode(value: ?toml.Value, what: []const u8, n: usize) Error!?Mode {
     if (v == .string) {
         if (std.meta.stringToEnum(Mode, v.string)) |m| return m;
     }
-    return if (n == 0) fail("{s} must be \"scroll\" or \"sweep\"", .{what}) else fail("{s} {d}: mode must be \"scroll\" or \"sweep\"", .{ what, n });
+    return if (n == 0) fail("{s} must be \"scroll\", \"sweep\" or \"triggered\"", .{what}) else fail("{s} {d}: mode must be \"scroll\", \"sweep\" or \"triggered\"", .{ what, n });
 }
 
 /// The panels of the config (`[[panel]]` tables), or the default layout if it has none.
@@ -268,6 +285,13 @@ pub fn fromConfig(doc: toml.Document, layout: *const types.Layout) Error!Set {
             .scale = doc.number("panel", i, "scale") orelse Panel.defaultScale(src.kind),
             .mode = (try parseMode(doc.get("panel", i, "mode"), "panel", i + 1)) orelse all_mode orelse .scroll,
         };
+        if (doc.number("panel", i, "trigger")) |v| {
+            if (v < 1 or v > 8 or v != @floor(v)) return fail("panel {d}: trigger is a TTL input line, 1 to 8", .{i + 1});
+            p.trig_line = @intFromFloat(v);
+        }
+        if (doc.number("panel", i, "pre_ms")) |v| p.pre_ms = v;
+        if (doc.number("panel", i, "post_ms")) |v| p.post_ms = v;
+        if (doc.number("panel", i, "sweeps")) |v| p.overlay = @intFromFloat(std.math.clamp(v, 1, 1000));
         if (doc.get("panel", i, "band")) |v| {
             const band: []const f64 = if (v == .numbers) v.numbers else &.{};
             if (band.len != 2 or band[0] < 0 or band[1] < 0 or (band[1] != 0 and band[1] <= band[0]))
@@ -386,6 +410,37 @@ test "band: from the config, and stepped by keys" {
     try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"A1\"\nrect = [0,0,1,1]\nband = [6000, 300]"), &l));
     try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"adc\"\nrect = [0,0,1,1]\nband = [1, 100]"), &l));
     try testing.expect(std.mem.indexOf(u8, error_message, "electrodes") != null);
+}
+
+test "triggered panels from the config" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const l = testLayout();
+    var set = try fromConfig(try toml.parse(a,
+        \\[[panel]]
+        \\source = "A1"
+        \\rect = [0, 0, 0.5, 1]
+        \\mode = "triggered"
+        \\trigger = 3
+        \\pre_ms = 2
+        \\post_ms = 5000
+        \\sweeps = 100
+        \\[[panel]]
+        \\source = "B1"
+        \\rect = [0.5, 0, 0.5, 1]
+        \\mode = "triggered"
+    ), &l);
+    const p = &set.items[0];
+    try testing.expectEqual(Mode.triggered, p.mode);
+    try testing.expectEqual(3, p.trig_line);
+    try testing.expectEqual(2, p.pre_ms);
+    try testing.expectEqual(2000, p.post_ms); // clamped
+    try testing.expectEqual(32, p.overlay); // clamped
+    try testing.expectEqual(2, set.items[1].trig_line);
+    try testing.expectEqual(10, set.items[1].pre_ms);
+    try testing.expectEqual(40, set.items[1].post_ms);
+    try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"A1\"\nrect = [0,0,1,1]\ntrigger = 9"), &l));
 }
 
 test "sweep mode: per panel or for all, with a shorter longest time base" {

@@ -59,6 +59,10 @@ pub const TraceParams = extern struct {
     half_px: f32,
     /// Negative: scroll. Else sweep mode: samples since the current pass began.
     phase: f32 = -1,
+    /// Samples at the right end of the window that do not exist yet (not drawn).
+    future: f32 = 0,
+    /// Brightness, 0..1.
+    gain: f32 = 1,
 };
 
 /// A rectangle of the display, in pixels.

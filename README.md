@@ -108,7 +108,9 @@ source = "B1"                 # a headstage, "electrodes", "aux" or "adc"
 rect = [0.0, 0.0, 0.5, 0.75]  # x, y, width, height as fractions of the display
 span_s = 2.0                  # optional
 scale = 400                   # optional: µV per row (V per row for aux and adc)
-mode = "scroll"               # optional: "scroll" (default) or "sweep"
+mode = "scroll"               # optional: "scroll" (default), "sweep" or "triggered"
+trigger = 2                   # triggered mode: TTL input line; pre_ms = 10, post_ms = 40,
+                              # sweeps = 10 (how many are overlaid) are optional too
 band = [300, 6000]            # optional: show band-passed (Hz; 0 leaves a side out)
 
 [[panel]]
@@ -127,6 +129,17 @@ Keys go by what they are labelled in your keyboard layout (so on Dvorak, `r` is 
 marked r), and reach oEZ while its window has the keyboard focus (with Hyprland's
 `follow_mouse = 1`, while the pointer is over it). `OEZ_KEY_DEBUG=1` logs focus changes and
 every key received.
+
+**Triggered sweeps.** A panel in triggered mode (`mode = "triggered"`, or `t` on the
+panel under the pointer) shows the signal around each rising edge of a TTL input line:
+10 ms before to 40 ms after by default, the last 10 sweeps overlaid with the newest
+brightest. The newest sweep is drawn as it fills in. A line marks the trigger and a tint
+marks while the trigger line was high (the laser, for opto-tagging). `1`-`8` pick the
+line; `[` `]`, Shift+wheel and pinch zoom the window; the panel's display filter applies
+as usual. Edges are found on the display thread from the digital words of each block
+(`src/sweeps.zig`). Sweeps older than the GPU's sample history (about 30 s) are dropped, so
+with slow triggers fewer are overlaid. After a filter corner change, only the recent past
+is refiltered, so older overlaid sweeps keep the old corners until they are replaced.
 
 **Display filter.** Each electrode panel can show its channels band-passed: a 4th-order
 Butterworth high-pass and low-pass with the panel's own corners (`band = [low, high]`; a 0

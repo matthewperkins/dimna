@@ -15,6 +15,7 @@ pub const toml = @import("toml.zig");
 pub const panels = @import("panels.zig");
 pub const dsp = @import("dsp.zig");
 pub const feed = @import("feed.zig");
+pub const sweeps = @import("sweeps.zig");
 pub const usbfs = @import("usbfs.zig");
 pub const ft600 = @import("ft600.zig");
 pub const oni_usb = @import("oni_usb.zig");

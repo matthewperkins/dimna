@@ -28,7 +28,7 @@
 //!
 //! --script feeds synthetic input for tests, as "SECONDS:STEP;SECONDS:STEP;...", where STEP is
 //! wheel=N, hwheel=N (axis units, 15 = one click), pinch=F (scale factor), or keys such as
-//! "]]==" (any of [ ] - = r m f , . ' q; ';' separates steps, so the high corner can only be
+//! "]]==" (any of [ ] - = r m f t 1-8 , . ' q; ';' separates steps, so the high corner can only be
 //! stepped up by script). It goes through the same path as real input.
 //!
 //! Without --sim it opens the board. Controls:
@@ -37,6 +37,9 @@
 //!   touchpad pinch                 time base
 //!   - =   [ ]                      Y scale, time base by keys;  r resets;  q or Esc quits
 //!   m                              scroll <-> sweep (traces stand still, a cursor moves across)
+//!   t                              triggered sweeps on/off: the signal around each rising edge of
+//!                                  a TTL input line, the last few overlaid; 1-8 pick the line,
+//!                                  [ ] and Shift+wheel zoom the window around the trigger
 //!   f                              display filter on/off (electrode panels): raw <-> band-pass
 //!   , .   ; '                      the band's low corner, high corner: down, up
 //!
@@ -164,6 +167,8 @@ fn runScript(script: []const u8, pos: *usize, elapsed_s: f64, in: *Input, displa
                 'r' => .r,
                 'm' => .m,
                 'f' => .f,
+                't' => .t,
+                '1'...'8' => @enumFromInt(ch),
                 ',' => .comma,
                 '.' => .dot,
                 '\'' => .apostrophe,
@@ -297,6 +302,8 @@ const Status = struct {
 const max_text_vertices = 24 * 1024;
 /// Per panel: two dividers, the target bar, and the sweep cursor's two.
 const max_fills = 5 * panels_mod.max_panels;
+/// One draw per panel, or per overlaid sweep of a triggered panel.
+const max_draws = panels_mod.max_panels * oez.sweeps.max_sweeps;
 
 /// "500 ms" or "2.00 s".
 fn fmtSpan(buf: []u8, s: f64) []const u8 {
@@ -365,6 +372,16 @@ const Display = struct {
     target: usize = 0,
     /// Set by a test script (`panel=`, `pointer=`); then it overrides the pointer.
     scripted_target: ?usize = null,
+    /// The triggers of each panel's TTL line (used by panels in triggered mode).
+    triggers: [panels_mod.max_panels]oez.sweeps.Triggers = @splat(.{}),
+
+    /// Looks for trigger edges in the digital words of a block starting at sample `first`.
+    fn feedTtl(self: *Display, first: i64, words: []const u16) void {
+        for (self.set.items[0..self.set.len], self.triggers[0..self.set.len]) |*p, *t| {
+            if (t.line != p.trig_line) t.reset(p.trig_line);
+            t.feed(first, words);
+        }
+    }
 
     fn init(set: panels_mod.Set) Display {
         return .{ .set = set, .initial = set };
@@ -395,18 +412,30 @@ const Display = struct {
             sy = 0;
         }
         if (sy != 0) p.scale *= @exp(sy * per_unit);
-        if (sx != 0) p.span_s *= @exp(sx * per_unit);
+        // The time base; in triggered mode, the window around the trigger.
+        var zoom: f64 = 1;
+        if (sx != 0) zoom *= @exp(sx * per_unit);
         // Fingers apart = zoom in = less time across the panel.
-        if (in.pinch != 1 and in.pinch > 0) p.span_s /= in.pinch;
+        if (in.pinch != 1 and in.pinch > 0) zoom /= in.pinch;
+        for (in.keys[0..in.num_keys]) |k| switch (k) {
+            .left_bracket => zoom *= 1.25,
+            .right_bracket => zoom /= 1.25,
+            else => {},
+        };
+        if (p.mode == .triggered) {
+            p.pre_ms *= zoom;
+            p.post_ms *= zoom;
+        } else p.span_s *= zoom;
         for (in.keys[0..in.num_keys]) |k| switch (k) {
             .minus => p.scale *= 1.25,
             .equal => p.scale /= 1.25,
-            .left_bracket => p.span_s *= 1.25,
-            .right_bracket => p.span_s /= 1.25,
             .r => {
                 p.span_s = self.initial.items[self.target].span_s;
                 p.scale = self.initial.items[self.target].scale;
                 p.mode = self.initial.items[self.target].mode;
+                p.trig_line = self.initial.items[self.target].trig_line;
+                p.pre_ms = self.initial.items[self.target].pre_ms;
+                p.post_ms = self.initial.items[self.target].post_ms;
                 p.filtered = self.initial.items[self.target].filtered;
                 p.band_low_hz = self.initial.items[self.target].band_low_hz;
                 p.band_high_hz = self.initial.items[self.target].band_high_hz;
@@ -417,7 +446,10 @@ const Display = struct {
             .semicolon => if (p.filtered) p.stepCorner(true, false),
             .apostrophe => if (p.filtered) p.stepCorner(true, true),
             .m => p.mode = if (p.mode == .scroll) .sweep else .scroll,
-            else => {},
+            .t => p.mode = if (p.mode == .triggered) .scroll else .triggered,
+            else => if (p.mode == .triggered and @intFromEnum(k) >= '1' and @intFromEnum(k) <= '8') {
+                p.trig_line = @intCast(@intFromEnum(k) - '0');
+            },
         };
         p.clamp();
         return quit;
@@ -426,12 +458,13 @@ const Display = struct {
     /// What to draw: each panel's traces, then dividers and a bar marking the target panel,
     /// and into `batch` the text: each panel's title (name, time base, scale per row), its
     /// row labels, and the status read-out in the bottom right corner.
-    fn frame(self: *const Display, gpu: *const Gpu, layout: *const oez.types.Layout, newest: i64, status: Status, batch: *font.Batch, draws: *[panels_mod.max_panels]gpu_mod.PanelDraw, fills: *[max_fills]gpu_mod.Fill) struct { draws: []const gpu_mod.PanelDraw, fills: []const gpu_mod.Fill, text: []const font.Vertex } {
+    fn frame(self: *const Display, gpu: *const Gpu, layout: *const oez.types.Layout, newest: i64, status: Status, batch: *font.Batch, draws: *[max_draws]gpu_mod.PanelDraw, fills: *[max_fills]gpu_mod.Fill) struct { draws: []const gpu_mod.PanelDraw, fills: []const gpu_mod.Fill, text: []const font.Vertex } {
         const width = gpu.extent.width;
         const height = gpu.extent.height;
         const nch = gpu.nch;
         const fs = layout.sample_rate;
         var nf: usize = 0;
+        var nd: usize = 0;
         batch.clear();
         const line_h = @round(batch.font.line_height);
         const bright: font.Colour = .{ 225, 230, 240, 255 };
@@ -441,21 +474,63 @@ const Display = struct {
             // Sweep: a whole number of samples per pass, so the picture stands still.
             const span: f64 = if (p.mode == .sweep) @max(1, @round(p.span_s * fs)) else p.span_s * fs;
             const phase: f64 = if (p.mode == .sweep) @floatFromInt(@mod(newest, @as(i64, @intFromFloat(span)))) else -1;
-            draws[i] = .{
-                .rect = .{ .x = r.x, .y = r.y, .w = r.w, .h = r.h },
-                .params = .{
-                    .nch = @intCast(nch),
-                    .cap_mask = @intCast(gpu.hist_cap - 1),
-                    .newest = @truncate(@as(u64, @bitCast(newest))),
-                    .first_ch = p.drawColumn(),
-                    .cols = r.w,
-                    .rows = p.rows,
-                    .span = @floatCast(span),
-                    .lsb_per_row = @floatCast(p.scale / p.unitsPerLsb()),
-                    .half_px = 1.5 / @as(f32, @floatFromInt(r.h)),
-                    .phase = @floatCast(phase),
-                },
+            const px: f32 = @floatFromInt(r.x);
+            const py: f32 = @floatFromInt(r.y);
+            var params: gpu_mod.TraceParams = .{
+                .nch = @intCast(nch),
+                .cap_mask = @intCast(gpu.hist_cap - 1),
+                .newest = @truncate(@as(u64, @bitCast(newest))),
+                .first_ch = p.drawColumn(),
+                .cols = r.w,
+                .rows = p.rows,
+                .span = @floatCast(span),
+                .lsb_per_row = @floatCast(p.scale / p.unitsPerLsb()),
+                .half_px = 1.5 / @as(f32, @floatFromInt(r.h)),
+                .phase = @floatCast(phase),
             };
+            const rect: gpu_mod.PixelRect = .{ .x = r.x, .y = r.y, .w = r.w, .h = r.h };
+            var shown_sweeps: usize = 0;
+            if (p.mode == .triggered) {
+                // One draw per sweep, oldest first and dimmest, the newest on top.
+                const trig = &self.triggers[i];
+                const pre: i64 = @intFromFloat(@round(p.pre_ms * 1e-3 * fs));
+                const post: i64 = @max(1, @as(i64, @intFromFloat(@round(p.post_ms * 1e-3 * fs))));
+                const window: f64 = @floatFromInt(pre + post);
+                // Sweeps whose samples the history may no longer hold are left out.
+                const keep: i64 = @as(i64, @intCast(gpu.hist_cap)) - @as(i64, @intFromFloat(fs));
+                var k: usize = @min(p.overlay, trig.len);
+                while (k > 0) {
+                    k -= 1;
+                    const s = trig.recent(k).?;
+                    if (newest - (s.t0 - pre) > keep) continue;
+                    const end = s.t0 + post;
+                    const future: f64 = @floatFromInt(@max(0, end - newest));
+                    if (window - future < 2 * window / @as(f64, @floatFromInt(r.w)) + 2) continue;
+                    params.newest = @truncate(@as(u64, @bitCast(end)));
+                    params.span = @floatCast(window);
+                    params.phase = -1;
+                    params.future = @floatCast(future);
+                    params.gain = if (k == 0) 1.0 else 0.6 - 0.4 * @as(f32, @floatFromInt(k - 1)) / @as(f32, @floatFromInt(@max(1, p.overlay -| 2)));
+                    if (nd < draws.len) {
+                        draws[nd] = .{ .rect = rect, .params = params };
+                        nd += 1;
+                        shown_sweeps += 1;
+                    }
+                }
+                // Over the traces: when the trigger line was high in the newest sweep
+                // (the laser), and a line at the trigger.
+                const w: f32 = @floatFromInt(r.w);
+                const x0 = px + w * @as(f32, @floatFromInt(pre)) / @as(f32, @floatCast(window));
+                if (trig.recent(0)) |s| {
+                    const until = @min(s.fall orelse newest, s.t0 + post);
+                    const x1 = px + w * @as(f32, @floatFromInt(until - s.t0 + pre)) / @as(f32, @floatCast(window));
+                    if (shown_sweeps > 0 and x1 > x0) batch.rect(x0, py, x1 - x0, @floatFromInt(r.h), .{ 90, 150, 255, 34 });
+                }
+                batch.rect(@round(x0), py, 1, @floatFromInt(r.h), .{ 200, 210, 230, 150 });
+            } else if (nd < draws.len) {
+                draws[nd] = .{ .rect = rect, .params = params };
+                nd += 1;
+            }
             if (p.mode == .sweep) {
                 // The cursor: a line where the newest sample is, and a blank stretch ahead.
                 const cx: u32 = @min(r.w - 1, @as(u32, @intFromFloat(phase / span * @as(f64, @floatFromInt(r.w)))));
@@ -475,15 +550,31 @@ const Display = struct {
             }
             if (line_h <= 0) continue;
             // Title, top left.
-            const px: f32 = @floatFromInt(r.x);
-            const py: f32 = @floatFromInt(r.y);
             const title_y = py + 6;
             var span_buf: [24]u8 = undefined;
             var scale_buf: [24]u8 = undefined;
             var title_buf: [128]u8 = undefined;
             var band_buf: [32]u8 = undefined;
-            const title = std.fmt.bufPrint(&title_buf, "{s}   {s}   {s}/row{s}{s}", .{ p.name(), fmtSpan(&span_buf, p.span_s), fmtScale(&scale_buf, p), fmtBand(&band_buf, p), if (p.mode == .sweep) "   sweep" else "" }) catch "";
+            const title = if (p.mode == .triggered)
+                std.fmt.bufPrint(&title_buf, "{s}   TTL{d}   -{d:.1}/+{d:.1} ms   {s}/row{s}   {d} sweeps{s}", .{ p.name(), p.trig_line, p.pre_ms, p.post_ms, fmtScale(&scale_buf, p), fmtBand(&band_buf, p), shown_sweeps, if (shown_sweeps == 0) " (waiting for a trigger)" else "" }) catch ""
+            else
+                std.fmt.bufPrint(&title_buf, "{s}   {s}   {s}/row{s}{s}", .{ p.name(), fmtSpan(&span_buf, p.span_s), fmtScale(&scale_buf, p), fmtBand(&band_buf, p), if (p.mode == .sweep) "   sweep" else "" }) catch "";
             _ = batch.label(px + 8, title_y, title, bright);
+            if (p.mode == .triggered) {
+                // The time axis along the bottom: the ends of the window and the trigger.
+                const bottom = py + @as(f32, @floatFromInt(r.h)) - line_h - 4;
+                const w: f32 = @floatFromInt(r.w);
+                var t_buf: [24]u8 = undefined;
+                const right = std.fmt.bufPrint(&t_buf, "+{d:.1} ms", .{p.post_ms}) catch "";
+                _ = batch.label(px + w - batch.font.width(right) - 8, bottom, right, dim);
+                if (p.pre_ms > 0) {
+                    _ = batch.label(px + w * @as(f32, @floatCast(p.pre_ms / (p.pre_ms + p.post_ms))) + 4, bottom, "0", dim);
+                    var l_buf: [24]u8 = undefined;
+                    const left = std.fmt.bufPrint(&l_buf, "-{d:.1} ms", .{p.pre_ms}) catch "";
+                    // Only where it fits between the row labels and the trigger line.
+                    if (px + 48 + batch.font.width(left) + 8 < px + w * @as(f32, @floatCast(p.pre_ms / (p.pre_ms + p.post_ms)))) _ = batch.label(px + 48, bottom, left, dim);
+                }
+            }
             // Row labels down the left edge, thinned when rows are shorter than a line.
             const row_h = @as(f32, @floatFromInt(r.h)) / @as(f32, @floatFromInt(p.rows));
             const step: u32 = @max(1, @as(u32, @intFromFloat(@ceil((line_h + 3) / row_h))));
@@ -509,7 +600,7 @@ const Display = struct {
             fills[nf] = .{ .rect = .{ .x = r.x, .y = r.y, .w = r.w, .h = 3 }, .colour = .{ 0.30, 0.55, 0.95, 1.0 } };
             nf += 1;
         }
-        return .{ .draws = draws[0..self.set.len], .fills = fills[0..nf], .text = batch.vertices[0..batch.len] };
+        return .{ .draws = draws[0..nd], .fills = fills[0..nf], .text = batch.vertices[0..batch.len] };
     }
 };
 
@@ -586,7 +677,7 @@ fn runDirect(io: Io, gpa: std.mem.Allocator, args: Args, layout: oez.types.Layou
     try acq.start();
     defer acq.join();
 
-    var draws: [panels_mod.max_panels]gpu_mod.PanelDraw = undefined;
+    var draws: [max_draws]gpu_mod.PanelDraw = undefined;
     var fills: [max_fills]gpu_mod.Fill = undefined;
     var text: Text = .{};
     text.init(gpa, &gpu, args);
@@ -621,6 +712,7 @@ fn runDirect(io: Io, gpa: std.mem.Allocator, args: Args, layout: oez.types.Layou
         while (reader.next(blk)) {
             if (blk.len == 0) continue;
             gpu.writeSamples(blk.first_sample, try feed.rows(gpa, blk.first_sample, blk.samples()));
+            display.feedTtl(blk.first_sample, blk.ttl[0..blk.len]);
             newest = blk.first_sample + @as(i64, @intCast(blk.len));
             newest_acquired_ns = blk.acquired_ns;
         }
@@ -791,7 +883,7 @@ pub fn main(init: std.process.Init) !u8 {
     defer feed.deinit(gpa);
     display.initial = display.set;
     try gpu.createHistory(feed.width, history_samples);
-    var draws: [panels_mod.max_panels]gpu_mod.PanelDraw = undefined;
+    var draws: [max_draws]gpu_mod.PanelDraw = undefined;
     var fills: [max_fills]gpu_mod.Fill = undefined;
     var text: Text = .{};
     text.init(gpa, &gpu, args);
@@ -869,6 +961,7 @@ pub fn main(init: std.process.Init) !u8 {
         while (reader.next(&blk)) {
             if (blk.len == 0) continue;
             gpu.writeSamples(blk.first_sample, try feed.rows(gpa, blk.first_sample, blk.samples()));
+            display.feedTtl(blk.first_sample, blk.ttl[0..blk.len]);
             newest = blk.first_sample + @as(i64, @intCast(blk.len));
             newest_acquired_ns = blk.acquired_ns;
         }
