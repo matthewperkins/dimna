@@ -87,6 +87,8 @@ pub fn build(b: *std.Build) void {
     // Text: fontconfig finds the font, FreeType rasterizes it.
     gui_mod.linkSystemLibrary("freetype2", .{});
     gui_mod.linkSystemLibrary("fontconfig", .{});
+    // Keys by what they are labelled, whatever the keyboard layout.
+    gui_mod.linkSystemLibrary("xkbcommon", .{});
     const gui_c = b.addTranslateC(.{ .root_source_file = b.path("src/gui/c.h"), .target = target, .optimize = optimize });
     {
         // FreeType's headers live in their own directory; ask pkg-config where.

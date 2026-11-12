@@ -123,6 +123,10 @@ rect = [0.0, 0.75, 1.0, 0.25]
 Without `[[panel]]` tables there is one panel per headstage, side by side. Wheel (Y scale),
 Shift+wheel or pinch (time base) and the keys `- = [ ] r` act on the panel under the pointer,
 marked by a bar along its top; `q` quits.
+Keys go by what they are labelled in your keyboard layout (so on Dvorak, `r` is the key
+marked r), and reach oEZ while its window has the keyboard focus (with Hyprland's
+`follow_mouse = 1`, while the pointer is over it). `OEZ_KEY_DEBUG=1` logs focus changes and
+every key received.
 
 **Display filter.** Each electrode panel can show its channels band-passed: a 4th-order
 Butterworth high-pass and low-pass with the panel's own corners (`band = [low, high]`; a 0

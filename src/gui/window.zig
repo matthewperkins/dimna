@@ -11,29 +11,57 @@ const xdg = wayland.client.xdg;
 const wp = wayland.client.wp;
 const zwp = wayland.client.zwp;
 const linux = std.os.linux;
+const xkb = @import("gui_c");
 const log = std.log.scoped(.window);
 
-/// Evdev key codes (wl_keyboard delivers these; no keymap is needed for a few fixed keys).
+/// The keys oez acts on, by what the key is labelled in the user's keyboard layout (its
+/// symbol without modifiers, from the compositor's keymap through xkbcommon), not by where
+/// it sits: on Dvorak, `r` is the key marked r. The values are X keysyms.
 pub const Key = enum(u32) {
-    escape = 1,
-    q = 16,
-    r = 19,
-    m = 50,
-    f = 33,
-    comma = 51,
-    dot = 52,
-    semicolon = 39,
-    apostrophe = 40,
-    minus = 12,
-    equal = 13,
-    left_bracket = 26,
-    right_bracket = 27,
-    up = 103,
-    down = 108,
-    left = 105,
-    right = 106,
+    escape = 0xff1b,
+    q = 'q',
+    r = 'r',
+    m = 'm',
+    f = 'f',
+    comma = ',',
+    dot = '.',
+    semicolon = ';',
+    apostrophe = '\'',
+    minus = '-',
+    equal = '=',
+    left_bracket = '[',
+    right_bracket = ']',
+    left = 0xff51,
+    up = 0xff52,
+    right = 0xff53,
+    down = 0xff54,
     _,
 };
+
+/// The keysym of an evdev key code on a US QWERTY keyboard, for when the compositor sends
+/// no usable keymap.
+fn qwertyKey(code: u32) u32 {
+    return switch (code) {
+        1 => 0xff1b,
+        12 => '-',
+        13 => '=',
+        16 => 'q',
+        19 => 'r',
+        26 => '[',
+        27 => ']',
+        33 => 'f',
+        39 => ';',
+        40 => '\'',
+        50 => 'm',
+        51 => ',',
+        52 => '.',
+        103 => 0xff52,
+        105 => 0xff51,
+        106 => 0xff53,
+        108 => 0xff54,
+        else => 0,
+    };
+}
 
 /// What the user did since the last `takeInput`.
 pub const Input = struct {
@@ -85,6 +113,11 @@ pub const Window = struct {
     seat: ?*wl.Seat = null,
     pointer: ?*wl.Pointer = null,
     keyboard: ?*wl.Keyboard = null,
+    xkb_context: ?*xkb.xkb_context = null,
+    xkb_keymap: ?*xkb.xkb_keymap = null,
+    xkb_state: ?*xkb.xkb_state = null,
+    /// OEZ_KEY_DEBUG=1 logs keyboard focus and every key.
+    key_debug: bool = false,
     gestures: ?*zwp.PointerGesturesV1 = null,
     pinch: ?*zwp.PointerGesturePinchV1 = null,
     presentation: ?*wp.Presentation = null,
@@ -125,6 +158,7 @@ pub const Window = struct {
         const display = try wl.Display.connect(null);
         errdefer display.disconnect();
         self.* = .{ .display = display, .registry = try display.getRegistry() };
+        self.key_debug = std.c.getenv("OEZ_KEY_DEBUG") != null;
         for (&self.feedback) |*f| f.* = .{ .window = self };
         for (&self.outputs) |*o| o.* = .{ .window = self };
         self.registry.setListener(*Window, onRegistry, self);
@@ -134,7 +168,6 @@ pub const Window = struct {
         const compositor = self.compositor orelse return error.NoCompositor;
         const wm_base = self.wm_base orelse return error.NoXdgShell;
         wm_base.setListener(*Window, onWmBase, self);
-        if (self.seat) |seat| seat.setListener(*Window, onSeat, self);
 
         self.surface = try compositor.createSurface();
         self.xdg_surface = try wm_base.getXdgSurface(self.surface);
@@ -157,6 +190,9 @@ pub const Window = struct {
         if (self.pinch) |p| p.destroy();
         if (self.pointer) |p| p.release();
         if (self.keyboard) |k| k.release();
+        if (self.xkb_state) |s| xkb.xkb_state_unref(s);
+        if (self.xkb_keymap) |m| xkb.xkb_keymap_unref(m);
+        if (self.xkb_context) |x| xkb.xkb_context_unref(x);
         self.toplevel.destroy();
         self.xdg_surface.destroy();
         self.surface.destroy();
@@ -264,7 +300,12 @@ pub const Window = struct {
                 } else if (std.mem.eql(u8, name, std.mem.span(xdg.WmBase.interface.name))) {
                     self.wm_base = registry.bind(g.name, xdg.WmBase, @min(g.version, 2)) catch null;
                 } else if (std.mem.eql(u8, name, std.mem.span(wl.Seat.interface.name))) {
-                    if (self.seat == null) self.seat = registry.bind(g.name, wl.Seat, @min(g.version, 5)) catch null;
+                    if (self.seat == null) {
+                        self.seat = registry.bind(g.name, wl.Seat, @min(g.version, 5)) catch null;
+                        // Listen at once: the seat says what it has (pointer, keyboard)
+                        // right after binding, and an event with no listener is dropped.
+                        if (self.seat) |seat| seat.setListener(*Window, onSeat, self);
+                    }
                 } else if (std.mem.eql(u8, name, std.mem.span(wp.Presentation.interface.name))) {
                     self.presentation = registry.bind(g.name, wp.Presentation, 1) catch null;
                     // Listen at once: the clock id is sent right after binding.
@@ -421,14 +462,44 @@ pub const Window = struct {
 
     fn onKeyboard(_: *wl.Keyboard, event: wl.Keyboard.Event, self: *Window) void {
         switch (event) {
-            .keymap => |k| _ = linux.close(k.fd),
+            .keymap => |k| {
+                defer _ = linux.close(k.fd);
+                if (k.format != .xkb_v1) return;
+                const map = std.posix.mmap(null, k.size, .{ .READ = true }, .{ .TYPE = .PRIVATE }, k.fd, 0) catch return;
+                defer std.posix.munmap(map);
+                if (self.xkb_context == null) self.xkb_context = xkb.xkb_context_new(xkb.XKB_CONTEXT_NO_FLAGS);
+                const keymap = xkb.xkb_keymap_new_from_buffer(self.xkb_context, map.ptr, std.mem.indexOfScalar(u8, map, 0) orelse map.len, xkb.XKB_KEYMAP_FORMAT_TEXT_V1, xkb.XKB_KEYMAP_COMPILE_NO_FLAGS) orelse {
+                    log.warn("the compositor's keymap did not compile; keys are read as on a US QWERTY keyboard", .{});
+                    return;
+                };
+                const state = xkb.xkb_state_new(keymap) orelse {
+                    xkb.xkb_keymap_unref(keymap);
+                    return;
+                };
+                if (self.xkb_state) |s| xkb.xkb_state_unref(s);
+                if (self.xkb_keymap) |m| xkb.xkb_keymap_unref(m);
+                self.xkb_keymap = keymap;
+                self.xkb_state = state;
+            },
+            .enter => if (self.key_debug) log.info("keyboard focus: gained", .{}),
+            .leave => if (self.key_debug) log.info("keyboard focus: lost", .{}),
             .key => |k| {
-                if (k.state == .pressed and self.input.num_keys < self.input.keys.len) {
-                    self.input.keys[self.input.num_keys] = @enumFromInt(k.key);
+                // The key's symbol with no modifier held, in the layout in use (xkb key
+                // codes are evdev codes + 8).
+                var sym: u32 = qwertyKey(k.key);
+                if (self.xkb_state) |state| {
+                    const layout = xkb.xkb_state_key_get_layout(state, k.key + 8);
+                    var syms: [*c]const xkb.xkb_keysym_t = null;
+                    if (xkb.xkb_keymap_key_get_syms_by_level(self.xkb_keymap, k.key + 8, layout, 0, &syms) >= 1) sym = syms[0];
+                }
+                if (self.key_debug) log.info("key code {d} {s}: symbol 0x{x}", .{ k.key, if (k.state == .pressed) "pressed" else "released", sym });
+                if (k.state == .pressed and sym != 0 and self.input.num_keys < self.input.keys.len) {
+                    self.input.keys[self.input.num_keys] = @enumFromInt(sym);
                     self.input.num_keys += 1;
                 }
             },
             .modifiers => |m| {
+                if (self.xkb_state) |state| _ = xkb.xkb_state_update_mask(state, m.mods_depressed, m.mods_latched, m.mods_locked, 0, 0, m.group);
                 // Standard xkb modifier bits: Shift = 1, Control = 4.
                 self.input.shift = (m.mods_depressed & 1) != 0;
                 self.input.ctrl = (m.mods_depressed & 4) != 0;
