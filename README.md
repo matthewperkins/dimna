@@ -129,6 +129,12 @@ Ctrl+wheel scales only the row under the pointer; that row's label then shows it
 scale in amber. The plain wheel still moves every row, keeping such a row's ratio, and `r`
 clears it. (Per-row scales are not saved in the config.)
 
+**Off scale and saturated.** A trace may reach 1.5 rows from its row's centre. Where it
+is wholly beyond that, a dashed amber line near the row's own upper or lower edge shows
+which way it has gone, instead of a flat line in a neighbour's row. Samples at the
+converter's limits (a saturated amplifier or ADC, whatever the display's scale) are drawn
+red.
+
 Keys go by what they are labelled in your keyboard layout (so on Dvorak, `r` is the key
 marked r), and reach oEZ while its window has the keyboard focus (with Hyprland's
 `follow_mouse = 1`, while the pointer is over it). `OEZ_KEY_DEBUG=1` logs focus changes and

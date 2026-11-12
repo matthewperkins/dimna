@@ -85,9 +85,24 @@ void main() {
     float lo = clamp(mn / per_row, -1.5, 1.5);
     float hi = clamp(mx / per_row, -1.5, 1.5);
     float y = top ? centre - hi * row_h - p.half_px : centre - lo * row_h + p.half_px;
+    // Off scale: the whole column lies beyond what is drawn (1.5 rows from the centre).
+    // Instead of a flat line far from its row, a dashed line near the row's own upper or
+    // lower edge says which way the signal has gone.
+    bool above = mn / per_row > 1.5;
+    bool below = mx / per_row < -1.5;
+    bool off_scale = above || below;
+    if (off_scale) {
+        float edge = centre + (above ? -0.42 : 0.42) * row_h;
+        bool dash = ((col >> 2) & 1u) == 0u;
+        y = dash ? (top ? edge - p.half_px : edge + p.half_px) : edge;
+    }
     float x = -1.0 + 2.0 * (float(col) + 0.5) / float(p.cols);
     gl_Position = vec4(x, y, 0.0, 1.0);
 
     const vec3 palette[4] = vec3[4](vec3(0.55, 0.85, 1.0), vec3(1.0, 0.82, 0.45), vec3(0.6, 1.0, 0.65), vec3(1.0, 0.6, 0.75));
     colour = palette[ch & 3u] * p.gain;
+    // Off scale: the row's colour pulled towards amber. At the converter's limits (the
+    // amplifier or ADC is saturated, whatever the display's scale): red.
+    if (off_scale) colour = mix(colour, vec3(1.0, 0.62, 0.2) * p.gain, 0.65);
+    if (mx >= 32767.0 || mn <= -32768.0) colour = vec3(1.0, 0.22, 0.18) * p.gain;
 }
