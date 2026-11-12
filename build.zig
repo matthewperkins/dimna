@@ -89,6 +89,8 @@ pub fn build(b: *std.Build) void {
     gui_mod.linkSystemLibrary("fontconfig", .{});
     // Keys by what they are labelled, whatever the keyboard layout.
     gui_mod.linkSystemLibrary("xkbcommon", .{});
+    // Sound: ALSA's API (PipeWire serves it on a desktop).
+    gui_mod.linkSystemLibrary("alsa", .{});
     const gui_c = b.addTranslateC(.{ .root_source_file = b.path("src/gui/c.h"), .target = target, .optimize = optimize });
     {
         // FreeType's headers live in their own directory; ask pkg-config where.

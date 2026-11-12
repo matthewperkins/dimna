@@ -3,3 +3,4 @@
 #include FT_FREETYPE_H
 #include <fontconfig/fontconfig.h>
 #include <xkbcommon/xkbcommon.h>
+#include <alsa/asoundlib.h>

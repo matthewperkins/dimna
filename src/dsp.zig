@@ -37,6 +37,15 @@ pub const Biquad = struct {
         return y;
     }
 
+    /// A peaking equalizer: `gain_db` at `fc`, width set by `q`; unity elsewhere.
+    pub fn peaking(fc: f64, q: f64, gain_db: f64, fs: f64) Biquad {
+        const a = std.math.pow(f64, 10.0, gain_db / 40.0);
+        const w0 = 2.0 * std.math.pi * fc / fs;
+        const al = @sin(w0) / (2.0 * q);
+        const a0 = 1.0 + al / a;
+        return .{ .b0 = (1.0 + al * a) / a0, .b1 = -2.0 * @cos(w0) / a0, .b2 = (1.0 - al * a) / a0, .a1 = -2.0 * @cos(w0) / a0, .a2 = (1.0 - al / a) / a0 };
+    }
+
     pub const Kind = enum { low_pass, high_pass };
 
     /// A second-order low-pass or high-pass with corner `fc` (Hz) and quality `q` at sample

@@ -27,7 +27,7 @@
 //!   of once per refresh just before it.
 //!
 //! --script feeds synthetic input for tests, as "SECONDS:STEP;SECONDS:STEP;...", where STEP is
-//! wheel=N, hwheel=N, cwheel=N (Ctrl+wheel; axis units, 15 = one click), pointer=FX,FY, pinch=F (scale factor), or keys such as
+//! wheel=N, hwheel=N, cwheel=N (Ctrl+wheel; axis units, 15 = one click), pointer=FX,FY, click, cclick, pinch=F (scale factor), or keys such as
 //! "]]==" (any of [ ] - = r m f t 1-8 , . ' q; ';' separates steps, so the high corner can only be
 //! stepped up by script). It goes through the same path as real input.
 //!
@@ -43,6 +43,7 @@
 //!                                  s switches to spikes on the row under the pointer (a slope
 //!                                  trigger; click another row to move it) and back,
 //!                                  [ ] and Shift+wheel zoom the window around the trigger
+//!   click a row                    listen to that channel (Ctrl+click adds or removes one)
 //!   f                              display filter on/off (electrode panels): raw <-> band-pass
 //!   , .   ; '                      the band's low corner, high corner: down, up
 //!
@@ -106,6 +107,7 @@ const format = @import("format.zig");
 const fmtSpan = format.fmtSpan;
 const fmtScale = format.fmtScale;
 const control = @import("control.zig");
+const audio_out = @import("audio_out.zig");
 const Status = control.Status;
 const Io = std.Io;
 const log = std.log.scoped(.oez);
@@ -128,6 +130,9 @@ const Args = struct {
     tearing: bool = false,
     /// Where recordings go: one session folder per recording beneath it.
     record_dir: []const u8 = "~/oez-recordings",
+    /// The spike audio monitor.
+    audio: bool = true,
+    volume_db: f64 = -6,
     /// The control window (a second, ordinary window with the panels' settings).
     control: bool = true,
     /// All panels in sweep mode (see `panels.Mode`).
@@ -173,6 +178,12 @@ fn runScript(script: []const u8, pos: *usize, elapsed_s: f64, in: *Input, displa
         } else if (std.mem.startsWith(u8, what, "panel=")) {
             const n = std.fmt.parseInt(usize, what[6..], 10) catch 1;
             display.scripted_target = std.math.clamp(n, 1, @max(display.set.len, 1)) - 1;
+        } else if (std.mem.eql(u8, what, "click")) {
+            in.clicks += 1;
+        } else if (std.mem.eql(u8, what, "cclick")) {
+            // Ctrl+click.
+            in.clicks += 1;
+            in.ctrl = true;
         } else if (std.mem.startsWith(u8, what, "pointer=")) {
             var it = std.mem.tokenizeScalar(u8, what[8..], ',');
             const fx = std.fmt.parseFloat(f64, it.next() orelse "0") catch 0;
@@ -223,6 +234,10 @@ fn applyConfig(a: *Args, doc: oez.toml.Document) void {
             a.font = e.value.string;
         } else if (std.mem.eql(u8, e.key, "font_px") and e.value == .number and e.value.number >= 6 and e.value.number <= 64) {
             a.font_px = @intFromFloat(e.value.number);
+        } else if (std.mem.eql(u8, e.key, "audio") and e.value == .boolean) {
+            a.audio = e.value.boolean;
+        } else if (std.mem.eql(u8, e.key, "volume_db") and e.value == .number) {
+            a.volume_db = std.math.clamp(e.value.number, -60, 12);
         } else if (std.mem.eql(u8, e.key, "record_dir") and e.value == .string) {
             a.record_dir = e.value.string;
         } else if (std.mem.eql(u8, e.key, "control") and e.value == .boolean) {
@@ -267,6 +282,8 @@ fn parseArgs(args: []const [:0]const u8, doc: oez.toml.Document) !Args {
         } else if (std.mem.eql(u8, arg, "--tearing")) {
             a.tearing = true;
             a.present = .immediate;
+        } else if (std.mem.eql(u8, arg, "--no-audio")) {
+            a.audio = false;
         } else if (std.mem.eql(u8, arg, "--no-control")) {
             a.control = false;
         } else if (std.mem.eql(u8, arg, "--sweep")) {
@@ -347,6 +364,15 @@ fn fmtBand(buf: []u8, p: *const Panel) []const u8 {
         std.fmt.bufPrint(buf, "   filter: no corners", .{})) catch "";
 }
 
+/// An electrode channel by headstage and number ("A1-5"), or "ch 37" if it is not one.
+fn channelName(buf: []u8, layout: *const oez.types.Layout, ch: u32) []const u8 {
+    for (layout.headstageSlice()) |h| {
+        if (ch >= h.first_channel and ch < h.first_channel + h.num_channels)
+            return std.fmt.bufPrint(buf, "{s}-{d}", .{ oez.types.headstage_names[h.slot], ch - h.first_channel + 1 }) catch "";
+    }
+    return std.fmt.bufPrint(buf, "ch {d}", .{ch + 1}) catch "";
+}
+
 /// What triggers a panel's sweeps: "TTL2", or "row 5 falling -62 µV".
 fn trigText(buf: []u8, p: *const Panel) []const u8 {
     return (if (p.trig_source == .ttl)
@@ -402,12 +428,51 @@ const Display = struct {
     /// The triggers of each panel's TTL line (used by panels in triggered mode).
     triggers: [panels_mod.max_panels]oez.sweeps.Triggers = @splat(.{}),
 
+    /// The audio monitor's settings (which channels, volume, ...); `audio_dirty` when they
+    /// have changed and the audio threads are to be told.
+    audio: oez.audio.Settings = .{},
+    audio_dirty: bool = true,
+    audio_recalibrate: bool = false,
+
     /// The pulses of each panel's tint line (see `Panel.tint_line`).
     pulses: [panels_mod.max_panels]oez.sweeps.Pulses = @splat(.{}),
     /// The slope trigger of each panel that triggers on one of its channels, and what its
     /// trigger list was made from (a change of source, line or row starts it afresh).
     slopes: [panels_mod.max_panels]?oez.slope.Slope = @splat(null),
     trig_made_from: [panels_mod.max_panels]u64 = @splat(0),
+
+    /// Listens to the first row of the first electrode panel.
+    fn listenToFirst(self: *Display) void {
+        self.audio.num_channels = 0;
+        for (self.set.items[0..self.set.len]) |*p| {
+            if (p.kind != .electrode or p.rows == 0) continue;
+            self.audio.channels[0] = p.first_ch;
+            self.audio.num_channels = 1;
+            break;
+        }
+        self.audio_dirty = true;
+    }
+
+    fn listening(self: *const Display, channel: u32) bool {
+        return std.mem.indexOfScalar(u32, self.audio.channelSlice(), channel) != null;
+    }
+
+    /// A click on an electrode row: listen to that channel alone, or with Ctrl add it to
+    /// (or take it out of) what is listened to.
+    fn listenClick(self: *Display, channel: u32, add: bool) void {
+        const a = &self.audio;
+        if (!add) {
+            a.channels[0] = channel;
+            a.num_channels = 1;
+        } else if (std.mem.indexOfScalar(u32, a.channelSlice(), channel)) |at| {
+            for (at..a.num_channels - 1) |k| a.channels[k] = a.channels[k + 1];
+            a.num_channels -= 1;
+        } else if (a.num_channels < a.channels.len) {
+            a.channels[a.num_channels] = channel;
+            a.num_channels += 1;
+        }
+        self.audio_dirty = true;
+    }
 
     /// Looks for triggers in a block that starts at sample `first`: `samples` (`nch`
     /// interleaved, as acquired) for slope triggers, the digital `words` for TTL edges.
@@ -462,6 +527,17 @@ const Display = struct {
     /// Applies an edit from the control window. True means quit.
     fn applyEdit(self: *Display, edit: control.Edit) bool {
         if (edit.action == .quit) return true;
+        if (edit.action == .audio) {
+            switch (edit.action.audio) {
+                .enabled => |on| self.audio.enabled = on,
+                .mute => |on| self.audio.mute = on,
+                .volume => |up| self.audio.volume_db = std.math.clamp(self.audio.volume_db + (if (up) @as(f64, 2) else -2), -60, 12),
+                .reference => |on| self.audio.reference = on,
+                .recalibrate => self.audio_recalibrate = true,
+            }
+            self.audio_dirty = true;
+            return false;
+        }
         if (edit.action == .record or edit.action == .board or edit.action == .quit_answer or edit.panel >= self.set.len) return false;
         const p = &self.set.items[edit.panel];
         switch (edit.action) {
@@ -492,7 +568,7 @@ const Display = struct {
             .trig_holdoff => |up| p.trig_holdoff_ms = oez.board_config.step(f64, &.{ 0, 1, 2, 5, 10, 20, 50, 100, 200, 500 }, p.trig_holdoff_ms, up),
             .overlay => |n| p.overlay = n,
             .reset => self.reset(edit.panel),
-            .quit, .record, .board, .quit_answer => {},
+            .quit, .record, .board, .quit_answer, .audio => {},
         }
         p.clamp();
         return false;
@@ -558,6 +634,10 @@ const Display = struct {
                 p.trig_line = @intCast(@intFromEnum(k) - '0');
             },
         };
+        // A click on an electrode row listens to it (Ctrl: adds or removes it).
+        if (in.clicks > 0 and p.kind == .electrode) {
+            if (p.rowAt(self.pointer_fy)) |row| self.listenClick(p.first_ch + @as(u32, @intCast(row)), in.ctrl);
+        }
         // A click on a row of a spike-triggered panel moves the trigger to that row.
         if (in.clicks > 0 and p.mode == .triggered and p.trig_source == .channel) {
             if (p.rowAt(self.pointer_fy)) |row| p.trig_row = @intCast(row);
@@ -736,7 +816,9 @@ if (p.kind == .ttl)
                 const y = py + (@as(f32, @floatFromInt(row)) + 0.5) * row_h - 0.5 * line_h;
                 if (p.kind != .ttl and y < title_y + line_h + 3) continue;
                 var label_buf: [16]u8 = undefined;
-                const after = batch.label(px + 5, y, rowLabel(&label_buf, p, row, layout, &self.set), dim);
+                // The rows listened to stand out.
+                const heard = p.kind == .electrode and self.audio.enabled and self.listening(p.first_ch + row);
+                const after = batch.label(px + 5, y, rowLabel(&label_buf, p, row, layout, &self.set), if (heard) .{ 255, 225, 120, 255 } else dim);
                 // A row with a scale of its own says so.
                 if (row < panels_mod.max_rows and p.row_gain[row] != 1) {
                     var own: Panel = p.*;
@@ -1135,6 +1217,14 @@ pub fn main(init: std.process.Init) !u8 {
     var board_status: control.BoardStatus = .{};
     // Board settings: what the config (and command line) gave at launch, to tell whether
     // they were changed; and the rate and channel choices waiting for a restart.
+    // The audio monitor (its own threads, see audio_out.zig).
+    var audio_shared: audio_out.Shared = .{};
+    display.audio.volume_db = args.volume_db;
+    display.listenToFirst();
+    audio_shared.publish(&display.audio);
+    var audio_dev: ?*audio_out.AudioOut = if (args.audio) audio_out.AudioOut.start(gpa, &audio_shared, &ring, fs, nch, bs) else null;
+    defer if (audio_dev) |a| a.stop();
+
     var saved_settings = acq.requested;
     var pending = acq.requested;
     var restart_asked = false;
@@ -1316,6 +1406,15 @@ pub fn main(init: std.process.Init) !u8 {
                 }
             }
         }
+        if (display.audio_dirty) {
+            display.audio_dirty = false;
+            audio_shared.publish(&display.audio);
+            snap_dirty = true;
+        }
+        if (display.audio_recalibrate) {
+            display.audio_recalibrate = false;
+            audio_shared.recalibrate.store(true, .release);
+        }
         if (quit_answer) |answer| {
             if (quit_prompt.active) switch (answer) {
                 .save => if (saveBoard(io, gpa, config_path, &acq.requested)) |_| {
@@ -1346,6 +1445,9 @@ pub fn main(init: std.process.Init) !u8 {
             if (rec != null) {
                 board_status.setNote("stop the recording first: this changes the shape of the data", .{});
             } else {
+                // The audio threads read the ring that is about to be replaced.
+                if (audio_dev) |a| a.stop();
+                audio_dev = null;
                 acq.join();
                 const before = source.settings();
                 applyToSource(source, pending) catch |err| {
@@ -1373,6 +1475,7 @@ pub fn main(init: std.process.Init) !u8 {
                 // The panels again from the config (their sources may have moved), keeping
                 // what was set by hand where the panels still correspond.
                 const old_set = display.set;
+                const old_audio = display.audio;
                 var new_display = makeDisplay(args, &layout) orelse Display.init(panels_mod.default(&layout));
                 if (new_display.set.len == old_set.len) {
                     for (new_display.set.slice(), old_set.items[0..old_set.len]) |*p, *o| {
@@ -1415,6 +1518,14 @@ pub fn main(init: std.process.Init) !u8 {
                 drawn_newest = 0;
                 try acq.start();
                 pending = acq.requested;
+                // Channel numbers mean something else now.
+                new_display_audio: {
+                    display.audio = old_audio;
+                    display.listenToFirst();
+                    audio_shared.publish(&display.audio);
+                    break :new_display_audio;
+                }
+                if (args.audio) audio_dev = audio_out.AudioOut.start(gpa, &audio_shared, &ring, fs, nch, bs);
             }
         }
         // The recorder has finished (asked to, or because writing failed): close it.
@@ -1453,6 +1564,23 @@ pub fn main(init: std.process.Init) !u8 {
                 .ring_overflow = acq.ring_overflow.load(.monotonic),
                 .seconds = @as(f64, @floatFromInt(nowNs(io) - t_start)) / 1e9,
                 .quit_prompt = quit_prompt,
+                .audio = blk: {
+                    var st: control.AudioStatus = .{
+                        .settings = display.audio,
+                        .running = audio_shared.running.load(.acquire),
+                        .sigma_uv = @as(f64, @floatFromInt(audio_shared.held_sigma_c.load(.monotonic))) / 100.0 * oez.types.electrode_uv_per_bit,
+                        .latency_ms = @as(f64, @floatFromInt(audio_shared.latency_us.load(.monotonic))) / 1000.0,
+                        .underruns = audio_shared.underruns.load(.monotonic),
+                        .dropped = audio_shared.dropped.load(.monotonic),
+                    };
+                    var w: Io.Writer = .fixed(&st.listen_buf);
+                    for (display.audio.channelSlice(), 0..) |ch, k| {
+                        var name_buf: [16]u8 = undefined;
+                        w.print("{s}{s}", .{ if (k > 0) ", " else "", channelName(&name_buf, &layout, ch) }) catch break;
+                    }
+                    st.listen_len = w.buffered().len;
+                    break :blk st;
+                },
                 .about_buf = about: {
                     var b: [160]u8 = undefined;
                     _ = std.fmt.bufPrint(&b, "{s}   {d} channels ({d} electrode) at {d} Hz", .{ if (sim != null) "simulated board" else "Open Ephys acquisition board", nch, layout.num_electrodes, fs }) catch "";
@@ -1642,6 +1770,15 @@ pub fn main(init: std.process.Init) !u8 {
             });
             status = .{ .valid = lat_n > 0, .latency_ms = avg, .fps = frames, .lost = reader.lost, .recording = status.recording, .rec_seconds = status.rec_seconds };
             snap_dirty = true;
+            if (audio_dev != null) log.info("  audio: {d:.1} ms (queue {d:.1}, device {d:.1}), gaps {d}, dropped {d}, noise {d:.1} uV{s}", .{
+                @as(f64, @floatFromInt(audio_shared.latency_us.load(.monotonic))) / 1000.0,
+                @as(f64, @floatFromInt(audio_shared.queue_us.load(.monotonic))) / 1000.0,
+                @as(f64, @floatFromInt(audio_shared.device_us.load(.monotonic))) / 1000.0,
+                audio_shared.underruns.load(.monotonic),
+                audio_shared.dropped.load(.monotonic),
+                @as(f64, @floatFromInt(audio_shared.held_sigma_c.load(.monotonic))) / 100.0 * oez.types.electrode_uv_per_bit,
+                if (audio_shared.held_sigma_c.load(.monotonic) == 0) " (measuring)" else " held",
+            });
             on_time_frames = 0;
             late_frames_now = 0;
             if (frame_debug) {

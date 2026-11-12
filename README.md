@@ -145,6 +145,36 @@ as usual. Edges are found on the display thread from the digital words of each b
 with slow triggers fewer are overlaid. After a filter corner change, only the recent past
 is refiltered, so older overlaid sweeps keep the old corners until they are replaced.
 
+**Spike audio.** oEZ plays the channels you choose through the default sound device.
+Click an electrode row on the display to listen to it; Ctrl+click adds or removes a
+channel (up to 8, spread across the stereo field). The rows listened to have a bright
+label. The control window's Audio section has on / off, mute, volume, shaped / plain,
+and recalibrate, and shows the held noise level, the latency and any gaps.
+
+The chain (`src/audio.zig`, carried over from oers) is built to keep what makes one
+region sound unlike another, so nothing in it adapts continuously:
+
+1. Band-limit 300 Hz to 7 kHz.
+2. A gain taken from the noise, measured once for 3 s when channels are chosen (or on
+   "recalibrate") and then held: the noise sigma becomes 0.02 of full scale. The estimate
+   leaves spikes out, so dense firing does not change it.
+3. A gentle downward expander keyed on that held sigma (floor 9 dB down by default, so
+   multi-unit hash stays audible), with a 0.6 ms look-ahead.
+4. +3 dB of presence around 2.8 kHz.
+5. A safety limiter that is exactly linear below half of full scale.
+6. A flat windowed-sinc resampler to the device's rate.
+
+"plain" leaves out 3 and 4, for comparing by ear. Tests hold the chain to this: unit size
+ratios kept, loudness independent of firing rate, hash not gated away, the limiter linear
+where spikes are, the resampler flat to 10 kHz.
+
+Sound runs on two threads of its own (`src/gui/audio_out.zig`) with their own reader on
+the acquisition ring, so it does not depend on the display. On the board: about 16 ms as
+reported, of which about 5 ms waits in oEZ's queue and about 10 ms is what the device
+(PipeWire at a 128-frame quantum, and the sound card) says is still to be played; a few
+gaps in the first seconds while the clock servo settles, then about one in 10 s.
+`--no-audio` or `audio = false` turns it off; `volume_db = -6` sets the starting volume.
+
 **Slope trigger (spikes).** A triggered panel of electrodes can start its sweeps where one
 of its own channels crosses a level, instead of at a TTL edge: `s` on the panel (with the
 pointer over the row to listen to), the TTL / spikes buttons in the control window, or

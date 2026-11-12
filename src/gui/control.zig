@@ -61,6 +61,30 @@ pub const RecStatus = struct {
     }
 };
 
+/// The audio monitor, as the control window shows it.
+pub const AudioStatus = struct {
+    settings: oez.audio.Settings = .{},
+    /// A device is open and both audio threads run.
+    running: bool = false,
+    /// The held noise sigma of the first channel in µV; 0 while it is measured.
+    sigma_uv: f64 = 0,
+    latency_ms: f64 = 0,
+    underruns: u64 = 0,
+    dropped: u64 = 0,
+    /// The channels listened to, as text ("A1-5, B1-3").
+    listen_buf: [96]u8 = undefined,
+    listen_len: usize = 0,
+};
+
+pub const AudioAction = union(enum) {
+    enabled: bool,
+    mute: bool,
+    /// Louder (true) or quieter, 2 dB a step.
+    volume: bool,
+    reference: bool,
+    recalibrate,
+};
+
 /// The board's settings, as the control window shows them.
 pub const BoardStatus = struct {
     settings: oez.types.Settings = .{},
@@ -158,6 +182,7 @@ pub const Action = union(enum) {
     /// Start (true) or stop a recording.
     record: bool,
     board: BoardAction,
+    audio: AudioAction,
     quit_answer: QuitAnswer,
     quit,
 };
@@ -173,6 +198,7 @@ pub const Snapshot = struct {
     seconds: f64 = 0,
     rec: RecStatus = .{},
     board: BoardStatus = .{},
+    audio: AudioStatus = .{},
     quit_prompt: QuitPrompt = .{},
     /// One line about the source ("Open Ephys acquisition board   56 channels at 30000 Hz").
     about_buf: [160]u8 = undefined,
@@ -401,6 +427,36 @@ fn build(ui: *ui_mod.Ui, cfg: *const Config, snap: *const Snapshot, shared: *Sha
         ui.text(rec.path(), ui_mod.text_dim);
         ui.newline();
     }
+    ui.separator();
+
+    // The audio monitor.
+    const au = &snap.audio;
+    ui.text("Audio", ui_mod.text_bright);
+    ui.column(64);
+    if (ui.button("on", au.settings.enabled) and !au.settings.enabled) shared.push(.{ .action = .{ .audio = .{ .enabled = true } } });
+    if (ui.button("off", !au.settings.enabled) and au.settings.enabled) shared.push(.{ .action = .{ .audio = .{ .enabled = false } } });
+    if (ui.button("mute", au.settings.mute)) shared.push(.{ .action = .{ .audio = .{ .mute = !au.settings.mute } } });
+    const dvol = ui.stepper("volume", std.fmt.bufPrint(&buf, "{d:.0} dB", .{au.settings.volume_db}) catch "", 60);
+    if (dvol != 0) shared.push(.{ .action = .{ .audio = .{ .volume = dvol > 0 } } });
+    // "plain" is the linear reference chain, for comparing by ear.
+    if (ui.button("shaped", !au.settings.reference) and au.settings.reference) shared.push(.{ .action = .{ .audio = .{ .reference = false } } });
+    if (ui.button("plain", au.settings.reference) and !au.settings.reference) shared.push(.{ .action = .{ .audio = .{ .reference = true } } });
+    if (ui.button("recalibrate", false)) shared.push(.{ .action = .{ .audio = .recalibrate } });
+    ui.newline();
+    if (!au.running) {
+        ui.text("no audio output", ui_mod.text_dim);
+    } else if (au.settings.enabled) {
+        ui.text(std.fmt.bufPrint(&buf, "listening to {s}", .{if (au.listen_len > 0) au.listen_buf[0..au.listen_len] else "nothing (click a row on the display)"}) catch "", ui_mod.text_dim);
+        if (au.listen_len > 0) {
+            if (au.sigma_uv > 0)
+                ui.text(std.fmt.bufPrint(&buf, "noise {d:.1} µV, held", .{au.sigma_uv}) catch "", ui_mod.text_dim)
+            else
+                ui.text("measuring the noise (3 s)", ui_mod.text_warn);
+            ui.text(std.fmt.bufPrint(&buf, "{d:.0} ms", .{au.latency_ms}) catch "", ui_mod.text_dim);
+        }
+        if (au.underruns > 0) ui.text(std.fmt.bufPrint(&buf, "{d} gaps in the sound", .{au.underruns}) catch "", ui_mod.text_dim);
+    } else ui.text("off", ui_mod.text_dim);
+    ui.newline();
     ui.separator();
 
     // The headstage chips: these change what is recorded. Both apply without a gap.
