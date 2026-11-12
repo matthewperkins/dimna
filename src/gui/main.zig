@@ -39,7 +39,9 @@
 //!   - =   [ ]                      Y scale, time base by keys;  r resets;  q or Esc quits
 //!   m                              scroll <-> sweep (traces stand still, a cursor moves across)
 //!   t                              triggered sweeps on/off: the signal around each rising edge of
-//!                                  a TTL input line, the last few overlaid; 1-8 pick the line,
+//!                                  a TTL input line, the last few overlaid; 1-8 pick the line;
+//!                                  s switches to spikes on the row under the pointer (a slope
+//!                                  trigger; click another row to move it) and back,
 //!                                  [ ] and Shift+wheel zoom the window around the trigger
 //!   f                              display filter on/off (electrode panels): raw <-> band-pass
 //!   , .   ; '                      the band's low corner, high corner: down, up
@@ -189,6 +191,7 @@ fn runScript(script: []const u8, pos: *usize, elapsed_s: f64, in: *Input, displa
                 'm' => .m,
                 'f' => .f,
                 't' => .t,
+                's' => .s,
                 '1'...'8' => @enumFromInt(ch),
                 ',' => .comma,
                 '.' => .dot,
@@ -344,6 +347,14 @@ fn fmtBand(buf: []u8, p: *const Panel) []const u8 {
         std.fmt.bufPrint(buf, "   filter: no corners", .{})) catch "";
 }
 
+/// What triggers a panel's sweeps: "TTL2", or "row 5 falling -62 µV".
+fn trigText(buf: []u8, p: *const Panel) []const u8 {
+    return (if (p.trig_source == .ttl)
+        std.fmt.bufPrint(buf, "TTL{d}", .{p.trig_line})
+    else
+        std.fmt.bufPrint(buf, "row {d} {s} {d:.0} µV", .{ p.trig_row + 1, if (p.trig_rising) "rising" else "falling", p.trig_level_now_uv })) catch "";
+}
+
 /// How many recent samples to filter again when a panel's corners change: what its window
 /// can show (two passes in sweep mode), and a second more.
 fn refilterSamples(set: *const panels_mod.Set, fs: f64) usize {
@@ -393,12 +404,35 @@ const Display = struct {
 
     /// The pulses of each panel's tint line (see `Panel.tint_line`).
     pulses: [panels_mod.max_panels]oez.sweeps.Pulses = @splat(.{}),
+    /// The slope trigger of each panel that triggers on one of its channels, and what its
+    /// trigger list was made from (a change of source, line or row starts it afresh).
+    slopes: [panels_mod.max_panels]?oez.slope.Slope = @splat(null),
+    trig_made_from: [panels_mod.max_panels]u64 = @splat(0),
 
-    /// Looks for trigger edges in the digital words of a block starting at sample `first`.
-    fn feedTtl(self: *Display, first: i64, words: []const u16) void {
-        for (self.set.items[0..self.set.len], self.triggers[0..self.set.len], self.pulses[0..self.set.len]) |*p, *t, *pl| {
-            if (t.line != p.trig_line) t.reset(p.trig_line);
-            t.feed(first, words);
+    /// Looks for triggers in a block that starts at sample `first`: `samples` (`nch`
+    /// interleaved, as acquired) for slope triggers, the digital `words` for TTL edges.
+    fn feedBlock(self: *Display, first: i64, samples: []const i16, nch: usize, fs: f64, words: []const u16) void {
+        for (self.set.items[0..self.set.len], self.triggers[0..self.set.len], self.pulses[0..self.set.len], 0..) |*p, *t, *pl, i| {
+            const channel = p.trig_source == .channel and p.kind == .electrode;
+            const made_from: u64 = if (channel) 0x100 + @as(u64, p.trig_row) else p.trig_line;
+            if (self.trig_made_from[i] != made_from) {
+                self.trig_made_from[i] = made_from;
+                t.reset(p.trig_line);
+                self.slopes[i] = null;
+            }
+            if (channel) {
+                const want: oez.slope.Settings = .{
+                    .rising = p.trig_rising,
+                    .auto = p.trig_auto,
+                    .level = p.trig_level_uv / oez.types.electrode_uv_per_bit,
+                    .holdoff_ms = p.trig_holdoff_ms,
+                };
+                if (self.slopes[i] == null) self.slopes[i] = .init(fs, want);
+                const sl = &self.slopes[i].?;
+                sl.settings = want;
+                sl.feed(first, samples, nch, p.first_ch + p.trig_row, t);
+                p.trig_level_now_uv = sl.level() * oez.types.electrode_uv_per_bit;
+            } else t.feed(first, words);
             if (p.tint_line == 0) continue;
             if (pl.line != p.tint_line) pl.reset(p.tint_line);
             pl.feed(first, words);
@@ -421,17 +455,8 @@ const Display = struct {
     fn reset(self: *Display, index: usize) void {
         const p = &self.set.items[index];
         const was = &self.initial.items[index];
-        p.span_s = was.span_s;
-        p.scale = was.scale;
-        p.row_gain = was.row_gain;
-        p.mode = was.mode;
-        p.trig_line = was.trig_line;
-        p.pre_ms = was.pre_ms;
-        p.post_ms = was.post_ms;
-        p.overlay = was.overlay;
-        p.filtered = was.filtered;
-        p.band_low_hz = was.band_low_hz;
-        p.band_high_hz = was.band_high_hz;
+        // `initial` holds the config's values with this run's slots.
+        p.* = was.*;
     }
 
     /// Applies an edit from the control window. True means quit.
@@ -451,6 +476,20 @@ const Display = struct {
             .filter => |on| p.filtered = on and p.kind == .electrode,
             .corner => |c| p.stepCorner(c.high, c.up),
             .trig_line => |l| p.trig_line = l,
+            .trig_source => |s| p.setTrigSource(s),
+            .trig_row => |d| p.trig_row = @intCast(std.math.clamp(@as(i64, p.trig_row) + d, 0, @as(i64, p.rows) - 1)),
+            .trig_rising => |on| {
+                // The fixed level changes side with the slope.
+                if (on != p.trig_rising) p.trig_level_uv = -p.trig_level_uv;
+                p.trig_rising = on;
+            },
+            .trig_auto => |on| {
+                // Going to a fixed level starts from where the level is now.
+                if (!on and p.trig_auto and p.trig_level_now_uv != 0) p.trig_level_uv = @round(p.trig_level_now_uv);
+                p.trig_auto = on;
+            },
+            .trig_level => |f| p.trig_level_uv = if (@abs(p.trig_level_uv * f) < 5) (if (p.trig_level_uv < 0) -5.0 else 5.0) else p.trig_level_uv * f,
+            .trig_holdoff => |up| p.trig_holdoff_ms = oez.board_config.step(f64, &.{ 0, 1, 2, 5, 10, 20, 50, 100, 200, 500 }, p.trig_holdoff_ms, up),
             .overlay => |n| p.overlay = n,
             .reset => self.reset(edit.panel),
             .quit, .record, .board, .quit_answer => {},
@@ -506,11 +545,23 @@ const Display = struct {
             .semicolon => if (p.filtered) p.stepCorner(true, false),
             .apostrophe => if (p.filtered) p.stepCorner(true, true),
             .m => p.mode = if (p.mode == .scroll) .sweep else .scroll,
+            // Triggered mode: s switches between a TTL line and spikes on the row under
+            // the pointer.
+            .s => if (p.mode == .triggered) {
+                if (p.trig_source == .ttl) {
+                    p.setTrigSource(.channel);
+                    if (p.rowAt(self.pointer_fy)) |row| p.trig_row = @intCast(row);
+                } else p.setTrigSource(.ttl);
+            },
             .t => p.mode = if (p.mode == .triggered) .scroll else .triggered,
-            else => if (p.mode == .triggered and @intFromEnum(k) >= '1' and @intFromEnum(k) <= '8') {
+            else => if (p.mode == .triggered and p.trig_source == .ttl and @intFromEnum(k) >= '1' and @intFromEnum(k) <= '8') {
                 p.trig_line = @intCast(@intFromEnum(k) - '0');
             },
         };
+        // A click on a row of a spike-triggered panel moves the trigger to that row.
+        if (in.clicks > 0 and p.mode == .triggered and p.trig_source == .channel) {
+            if (p.rowAt(self.pointer_fy)) |row| p.trig_row = @intCast(row);
+        }
         p.clamp();
         return quit;
     }
@@ -584,7 +635,15 @@ const Display = struct {
                 // (the laser), and a line at the trigger.
                 const w: f32 = @floatFromInt(r.w);
                 const x0 = px + w * @as(f32, @floatFromInt(pre)) / @as(f32, @floatCast(window));
-                if (trig.recent(0)) |s| {
+                if (p.trig_source == .channel) {
+                    // The level, as a line across the trigger's row (in the row's own
+                    // scale: it sits on the trace when the panel shows the spike band).
+                    const row_h = @as(f32, @floatFromInt(r.h)) / @as(f32, @floatFromInt(p.rows));
+                    const centre = py + (@as(f32, @floatFromInt(p.trig_row)) + 0.5) * row_h;
+                    const dy: f32 = @floatCast(std.math.clamp(p.trig_level_now_uv / p.rowScale(p.trig_row), -1.5, 1.5));
+                    var x = px;
+                    while (x < px + w) : (x += 12) batch.rect(x, @round(centre - dy * row_h), 6, 1, .{ 255, 205, 120, 200 });
+                } else if (trig.recent(0)) |s| {
                     const until = @min(s.fall orelse newest, s.t0 + post);
                     const x1 = px + w * @as(f32, @floatFromInt(until - s.t0 + pre)) / @as(f32, @floatCast(window));
                     if (shown_sweeps > 0 and x1 > x0) batch.rect(x0, py, x1 - x0, @floatFromInt(r.h), .{ 90, 150, 255, 34 });
@@ -644,8 +703,9 @@ const Display = struct {
             var scale_buf: [24]u8 = undefined;
             var title_buf: [128]u8 = undefined;
             var band_buf: [32]u8 = undefined;
+            var trig_buf: [48]u8 = undefined;
             const title = if (p.mode == .triggered)
-                std.fmt.bufPrint(&title_buf, "{s}   TTL{d}   -{d:.1}/+{d:.1} ms   {s}/row{s}   {d} sweeps{s}", .{ p.name(), p.trig_line, p.pre_ms, p.post_ms, fmtScale(&scale_buf, p), fmtBand(&band_buf, p), shown_sweeps, if (shown_sweeps == 0) " (waiting for a trigger)" else "" }) catch ""
+                std.fmt.bufPrint(&title_buf, "{s}   {s}   -{d:.1}/+{d:.1} ms   {s}/row{s}   {d} sweeps{s}", .{ p.name(), trigText(&trig_buf, p), p.pre_ms, p.post_ms, fmtScale(&scale_buf, p), fmtBand(&band_buf, p), shown_sweeps, if (shown_sweeps == 0) " (waiting for a trigger)" else "" }) catch ""
             else
 if (p.kind == .ttl)
                 std.fmt.bufPrint(&title_buf, "{s}   {s}{s}", .{ p.name(), fmtSpan(&span_buf, p.span_s), if (p.mode == .sweep) "   sweep" else "" }) catch ""
@@ -862,7 +922,7 @@ fn runDirect(io: Io, gpa: std.mem.Allocator, args: Args, layout: oez.types.Layou
         while (reader.next(blk)) {
             if (blk.len == 0) continue;
             gpu.writeSamples(blk.first_sample, try feed.rows(gpa, blk.first_sample, blk.samples(), blk.ttl[0..blk.len]));
-            display.feedTtl(blk.first_sample, blk.ttl[0..blk.len]);
+            display.feedBlock(blk.first_sample, blk.samples(), layout.numChannels(), fs, blk.ttl[0..blk.len]);
             newest = blk.first_sample + @as(i64, @intCast(blk.len));
             newest_acquired_ns = blk.acquired_ns;
         }
@@ -1157,7 +1217,7 @@ pub fn main(init: std.process.Init) !u8 {
         while (reader.next(&blk)) {
             if (blk.len == 0) continue;
             gpu.writeSamples(blk.first_sample, try feed.rows(gpa, blk.first_sample, blk.samples(), blk.ttl[0..blk.len]));
-            display.feedTtl(blk.first_sample, blk.ttl[0..blk.len]);
+            display.feedBlock(blk.first_sample, blk.samples(), nch, fs, blk.ttl[0..blk.len]);
             newest = blk.first_sample + @as(i64, @intCast(blk.len));
             newest_acquired_ns = blk.acquired_ns;
         }
@@ -1324,6 +1384,14 @@ pub fn main(init: std.process.Init) !u8 {
                         p.band_low_hz = o.band_low_hz;
                         p.band_high_hz = o.band_high_hz;
                         p.trig_line = o.trig_line;
+                        p.trig_source = o.trig_source;
+                        p.trig_row = @min(o.trig_row, p.rows -| 1);
+                        p.trig_rising = o.trig_rising;
+                        p.trig_auto = o.trig_auto;
+                        p.trig_level_uv = o.trig_level_uv;
+                        p.trig_holdoff_ms = o.trig_holdoff_ms;
+                        p.other_pre_ms = o.other_pre_ms;
+                        p.other_post_ms = o.other_post_ms;
                         p.pre_ms = o.pre_ms;
                         p.post_ms = o.post_ms;
                         p.overlay = o.overlay;

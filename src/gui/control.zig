@@ -143,6 +143,16 @@ pub const Action = union(enum) {
     filter: bool,
     corner: struct { high: bool, up: bool },
     trig_line: u8,
+    trig_source: panels.TrigSource,
+    /// Move the slope trigger to the next (+1) or previous row.
+    trig_row: i32,
+    trig_rising: bool,
+    /// The level follows the noise (true) or is fixed.
+    trig_auto: bool,
+    /// Multiply the fixed level.
+    trig_level: f64,
+    /// One step up (true) or down through the holdoff values.
+    trig_holdoff: bool,
     overlay: u32,
     reset,
     /// Start (true) or stop a recording.
@@ -498,8 +508,34 @@ fn build(ui: *ui_mod.Ui, cfg: *const Config, snap: *const Snapshot, shared: *Sha
         if (p.mode == .triggered) {
             ui.text("trigger", ui_mod.text_dim);
             ui.column(64);
-            const dl = ui.stepper("", std.fmt.bufPrint(&value_buf, "TTL {d}", .{p.trig_line}) catch "", 60);
-            if (dl != 0) shared.push(.{ .panel = i, .action = .{ .trig_line = @intCast(std.math.clamp(@as(i32, p.trig_line) + dl, 1, 8)) } });
+            if (p.kind == .electrode) {
+                if (ui.button("TTL", p.trig_source == .ttl) and p.trig_source != .ttl) shared.push(.{ .panel = i, .action = .{ .trig_source = .ttl } });
+                if (ui.button("spikes", p.trig_source == .channel) and p.trig_source != .channel) shared.push(.{ .panel = i, .action = .{ .trig_source = .channel } });
+                ui.space(8);
+            }
+            if (p.trig_source == .ttl) {
+                const dl = ui.stepper("", std.fmt.bufPrint(&value_buf, "TTL {d}", .{p.trig_line}) catch "", 60);
+                if (dl != 0) shared.push(.{ .panel = i, .action = .{ .trig_line = @intCast(std.math.clamp(@as(i32, p.trig_line) + dl, 1, 8)) } });
+            } else {
+                const dw = ui.stepper("", std.fmt.bufPrint(&value_buf, "row {d}", .{p.trig_row + 1}) catch "", 60);
+                if (dw != 0) shared.push(.{ .panel = i, .action = .{ .trig_row = dw } });
+                if (ui.button("falling", !p.trig_rising) and p.trig_rising) shared.push(.{ .panel = i, .action = .{ .trig_rising = false } });
+                if (ui.button("rising", p.trig_rising) and !p.trig_rising) shared.push(.{ .panel = i, .action = .{ .trig_rising = true } });
+                ui.newline();
+                ui.text("level", ui_mod.text_dim);
+                ui.column(64);
+                if (ui.button("follows noise", p.trig_auto) and !p.trig_auto) shared.push(.{ .panel = i, .action = .{ .trig_auto = true } });
+                if (ui.button("fixed", !p.trig_auto) and p.trig_auto) shared.push(.{ .panel = i, .action = .{ .trig_auto = false } });
+                if (p.trig_auto) {
+                    ui.text(std.fmt.bufPrint(&value_buf, "{d:.0} µV", .{p.trig_level_now_uv}) catch "", ui_mod.text_bright);
+                } else {
+                    // "+" makes the level larger in size, whichever its sign.
+                    const dv = ui.stepper("", std.fmt.bufPrint(&value_buf, "{d:.0} µV", .{p.trig_level_uv}) catch "", 70);
+                    if (dv != 0) shared.push(.{ .panel = i, .action = .{ .trig_level = if (dv > 0) 1.15 else 1.0 / 1.15 } });
+                }
+                const dh = ui.stepper("holdoff", std.fmt.bufPrint(&value_buf, "{d} ms", .{p.trig_holdoff_ms}) catch "", 60);
+                if (dh != 0) shared.push(.{ .panel = i, .action = .{ .trig_holdoff = dh > 0 } });
+            }
             const dn = ui.stepper("overlaid", std.fmt.bufPrint(&value_buf, "{d} sweeps", .{p.overlay}) catch "", 90);
             if (dn != 0) shared.push(.{ .panel = i, .action = .{ .overlay = @intCast(std.math.clamp(@as(i32, @intCast(p.overlay)) + dn, 1, oez.sweeps.max_sweeps)) } });
             ui.newline();

@@ -53,17 +53,22 @@ pub fn List(comptime cap: usize) type {
                 self.high = high;
                 const n = first + @as(i64, @intCast(i));
                 if (high) {
-                    if (self.len == cap) {
-                        self.head = (self.head + 1) % cap;
-                        self.len -= 1;
-                    }
-                    self.list[(self.head + self.len) % cap] = .{ .t0 = n };
-                    self.len += 1;
-                    self.count += 1;
+                    self.push(n);
                 } else if (self.len > 0) {
                     self.list[(self.head + self.len - 1) % cap].fall = n;
                 }
             }
+        }
+
+        /// Adds a trigger at sample `t0` (from a TTL edge, or a slope trigger).
+        pub fn push(self: *Self, t0: i64) void {
+            if (self.len == cap) {
+                self.head = (self.head + 1) % cap;
+                self.len -= 1;
+            }
+            self.list[(self.head + self.len) % cap] = .{ .t0 = t0 };
+            self.len += 1;
+            self.count += 1;
         }
 
         /// The `i`-th most recent trigger (0 = newest), if there are that many.

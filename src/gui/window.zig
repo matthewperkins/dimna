@@ -24,6 +24,7 @@ pub const Key = enum(u32) {
     m = 'm',
     f = 'f',
     t = 't',
+    s = 's',
     /// '1'..'8' are used as numbers (see `digit`).
     comma = ',',
     dot = '.',

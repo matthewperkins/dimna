@@ -145,6 +145,25 @@ as usual. Edges are found on the display thread from the digital words of each b
 with slow triggers fewer are overlaid. After a filter corner change, only the recent past
 is refiltered, so older overlaid sweeps keep the old corners until they are replaced.
 
+**Slope trigger (spikes).** A triggered panel of electrodes can start its sweeps where one
+of its own channels crosses a level, instead of at a TTL edge: `s` on the panel (with the
+pointer over the row to listen to), the TTL / spikes buttons in the control window, or
+`trigger_channel = 5` in the config. Clicking another row moves the trigger there.
+
+- The channel is band-passed 300 Hz to 6 kHz for the detection, whatever the panel shows.
+- The level follows the noise by default (4.5 sigma, sigma from the median of the
+  absolute signal, so spikes hardly move it), or is fixed in µV (`level_uv`). A dashed
+  line shows it on the trigger's row, in that row's scale; it sits on the trace when the
+  panel shows a band near 300-6000 Hz.
+- Falling (default) or rising slope; the sweep is aligned on the extreme within 0.5 ms
+  after the crossing (the spike's trough or peak); 1 ms dead time plus an optional
+  holdoff.
+- The window is its own: -1 / +2 ms, kept apart from the TTL window (-10 / +40 ms).
+
+After a very large spike the band-pass rings for a few ms and can trigger once more once
+the dead time is over; a holdoff of a few ms stops that. Detection runs on the display
+thread (`src/slope.zig`) and has nothing to do with what is recorded.
+
 **TTL lanes and tint.** A panel with `source = "ttl"` shows the digital input lines as
 square-wave lanes, one row per line (`lines = [1, 2]` picks them; all 8 otherwise). It is
 drawn from the same sample history as the traces, so it scrolls, sweeps and zooms with

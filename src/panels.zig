@@ -9,8 +9,11 @@
 //!   scale = 400                   # optional: µV per row (V per row for aux and adc)
 //!   mode = "sweep"                # optional: see `Mode`; a top-level `mode` sets all panels
 //!   trigger = 2                   # optional, with mode = "triggered": the TTL input line
-//!   pre_ms = 10                   # optional: time shown before the trigger
-//!   post_ms = 40                  # optional: and after it
+//!   trigger_channel = 5           # or: a slope trigger on this row of the panel (spikes);
+//!                                 # then level_uv = -60 (else the level follows the noise),
+//!                                 # slope = "rising" (else falling), holdoff_ms = 0
+//!   pre_ms = 10                   # optional: time shown before the trigger (slope: 1)
+//!   post_ms = 40                  # optional: and after it (slope: 2)
 //!   sweeps = 10                   # optional: how many sweeps are overlaid
 //!   lines = [1, 2]                # optional, source "ttl": which input lines (default all 8)
 //!   tint = 2                      # optional: shade the panel while this TTL line is high
@@ -46,6 +49,10 @@ pub const Kind = enum { electrode, aux, adc, ttl };
 /// laser's TTL as the trigger).
 pub const Mode = enum { scroll, sweep, triggered };
 
+/// What starts a triggered panel's sweeps: a TTL input line's rising edge, or one of the
+/// panel's own channels crossing a level (see slope.zig).
+pub const TrigSource = enum { ttl, channel };
+
 pub const Rect = struct { x: u32, y: u32, w: u32, h: u32 };
 
 pub const Panel = struct {
@@ -71,6 +78,20 @@ pub const Panel = struct {
     pre_ms: f64 = 10,
     post_ms: f64 = 40,
     overlay: u32 = 10,
+    trig_source: TrigSource = .ttl,
+    /// Slope trigger: the panel row it listens to, the slope, whether the level follows
+    /// the noise or is fixed (µV), and the holdoff after each trigger.
+    trig_row: u32 = 0,
+    trig_rising: bool = false,
+    trig_auto: bool = true,
+    trig_level_uv: f64 = -50,
+    trig_holdoff_ms: f64 = 0,
+    /// The level in use right now, µV (set by the display, for showing).
+    trig_level_now_uv: f64 = 0,
+    /// The window of the trigger source that is not in use (TTL: -10/+40 ms, slope: -1/+2),
+    /// swapped in by `setTrigSource`.
+    other_pre_ms: f64 = 1,
+    other_post_ms: f64 = 2,
     /// A factor on `scale` for single rows (Ctrl+wheel over a row); 1 = the panel's scale.
     row_gain: [max_rows]f32 = @splat(1),
     /// Source "ttl": the input lines shown, 1-based, one per row.
@@ -101,7 +122,14 @@ pub const Panel = struct {
         };
     }
 
-    /// The first history column the panel draws: its filtered copy or its channels.
+    /// Switches between TTL and slope triggering, each with its own window.
+    pub fn setTrigSource(self: *Panel, source: TrigSource) void {
+        if (source == self.trig_source or (source == .channel and self.kind != .electrode)) return;
+        self.trig_source = source;
+        std.mem.swap(f64, &self.pre_ms, &self.other_pre_ms);
+        std.mem.swap(f64, &self.post_ms, &self.other_post_ms);
+    }
+
     /// Units per row of one row.
     pub fn rowScale(self: *const Panel, row: usize) f64 {
         return self.scale * (if (row < max_rows) self.row_gain[row] else 1.0);
@@ -121,6 +149,7 @@ pub const Panel = struct {
         return @min(self.rows - 1, @as(usize, @intFromFloat((fy - self.y) / self.h * @as(f64, @floatFromInt(self.rows)))));
     }
 
+    /// The first history column the panel draws: its filtered copy or its channels.
     pub fn drawColumn(self: *const Panel) u32 {
         return if ((self.filtered and self.kind == .electrode) or self.kind == .ttl) self.slot else self.first_ch;
     }
@@ -201,7 +230,10 @@ pub const Panel = struct {
         self.span_s = std.math.clamp(self.span_s, span_min, longest);
         self.scale = std.math.clamp(self.scale, lim[0], lim[1]);
         self.pre_ms = std.math.clamp(self.pre_ms, 0, 1000);
-        self.post_ms = std.math.clamp(self.post_ms, 1, 2000);
+        self.post_ms = std.math.clamp(self.post_ms, 0.2, 2000);
+        self.trig_row = @min(self.trig_row, self.rows -| 1);
+        self.trig_holdoff_ms = std.math.clamp(self.trig_holdoff_ms, 0, 1000);
+        self.trig_level_uv = std.math.clamp(self.trig_level_uv, -5000, 5000);
         self.overlay = std.math.clamp(self.overlay, 1, @import("sweeps.zig").max_sweeps);
         self.trig_line = std.math.clamp(self.trig_line, 1, 8);
     }
@@ -374,6 +406,20 @@ pub fn fromConfig(doc: toml.Document, layout: *const types.Layout) Error!Set {
             if (v < 1 or v > 8 or v != @floor(v)) return fail("panel {d}: trigger is a TTL input line, 1 to 8", .{i + 1});
             p.trig_line = @intFromFloat(v);
         }
+        if (doc.number("panel", i, "trigger_channel")) |v| {
+            if (src.kind != .electrode) return fail("panel {d}: trigger_channel is for electrode panels", .{i + 1});
+            if (v < 1 or v > @as(f64, @floatFromInt(src.rows)) or v != @floor(v)) return fail("panel {d}: trigger_channel is a row of the panel, 1 to {d}", .{ i + 1, src.rows });
+            p.setTrigSource(.channel);
+            p.trig_row = @intFromFloat(v - 1);
+        }
+        if (doc.number("panel", i, "level_uv")) |v| {
+            p.trig_auto = false;
+            p.trig_level_uv = v;
+        }
+        if (doc.string("panel", i, "slope")) |v| {
+            if (std.mem.eql(u8, v, "rising")) p.trig_rising = true else if (!std.mem.eql(u8, v, "falling")) return fail("panel {d}: slope must be \"falling\" or \"rising\"", .{i + 1});
+        }
+        if (doc.number("panel", i, "holdoff_ms")) |v| p.trig_holdoff_ms = v;
         if (doc.number("panel", i, "pre_ms")) |v| p.pre_ms = v;
         if (doc.number("panel", i, "post_ms")) |v| p.post_ms = v;
         if (doc.number("panel", i, "sweeps")) |v| p.overlay = @intFromFloat(std.math.clamp(v, 1, 1000));
@@ -579,6 +625,38 @@ test "TTL lanes, line names and a tint from the config" {
     try testing.expectEqualStrings("", set.ttlName(3));
     try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"ttl\"\nrect = [0,0,1,1]\nlines = [0, 9]"), &l));
     try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"A1\"\nrect = [0,0,1,1]\nlines = [1]"), &l));
+}
+
+test "slope trigger from the config, with its own window" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const l = testLayout();
+    var set = try fromConfig(try toml.parse(a,
+        \\[[panel]]
+        \\source = "A1"
+        \\rect = [0, 0, 1, 1]
+        \\mode = "triggered"
+        \\trigger_channel = 5
+        \\level_uv = -80
+        \\slope = "rising"
+        \\post_ms = 3
+    ), &l);
+    const p = &set.items[0];
+    try testing.expectEqual(TrigSource.channel, p.trig_source);
+    try testing.expectEqual(4, p.trig_row);
+    try testing.expect(p.trig_rising and !p.trig_auto);
+    try testing.expectEqual(-80, p.trig_level_uv);
+    try testing.expectEqual(1, p.pre_ms);
+    try testing.expectEqual(3, p.post_ms);
+    // Back to TTL: its own window returns, and the slope's is kept for next time.
+    p.setTrigSource(.ttl);
+    try testing.expectEqual(10, p.pre_ms);
+    try testing.expectEqual(40, p.post_ms);
+    p.setTrigSource(.channel);
+    try testing.expectEqual(3, p.post_ms);
+    try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"A1\"\nrect = [0,0,1,1]\ntrigger_channel = 99"), &l));
+    try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"adc\"\nrect = [0,0,1,1]\ntrigger_channel = 1"), &l));
 }
 
 test "sweep mode: per panel or for all, with a shorter longest time base" {
