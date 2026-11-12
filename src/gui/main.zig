@@ -28,7 +28,8 @@
 //!
 //! --script feeds synthetic input for tests, as "SECONDS:STEP;SECONDS:STEP;...", where STEP is
 //! wheel=N, hwheel=N (axis units, 15 = one click), pinch=F (scale factor), or keys such as
-//! "]]==" (any of [ ] - = r m q). It goes through the same path as real input.
+//! "]]==" (any of [ ] - = r m f , . ' q; ';' separates steps, so the high corner can only be
+//! stepped up by script). It goes through the same path as real input.
 //!
 //! Without --sim it opens the board. Controls:
 //!   wheel / two-finger scroll      Y scale (µV per row)
@@ -36,6 +37,8 @@
 //!   touchpad pinch                 time base
 //!   - =   [ ]                      Y scale, time base by keys;  r resets;  q or Esc quits
 //!   m                              scroll <-> sweep (traces stand still, a cursor moves across)
+//!   f                              display filter on/off (electrode panels): raw <-> band-pass
+//!   , .   ; '                      the band's low corner, high corner: down, up
 //!
 //! The display reads the acquisition ring with a lossy reader, so it can never hold
 //! acquisition back. Once a second it logs the frame rate and the sample-to-screen latency:
@@ -160,6 +163,10 @@ fn runScript(script: []const u8, pos: *usize, elapsed_s: f64, in: *Input, displa
                 '=' => .equal,
                 'r' => .r,
                 'm' => .m,
+                'f' => .f,
+                ',' => .comma,
+                '.' => .dot,
+                '\'' => .apostrophe,
                 'q' => .q,
                 else => continue,
             };
@@ -306,6 +313,30 @@ fn fmtScale(buf: []u8, p: *const Panel) []const u8 {
         (if (v < 0.9995) std.fmt.bufPrint(buf, "{d:.0} mV", .{v * 1000}) else std.fmt.bufPrint(buf, "{d:.2} V", .{v}))) catch "";
 }
 
+/// The display filter for a panel's title: "   300-6000 Hz", "   > 10 Hz", "   < 300 Hz",
+/// or nothing when the panel shows its channels as they are.
+fn fmtBand(buf: []u8, p: *const Panel) []const u8 {
+    if (!p.filtered or p.kind != .electrode) return "";
+    const lo = p.band_low_hz;
+    const hi = p.band_high_hz;
+    return (if (lo > 0 and hi > 0)
+        std.fmt.bufPrint(buf, "   {d}-{d} Hz", .{ lo, hi })
+    else if (lo > 0)
+        std.fmt.bufPrint(buf, "   > {d} Hz", .{lo})
+    else if (hi > 0)
+        std.fmt.bufPrint(buf, "   < {d} Hz", .{hi})
+    else
+        std.fmt.bufPrint(buf, "   filter: no corners", .{})) catch "";
+}
+
+/// How many recent samples to filter again when a panel's corners change: what its window
+/// can show (two passes in sweep mode), and a second more.
+fn refilterSamples(set: *const panels_mod.Set, fs: f64) usize {
+    var longest: f64 = 0;
+    for (set.items[0..set.len]) |*p| longest = @max(longest, if (p.mode == .sweep) 2 * p.span_s else p.span_s);
+    return @intFromFloat((longest + 1.0) * fs);
+}
+
 /// The label of one row: the electrode's number on its headstage (with the headstage's name
 /// when the panel spans more than one), or AUXn / ADCn.
 fn rowLabel(buf: []u8, p: *const Panel, row: u32, layout: *const oez.types.Layout) []const u8 {
@@ -376,7 +407,15 @@ const Display = struct {
                 p.span_s = self.initial.items[self.target].span_s;
                 p.scale = self.initial.items[self.target].scale;
                 p.mode = self.initial.items[self.target].mode;
+                p.filtered = self.initial.items[self.target].filtered;
+                p.band_low_hz = self.initial.items[self.target].band_low_hz;
+                p.band_high_hz = self.initial.items[self.target].band_high_hz;
             },
+            .f => p.filtered = p.kind == .electrode and !p.filtered,
+            .comma => if (p.filtered) p.stepCorner(false, false),
+            .dot => if (p.filtered) p.stepCorner(false, true),
+            .semicolon => if (p.filtered) p.stepCorner(true, false),
+            .apostrophe => if (p.filtered) p.stepCorner(true, true),
             .m => p.mode = if (p.mode == .scroll) .sweep else .scroll,
             else => {},
         };
@@ -390,7 +429,7 @@ const Display = struct {
     fn frame(self: *const Display, gpu: *const Gpu, layout: *const oez.types.Layout, newest: i64, status: Status, batch: *font.Batch, draws: *[panels_mod.max_panels]gpu_mod.PanelDraw, fills: *[max_fills]gpu_mod.Fill) struct { draws: []const gpu_mod.PanelDraw, fills: []const gpu_mod.Fill, text: []const font.Vertex } {
         const width = gpu.extent.width;
         const height = gpu.extent.height;
-        const nch = layout.numChannels();
+        const nch = gpu.nch;
         const fs = layout.sample_rate;
         var nf: usize = 0;
         batch.clear();
@@ -408,7 +447,7 @@ const Display = struct {
                     .nch = @intCast(nch),
                     .cap_mask = @intCast(gpu.hist_cap - 1),
                     .newest = @truncate(@as(u64, @bitCast(newest))),
-                    .first_ch = p.first_ch,
+                    .first_ch = p.drawColumn(),
                     .cols = r.w,
                     .rows = p.rows,
                     .span = @floatCast(span),
@@ -441,8 +480,9 @@ const Display = struct {
             const title_y = py + 6;
             var span_buf: [24]u8 = undefined;
             var scale_buf: [24]u8 = undefined;
-            var title_buf: [96]u8 = undefined;
-            const title = std.fmt.bufPrint(&title_buf, "{s}   {s}   {s}/row{s}", .{ p.name(), fmtSpan(&span_buf, p.span_s), fmtScale(&scale_buf, p), if (p.mode == .sweep) "   sweep" else "" }) catch "";
+            var title_buf: [128]u8 = undefined;
+            var band_buf: [32]u8 = undefined;
+            const title = std.fmt.bufPrint(&title_buf, "{s}   {s}   {s}/row{s}{s}", .{ p.name(), fmtSpan(&span_buf, p.span_s), fmtScale(&scale_buf, p), fmtBand(&band_buf, p), if (p.mode == .sweep) "   sweep" else "" }) catch "";
             _ = batch.label(px + 8, title_y, title, bright);
             // Row labels down the left edge, thinned when rows are shorter than a line.
             const row_h = @as(f32, @floatFromInt(r.h)) / @as(f32, @floatFromInt(p.rows));
@@ -524,7 +564,6 @@ const Text = struct {
 /// a time: draw `margin` before a refresh, wait until that frame is on screen, repeat. The
 /// time a frame reached the screen comes from vkWaitForPresentKHR.
 fn runDirect(io: Io, gpa: std.mem.Allocator, args: Args, layout: oez.types.Layout, acq: *oez.acquisition.Acquisition, reader: *oez.ring.LossyReader, blk: *oez.types.Block) !u8 {
-    const nch = layout.numChannels();
     const fs = layout.sample_rate;
     var gpu = Gpu.init(gpa, .{ .direct = args.direct }, .fifo) catch |e| {
         log.err("direct display on {s} failed: {t}", .{ args.direct, e });
@@ -532,7 +571,12 @@ fn runDirect(io: Io, gpa: std.mem.Allocator, args: Args, layout: oez.types.Layou
     };
     defer gpu.deinit();
     gpu.wait_render = true;
-    try gpu.createHistory(nch, @intFromFloat((Panel.span_max + 2.0) * fs));
+    var display = makeDisplay(args, &layout) orelse return 2;
+    const history_samples: usize = @intFromFloat((Panel.span_max + 2.0) * fs);
+    var feed = try oez.feed.Feed.init(gpa, &layout, &display.set, history_samples);
+    defer feed.deinit(gpa);
+    display.initial = display.set;
+    try gpu.createHistory(feed.width, history_samples);
     try gpu.resize(0, 0);
     const period: i128 = gpu.refresh_period_ns;
     const margin_ms: f64 = if (args.margin_ms >= 0) args.margin_ms else 1.5;
@@ -542,7 +586,6 @@ fn runDirect(io: Io, gpa: std.mem.Allocator, args: Args, layout: oez.types.Layou
     try acq.start();
     defer acq.join();
 
-    var display = makeDisplay(args, &layout) orelse return 2;
     var draws: [panels_mod.max_panels]gpu_mod.PanelDraw = undefined;
     var fills: [max_fills]gpu_mod.Fill = undefined;
     var text: Text = .{};
@@ -577,13 +620,15 @@ fn runDirect(io: Io, gpa: std.mem.Allocator, args: Args, layout: oez.types.Layou
     while (!acq.done.load(.acquire)) {
         while (reader.next(blk)) {
             if (blk.len == 0) continue;
-            gpu.writeSamples(blk.first_sample, blk.samples());
+            gpu.writeSamples(blk.first_sample, try feed.rows(gpa, blk.first_sample, blk.samples()));
             newest = blk.first_sample + @as(i64, @intCast(blk.len));
             newest_acquired_ns = blk.acquired_ns;
         }
         var input: Input = .{};
         if (args.script.len > 0) runScript(args.script, &script_pos, @as(f64, @floatFromInt(nowNs(io) - t_start)) / 1e9, &input, &display);
         if (display.applyInput(input)) break;
+        // A panel's corners changed: filter its recent past again.
+        if (gpu.hist_cap > 0) _ = feed.sync(&display.set, refilterSamples(&display.set, fs), gpu.hist, gpu.hist_cap);
 
         var now = nowNs(io);
         if (in_flight != 0) {
@@ -739,9 +784,13 @@ pub fn main(init: std.process.Init) !u8 {
     if (args.tearing and !win.preferTearing()) log.warn("the compositor has no tearing control; frames will wait for the refresh", .{});
     var gpu = try Gpu.init(gpa, .{ .wayland = .{ .display = win.display, .surface = win.surface } }, args.present);
     defer gpu.deinit();
-    // The longest time base plus a margin, so new samples never overwrite what is drawn.
-    try gpu.createHistory(nch, @intFromFloat((Panel.span_max + 2.0) * fs));
     var display = makeDisplay(args, &layout) orelse return 2;
+    // The longest time base plus a margin, so new samples never overwrite what is drawn.
+    const history_samples: usize = @intFromFloat((Panel.span_max + 2.0) * fs);
+    var feed = try oez.feed.Feed.init(gpa, &layout, &display.set, history_samples);
+    defer feed.deinit(gpa);
+    display.initial = display.set;
+    try gpu.createHistory(feed.width, history_samples);
     var draws: [panels_mod.max_panels]gpu_mod.PanelDraw = undefined;
     var fills: [max_fills]gpu_mod.Fill = undefined;
     var text: Text = .{};
@@ -819,7 +868,7 @@ pub fn main(init: std.process.Init) !u8 {
         // New samples into the GPU's history.
         while (reader.next(&blk)) {
             if (blk.len == 0) continue;
-            gpu.writeSamples(blk.first_sample, blk.samples());
+            gpu.writeSamples(blk.first_sample, try feed.rows(gpa, blk.first_sample, blk.samples()));
             newest = blk.first_sample + @as(i64, @intCast(blk.len));
             newest_acquired_ns = blk.acquired_ns;
         }
@@ -829,6 +878,8 @@ pub fn main(init: std.process.Init) !u8 {
         // Input goes to the panel under the pointer.
         display.pointAt(input.pointer_x / @as(f64, @floatFromInt(@max(win.width, 1))), input.pointer_y / @as(f64, @floatFromInt(@max(win.height, 1))));
         if (display.applyInput(input)) break;
+        // A panel's corners changed: filter its recent past again.
+        if (gpu.hist_cap > 0) _ = feed.sync(&display.set, refilterSamples(&display.set, fs), gpu.hist, gpu.hist_cap);
 
         for (win.takePresented()) |p| {
             const acquired = frame_acquired[p.tag % frame_acquired.len];

@@ -109,6 +109,7 @@ rect = [0.0, 0.0, 0.5, 0.75]  # x, y, width, height as fractions of the display
 span_s = 2.0                  # optional
 scale = 400                   # optional: µV per row (V per row for aux and adc)
 mode = "scroll"               # optional: "scroll" (default) or "sweep"
+band = [300, 6000]            # optional: show band-passed (Hz; 0 leaves a side out)
 
 [[panel]]
 source = "A1"
@@ -122,6 +123,22 @@ rect = [0.0, 0.75, 1.0, 0.25]
 Without `[[panel]]` tables there is one panel per headstage, side by side. Wheel (Y scale),
 Shift+wheel or pinch (time base) and the keys `- = [ ] r` act on the panel under the pointer,
 marked by a bar along its top; `q` quits.
+
+**Display filter.** Each electrode panel can show its channels band-passed: a 4th-order
+Butterworth high-pass and low-pass with the panel's own corners (`band = [low, high]`; a 0
+leaves that side out, so `[10, 0]` is a 10 Hz high-pass). `f` switches the panel under the
+pointer between raw and filtered, `,` `.` step the low corner and `;` `'` the high corner;
+the title shows the band. Two panels on the same headstage can have different bands. AUX
+and ADC are always drawn as they are.
+
+The filter is for the display only: recordings hold the samples as acquired. It runs on
+the display's thread as blocks arrive (`src/feed.zig`, `src/dsp.zig`; about 4 % of a core
+for 48 channels) and writes a filtered copy of each electrode panel's channels beside the
+raw ones in the GPU's sample history, so switching between raw and filtered is instant and
+shows the whole window. When corners change, the panel's recent past (its window plus a
+second) is filtered again, so the whole trace changes at once. Latency is unchanged (board,
+tearing: 2.6 ms). The sample history is wider for it: 218 MB of GPU memory for 56 channels
+with 48 filtered, and a 117 MB copy of the raw samples in RAM for refiltering.
 
 **Sweep mode.** By default traces scroll, with the newest sample at the right edge. In
 sweep mode they stand still and a cursor moves left to right, overwriting the previous pass

@@ -8,6 +8,8 @@
 //!   span_s = 2.0                  # optional: time across the panel
 //!   scale = 400                   # optional: µV per row (V per row for aux and adc)
 //!   mode = "sweep"                # optional: see `Mode`; a top-level `mode` sets all panels
+//!   band = [300, 6000]            # optional, electrodes: show band-passed, corners in Hz
+//!                                 # (0 leaves a side out: [10, 0] is a 10 Hz high-pass)
 //!
 //! With no [[panel]] in the config there is one panel per headstage, side by side.
 
@@ -43,6 +45,15 @@ pub const Panel = struct {
     /// Units per row: µV for electrodes, V for aux and adc.
     scale: f64,
     mode: Mode = .scroll,
+    /// Display filter (electrodes only; never applied to what is recorded): whether the
+    /// panel shows its channels band-passed, and the band's corners in Hz (0 = that side
+    /// off). 4th-order Butterworth each side, see `dsp.Band`.
+    filtered: bool = false,
+    band_low_hz: f64 = 300,
+    band_high_hz: f64 = 6000,
+    /// Where the band-passed copy of the panel's channels is in a row of the display's
+    /// sample history (set by `feed.Feed.init`).
+    slot: u32 = 0,
 
     pub fn name(self: *const Panel) []const u8 {
         return self.name_buf[0..self.name_len];
@@ -55,6 +66,48 @@ pub const Panel = struct {
             .aux => types.aux_v_per_bit,
             .adc => types.adc_v_per_bit,
         };
+    }
+
+    /// The first history column the panel draws: its filtered copy or its channels.
+    pub fn drawColumn(self: *const Panel) u32 {
+        return if (self.filtered and self.kind == .electrode) self.slot else self.first_ch;
+    }
+
+    /// The corners offered when stepping with keys (0 = that side off).
+    pub const low_corners = [_]f64{ 0, 1, 3, 10, 30, 100, 300, 600, 1000 };
+    pub const high_corners = [_]f64{ 100, 300, 1000, 3000, 6000, 10000, 0 };
+
+    /// Moves the low (`high` false) or high corner one step up or down its list, keeping
+    /// the high corner above the low one.
+    pub fn stepCorner(self: *Panel, high: bool, up: bool) void {
+        const list: []const f64 = if (high) &high_corners else &low_corners;
+        const cur = if (high) self.band_high_hz else self.band_low_hz;
+        // "Off" is the bottom of the low list and the top of the high list.
+        const rank = struct {
+            fn f(v: f64, is_high: bool) f64 {
+                return if (v == 0 and is_high) std.math.inf(f64) else v;
+            }
+        }.f;
+        var next = cur;
+        if (up) {
+            for (list) |v| {
+                if (rank(v, high) > rank(cur, high)) {
+                    next = v;
+                    break;
+                }
+            }
+        } else {
+            for (list) |v| {
+                if (rank(v, high) < rank(cur, high)) next = v;
+            }
+        }
+        if (high) {
+            if (next != 0 and next <= self.band_low_hz) return;
+            self.band_high_hz = next;
+        } else {
+            if (self.band_high_hz != 0 and next >= self.band_high_hz) return;
+            self.band_low_hz = next;
+        }
     }
 
     pub fn unit(self: *const Panel) []const u8 {
@@ -215,6 +268,15 @@ pub fn fromConfig(doc: toml.Document, layout: *const types.Layout) Error!Set {
             .scale = doc.number("panel", i, "scale") orelse Panel.defaultScale(src.kind),
             .mode = (try parseMode(doc.get("panel", i, "mode"), "panel", i + 1)) orelse all_mode orelse .scroll,
         };
+        if (doc.get("panel", i, "band")) |v| {
+            const band: []const f64 = if (v == .numbers) v.numbers else &.{};
+            if (band.len != 2 or band[0] < 0 or band[1] < 0 or (band[1] != 0 and band[1] <= band[0]))
+                return fail("panel {d}: band needs [low, high] in Hz, low below high (0 leaves a side out)", .{i + 1});
+            if (src.kind != .electrode) return fail("panel {d}: band is for electrodes; aux and adc are drawn as they are", .{i + 1});
+            p.filtered = true;
+            p.band_low_hz = band[0];
+            p.band_high_hz = band[1];
+        }
         p.setName(doc.string("panel", i, "name") orelse source);
         p.clamp();
         set.items[i] = p;
@@ -287,6 +349,43 @@ test "panels from the config" {
     try testing.expectEqualStrings("V", p[2].unit());
     try testing.expectEqual(2, set.at(0.3, 0.9).?);
     try testing.expectEqual(Mode.scroll, p[0].mode);
+}
+
+test "band: from the config, and stepped by keys" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const l = testLayout();
+    var set = try fromConfig(try toml.parse(a,
+        \\[[panel]]
+        \\source = "A1"
+        \\rect = [0, 0, 0.5, 1]
+        \\band = [10, 0]
+        \\[[panel]]
+        \\source = "B1"
+        \\rect = [0.5, 0, 0.5, 1]
+    ), &l);
+    const p = &set.items[0];
+    try testing.expect(p.filtered);
+    try testing.expectEqual(10, p.band_low_hz);
+    try testing.expectEqual(0, p.band_high_hz);
+    try testing.expect(!set.items[1].filtered);
+    try testing.expectEqual(300, set.items[1].band_low_hz);
+    p.stepCorner(false, true);
+    try testing.expectEqual(30, p.band_low_hz);
+    p.stepCorner(true, false); // from off down to the top of the list
+    try testing.expectEqual(10000, p.band_high_hz);
+    p.band_high_hz = 100;
+    p.stepCorner(false, true); // 100 would meet the high corner: refused
+    try testing.expectEqual(30, p.band_low_hz);
+    p.stepCorner(true, false); // already the lowest
+    try testing.expectEqual(100, p.band_high_hz);
+    p.band_low_hz = 1;
+    p.stepCorner(false, false);
+    try testing.expectEqual(0, p.band_low_hz);
+    try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"A1\"\nrect = [0,0,1,1]\nband = [6000, 300]"), &l));
+    try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"adc\"\nrect = [0,0,1,1]\nband = [1, 100]"), &l));
+    try testing.expect(std.mem.indexOf(u8, error_message, "electrodes") != null);
 }
 
 test "sweep mode: per panel or for all, with a shorter longest time base" {
