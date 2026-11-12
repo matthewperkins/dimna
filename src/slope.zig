@@ -67,12 +67,13 @@ pub const Slope = struct {
     }
 
     /// Feeds channel `ch` of a block of `nch` interleaved samples that starts at sample
-    /// number `first`; calls `sink.push(t0)` for each trigger.
-    pub fn feed(self: *Slope, first: i64, samples: []const i16, nch: usize, ch: usize, sink: anytype) void {
+    /// number `first`; calls `sink.push(t0)` for each trigger. `ref`: channels whose mean
+    /// is subtracted first (a common average reference), or none.
+    pub fn feed(self: *Slope, first: i64, samples: []const i16, nch: usize, ch: usize, ref: []const u32, sink: anytype) void {
         const count = samples.len / nch;
         if (count == 0 or ch >= nch) return;
         if (!self.started) {
-            self.band.settle(&self.state, @floatFromInt(samples[ch]));
+            self.band.settle(&self.state, referenced(samples[0..nch], ch, ref));
             self.started = true;
         }
         const align_n: i64 = if (self.settings.align_extreme) @intFromFloat(@round(0.0005 * self.fs)) else 0;
@@ -82,7 +83,7 @@ pub const Slope = struct {
         const sign: f64 = if (self.settings.rising) -1 else 1;
         for (0..count) |i| {
             const n = first + @as(i64, @intCast(i));
-            const y = self.band.step(&self.state, @floatFromInt(samples[i * nch + ch]));
+            const y = self.band.step(&self.state, referenced(samples[i * nch ..][0..nch], ch, ref));
             // The median of |y| by small steps towards it: up when |y| is above, down when
             // below. Starts at the first values' size, then moves about 0.1 % per sample.
             const a = @abs(y);
@@ -120,6 +121,15 @@ pub const Slope = struct {
         }
     }
 };
+
+/// One sample of channel `ch`, less the mean of the `ref` channels.
+inline fn referenced(row: []const i16, ch: usize, ref: []const u32) f64 {
+    const x: f64 = @floatFromInt(row[ch]);
+    if (ref.len == 0) return x;
+    var sum: f64 = 0;
+    for (ref) |rc| sum += if (rc < row.len) @as(f64, @floatFromInt(row[rc])) else 0;
+    return x - sum / @as(f64, @floatFromInt(ref.len));
+}
 
 const testing = std.testing;
 
@@ -160,7 +170,7 @@ test "triggers at the troughs of spikes, not on noise or slow waves; sigma follo
     var n: i64 = 0;
     while (n < 30000) : (n += 256) {
         synth(&buf, n, &spikes, 400, 20, &rng);
-        slope.feed(n, &buf, 1, 0, &got);
+        slope.feed(n, &buf, 1, 0, &.{}, &got);
     }
     // Sigma of the band-passed noise: white noise of 20 keeps about 0.38 of its power in
     // 300 Hz to 6 kHz at 30 kHz, so about 12.
@@ -195,7 +205,7 @@ test "rising slope, a fixed level, the crossing itself, and holdoff" {
     var n: i64 = 0;
     while (n < 20000) : (n += 256) {
         synth(&buf, n, &spikes, 400, 10, &rng);
-        slope.feed(n, &buf, 1, 0, &got);
+        slope.feed(n, &buf, 1, 0, &.{}, &got);
     }
     try testing.expectEqual(2, got.len);
     // The positive phase crosses +150 about half a millisecond after the trough.

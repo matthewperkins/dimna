@@ -194,6 +194,31 @@ After a very large spike the band-pass rings for a few ms and can trigger once m
 the dead time is over; a holdoff of a few ms stops that. Detection runs on the display
 thread (`src/slope.zig`) and has nothing to do with what is recorded.
 
+**Common average reference (CAR).** Per electrode panel (so per port): the plain mean of
+the rows you choose, sample by sample, is subtracted from the rows you choose. Turn it on
+in the control window (CAR on, then the two rows of numbered buttons: "average of" and
+"subtract from"; all / none), or in the config:
+
+```toml
+[[panel]]
+source = "A1"
+rect = [0.5, 0.0, 0.5, 0.75]
+car_ref = [1, 2, 3, 5, 6, 7, 8]      # rows averaged (default: all); leave dead ones out
+car_subtract = [1, 2, 3, 4, 5, 6, 7, 8]   # rows it is subtracted from (default: all)
+```
+
+The mean is uniform (sum divided by the number of reference rows) and is taken from the
+samples as acquired, then subtracted before a channel's filter. For these filters that is
+exactly the same as filtering all channels alike and then referencing, whichever band the
+panel shows, because filtering and averaging are both linear; nothing has to be padded or
+run ahead. A row that is in both sets loses 1/N of itself with the average, as in any CAR.
+
+It applies to what the panel displays (raw or band), to a slope trigger on one of the
+panel's subtract rows, and to the sound when a channel listened to is one of them (the
+Audio section's CAR button turns that off; the noise is measured again when it changes).
+Like the display filter, it never touches what is recorded. The panel's title says CAR.
+Changing either set redoes the panel's recent past, so the whole window changes at once.
+
 **TTL lanes and tint.** A panel with `source = "ttl"` shows the digital input lines as
 square-wave lanes, one row per line (`lines = [1, 2]` picks them; all 8 otherwise). It is
 drawn from the same sample history as the traces, so it scrolls, sweeps and zooms with

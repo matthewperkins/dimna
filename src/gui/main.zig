@@ -351,17 +351,19 @@ const max_draws = panels_mod.max_panels * oez.sweeps.max_sweeps;
 /// The display filter for a panel's title: "   300-6000 Hz", "   > 10 Hz", "   < 300 Hz",
 /// or nothing when the panel shows its channels as they are.
 fn fmtBand(buf: []u8, p: *const Panel) []const u8 {
-    if (!p.filtered or p.kind != .electrode) return "";
+    if (p.kind != .electrode) return "";
+    if (!p.filtered) return if (p.carActive()) "   CAR" else "";
     const lo = p.band_low_hz;
     const hi = p.band_high_hz;
+    const car: []const u8 = if (p.carActive()) "   CAR" else "";
     return (if (lo > 0 and hi > 0)
-        std.fmt.bufPrint(buf, "   {d}-{d} Hz", .{ lo, hi })
+        std.fmt.bufPrint(buf, "   {d}-{d} Hz{s}", .{ lo, hi, car })
     else if (lo > 0)
-        std.fmt.bufPrint(buf, "   > {d} Hz", .{lo})
+        std.fmt.bufPrint(buf, "   > {d} Hz{s}", .{ lo, car })
     else if (hi > 0)
-        std.fmt.bufPrint(buf, "   < {d} Hz", .{hi})
+        std.fmt.bufPrint(buf, "   < {d} Hz{s}", .{ hi, car })
     else
-        std.fmt.bufPrint(buf, "   filter: no corners", .{})) catch "";
+        std.fmt.bufPrint(buf, "   filter: no corners{s}", .{car})) catch "";
 }
 
 /// An electrode channel by headstage and number ("A1-5"), or "ch 37" if it is not one.
@@ -433,6 +435,8 @@ const Display = struct {
     audio: oez.audio.Settings = .{},
     audio_dirty: bool = true,
     audio_recalibrate: bool = false,
+    /// The sound takes the panels' common average references.
+    audio_car: bool = true,
 
     /// The pulses of each panel's tint line (see `Panel.tint_line`).
     pulses: [panels_mod.max_panels]oez.sweeps.Pulses = @splat(.{}),
@@ -440,6 +444,39 @@ const Display = struct {
     /// trigger list was made from (a change of source, line or row starts it afresh).
     slopes: [panels_mod.max_panels]?oez.slope.Slope = @splat(null),
     trig_made_from: [panels_mod.max_panels]u64 = @splat(0),
+
+    /// The channels whose mean is the reference for `channel`: those of the first panel
+    /// that has its reference on and `channel` among the rows it subtracts from. Fills
+    /// `out` (as many as fit) and returns how many.
+    fn carChannels(self: *const Display, channel: u32, out: []u32) usize {
+        for (self.set.items[0..self.set.len]) |*p| {
+            if (!p.carActive() or channel < p.first_ch or channel >= p.first_ch + p.rows) continue;
+            if (!p.car_sub.has(channel - p.first_ch)) continue;
+            var n: usize = 0;
+            for (0..p.rows) |r| {
+                if (!p.car_ref.has(r) or n == out.len) continue;
+                out[n] = p.first_ch + @as(u32, @intCast(r));
+                n += 1;
+            }
+            return n;
+        }
+        return 0;
+    }
+
+    /// Brings the audio's references in line with the panels'. A change is a different
+    /// signal, so the noise is measured again.
+    fn refreshAudioCar(self: *Display) void {
+        const a = &self.audio;
+        for (a.channelSlice(), 0..) |ch, k| {
+            var ref: [oez.audio.max_car_ref]u32 = undefined;
+            const n = if (self.audio_car) self.carChannels(ch, &ref) else 0;
+            if (n == a.car_len[k] and std.mem.eql(u32, ref[0..n], a.car_ref[k][0..n])) continue;
+            a.car_len[k] = @intCast(n);
+            @memcpy(a.car_ref[k][0..n], ref[0..n]);
+            self.audio_dirty = true;
+            self.audio_recalibrate = true;
+        }
+    }
 
     /// Listens to the first row of the first electrode panel.
     fn listenToFirst(self: *Display) void {
@@ -495,7 +532,10 @@ const Display = struct {
                 if (self.slopes[i] == null) self.slopes[i] = .init(fs, want);
                 const sl = &self.slopes[i].?;
                 sl.settings = want;
-                sl.feed(first, samples, nch, p.first_ch + p.trig_row, t);
+                // With the panel's reference, if the trigger's row is one it applies to.
+                var ref: [oez.audio.max_car_ref]u32 = undefined;
+                const nref = self.carChannels(p.first_ch + p.trig_row, &ref);
+                sl.feed(first, samples, nch, p.first_ch + p.trig_row, ref[0..nref], t);
                 p.trig_level_now_uv = sl.level() * oez.types.electrode_uv_per_bit;
             } else t.feed(first, words);
             if (p.tint_line == 0) continue;
@@ -533,6 +573,7 @@ const Display = struct {
                 .mute => |on| self.audio.mute = on,
                 .volume => |up| self.audio.volume_db = std.math.clamp(self.audio.volume_db + (if (up) @as(f64, 2) else -2), -60, 12),
                 .reference => |on| self.audio.reference = on,
+                .car => |on| self.audio_car = on,
                 .recalibrate => self.audio_recalibrate = true,
             }
             self.audio_dirty = true;
@@ -552,6 +593,11 @@ const Display = struct {
             .filter => |on| p.filtered = on and p.kind == .electrode,
             .corner => |c| p.stepCorner(c.high, c.up),
             .trig_line => |l| p.trig_line = l,
+            .car => |on| p.setCar(on),
+            .car_ref_row => |r| p.car_ref.set(r, !p.car_ref.has(r)),
+            .car_sub_row => |r| p.car_sub.set(r, !p.car_sub.has(r)),
+            .car_ref_all => |on| p.car_ref = if (on) .all(p.rows) else .{},
+            .car_sub_all => |on| p.car_sub = if (on) .all(p.rows) else .{},
             .trig_source => |s| p.setTrigSource(s),
             .trig_row => |d| p.trig_row = @intCast(std.math.clamp(@as(i64, p.trig_row) + d, 0, @as(i64, p.rows) - 1)),
             .trig_rising => |on| {
@@ -782,7 +828,7 @@ const Display = struct {
             var span_buf: [24]u8 = undefined;
             var scale_buf: [24]u8 = undefined;
             var title_buf: [128]u8 = undefined;
-            var band_buf: [32]u8 = undefined;
+            var band_buf: [48]u8 = undefined;
             var trig_buf: [48]u8 = undefined;
             const title = if (p.mode == .triggered)
                 std.fmt.bufPrint(&title_buf, "{s}   {s}   -{d:.1}/+{d:.1} ms   {s}/row{s}   {d} sweeps{s}", .{ p.name(), trigText(&trig_buf, p), p.pre_ms, p.post_ms, fmtScale(&scale_buf, p), fmtBand(&band_buf, p), shown_sweeps, if (shown_sweeps == 0) " (waiting for a trigger)" else "" }) catch ""
@@ -1012,7 +1058,7 @@ fn runDirect(io: Io, gpa: std.mem.Allocator, args: Args, layout: oez.types.Layou
         if (args.script.len > 0) runScript(args.script, &script_pos, @as(f64, @floatFromInt(nowNs(io) - t_start)) / 1e9, &input, &display);
         if (display.applyInput(input)) break;
         // A panel's corners changed: filter its recent past again.
-        if (gpu.hist_cap > 0) _ = feed.sync(&display.set, refilterSamples(&display.set, fs), gpu.hist, gpu.hist_cap);
+        if (gpu.hist_cap > 0) _ = try feed.sync(gpa, &display.set, refilterSamples(&display.set, fs), gpu.hist, gpu.hist_cap);
 
         var now = nowNs(io);
         if (in_flight != 0) {
@@ -1406,6 +1452,7 @@ pub fn main(init: std.process.Init) !u8 {
                 }
             }
         }
+        display.refreshAudioCar();
         if (display.audio_dirty) {
             display.audio_dirty = false;
             audio_shared.publish(&display.audio);
@@ -1486,6 +1533,11 @@ pub fn main(init: std.process.Init) !u8 {
                         p.filtered = o.filtered;
                         p.band_low_hz = o.band_low_hz;
                         p.band_high_hz = o.band_high_hz;
+                        if (p.rows == o.rows) {
+                            p.car = o.car;
+                            p.car_ref = o.car_ref;
+                            p.car_sub = o.car_sub;
+                        }
                         p.trig_line = o.trig_line;
                         p.trig_source = o.trig_source;
                         p.trig_row = @min(o.trig_row, p.rows -| 1);
@@ -1572,6 +1624,7 @@ pub fn main(init: std.process.Init) !u8 {
                         .latency_ms = @as(f64, @floatFromInt(audio_shared.latency_us.load(.monotonic))) / 1000.0,
                         .underruns = audio_shared.underruns.load(.monotonic),
                         .dropped = audio_shared.dropped.load(.monotonic),
+                        .car = display.audio_car,
                     };
                     var w: Io.Writer = .fixed(&st.listen_buf);
                     for (display.audio.channelSlice(), 0..) |ch, k| {
@@ -1618,7 +1671,7 @@ pub fn main(init: std.process.Init) !u8 {
             });
         }
         // A panel's corners changed: filter its recent past again.
-        if (gpu.hist_cap > 0) _ = feed.sync(&display.set, refilterSamples(&display.set, fs), gpu.hist, gpu.hist_cap);
+        if (gpu.hist_cap > 0) _ = try feed.sync(gpa, &display.set, refilterSamples(&display.set, fs), gpu.hist, gpu.hist_cap);
 
         for (win.takePresented()) |p| {
             const acquired = frame_acquired[p.tag % frame_acquired.len];

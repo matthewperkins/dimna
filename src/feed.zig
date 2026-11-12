@@ -9,7 +9,12 @@
 //! Filtering happens here, on the display's thread, as blocks arrive: a few million biquad
 //! steps a second. It never touches acquisition or what is recorded.
 //!
-//! When a panel's corners change, the recent past of its slot is filtered again from a copy
+//! A panel's common average reference is applied here too: the mean of its reference rows,
+//! taken from the samples as acquired, is subtracted from its subtract rows before the
+//! filter. With the reference on and the filter off the slot holds the referenced signal
+//! unfiltered.
+//!
+//! When a panel's corners or reference change, the recent past of its slot is filtered again from a copy
 //! of the raw samples kept here (`refilter`), so the whole trace changes, not only what
 //! arrives afterwards.
 
@@ -23,11 +28,38 @@ const Slot = struct {
     rows: usize,
     /// First column of the slot in a history row.
     column: usize,
-    low_hz: f64,
-    high_hz: f64,
+    cfg: Config,
     band: dsp.Band,
     /// One per channel.
     states: []dsp.Band.State,
+};
+
+/// What a slot holds, from its panel's settings.
+const Config = struct {
+    low_hz: f64,
+    high_hz: f64,
+    car: bool,
+    ref: panels.RowSet,
+    sub: panels.RowSet,
+
+    fn of(p: *const panels.Panel) Config {
+        const car = p.carActive();
+        // Unfiltered with the reference on: the slot passes the referenced signal as it
+        // is. Unfiltered without it: the slot is not drawn, and keeps the band going so
+        // that switching the filter on shows the whole window at once.
+        const pass = car and !p.filtered;
+        return .{
+            .low_hz = if (pass) 0 else p.band_low_hz,
+            .high_hz = if (pass) 0 else p.band_high_hz,
+            .car = car,
+            .ref = if (car) p.car_ref else .{},
+            .sub = if (car) p.car_sub else .{},
+        };
+    }
+
+    fn eql(a: *const Config, b: *const Config) bool {
+        return a.low_hz == b.low_hz and a.high_hz == b.high_hz and a.car == b.car and a.ref.eql(&b.ref) and a.sub.eql(&b.sub);
+    }
 };
 
 const TtlSlot = struct {
@@ -49,6 +81,8 @@ pub const Feed = struct {
     slot_of: [panels.max_panels]?usize = @splat(null),
     /// Scratch for the rows of one block.
     row_buf: []i16 = &.{},
+    /// Scratch for a slot's reference, one value per sample.
+    mean_buf: []f64 = &.{},
     /// The raw samples of the last `raw_cap` (a power of two) sample numbers, `nch` each.
     raw: []i16,
     raw_cap: usize,
@@ -80,13 +114,13 @@ pub const Feed = struct {
             @memset(states, @splat(.{}));
             p.slot = @intCast(self.width);
             self.slot_of[i] = self.num_slots;
+            const cfg: Config = .of(p);
             self.slots[self.num_slots] = .{
                 .first_ch = p.first_ch,
                 .rows = p.rows,
                 .column = self.width,
-                .low_hz = p.band_low_hz,
-                .high_hz = p.band_high_hz,
-                .band = .init(p.band_low_hz, p.band_high_hz, self.fs),
+                .cfg = cfg,
+                .band = .init(cfg.low_hz, cfg.high_hz, self.fs),
                 .states = states,
             };
             self.num_slots += 1;
@@ -98,6 +132,7 @@ pub const Feed = struct {
     pub fn deinit(self: *Feed, gpa: std.mem.Allocator) void {
         for (self.slots[0..self.num_slots]) |s| gpa.free(s.states);
         gpa.free(self.row_buf);
+        gpa.free(self.mean_buf);
         gpa.free(self.raw);
     }
 
@@ -114,11 +149,13 @@ pub const Feed = struct {
             self.row_buf = try gpa.alloc(i16, count * width);
         }
         const out = self.row_buf[0 .. count * width];
-        if (!self.started and count > 0) {
-            // Start every filter settled on its channel's first sample.
-            for (self.slots[0..self.num_slots]) |*s| {
-                for (s.states, 0..) |*st, r| s.band.settle(st, @floatFromInt(samples[s.first_ch + r]));
-            }
+        if (self.mean_buf.len < count) {
+            gpa.free(self.mean_buf);
+            self.mean_buf = &.{};
+            self.mean_buf = try gpa.alloc(f64, count);
+        }
+        const starting = !self.started and count > 0;
+        if (starting) {
             self.oldest = first;
             self.started = true;
         }
@@ -130,13 +167,32 @@ pub const Feed = struct {
             const pos: usize = @intCast(@as(u64, @bitCast(first + @as(i64, @intCast(i)))) & mask);
             @memcpy(self.raw[pos * nch ..][0..nch], in);
         }
-        // Channel by channel, so each filter's state stays in registers.
         for (self.slots[0..self.num_slots]) |*s| {
+            // The reference: the mean of the reference rows, for each sample.
+            const mean = self.mean_buf[0..count];
+            if (s.cfg.car) {
+                const n: f64 = @floatFromInt(s.cfg.ref.count(s.rows));
+                @memset(mean, 0);
+                for (0..s.rows) |r| {
+                    if (!s.cfg.ref.has(r)) continue;
+                    const ch = s.first_ch + r;
+                    for (mean, 0..) |*m, i| m.* += @floatFromInt(samples[i * nch + ch]);
+                }
+                for (mean) |*m| m.* /= n;
+            }
+            // Channel by channel, so each filter's state stays in registers.
             for (s.states, 0..) |*st_ptr, r| {
-                var st = st_ptr.*;
                 const ch = s.first_ch + r;
                 const col = s.column + r;
-                for (0..count) |i| out[i * width + col] = dsp.toI16(s.band.step(&st, @floatFromInt(samples[i * nch + ch])));
+                const sub = s.cfg.car and s.cfg.sub.has(r);
+                // Start every filter settled on its channel's first sample.
+                if (starting) s.band.settle(st_ptr, @as(f64, @floatFromInt(samples[ch])) - (if (sub) mean[0] else 0));
+                var st = st_ptr.*;
+                if (sub) {
+                    for (0..count) |i| out[i * width + col] = dsp.toI16(s.band.step(&st, @as(f64, @floatFromInt(samples[i * nch + ch])) - mean[i]));
+                } else {
+                    for (0..count) |i| out[i * width + col] = dsp.toI16(s.band.step(&st, @floatFromInt(samples[i * nch + ch])));
+                }
                 st_ptr.* = st;
             }
         }
@@ -152,39 +208,60 @@ pub const Feed = struct {
         return out;
     }
 
-    /// Brings the slots' filters in line with the panels' corners. A slot whose corners
-    /// changed has its last `recent` samples filtered again, into `hist` (the history: a
+    /// Brings the slots in line with the panels' corners and references. A slot for which
+    /// they changed has its last `recent` samples made again, into `hist` (the history: a
     /// ring of `hist_cap` rows indexed by sample number). True if anything changed.
-    pub fn sync(self: *Feed, set: *const panels.Set, recent: usize, hist: []i16, hist_cap: usize) bool {
+    pub fn sync(self: *Feed, gpa: std.mem.Allocator, set: *const panels.Set, recent: usize, hist: []i16, hist_cap: usize) !bool {
         var changed = false;
         for (set.items[0..set.len], 0..) |*p, i| {
             const s = &self.slots[self.slot_of[i] orelse continue];
-            if (s.low_hz == p.band_low_hz and s.high_hz == p.band_high_hz) continue;
-            s.low_hz = p.band_low_hz;
-            s.high_hz = p.band_high_hz;
-            s.band = .init(s.low_hz, s.high_hz, self.fs);
-            self.refilter(s, recent, hist, hist_cap);
+            const cfg: Config = .of(p);
+            if (s.cfg.eql(&cfg)) continue;
+            s.cfg = cfg;
+            s.band = .init(cfg.low_hz, cfg.high_hz, self.fs);
+            try self.refilter(gpa, s, recent, hist, hist_cap);
             changed = true;
         }
         return changed;
     }
 
-    fn refilter(self: *Feed, s: *Slot, recent: usize, hist: []i16, hist_cap: usize) void {
+    fn refilter(self: *Feed, gpa: std.mem.Allocator, s: *Slot, recent: usize, hist: []i16, hist_cap: usize) !void {
         if (!self.started) return;
         const start = @max(self.oldest, self.newest - @as(i64, @intCast(@min(recent, hist_cap))));
         const count: usize = @intCast(self.newest - start);
         if (count == 0) return;
         const raw_mask = self.raw_cap - 1;
         const hist_mask = hist_cap - 1;
+        const nch = self.nch;
+        if (self.mean_buf.len < count) {
+            gpa.free(self.mean_buf);
+            self.mean_buf = &.{};
+            self.mean_buf = try gpa.alloc(f64, count);
+        }
+        const mean = self.mean_buf[0..count];
+        if (s.cfg.car) {
+            const n: f64 = @floatFromInt(s.cfg.ref.count(s.rows));
+            @memset(mean, 0);
+            for (0..s.rows) |r| {
+                if (!s.cfg.ref.has(r)) continue;
+                const ch = s.first_ch + r;
+                for (mean, 0..) |*m, i| {
+                    const k: u64 = @bitCast(start + @as(i64, @intCast(i)));
+                    m.* += @floatFromInt(self.raw[@as(usize, @intCast(k & raw_mask)) * nch + ch]);
+                }
+            }
+            for (mean) |*m| m.* /= n;
+        } else @memset(mean, 0);
         for (s.states, 0..) |*st_ptr, r| {
             const ch = s.first_ch + r;
             const col = s.column + r;
+            const sub: f64 = if (s.cfg.car and s.cfg.sub.has(r)) 1 else 0;
             var st: dsp.Band.State = @splat(.{});
             const first_pos: usize = @intCast(@as(u64, @bitCast(start)) & raw_mask);
-            s.band.settle(&st, @floatFromInt(self.raw[first_pos * self.nch + ch]));
+            s.band.settle(&st, @as(f64, @floatFromInt(self.raw[first_pos * nch + ch])) - sub * mean[0]);
             for (0..count) |i| {
                 const n: u64 = @bitCast(start + @as(i64, @intCast(i)));
-                const x: f64 = @floatFromInt(self.raw[@as(usize, @intCast(n & raw_mask)) * self.nch + ch]);
+                const x = @as(f64, @floatFromInt(self.raw[@as(usize, @intCast(n & raw_mask)) * nch + ch])) - sub * mean[i];
                 hist[@as(usize, @intCast(n & hist_mask)) * self.width + col] = dsp.toI16(s.band.step(&st, x));
             }
             st_ptr.* = st;
@@ -254,8 +331,8 @@ test "rows carry raw channels and each electrode panel's filtered copy; refilter
     // passes and the fast one is gone, and the offset stays.
     set.items[0].band_low_hz = 0;
     set.items[0].band_high_hz = 100;
-    try testing.expect(feed.sync(&set, 2000, hist, cap));
-    try testing.expect(!feed.sync(&set, 2000, hist, cap));
+    try testing.expect(try feed.sync(gpa, &set, 2000, hist, cap));
+    try testing.expect(!try feed.sync(gpa, &set, 2000, hist, cap));
     const slow = Peak.of(hist, feed.width, 4, newest - 1000, newest);
     try testing.expect(slow > 2800 and slow < 3100);
     var lo: i32 = 32767;
@@ -276,4 +353,66 @@ test "rows carry raw channels and each electrode panel's filtered copy; refilter
     }
     const out = try feed.rows(gpa, newest, &block, &.{});
     try testing.expect(out[3] > 7950 and out[3] < 8050);
+}
+
+test "common average reference: the shared part goes, each channel's own stays" {
+    const gpa = testing.allocator;
+    var layout: types.Layout = .{ .sample_rate = 30000, .hw_clock_hz = 50e6 };
+    layout.headstages[0] = .{ .slot = 0, .chip = "RHD2132", .num_channels = 4, .first_channel = 0, .has_bno = false };
+    layout.num_headstages = 1;
+    layout.num_electrodes = 4;
+    var set = panels.default(&layout);
+    const p = &set.items[0];
+    // Unfiltered, reference = rows 1 to 3, subtracted from rows 1, 2 and 4.
+    p.car = true;
+    for ([_]usize{ 0, 1, 2 }) |r| p.car_ref.set(r, true);
+    for ([_]usize{ 0, 1, 3 }) |r| p.car_sub.set(r, true);
+    var feed = try Feed.init(gpa, &layout, &set, 2048);
+    defer feed.deinit(gpa);
+    try testing.expectEqual(4, p.slot);
+    try testing.expectEqual(4, p.drawColumn());
+
+    const cap = 2048;
+    const hist = try gpa.alloc(i16, cap * feed.width);
+    defer gpa.free(hist);
+    @memset(hist, 0);
+    // Every channel: a shared 50 Hz wave of 3000, plus its own constant (100 * its number).
+    var block: [256 * 4]i16 = undefined;
+    var n: i64 = 0;
+    while (n < 1024) : (n += 256) {
+        for (0..256) |i| {
+            const t = @as(f64, @floatFromInt(n + @as(i64, @intCast(i)))) / 30000.0;
+            const common: f64 = 3000.0 * @sin(2.0 * std.math.pi * 50.0 * t);
+            for (0..4) |c| block[i * 4 + c] = @intFromFloat(common + 100.0 * @as(f64, @floatFromInt(c + 1)));
+        }
+        const out = try feed.rows(gpa, n, &block, &.{});
+        for (0..256) |i| {
+            const pos: usize = @intCast(@mod(n + @as(i64, @intCast(i)), cap));
+            @memcpy(hist[pos * feed.width ..][0..feed.width], out[i * feed.width ..][0..feed.width]);
+        }
+    }
+    // The mean of rows 1 to 3 is the wave + 200. Rows 1, 2 and 4 lose it: -100, 0, +200,
+    // steady. Row 3 is not in the subtract set and keeps the wave. The acquired columns
+    // are untouched.
+    var k: usize = 100;
+    while (k < 1024) : (k += 97) {
+        const row = hist[k * feed.width ..][0..feed.width];
+        try testing.expect(@abs(@as(i32, row[4]) + 100) <= 1);
+        try testing.expect(@abs(@as(i32, row[5])) <= 1);
+        try testing.expect(@abs(@as(i32, row[7]) - 200) <= 1);
+        try testing.expectEqual(row[2], row[6]);
+    }
+    // Taking row 3 out of the reference changes the past too: the mean is then the wave
+    // + 150.
+    p.car_ref.set(2, false);
+    try testing.expect(try feed.sync(gpa, &set, 1024, hist, cap));
+    k = 100;
+    while (k < 1024) : (k += 97) {
+        const row = hist[k * feed.width ..][0..feed.width];
+        try testing.expect(@abs(@as(i32, row[4]) + 50) <= 1);
+        try testing.expect(@abs(@as(i32, row[7]) - 250) <= 1);
+    }
+    // Off: the slot is no longer drawn.
+    p.setCar(false);
+    try testing.expectEqual(0, p.drawColumn());
 }

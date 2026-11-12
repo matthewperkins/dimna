@@ -106,6 +106,18 @@ pub const Ui = struct {
         return hot and self.clicked;
     }
 
+    /// A small toggle (a row number, say) of a fixed width, so a run of them lines up.
+    pub fn chip(self: *Ui, label: []const u8, on: bool) bool {
+        const w: f32 = 30;
+        const h = self.lineHeight() + 8;
+        self.fit(w);
+        const hot = self.hovering(self.x, self.y, w, h);
+        self.batch.rect(self.x, self.y, w, h, if (on) (if (hot) button_on_hover else button_on) else if (hot) button_hover else button_idle);
+        _ = self.batch.text(self.x + (w - self.batch.font.width(label)) / 2, self.y + 4, label, if (on) text_bright else text_dim);
+        self.x += w + 3;
+        return hot and self.clicked;
+    }
+
     /// "label  [-] value [+]". Returns -1 or +1 when a button is clicked or the wheel turns
     /// over it, else 0.
     pub fn stepper(self: *Ui, label: []const u8, string: []const u8, value_width: f32) i32 {

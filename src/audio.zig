@@ -33,6 +33,8 @@ const dsp = @import("dsp.zig");
 const types = @import("types.zig");
 
 pub const max_channels = 8;
+/// The most channels a reference for one audio channel is averaged over.
+pub const max_car_ref = 64;
 
 pub const Settings = struct {
     enabled: bool = true,
@@ -47,6 +49,10 @@ pub const Settings = struct {
     expansion: f64 = 0.375,
     gate_sigma: f64 = 3,
     presence_db: f64 = 3,
+    /// A common average reference for each channel listened to: the channels whose mean
+    /// is subtracted from it before anything else (none: `car_len` 0).
+    car_ref: [max_channels][max_car_ref]u32 = undefined,
+    car_len: [max_channels]u8 = @splat(0),
 
     pub fn channelSlice(self: *const Settings) []const u32 {
         return self.channels[0..self.num_channels];
@@ -252,8 +258,13 @@ pub const Monitor = struct {
             const row = samples[t * nch ..][0..nch];
             var l: f64 = 0;
             var r: f64 = 0;
-            for (self.chains[0..self.num_chains], s.channelSlice()) |*c, ch| {
-                const x: f64 = if (ch < nch) @floatFromInt(row[ch]) else 0;
+            for (self.chains[0..self.num_chains], s.channelSlice(), 0..) |*c, ch, ci| {
+                var x: f64 = if (ch < nch) @floatFromInt(row[ch]) else 0;
+                if (s.car_len[ci] > 0) {
+                    var sum: f64 = 0;
+                    for (s.car_ref[ci][0..s.car_len[ci]]) |rc| sum += if (rc < nch) @as(f64, @floatFromInt(row[rc])) else 0;
+                    x -= sum / @as(f64, @floatFromInt(s.car_len[ci]));
+                }
                 if (!c.settled) {
                     // No start-up thump from the electrode's offset.
                     c.band.settle(&c.band_state, x);
@@ -577,4 +588,38 @@ test "the reference chain is linear; sigma is not inflated by dense firing" {
         out.* = est.sigma;
     }
     try testing.expect(@abs(sig[1] / sig[0] - 1.0) < 0.12);
+}
+
+test "a common average reference takes the shared part out of the monitor" {
+    // Four electrodes: their own noise (5 µV) plus a shared 400 µV artefact train.
+    const gpa = testing.allocator;
+    const fs = 30000.0;
+    const common = try synth(gpa, fs, 1, 0, &.{.{ 5, 400 }}, 1);
+    defer gpa.free(common);
+    const n = common.len;
+    const block = try gpa.alloc(i16, n * 4);
+    defer gpa.free(block);
+    for (0..4) |k| {
+        const own = try synth(gpa, fs, 1, 5, &.{}, 10 + k);
+        defer gpa.free(own);
+        for (0..n) |t| block[t * 4 + k] = own[t] + common[t];
+    }
+    var peaks: [2]f64 = undefined;
+    for ([_]bool{ false, true }, &peaks) |car, *peak| {
+        var m: Monitor = .init(gpa, fs);
+        defer m.deinit();
+        var s: Settings = .{ .reference = true, .volume_db = 0, .num_channels = 1 };
+        s.channels[0] = 1;
+        if (car) {
+            s.car_ref[0][0..4].* = .{ 0, 1, 2, 3 };
+            s.car_len[0] = 4;
+        }
+        var out: std.ArrayList(f32) = .empty;
+        defer out.deinit(gpa);
+        try m.process(&s, block, 4, &out);
+        peak.* = 0;
+        var i: usize = 6000;
+        while (i < out.items.len) : (i += 2) peak.* = @max(peak.*, @abs(out.items[i]));
+    }
+    try testing.expect(peaks[1] < 0.2 * peaks[0]);
 }

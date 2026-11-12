@@ -74,6 +74,8 @@ pub const AudioStatus = struct {
     /// The channels listened to, as text ("A1-5, B1-3").
     listen_buf: [96]u8 = undefined,
     listen_len: usize = 0,
+    /// The sound takes the panels' common average references (when they have one).
+    car: bool = true,
 };
 
 pub const AudioAction = union(enum) {
@@ -82,6 +84,8 @@ pub const AudioAction = union(enum) {
     /// Louder (true) or quieter, 2 dB a step.
     volume: bool,
     reference: bool,
+    /// Whether the sound takes the panels' common average references.
+    car: bool,
     recalibrate,
 };
 
@@ -167,6 +171,13 @@ pub const Action = union(enum) {
     filter: bool,
     corner: struct { high: bool, up: bool },
     trig_line: u8,
+    /// The common average reference: on or off, one row in or out of a set, or a whole
+    /// set at once (all rows, or none).
+    car: bool,
+    car_ref_row: usize,
+    car_sub_row: usize,
+    car_ref_all: bool,
+    car_sub_all: bool,
     trig_source: panels.TrigSource,
     /// Move the slope trigger to the next (+1) or previous row.
     trig_row: i32,
@@ -441,6 +452,7 @@ fn build(ui: *ui_mod.Ui, cfg: *const Config, snap: *const Snapshot, shared: *Sha
     // "plain" is the linear reference chain, for comparing by ear.
     if (ui.button("shaped", !au.settings.reference) and au.settings.reference) shared.push(.{ .action = .{ .audio = .{ .reference = false } } });
     if (ui.button("plain", au.settings.reference) and !au.settings.reference) shared.push(.{ .action = .{ .audio = .{ .reference = true } } });
+    if (ui.button("CAR", au.car)) shared.push(.{ .action = .{ .audio = .{ .car = !au.car } } });
     if (ui.button("recalibrate", false)) shared.push(.{ .action = .{ .audio = .recalibrate } });
     ui.newline();
     if (!au.running) {
@@ -560,6 +572,30 @@ fn build(ui: *ui_mod.Ui, cfg: *const Config, snap: *const Snapshot, shared: *Sha
                 if (hi != 0) shared.push(.{ .panel = i, .action = .{ .corner = .{ .high = true, .up = hi > 0 } } });
             }
             ui.newline();
+            // Common average reference: which rows are averaged, which lose the average.
+            ui.text("CAR", ui_mod.text_dim);
+            ui.column(64);
+            if (ui.button("off", !p.car) and p.car) shared.push(.{ .panel = i, .action = .{ .car = false } });
+            if (ui.button("on", p.car) and !p.car) shared.push(.{ .panel = i, .action = .{ .car = true } });
+            if (p.car) {
+                ui.newline();
+                inline for (.{ "average of", "subtract from" }, .{ true, false }) |label, is_ref| {
+                    const rows = if (is_ref) &p.car_ref else &p.car_sub;
+                    ui.text(label, ui_mod.text_dim);
+                    ui.column(104);
+                    const saved_indent = ui.indent;
+                    ui.indent = 104;
+                    if (ui.button("all", false)) shared.push(.{ .panel = i, .action = if (is_ref) .{ .car_ref_all = true } else .{ .car_sub_all = true } });
+                    if (ui.button("none", false)) shared.push(.{ .panel = i, .action = if (is_ref) .{ .car_ref_all = false } else .{ .car_sub_all = false } });
+                    ui.space(6);
+                    for (0..@min(p.rows, panels.max_rows)) |r| {
+                        var nb: [8]u8 = undefined;
+                        if (ui.chip(std.fmt.bufPrint(&nb, "{d}", .{r + 1}) catch "", rows.has(r))) shared.push(.{ .panel = i, .action = if (is_ref) .{ .car_ref_row = r } else .{ .car_sub_row = r } });
+                    }
+                    ui.indent = saved_indent;
+                    ui.newline();
+                }
+            } else ui.newline();
         }
         if (p.mode == .triggered) {
             ui.text("trigger", ui_mod.text_dim);

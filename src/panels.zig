@@ -17,6 +17,9 @@
 //!   sweeps = 10                   # optional: how many sweeps are overlaid
 //!   lines = [1, 2]                # optional, source "ttl": which input lines (default all 8)
 //!   tint = 2                      # optional: shade the panel while this TTL line is high
+//!   car = true                    # optional, electrodes: common average reference (below)
+//!   car_ref = [1, 2, 3, 5]        # optional: the rows averaged (default: all)
+//!   car_subtract = [1, 2, 3, 4]   # optional: the rows it is subtracted from (default: all)
 //!   band = [300, 6000]            # optional, electrodes: show band-passed, corners in Hz
 //!                                 # (0 leaves a side out: [10, 0] is a 10 Hz high-pass)
 //!
@@ -40,6 +43,34 @@ pub const ttl_level = 1000.0;
 
 /// `ttl`: the digital input lines as square-wave lanes, one row per line.
 pub const Kind = enum { electrode, aux, adc, ttl };
+
+/// A set of a panel's rows.
+pub const RowSet = struct {
+    bits: [max_rows / 64]u64 = @splat(0),
+
+    pub fn has(self: *const RowSet, row: usize) bool {
+        return row < max_rows and self.bits[row / 64] >> @intCast(row % 64) & 1 != 0;
+    }
+    pub fn set(self: *RowSet, row: usize, on: bool) void {
+        if (row >= max_rows) return;
+        const bit = @as(u64, 1) << @intCast(row % 64);
+        if (on) self.bits[row / 64] |= bit else self.bits[row / 64] &= ~bit;
+    }
+    /// How many of the first `rows` rows are in the set.
+    pub fn count(self: *const RowSet, rows: usize) usize {
+        var n: usize = 0;
+        for (0..@min(rows, max_rows)) |r| n += @intFromBool(self.has(r));
+        return n;
+    }
+    pub fn all(rows: usize) RowSet {
+        var s: RowSet = .{};
+        for (0..@min(rows, max_rows)) |r| s.set(r, true);
+        return s;
+    }
+    pub fn eql(a: *const RowSet, b: *const RowSet) bool {
+        return std.mem.eql(u64, &a.bits, &b.bits);
+    }
+};
 
 /// How a panel shows time. `scroll` (the default): the newest sample is at the right edge
 /// and the traces move left. `sweep`: the traces stand still and a cursor moves left to
@@ -98,6 +129,14 @@ pub const Panel = struct {
     ttl_lines: [8]u8 = .{ 1, 2, 3, 4, 5, 6, 7, 8 },
     /// A TTL line (1-based) whose high state is shown as a tint over the whole panel, or 0.
     tint_line: u8 = 0,
+    /// Common average reference (electrodes only; like the filter, never applied to what is
+    /// recorded): the plain mean of the `car_ref` rows, sample by sample, is subtracted
+    /// from the `car_sub` rows. It is taken from the samples as acquired and subtracted
+    /// before any filter, which for these (linear) filters is the same as filtering
+    /// everything alike first.
+    car: bool = false,
+    car_ref: RowSet = .{},
+    car_sub: RowSet = .{},
     /// Display filter (electrodes only; never applied to what is recorded): whether the
     /// panel shows its channels band-passed, and the band's corners in Hz (0 = that side
     /// off). 4th-order Butterworth each side, see `dsp.Band`.
@@ -120,6 +159,22 @@ pub const Panel = struct {
             .adc => types.adc_v_per_bit,
             .ttl => 1.0,
         };
+    }
+
+    /// The reference is on and has something to average.
+    pub fn carActive(self: *const Panel) bool {
+        return self.car and self.kind == .electrode and self.car_ref.count(self.rows) > 0;
+    }
+
+    /// Turns the reference on or off; turning it on with nothing chosen yet takes every
+    /// row for both sets.
+    pub fn setCar(self: *Panel, on: bool) void {
+        if (self.kind != .electrode) return;
+        self.car = on;
+        if (on and self.car_ref.count(self.rows) == 0) {
+            self.car_ref = .all(self.rows);
+            self.car_sub = .all(self.rows);
+        }
     }
 
     /// Switches between TTL and slope triggering, each with its own window.
@@ -151,7 +206,7 @@ pub const Panel = struct {
 
     /// The first history column the panel draws: its filtered copy or its channels.
     pub fn drawColumn(self: *const Panel) u32 {
-        return if ((self.filtered and self.kind == .electrode) or self.kind == .ttl) self.slot else self.first_ch;
+        return if (((self.filtered or self.carActive()) and self.kind == .electrode) or self.kind == .ttl) self.slot else self.first_ch;
     }
 
     /// The corners offered when stepping with keys (0 = that side off).
@@ -423,6 +478,29 @@ pub fn fromConfig(doc: toml.Document, layout: *const types.Layout) Error!Set {
         if (doc.number("panel", i, "pre_ms")) |v| p.pre_ms = v;
         if (doc.number("panel", i, "post_ms")) |v| p.post_ms = v;
         if (doc.number("panel", i, "sweeps")) |v| p.overlay = @intFromFloat(std.math.clamp(v, 1, 1000));
+        if (doc.boolean("panel", i, "car")) |on| {
+            if (on and src.kind != .electrode) return fail("panel {d}: car is for electrode panels", .{i + 1});
+            p.car = on;
+            p.car_ref = .all(p.rows);
+            p.car_sub = .all(p.rows);
+        }
+        inline for (.{ "car_ref", "car_subtract" }) |key| {
+            if (doc.get("panel", i, key)) |v| {
+                const list: []const f64 = if (v == .numbers) v.numbers else &.{};
+                if (src.kind != .electrode) return fail("panel {d}: {s} is for electrode panels", .{ i + 1, key });
+                var rows: RowSet = .{};
+                for (list) |n| {
+                    if (n < 1 or n > @as(f64, @floatFromInt(p.rows)) or n != @floor(n)) return fail("panel {d}: {s} lists rows of the panel, 1 to {d}", .{ i + 1, key, p.rows });
+                    rows.set(@intFromFloat(n - 1), true);
+                }
+                if (comptime std.mem.eql(u8, key, "car_ref")) p.car_ref = rows else p.car_sub = rows;
+                // Naming rows turns the reference on unless `car = false` says otherwise.
+                if (doc.boolean("panel", i, "car") == null) p.car = true;
+                if (doc.get("panel", i, if (comptime std.mem.eql(u8, key, "car_ref")) "car_subtract" else "car_ref") == null and doc.boolean("panel", i, "car") == null) {
+                    if (comptime std.mem.eql(u8, key, "car_ref")) p.car_sub = .all(p.rows) else p.car_ref = .all(p.rows);
+                }
+            }
+        }
         if (doc.get("panel", i, "band")) |v| {
             const band: []const f64 = if (v == .numbers) v.numbers else &.{};
             if (band.len != 2 or band[0] < 0 or band[1] < 0 or (band[1] != 0 and band[1] <= band[0]))
@@ -657,6 +735,44 @@ test "slope trigger from the config, with its own window" {
     try testing.expectEqual(3, p.post_ms);
     try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"A1\"\nrect = [0,0,1,1]\ntrigger_channel = 99"), &l));
     try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"adc\"\nrect = [0,0,1,1]\ntrigger_channel = 1"), &l));
+}
+
+test "common average reference from the config" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const l = testLayout();
+    var set = try fromConfig(try toml.parse(a,
+        \\[[panel]]
+        \\source = "A1"
+        \\rect = [0, 0, 0.5, 1]
+        \\car = true
+        \\[[panel]]
+        \\source = "B1"
+        \\rect = [0.5, 0, 0.5, 1]
+        \\car_ref = [1, 2, 3, 16]
+        \\car_subtract = [5, 6]
+    ), &l);
+    const p = &set.items[0];
+    try testing.expect(p.carActive());
+    try testing.expectEqual(16, p.car_ref.count(p.rows));
+    try testing.expectEqual(16, p.car_sub.count(p.rows));
+    const q = &set.items[1];
+    try testing.expect(q.carActive());
+    try testing.expectEqual(4, q.car_ref.count(q.rows));
+    try testing.expect(q.car_ref.has(15) and !q.car_ref.has(3));
+    try testing.expect(q.car_sub.has(4) and q.car_sub.has(5) and !q.car_sub.has(0));
+    // The slot is drawn while the reference is on, filtered or not.
+    q.slot = 77;
+    try testing.expectEqual(77, q.drawColumn());
+    q.setCar(false);
+    try testing.expectEqual(q.first_ch, q.drawColumn());
+    // Turning it on with nothing chosen takes every row.
+    var fresh = default(&l);
+    fresh.items[0].setCar(true);
+    try testing.expectEqual(16, fresh.items[0].car_ref.count(16));
+    try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"A1\"\nrect = [0,0,1,1]\ncar_ref = [0, 40]"), &l));
+    try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"adc\"\nrect = [0,0,1,1]\ncar = true"), &l));
 }
 
 test "sweep mode: per panel or for all, with a shorter longest time base" {
