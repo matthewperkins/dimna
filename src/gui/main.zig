@@ -593,6 +593,8 @@ const Display = struct {
             .filter => |on| p.filtered = on and p.kind == .electrode,
             .corner => |c| p.stepCorner(c.high, c.up),
             .trig_line => |l| p.trig_line = l,
+            .row_hidden => |row| p.hidden.set(row, !p.hidden.has(row)),
+            .row_raw => |row| p.raw_rows.set(row, !p.raw_rows.has(row)),
             .car => |on| p.setCar(on),
             .car_ref_row => |r| p.car_ref.set(r, !p.car_ref.has(r)),
             .car_sub_row => |r| p.car_sub.set(r, !p.car_sub.has(r)),
@@ -713,21 +715,25 @@ const Display = struct {
             const phase: f64 = if (p.mode == .sweep) @floatFromInt(@mod(newest, @as(i64, @intFromFloat(span)))) else -1;
             const px: f32 = @floatFromInt(r.x);
             const py: f32 = @floatFromInt(r.y);
+            const shown = p.shownRows();
             var params: gpu_mod.TraceParams = .{
                 .nch = @intCast(nch),
                 .cap_mask = @intCast(gpu.hist_cap - 1),
                 .newest = @truncate(@as(u64, @bitCast(newest))),
                 .first_ch = p.drawColumn(),
                 .cols = r.w,
-                .rows = p.rows,
+                .rows = shown,
                 .span = @floatCast(span),
                 .lsb_per_row = @floatCast(p.scale / p.unitsPerLsb()),
                 .half_px = 1.5 / @as(f32, @floatFromInt(r.h)),
                 .phase = @floatCast(phase),
                 .gain_base = @intCast(i * gpu_mod.max_rows),
             };
-            // The rows' own scales, for the shader.
-            if (gpu.row_gains.len >= (i + 1) * gpu_mod.max_rows) @memcpy(gpu.row_gains[i * gpu_mod.max_rows ..][0..gpu_mod.max_rows], &p.row_gain);
+            // The rows' own scales, for the shader, in the order the rows are drawn.
+            if (gpu.row_gains.len >= (i + 1) * gpu_mod.max_rows) {
+                const gains = gpu.row_gains[i * gpu_mod.max_rows ..][0..gpu_mod.max_rows];
+                for (0..@min(shown, gpu_mod.max_rows)) |k| gains[k] = p.row_gain[p.rowOfShown(k) orelse k];
+            }
             const rect: gpu_mod.PixelRect = .{ .x = r.x, .y = r.y, .w = r.w, .h = r.h };
             var shown_sweeps: usize = 0;
             if (p.mode == .triggered) {
@@ -764,11 +770,11 @@ const Display = struct {
                 if (p.trig_source == .channel) {
                     // The level, as a line across the trigger's row (in the row's own
                     // scale: it sits on the trace when the panel shows the spike band).
-                    const row_h = @as(f32, @floatFromInt(r.h)) / @as(f32, @floatFromInt(p.rows));
-                    const centre = py + (@as(f32, @floatFromInt(p.trig_row)) + 0.5) * row_h;
+                    const row_h = @as(f32, @floatFromInt(r.h)) / @as(f32, @floatFromInt(@max(shown, 1)));
+                    const centre = py + (@as(f32, @floatFromInt(p.shownIndex(p.trig_row) orelse 0)) + 0.5) * row_h;
                     const dy: f32 = @floatCast(std.math.clamp(p.trig_level_now_uv / p.rowScale(p.trig_row), -1.5, 1.5));
                     var x = px;
-                    while (x < px + w) : (x += 12) batch.rect(x, @round(centre - dy * row_h), 6, 1, .{ 255, 205, 120, 200 });
+                    if (p.shownIndex(p.trig_row) != null) while (x < px + w) : (x += 12) batch.rect(x, @round(centre - dy * row_h), 6, 1, .{ 255, 205, 120, 200 });
                 } else if (trig.recent(0)) |s| {
                     const until = @min(s.fall orelse newest, s.t0 + post);
                     const x1 = px + w * @as(f32, @floatFromInt(until - s.t0 + pre)) / @as(f32, @floatCast(window));
@@ -855,16 +861,21 @@ if (p.kind == .ttl)
                 }
             }
             // Row labels down the left edge, thinned when rows are shorter than a line.
-            const row_h = @as(f32, @floatFromInt(r.h)) / @as(f32, @floatFromInt(p.rows));
+            if (shown == 0) continue;
+            const row_h = @as(f32, @floatFromInt(r.h)) / @as(f32, @floatFromInt(shown));
             const step: u32 = @max(1, @as(u32, @intFromFloat(@ceil((line_h + 3) / row_h))));
-            var row: u32 = 0;
-            while (row < p.rows) : (row += step) {
-                const y = py + (@as(f32, @floatFromInt(row)) + 0.5) * row_h - 0.5 * line_h;
+            var k: u32 = 0;
+            while (k < shown) : (k += step) {
+                // The `k`-th row drawn is panel row `row` (hidden rows are left out).
+                const row: u32 = @intCast(p.rowOfShown(k) orelse continue);
+                const y = py + (@as(f32, @floatFromInt(k)) + 0.5) * row_h - 0.5 * line_h;
                 if (p.kind != .ttl and y < title_y + line_h + 3) continue;
                 var label_buf: [16]u8 = undefined;
                 // The rows listened to stand out.
                 const heard = p.kind == .electrode and self.audio.enabled and self.listening(p.first_ch + row);
-                const after = batch.label(px + 5, y, rowLabel(&label_buf, p, row, layout, &self.set), if (heard) .{ 255, 225, 120, 255 } else dim);
+                var after = batch.label(px + 5, y, rowLabel(&label_buf, p, row, layout, &self.set), if (heard) .{ 255, 225, 120, 255 } else dim);
+                // In a filtered panel, the rows shown as they are say so.
+                if (p.filtered and p.kind == .electrode and !p.rowFiltered(row)) after = batch.label(after + 4, y, "raw", dim);
                 // A row with a scale of its own says so.
                 if (row < panels_mod.max_rows and p.row_gain[row] != 1) {
                     var own: Panel = p.*;
@@ -1534,6 +1545,9 @@ pub fn main(init: std.process.Init) !u8 {
                         p.band_low_hz = o.band_low_hz;
                         p.band_high_hz = o.band_high_hz;
                         if (p.rows == o.rows) {
+                            p.raw_rows = o.raw_rows;
+                            p.hidden = o.hidden;
+                            p.row_gain = o.row_gain;
                             p.car = o.car;
                             p.car_ref = o.car_ref;
                             p.car_sub = o.car_sub;

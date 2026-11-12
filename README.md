@@ -200,6 +200,27 @@ After a very large spike the band-pass rings for a few ms and can trigger once m
 the dead time is over; a holdoff of a few ms stops that. Detection runs on the display
 thread (`src/slope.zig`) and has nothing to do with what is recorded.
 
+**Rows: filtered, as they are, or hidden.** Within one panel each row can be shown
+through the display filter or as it is, and rows can be left out: fast and slow signals
+from one headstage side by side, without the dead channels.
+
+```toml
+[[panel]]
+name = "Port B"
+source = "B1"
+rect = [0.0, 0.0, 0.5, 0.75]
+band = [300, 6000]              # rows 1 to 8: skeletal muscle, filtered
+raw_rows = [9, 10, 11, 12]      # smooth muscle: shown as acquired
+raw_scale = 1000                # µV per row for those rows (the others: scale)
+hide = [13, 14, 15, 16]         # not shown
+```
+
+In the control window each electrode panel has a row of numbered toggles "rows shown" and,
+while its filter is on, "filtered". Rows shown as they are in a filtered panel are marked
+"raw", with their own scale beside the label; Ctrl+wheel scales one row. Hidden rows are
+still recorded, still take part in a common average reference if chosen for it, and keep
+their numbers: row 9 stays row 9. Changing any of this redoes the panel's recent past.
+
 **Common average reference (CAR).** Per electrode panel (so per port): the plain mean of
 the rows you choose, sample by sample, is subtracted from the rows you choose. Turn it on
 in the control window (CAR on, then the two rows of numbered buttons: "average of" and
@@ -256,10 +277,10 @@ and ADC are always drawn as they are.
 
 The filter is for the display only: recordings hold the samples as acquired. It runs on
 the display's thread as blocks arrive (`src/feed.zig`, `src/dsp.zig`; about 4 % of a core
-for 48 channels) and writes a filtered copy of each electrode panel's channels beside the
-raw ones in the GPU's sample history, so switching between raw and filtered is instant and
-shows the whole window. When corners change, the panel's recent past (its window plus a
-second) is filtered again, so the whole trace changes at once. Latency is unchanged (board,
+for 48 channels) and writes what each electrode panel shows of its channels beside the
+acquired ones in the GPU's sample history. When the filter is switched or its corners
+change, the panel's recent past (its window plus a second) is made again, so the whole
+trace changes at once. Latency is unchanged (board,
 tearing: 2.6 ms). The sample history is wider for it: 218 MB of GPU memory for 56 channels
 with 48 filtered, and a 117 MB copy of the raw samples in RAM for refiltering.
 

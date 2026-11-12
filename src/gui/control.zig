@@ -171,6 +171,9 @@ pub const Action = union(enum) {
     filter: bool,
     corner: struct { high: bool, up: bool },
     trig_line: u8,
+    /// Show or hide a row; show a row as it is although the panel's filter is on.
+    row_hidden: usize,
+    row_raw: usize,
     /// The common average reference: on or off, one row in or out of a set, or a whole
     /// set at once (all rows, or none).
     car: bool,
@@ -572,6 +575,22 @@ fn build(ui: *ui_mod.Ui, cfg: *const Config, snap: *const Snapshot, shared: *Sha
                 if (hi != 0) shared.push(.{ .panel = i, .action = .{ .corner = .{ .high = true, .up = hi > 0 } } });
             }
             ui.newline();
+            // Row by row: which are shown, and (filter on) which go through the filter.
+            inline for (.{ "rows shown", "filtered" }, .{ true, false }) |label, is_shown| {
+                if (is_shown or p.filtered) {
+                    ui.text(label, ui_mod.text_dim);
+                    ui.column(104);
+                    const saved_indent = ui.indent;
+                    ui.indent = 104;
+                    for (0..@min(p.rows, panels.max_rows)) |r| {
+                        var nb: [8]u8 = undefined;
+                        const on = if (is_shown) !p.hidden.has(r) else !p.raw_rows.has(r);
+                        if (ui.chip(std.fmt.bufPrint(&nb, "{d}", .{r + 1}) catch "", on)) shared.push(.{ .panel = i, .action = if (is_shown) .{ .row_hidden = r } else .{ .row_raw = r } });
+                    }
+                    ui.indent = saved_indent;
+                    ui.newline();
+                }
+            }
             // Common average reference: which rows are averaged, which lose the average.
             ui.text("CAR", ui_mod.text_dim);
             ui.column(64);

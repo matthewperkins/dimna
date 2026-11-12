@@ -1,9 +1,10 @@
 //! What the display's sample history holds, and the display filters.
 //!
 //! Each sample of the history is a row of `width` int16: the `nch` acquired channels as they
-//! came, then for every electrode panel a band-passed copy of its channels (the panel's
-//! "slot"). A panel draws either its channels or its slot, so switching between raw and
-//! filtered is instant, and two panels can show the same channels with different bands.
+//! came, then for every electrode panel what it shows of its channels (the panel's "slot"):
+//! its rows that are not hidden, one column each in order, band-passed or not row by row.
+//! So one panel can show fast signals filtered beside slow ones as they are, leave rows
+//! out, and two panels can show the same channels differently.
 //! A TTL panel's slot holds its input lines as square waves, one column per line.
 //!
 //! Filtering happens here, on the display's thread, as blocks arrive: a few million biquad
@@ -11,8 +12,7 @@
 //!
 //! A panel's common average reference is applied here too: the mean of its reference rows,
 //! taken from the samples as acquired, is subtracted from its subtract rows before the
-//! filter. With the reference on and the filter off the slot holds the referenced signal
-//! unfiltered.
+//! filter (or instead of one, for rows shown unfiltered).
 //!
 //! When a panel's corners or reference change, the recent past of its slot is filtered again from a copy
 //! of the raw samples kept here (`refilter`), so the whole trace changes, not only what
@@ -38,19 +38,22 @@ const Slot = struct {
 const Config = struct {
     low_hz: f64,
     high_hz: f64,
+    /// The rows that go through the band (the others are passed as they are).
+    band_rows: panels.RowSet,
+    hidden: panels.RowSet,
     car: bool,
     ref: panels.RowSet,
     sub: panels.RowSet,
 
     fn of(p: *const panels.Panel) Config {
         const car = p.carActive();
-        // Unfiltered with the reference on: the slot passes the referenced signal as it
-        // is. Unfiltered without it: the slot is not drawn, and keeps the band going so
-        // that switching the filter on shows the whole window at once.
-        const pass = car and !p.filtered;
+        var band_rows: panels.RowSet = .{};
+        for (0..@min(p.rows, panels.max_rows)) |r| band_rows.set(r, p.rowFiltered(r));
         return .{
-            .low_hz = if (pass) 0 else p.band_low_hz,
-            .high_hz = if (pass) 0 else p.band_high_hz,
+            .low_hz = p.band_low_hz,
+            .high_hz = p.band_high_hz,
+            .band_rows = band_rows,
+            .hidden = p.hidden,
             .car = car,
             .ref = if (car) p.car_ref else .{},
             .sub = if (car) p.car_sub else .{},
@@ -58,7 +61,8 @@ const Config = struct {
     }
 
     fn eql(a: *const Config, b: *const Config) bool {
-        return a.low_hz == b.low_hz and a.high_hz == b.high_hz and a.car == b.car and a.ref.eql(&b.ref) and a.sub.eql(&b.sub);
+        return a.low_hz == b.low_hz and a.high_hz == b.high_hz and a.band_rows.eql(&b.band_rows) and a.hidden.eql(&b.hidden) and
+            a.car == b.car and a.ref.eql(&b.ref) and a.sub.eql(&b.sub);
     }
 };
 
@@ -180,11 +184,23 @@ pub const Feed = struct {
                 }
                 for (mean) |*m| m.* /= n;
             }
-            // Channel by channel, so each filter's state stays in registers.
+            // Channel by channel, so each filter's state stays in registers. The rows shown
+            // take the slot's columns in order.
+            var col = s.column;
             for (s.states, 0..) |*st_ptr, r| {
+                if (s.cfg.hidden.has(r)) continue;
+                defer col += 1;
                 const ch = s.first_ch + r;
-                const col = s.column + r;
                 const sub = s.cfg.car and s.cfg.sub.has(r);
+                if (!s.cfg.band_rows.has(r)) {
+                    // Shown as it is (less the reference).
+                    if (sub) {
+                        for (0..count) |i| out[i * width + col] = dsp.toI16(@as(f64, @floatFromInt(samples[i * nch + ch])) - mean[i]);
+                    } else {
+                        for (0..count) |i| out[i * width + col] = samples[i * nch + ch];
+                    }
+                    continue;
+                }
                 // Start every filter settled on its channel's first sample.
                 if (starting) s.band.settle(st_ptr, @as(f64, @floatFromInt(samples[ch])) - (if (sub) mean[0] else 0));
                 var st = st_ptr.*;
@@ -252,17 +268,20 @@ pub const Feed = struct {
             }
             for (mean) |*m| m.* /= n;
         } else @memset(mean, 0);
+        var col = s.column;
         for (s.states, 0..) |*st_ptr, r| {
+            if (s.cfg.hidden.has(r)) continue;
+            defer col += 1;
             const ch = s.first_ch + r;
-            const col = s.column + r;
             const sub: f64 = if (s.cfg.car and s.cfg.sub.has(r)) 1 else 0;
+            const through_band = s.cfg.band_rows.has(r);
             var st: dsp.Band.State = @splat(.{});
             const first_pos: usize = @intCast(@as(u64, @bitCast(start)) & raw_mask);
             s.band.settle(&st, @as(f64, @floatFromInt(self.raw[first_pos * nch + ch])) - sub * mean[0]);
             for (0..count) |i| {
                 const n: u64 = @bitCast(start + @as(i64, @intCast(i)));
                 const x = @as(f64, @floatFromInt(self.raw[@as(usize, @intCast(n & raw_mask)) * nch + ch])) - sub * mean[i];
-                hist[@as(usize, @intCast(n & hist_mask)) * self.width + col] = dsp.toI16(s.band.step(&st, x));
+                hist[@as(usize, @intCast(n & hist_mask)) * self.width + col] = dsp.toI16(if (through_band) s.band.step(&st, x) else x);
             }
             st_ptr.* = st;
         }
@@ -279,6 +298,7 @@ test "rows carry raw channels and each electrode panel's filtered copy; refilter
     layout.num_electrodes = 2;
     layout.num_adc = 1;
     var set = panels.default(&layout);
+    set.items[0].filtered = true;
     set.items[0].band_low_hz = 300;
     set.items[0].band_high_hz = 6000;
     var feed = try Feed.init(gpa, &layout, &set, 4096);
@@ -412,7 +432,65 @@ test "common average reference: the shared part goes, each channel's own stays" 
         try testing.expect(@abs(@as(i32, row[4]) + 50) <= 1);
         try testing.expect(@abs(@as(i32, row[7]) - 250) <= 1);
     }
-    // Off: the slot is no longer drawn.
+    // Off: the slot passes the channels as they are.
     p.setCar(false);
-    try testing.expectEqual(0, p.drawColumn());
+    try testing.expect(try feed.sync(gpa, &set, 1024, hist, cap));
+    const row = hist[500 * feed.width ..][0..feed.width];
+    try testing.expectEqualSlices(i16, row[0..4], row[4..8]);
+}
+
+test "one panel: some rows filtered, some as they are, some hidden" {
+    const gpa = testing.allocator;
+    var layout: types.Layout = .{ .sample_rate = 30000, .hw_clock_hz = 50e6 };
+    layout.headstages[0] = .{ .slot = 0, .chip = "RHD2132", .num_channels = 4, .first_channel = 0, .has_bno = false };
+    layout.num_headstages = 1;
+    layout.num_electrodes = 4;
+    var set = panels.default(&layout);
+    const p = &set.items[0];
+    // Rows 1 and 2 through 300 Hz to 6 kHz, row 3 hidden, row 4 as it is.
+    p.filtered = true;
+    p.raw_rows.set(3, true);
+    p.hidden.set(2, true);
+    var feed = try Feed.init(gpa, &layout, &set, 4096);
+    defer feed.deinit(gpa);
+    try testing.expectEqual(3, p.shownRows());
+
+    const cap = 4096;
+    const hist = try gpa.alloc(i16, cap * feed.width);
+    defer gpa.free(hist);
+    @memset(hist, 0);
+    // Every channel: a slow 5 Hz wave of 4000 on an offset of 1000 * its number.
+    var block: [256 * 4]i16 = undefined;
+    var n: i64 = 0;
+    while (n < 3072) : (n += 256) {
+        for (0..256) |i| {
+            const t = @as(f64, @floatFromInt(n + @as(i64, @intCast(i)))) / 30000.0;
+            for (0..4) |c| block[i * 4 + c] = @intFromFloat(4000.0 * @sin(2.0 * std.math.pi * 5.0 * t) + 1000.0 * @as(f64, @floatFromInt(c + 1)));
+        }
+        const out = try feed.rows(gpa, n, &block, &.{});
+        for (0..256) |i| {
+            const pos: usize = @intCast(@mod(n + @as(i64, @intCast(i)), cap));
+            @memcpy(hist[pos * feed.width ..][0..feed.width], out[i * feed.width ..][0..feed.width]);
+        }
+    }
+    // The slot's three columns: rows 1 and 2 without the slow wave and the offset, then
+    // row 4 (not row 3) exactly as acquired.
+    var k: usize = 1500;
+    while (k < 3072) : (k += 131) {
+        const row = hist[k * feed.width ..][0..feed.width];
+        try testing.expect(@abs(@as(i32, row[4])) < 60 and @abs(@as(i32, row[5])) < 60);
+        try testing.expectEqual(row[3], row[6]);
+    }
+    // Showing row 3 again and taking row 1 out of the filter redoes the past: now four
+    // columns, row 1 as acquired, row 2 filtered, row 3 filtered, row 4 as acquired.
+    p.hidden.set(2, false);
+    p.raw_rows.set(0, true);
+    try testing.expect(try feed.sync(gpa, &set, 3000, hist, cap));
+    k = 1500;
+    while (k < 3072) : (k += 131) {
+        const row = hist[k * feed.width ..][0..feed.width];
+        try testing.expectEqual(row[0], row[4]);
+        try testing.expect(@abs(@as(i32, row[5])) < 60 and @abs(@as(i32, row[6])) < 60);
+        try testing.expectEqual(row[3], row[7]);
+    }
 }

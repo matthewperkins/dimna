@@ -20,6 +20,9 @@
 //!   car = true                    # optional, electrodes: common average reference (below)
 //!   car_ref = [1, 2, 3, 5]        # optional: the rows averaged (default: all)
 //!   car_subtract = [1, 2, 3, 4]   # optional: the rows it is subtracted from (default: all)
+//!   raw_rows = [9, 10, 11, 12]    # optional, with band: rows shown unfiltered all the same
+//!   raw_scale = 2000              # optional: µV per row for those rows
+//!   hide = [13, 14, 15, 16]       # optional: rows not shown
 //!   band = [300, 6000]            # optional, electrodes: show band-passed, corners in Hz
 //!                                 # (0 leaves a side out: [10, 0] is a 10 Hz high-pass)
 //!
@@ -137,6 +140,10 @@ pub const Panel = struct {
     car: bool = false,
     car_ref: RowSet = .{},
     car_sub: RowSet = .{},
+    /// Rows that stay unfiltered when the display filter is on (slow signals beside fast
+    /// ones on one headstage), and rows that are not shown at all.
+    raw_rows: RowSet = .{},
+    hidden: RowSet = .{},
     /// Display filter (electrodes only; never applied to what is recorded): whether the
     /// panel shows its channels band-passed, and the band's corners in Hz (0 = that side
     /// off). 4th-order Butterworth each side, see `dsp.Band`.
@@ -200,13 +207,48 @@ pub const Panel = struct {
 
     /// The row at a height given as a fraction of the display, if it is in the panel.
     pub fn rowAt(self: *const Panel, fy: f64) ?usize {
-        if (fy < self.y or fy >= self.y + self.h or self.rows == 0) return null;
-        return @min(self.rows - 1, @as(usize, @intFromFloat((fy - self.y) / self.h * @as(f64, @floatFromInt(self.rows)))));
+        const shown = self.shownRows();
+        if (fy < self.y or fy >= self.y + self.h or shown == 0) return null;
+        return self.rowOfShown(@min(shown - 1, @as(usize, @intFromFloat((fy - self.y) / self.h * @as(f64, @floatFromInt(shown))))));
     }
 
-    /// The first history column the panel draws: its filtered copy or its channels.
+    /// How many rows are drawn (all of them, less the hidden ones of an electrode panel).
+    pub fn shownRows(self: *const Panel) u32 {
+        if (self.kind != .electrode) return self.rows;
+        return self.rows - @as(u32, @intCast(self.hidden.count(self.rows)));
+    }
+
+    /// The row drawn `k`-th from the top.
+    pub fn rowOfShown(self: *const Panel, k: usize) ?usize {
+        if (self.kind != .electrode) return if (k < self.rows) k else null;
+        var seen: usize = 0;
+        for (0..self.rows) |r| {
+            if (self.hidden.has(r)) continue;
+            if (seen == k) return r;
+            seen += 1;
+        }
+        return null;
+    }
+
+    /// Where `row` is drawn, counted from the top, or null if it is hidden.
+    pub fn shownIndex(self: *const Panel, row: usize) ?usize {
+        if (row >= self.rows) return null;
+        if (self.kind != .electrode) return row;
+        if (self.hidden.has(row)) return null;
+        var k: usize = 0;
+        for (0..row) |r| k += @intFromBool(!self.hidden.has(r));
+        return k;
+    }
+
+    /// Whether `row` is shown through the display filter.
+    pub fn rowFiltered(self: *const Panel, row: usize) bool {
+        return self.filtered and self.kind == .electrode and !self.raw_rows.has(row);
+    }
+
+    /// The first history column the panel draws: its slot (electrodes: what is shown of
+    /// its channels, filtered and referenced as set; TTL: its lanes) or its channels.
     pub fn drawColumn(self: *const Panel) u32 {
-        return if (((self.filtered or self.carActive()) and self.kind == .electrode) or self.kind == .ttl) self.slot else self.first_ch;
+        return if (self.kind == .electrode or self.kind == .ttl) self.slot else self.first_ch;
     }
 
     /// The corners offered when stepping with keys (0 = that side off).
@@ -501,6 +543,25 @@ pub fn fromConfig(doc: toml.Document, layout: *const types.Layout) Error!Set {
                 }
             }
         }
+        inline for (.{ "raw_rows", "hide" }) |key| {
+            if (doc.get("panel", i, key)) |v| {
+                const list: []const f64 = if (v == .numbers) v.numbers else &.{};
+                if (src.kind != .electrode) return fail("panel {d}: {s} is for electrode panels", .{ i + 1, key });
+                var rows: RowSet = .{};
+                for (list) |n| {
+                    if (n < 1 or n > @as(f64, @floatFromInt(p.rows)) or n != @floor(n)) return fail("panel {d}: {s} lists rows of the panel, 1 to {d}", .{ i + 1, key, p.rows });
+                    rows.set(@intFromFloat(n - 1), true);
+                }
+                if (comptime std.mem.eql(u8, key, "hide")) p.hidden = rows else p.raw_rows = rows;
+            }
+        }
+        if (doc.number("panel", i, "raw_scale")) |v| {
+            // The raw rows' own scale, as a factor on the panel's.
+            const lim = p.scaleLimits();
+            for (0..@min(p.rows, max_rows)) |r| {
+                if (p.raw_rows.has(r)) p.row_gain[r] = @floatCast(std.math.clamp(v, lim[0], lim[1]) / p.scale);
+            }
+        }
         if (doc.get("panel", i, "band")) |v| {
             const band: []const f64 = if (v == .numbers) v.numbers else &.{};
             if (band.len != 2 or band[0] < 0 or band[1] < 0 or (band[1] != 0 and band[1] <= band[0]))
@@ -762,17 +823,51 @@ test "common average reference from the config" {
     try testing.expectEqual(4, q.car_ref.count(q.rows));
     try testing.expect(q.car_ref.has(15) and !q.car_ref.has(3));
     try testing.expect(q.car_sub.has(4) and q.car_sub.has(5) and !q.car_sub.has(0));
-    // The slot is drawn while the reference is on, filtered or not.
+    // An electrode panel draws its slot.
     q.slot = 77;
     try testing.expectEqual(77, q.drawColumn());
     q.setCar(false);
-    try testing.expectEqual(q.first_ch, q.drawColumn());
+    try testing.expect(!q.carActive());
     // Turning it on with nothing chosen takes every row.
     var fresh = default(&l);
     fresh.items[0].setCar(true);
     try testing.expectEqual(16, fresh.items[0].car_ref.count(16));
     try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"A1\"\nrect = [0,0,1,1]\ncar_ref = [0, 40]"), &l));
     try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"adc\"\nrect = [0,0,1,1]\ncar = true"), &l));
+}
+
+test "rows shown raw beside filtered ones, and hidden rows" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const l = testLayout();
+    var set = try fromConfig(try toml.parse(a,
+        \\[[panel]]
+        \\source = "B1"
+        \\rect = [0, 0.25, 1, 0.5]
+        \\scale = 400
+        \\band = [300, 6000]
+        \\raw_rows = [9, 10, 11, 12]
+        \\raw_scale = 2000
+        \\hide = [13, 14, 15, 16]
+    ), &l);
+    const p = &set.items[0];
+    try testing.expectEqual(12, p.shownRows());
+    try testing.expect(p.rowFiltered(0) and p.rowFiltered(7) and !p.rowFiltered(8) and !p.rowFiltered(11));
+    try testing.expectApproxEqAbs(2000.0, p.rowScale(8), 1e-3);
+    try testing.expectEqual(400, p.rowScale(0));
+    try testing.expectEqual(11, p.rowOfShown(11).?);
+    try testing.expectEqual(null, p.rowOfShown(12));
+    try testing.expectEqual(null, p.shownIndex(13));
+    // The pointer: the panel is the middle half of the display, 12 rows.
+    try testing.expectEqual(0, p.rowAt(0.26).?);
+    try testing.expectEqual(11, p.rowAt(0.74).?);
+    // Hiding a row in the middle moves the ones below it up.
+    p.hidden.set(2, true);
+    try testing.expectEqual(11, p.shownRows());
+    try testing.expectEqual(3, p.rowOfShown(2).?);
+    try testing.expectEqual(2, p.shownIndex(3).?);
+    try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"adc\"\nrect = [0,0,1,1]\nhide = [1]"), &l));
 }
 
 test "sweep mode: per panel or for all, with a shorter longest time base" {
