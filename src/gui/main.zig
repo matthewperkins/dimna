@@ -8,7 +8,7 @@
 //!   each refresh. It works only where nothing else drives the monitor: from a text console
 //!   (Ctrl+Alt+F3), with a DRM lease, or on a graphics card of its own. There is no window and
 //!   no input in this mode yet: it runs for --seconds (default 20) or until Ctrl+C, and
-//!   --script changes the view. Margin 1.5 ms unless --margin-ms.
+//!   --script changes the panels. Margin 1.5 ms unless --margin-ms.
 //! --monitor makes the window fullscreen on that monitor (the neural display).
 //! --tearing asks the compositor to show each frame at once, mid-scan, instead of at the
 //!   refresh; implies --present immediate and --free 2. The lowest latency under a compositor:
@@ -66,9 +66,19 @@
 //! (--monitor, or `monitor` in the config file). Free-running (--free) without tearing
 //! queues frames under direct scanout (33.6 ms).
 //!
-//! Config file: $XDG_CONFIG_HOME/oez/config.toml (default ~/.config/oez), flat `key = value`
-//! lines; command-line options win. Keys: monitor = "DP-2", tearing = true, free_ms = 2,
-//! margin_ms = 3.
+//! Config file: $XDG_CONFIG_HOME/oez/config.toml (default ~/.config/oez); command-line options
+//! win. Top-level keys: monitor = "DP-2", tearing = true, free_ms = 2, margin_ms = 3. Panels:
+//! one [[panel]] table each (see src/panels.zig), for example
+//!
+//!   [[panel]]
+//!   name = "Port B"
+//!   source = "B1"                 # a headstage, "electrodes", "aux" or "adc"
+//!   rect = [0.0, 0.0, 0.5, 1.0]   # x, y, width, height as fractions of the display
+//!   span_s = 2.0
+//!   scale = 400                   # µV per row (V per row for aux and adc)
+//!
+//! Without any, there is one panel per headstage, side by side. Wheel, pinch and keys act on
+//! the panel under the pointer (marked by a bar along its top).
 
 const std = @import("std");
 const oez = @import("oez");
@@ -96,12 +106,18 @@ const Args = struct {
     tearing: bool = false,
     /// Free-running: least interval between frames in ms; negative = paced to the refresh.
     free_ms: f64 = -1,
+    /// The parsed config file (panels are read from it once the channel layout is known).
+    doc: oez.toml.Document = .{ .entries = &.{} },
 };
 
 const Input = @import("window.zig").Input;
+const panels_mod = oez.panels;
+const Panel = panels_mod.Panel;
 
 /// Adds the script steps that are due at `elapsed_s` to `in`. `pos` is the script cursor.
-fn runScript(script: []const u8, pos: *usize, elapsed_s: f64, in: *Input) void {
+/// `panel=N` (1-based) and `pointer=FX,FY` (fractions of the display) choose the panel that
+/// input goes to, as moving the pointer would.
+fn runScript(script: []const u8, pos: *usize, elapsed_s: f64, in: *Input, display: *Display) void {
     while (pos.* < script.len) {
         const rest = script[pos.*..];
         const end = std.mem.indexOfScalar(u8, rest, ';') orelse rest.len;
@@ -119,6 +135,14 @@ fn runScript(script: []const u8, pos: *usize, elapsed_s: f64, in: *Input) void {
             in.scroll_x += std.fmt.parseFloat(f64, what[7..]) catch 0;
         } else if (std.mem.startsWith(u8, what, "pinch=")) {
             in.pinch *= std.fmt.parseFloat(f64, what[6..]) catch 1;
+        } else if (std.mem.startsWith(u8, what, "panel=")) {
+            const n = std.fmt.parseInt(usize, what[6..], 10) catch 1;
+            display.scripted_target = std.math.clamp(n, 1, @max(display.set.len, 1)) - 1;
+        } else if (std.mem.startsWith(u8, what, "pointer=")) {
+            var it = std.mem.tokenizeScalar(u8, what[8..], ',');
+            const fx = std.fmt.parseFloat(f64, it.next() orelse "0") catch 0;
+            const fy = std.fmt.parseFloat(f64, it.next() orelse "0") catch 0;
+            if (display.set.at(fx, fy)) |i| display.scripted_target = i;
         } else for (what) |ch| {
             if (in.num_keys == in.keys.len) break;
             in.keys[in.num_keys] = switch (ch) {
@@ -136,32 +160,30 @@ fn runScript(script: []const u8, pos: *usize, elapsed_s: f64, in: *Input) void {
     }
 }
 
-/// Reads `key = value` lines of the config file into `a` (strings may be quoted; `#` starts a
-/// comment; unknown keys are reported). `text` must outlive `a`.
-fn applyConfig(a: *Args, text: []const u8) void {
-    var lines = std.mem.tokenizeScalar(u8, text, '\n');
-    while (lines.next()) |raw| {
-        const line = std.mem.trim(u8, if (std.mem.indexOfScalar(u8, raw, '#')) |h| raw[0..h] else raw, " \t\r");
-        if (line.len == 0 or line[0] == '[') continue;
-        const eq = std.mem.indexOfScalar(u8, line, '=') orelse continue;
-        const key = std.mem.trim(u8, line[0..eq], " \t");
-        const value = std.mem.trim(u8, line[eq + 1 ..], " \t\"");
-        if (std.mem.eql(u8, key, "monitor")) {
-            a.monitor = value;
-        } else if (std.mem.eql(u8, key, "margin_ms")) {
-            a.margin_ms = std.fmt.parseFloat(f64, value) catch a.margin_ms;
-        } else if (std.mem.eql(u8, key, "free_ms")) {
-            a.free_ms = std.fmt.parseFloat(f64, value) catch a.free_ms;
-        } else if (std.mem.eql(u8, key, "tearing")) {
-            a.tearing = std.mem.eql(u8, value, "true");
+/// Applies the config file's top-level keys to `a`. (`[[panel]]` tables are read later.)
+fn applyConfig(a: *Args, doc: oez.toml.Document) void {
+    a.doc = doc;
+    for (doc.entries) |e| {
+        if (e.table.len != 0) {
+            if (!std.mem.eql(u8, e.table, "panel")) log.warn("config line {d}: unknown table [{s}]", .{ e.line, e.table });
+            continue;
+        }
+        if (std.mem.eql(u8, e.key, "monitor") and e.value == .string) {
+            a.monitor = e.value.string;
+        } else if (std.mem.eql(u8, e.key, "margin_ms") and e.value == .number) {
+            a.margin_ms = e.value.number;
+        } else if (std.mem.eql(u8, e.key, "free_ms") and e.value == .number) {
+            a.free_ms = e.value.number;
+        } else if (std.mem.eql(u8, e.key, "tearing") and e.value == .boolean) {
+            a.tearing = e.value.boolean;
             if (a.tearing) a.present = .immediate;
-        } else log.warn("config: unknown key '{s}'", .{key});
+        } else log.warn("config line {d}: unknown key '{s}' or wrong type", .{ e.line, e.key });
     }
 }
 
-fn parseArgs(args: []const [:0]const u8, config: []const u8) !Args {
+fn parseArgs(args: []const [:0]const u8, doc: oez.toml.Document) !Args {
     var a: Args = .{};
-    applyConfig(&a, config);
+    applyConfig(&a, doc);
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
@@ -239,17 +261,36 @@ fn parseArgs(args: []const [:0]const u8, config: []const u8) !Args {
     return a;
 }
 
-/// The trace view: what the controls change.
-const View = struct {
-    span_s: f64 = 2.0,
-    uv_per_row: f64 = 400.0,
+/// The panels of the display, and which one input goes to.
+const Display = struct {
+    set: panels_mod.Set,
+    /// The panels as configured, for `r` (reset).
+    initial: panels_mod.Set,
+    /// The panel that wheel, pinch and keys act on.
+    target: usize = 0,
+    /// Set by a test script (`panel=`, `pointer=`); then it overrides the pointer.
+    scripted_target: ?usize = null,
 
-    const span_min = 0.05;
-    const span_max = 20.0;
-    const uv_min = 5.0;
-    const uv_max = 20000.0;
+    fn init(set: panels_mod.Set) Display {
+        return .{ .set = set, .initial = set };
+    }
 
-    fn apply(self: *View, in: Input) bool {
+    /// Points input at the panel under the pointer (fractions of the display).
+    fn pointAt(self: *Display, fx: f64, fy: f64) void {
+        if (self.scripted_target) |t| {
+            self.target = t;
+        } else if (self.set.at(fx, fy)) |t| self.target = t;
+    }
+
+    /// Applies what the user did to the target panel. True means quit.
+    fn applyInput(self: *Display, in: Input) bool {
+        if (self.scripted_target) |t| self.target = t;
+        var quit = false;
+        for (in.keys[0..in.num_keys]) |k| {
+            if (k == .escape or k == .q) quit = true;
+        }
+        if (self.set.len == 0) return quit;
+        const p = &self.set.items[self.target];
         // One wheel click (about 15 units) changes a scale by 15 %.
         const per_unit = 0.0093;
         var sx = in.scroll_x;
@@ -258,25 +299,75 @@ const View = struct {
             sx += sy;
             sy = 0;
         }
-        if (sy != 0) self.uv_per_row *= @exp(sy * per_unit);
-        if (sx != 0) self.span_s *= @exp(sx * per_unit);
-        // Fingers apart = zoom in = less time across the window.
-        if (in.pinch != 1 and in.pinch > 0) self.span_s /= in.pinch;
-        var quit = false;
+        if (sy != 0) p.scale *= @exp(sy * per_unit);
+        if (sx != 0) p.span_s *= @exp(sx * per_unit);
+        // Fingers apart = zoom in = less time across the panel.
+        if (in.pinch != 1 and in.pinch > 0) p.span_s /= in.pinch;
         for (in.keys[0..in.num_keys]) |k| switch (k) {
-            .escape, .q => quit = true,
-            .minus => self.uv_per_row *= 1.25,
-            .equal => self.uv_per_row /= 1.25,
-            .left_bracket => self.span_s *= 1.25,
-            .right_bracket => self.span_s /= 1.25,
-            .r => self.* = .{},
+            .minus => p.scale *= 1.25,
+            .equal => p.scale /= 1.25,
+            .left_bracket => p.span_s *= 1.25,
+            .right_bracket => p.span_s /= 1.25,
+            .r => {
+                p.span_s = self.initial.items[self.target].span_s;
+                p.scale = self.initial.items[self.target].scale;
+            },
             else => {},
         };
-        self.span_s = std.math.clamp(self.span_s, span_min, span_max);
-        self.uv_per_row = std.math.clamp(self.uv_per_row, uv_min, uv_max);
+        p.clamp();
         return quit;
     }
+
+    /// What to draw: each panel's traces, then dividers and a bar marking the target panel.
+    fn frame(self: *const Display, gpu: *const Gpu, nch: usize, fs: f64, newest: i64, draws: *[panels_mod.max_panels]gpu_mod.PanelDraw, fills: *[3 * panels_mod.max_panels]gpu_mod.Fill) struct { draws: []const gpu_mod.PanelDraw, fills: []const gpu_mod.Fill } {
+        const width = gpu.extent.width;
+        const height = gpu.extent.height;
+        var nf: usize = 0;
+        for (self.set.items[0..self.set.len], 0..) |*p, i| {
+            const r = p.pixelRect(width, height);
+            draws[i] = .{
+                .rect = .{ .x = r.x, .y = r.y, .w = r.w, .h = r.h },
+                .params = .{
+                    .nch = @intCast(nch),
+                    .cap_mask = @intCast(gpu.hist_cap - 1),
+                    .newest = @truncate(@as(u64, @bitCast(newest))),
+                    .first_ch = p.first_ch,
+                    .cols = r.w,
+                    .rows = p.rows,
+                    .span = @floatCast(p.span_s * fs),
+                    .lsb_per_row = @floatCast(p.scale / p.unitsPerLsb()),
+                    .half_px = 1.5 / @as(f32, @floatFromInt(r.h)),
+                },
+            };
+            // A line along the left and top edges that are not the display's own.
+            const grey: [4]f32 = .{ 0.22, 0.24, 0.28, 1.0 };
+            if (r.x > 0) {
+                fills[nf] = .{ .rect = .{ .x = r.x, .y = r.y, .w = 1, .h = r.h }, .colour = grey };
+                nf += 1;
+            }
+            if (r.y > 0) {
+                fills[nf] = .{ .rect = .{ .x = r.x, .y = r.y, .w = r.w, .h = 1 }, .colour = grey };
+                nf += 1;
+            }
+        }
+        if (self.set.len > 1) {
+            const r = self.set.items[self.target].pixelRect(width, height);
+            fills[nf] = .{ .rect = .{ .x = r.x, .y = r.y, .w = r.w, .h = 3 }, .colour = .{ 0.30, 0.55, 0.95, 1.0 } };
+            nf += 1;
+        }
+        return .{ .draws = draws[0..self.set.len], .fills = fills[0..nf] };
+    }
 };
+
+/// The panels for this run: from the config, or one per headstage.
+fn makeDisplay(args: Args, layout: *const oez.types.Layout) ?Display {
+    const set = panels_mod.fromConfig(args.doc, layout) catch {
+        log.err("config: {s}", .{panels_mod.error_message});
+        return null;
+    };
+    for (set.items[0..set.len], 0..) |*p, i| log.info("panel {d} \"{s}\": {d} {t} channels from channel {d}, {d:.2} s, {d} {s}/row", .{ i + 1, p.name(), p.rows, p.kind, p.first_ch + 1, p.span_s, p.scale, p.unit() });
+    return .init(set);
+}
 
 /// The display loop when oez drives the monitor itself (--direct). One frame is in flight at
 /// a time: draw `margin` before a refresh, wait until that frame is on screen, repeat. The
@@ -290,7 +381,7 @@ fn runDirect(io: Io, gpa: std.mem.Allocator, args: Args, layout: oez.types.Layou
     };
     defer gpu.deinit();
     gpu.wait_render = true;
-    try gpu.createHistory(nch, @intFromFloat((View.span_max + 2.0) * fs));
+    try gpu.createHistory(nch, @intFromFloat((Panel.span_max + 2.0) * fs));
     try gpu.resize(0, 0);
     const period: i128 = gpu.refresh_period_ns;
     const margin_ms: f64 = if (args.margin_ms >= 0) args.margin_ms else 1.5;
@@ -300,7 +391,9 @@ fn runDirect(io: Io, gpa: std.mem.Allocator, args: Args, layout: oez.types.Layou
     try acq.start();
     defer acq.join();
 
-    var view: View = .{};
+    var display = makeDisplay(args, &layout) orelse return 2;
+    var draws: [panels_mod.max_panels]gpu_mod.PanelDraw = undefined;
+    var fills: [3 * panels_mod.max_panels]gpu_mod.Fill = undefined;
     var newest: i64 = 0;
     var newest_acquired_ns: i128 = 0;
     var in_flight: u64 = 0; // present id awaited, 0 = none
@@ -333,8 +426,8 @@ fn runDirect(io: Io, gpa: std.mem.Allocator, args: Args, layout: oez.types.Layou
             newest_acquired_ns = blk.acquired_ns;
         }
         var input: Input = .{};
-        if (args.script.len > 0) runScript(args.script, &script_pos, @as(f64, @floatFromInt(nowNs(io) - t_start)) / 1e9, &input);
-        if (view.apply(input)) break;
+        if (args.script.len > 0) runScript(args.script, &script_pos, @as(f64, @floatFromInt(nowNs(io) - t_start)) / 1e9, &input, &display);
+        if (display.applyInput(input)) break;
 
         var now = nowNs(io);
         if (in_flight != 0) {
@@ -356,18 +449,8 @@ fn runDirect(io: Io, gpa: std.mem.Allocator, args: Args, layout: oez.types.Layou
                 return 1;
             }
         } else if (newest > 0 and now >= draw_at) {
-            const params: gpu_mod.TraceParams = .{
-                .nch = @intCast(nch),
-                .cap_mask = @intCast(gpu.hist_cap - 1),
-                .newest = @truncate(@as(u64, @bitCast(newest))),
-                .first_ch = 0,
-                .cols = gpu.extent.width,
-                .rows = @intCast(layout.num_electrodes),
-                .span = @floatCast(view.span_s * fs),
-                .lsb_per_row = @floatCast(view.uv_per_row / oez.types.electrode_uv_per_bit),
-                .half_px = 1.5 / @as(f32, @floatFromInt(gpu.extent.height)),
-            };
-            const result = try gpu.draw(params, {}, struct {
+            const fr = display.frame(&gpu, nch, fs, newest, &draws, &fills);
+            const result = try gpu.draw(fr.draws, fr.fills, {}, struct {
                 fn f(_: void) void {}
             }.f);
             switch (result) {
@@ -435,7 +518,11 @@ pub fn main(init: std.process.Init) !u8 {
         std.fmt.bufPrint(&path_buf, "{s}/.config/oez/config.toml", .{init.environ_map.get("HOME") orelse ""}) catch "";
     const config_text: []const u8 = Io.Dir.cwd().readFileAlloc(io, config_path, init.arena.allocator(), .limited(1 << 16)) catch "";
     if (config_text.len > 0) log.info("config: {s}", .{config_path});
-    const args = parseArgs(argv, config_text) catch return 2;
+    const doc = oez.toml.parse(init.arena.allocator(), config_text) catch {
+        log.err("{s}: syntax error on line {d}", .{ config_path, oez.toml.error_line });
+        return 2;
+    };
+    const args = parseArgs(argv, doc) catch return 2;
 
     // ---- the source: simulator or board ----
     var board: ?oez.board.Board = null;
@@ -496,12 +583,14 @@ pub fn main(init: std.process.Init) !u8 {
     var gpu = try Gpu.init(gpa, .{ .wayland = .{ .display = win.display, .surface = win.surface } }, args.present);
     defer gpu.deinit();
     // The longest time base plus a margin, so new samples never overwrite what is drawn.
-    try gpu.createHistory(nch, @intFromFloat((View.span_max + 2.0) * fs));
+    try gpu.createHistory(nch, @intFromFloat((Panel.span_max + 2.0) * fs));
+    var display = makeDisplay(args, &layout) orelse return 2;
+    var draws: [panels_mod.max_panels]gpu_mod.PanelDraw = undefined;
+    var fills: [3 * panels_mod.max_panels]gpu_mod.Fill = undefined;
 
     try acq.start();
     defer acq.join();
 
-    var view: View = .{};
     var newest: i64 = 0;
     var newest_acquired_ns: i128 = 0;
     // Acquisition time of the newest sample drawn in each frame, by frame tag.
@@ -574,8 +663,10 @@ pub fn main(init: std.process.Init) !u8 {
         }
 
         var input = win.takeInput();
-        if (args.script.len > 0) runScript(args.script, &script_pos, @as(f64, @floatFromInt(nowNs(io) - t_start)) / 1e9, &input);
-        if (view.apply(input)) break;
+        if (args.script.len > 0) runScript(args.script, &script_pos, @as(f64, @floatFromInt(nowNs(io) - t_start)) / 1e9, &input, &display);
+        // Input goes to the panel under the pointer.
+        display.pointAt(input.pointer_x / @as(f64, @floatFromInt(@max(win.width, 1))), input.pointer_y / @as(f64, @floatFromInt(@max(win.height, 1))));
+        if (display.applyInput(input)) break;
 
         for (win.takePresented()) |p| {
             const acquired = frame_acquired[p.tag % frame_acquired.len];
@@ -673,21 +764,11 @@ pub fn main(init: std.process.Init) !u8 {
                 win.resized = false;
                 n_resize += 1;
             }
-            const params: gpu_mod.TraceParams = .{
-                .nch = @intCast(nch),
-                .cap_mask = @intCast(gpu.hist_cap - 1),
-                .newest = @truncate(@as(u64, @bitCast(newest))),
-                .first_ch = 0,
-                .cols = gpu.extent.width,
-                .rows = @intCast(layout.num_electrodes),
-                .span = @floatCast(view.span_s * fs),
-                .lsb_per_row = @floatCast(view.uv_per_row / oez.types.electrode_uv_per_bit),
-                .half_px = 1.5 / @as(f32, @floatFromInt(gpu.extent.height)),
-            };
+            const fr = display.frame(&gpu, nch, fs, newest, &draws, &fills);
             frame_tag += 1;
             frame_acquired[frame_tag % frame_acquired.len] = newest_acquired_ns;
             const Ctx = struct { win: *Window, tag: u64 };
-            const result = try gpu.draw(params, Ctx{ .win = &win, .tag = frame_tag }, struct {
+            const result = try gpu.draw(fr.draws, fr.fills, Ctx{ .win = &win, .tag = frame_tag }, struct {
                 fn f(c: Ctx) void {
                     c.win.beforePresent(c.tag);
                 }
@@ -728,10 +809,11 @@ pub fn main(init: std.process.Init) !u8 {
         if (now >= next_report) {
             const secs = @as(f64, @floatFromInt(now - t_start)) / 1e9;
             const avg = if (lat_n > 0) lat_sum / lat_n else 0;
-            log.info("t={d:.0}s {d} fps, latency ms avg {d:.1} min {d:.1} max {d:.1}, at the refresh aimed at {d}, a refresh later {d}, recovery skips {d}, margin {d:.1} ms, refresh {d:.2} ms, display lost {d} blocks, ring overflow {d}, span {d:.2} s, {d:.0} uV/row, {d}x{d}", .{
+            const tp = &display.set.items[display.target];
+            log.info("t={d:.0}s {d} fps, latency ms avg {d:.1} min {d:.1} max {d:.1}, at the refresh aimed at {d}, a refresh later {d}, recovery skips {d}, margin {d:.1} ms, refresh {d:.2} ms, display lost {d} blocks, ring overflow {d}, panel {d} span {d:.2} s scale {d:.1}, {d}x{d}", .{
                 secs,            frames, avg,       if (lat_n > 0) lat_min else 0,             lat_max,
                 on_time_frames,  late_frames_now, skips, margin_ms,                            @as(f64, @floatFromInt(refresh_ns)) / 1e6,
-                reader.lost,     acq.ring_overflow.load(.monotonic), view.span_s, view.uv_per_row, gpu.extent.width,
+                reader.lost,     acq.ring_overflow.load(.monotonic), display.target + 1, tp.span_s, tp.scale, gpu.extent.width,
                 gpu.extent.height,
             });
             on_time_frames = 0;
@@ -776,7 +858,7 @@ pub fn main(init: std.process.Init) !u8 {
                 best_ms = if (lat_n > 0) lat_min else std.math.inf(f64);
             }
             if (std.c.getenv("OEZ_NO_TITLE") == null) {
-                if (std.fmt.bufPrintSentinel(&title_buf, "oEZ   {d:.2} s   {d:.0} uV/row   latency {d:.1} ms   {d} fps", .{ view.span_s, view.uv_per_row, avg, frames }, 0)) |t| win.setTitle(t) else |_| {}
+                if (std.fmt.bufPrintSentinel(&title_buf, "oEZ   {s}: {d:.2} s  {d:.1} {s}/row   latency {d:.1} ms   {d} fps", .{ tp.name(), tp.span_s, tp.scale, tp.unit(), avg, frames }, 0)) |t| win.setTitle(t) else |_| {}
             }
             frames = 0;
             lat_sum = 0;

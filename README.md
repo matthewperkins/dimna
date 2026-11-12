@@ -82,6 +82,62 @@ The acquisition thread runs SCHED_FIFO (needs rtprio, e.g. the `realtime` group)
 memory. It never waits on readers: the recorder and other readers take blocks from a
 preallocated ring (30 s when recording).
 
+## The display (`oez`)
+
+    oez --sim 32,16                               # simulated signals in a window
+    oez --16ch A1 --adc                           # the board (config file decides the rest)
+
+Wayland directly (zig-wayland) and Vulkan (vulkan-zig); traces are drawn on the GPU from a
+ring of sample history that only new samples are written to. The display reads the
+acquisition ring with a lossy reader, so it can never hold acquisition back.
+
+Config: `~/.config/oez/config.toml` (command-line options win).
+
+```toml
+monitor = "DP-2"      # fullscreen on this monitor: the neural display
+tearing = true        # show each frame at once (see below)
+
+[[panel]]
+name = "Port B"
+source = "B1"                 # a headstage, "electrodes", "aux" or "adc"
+rect = [0.0, 0.0, 0.5, 0.75]  # x, y, width, height as fractions of the display
+span_s = 2.0                  # optional
+scale = 400                   # optional: µV per row (V per row for aux and adc)
+
+[[panel]]
+source = "A1"
+rect = [0.5, 0.0, 0.5, 0.75]
+
+[[panel]]
+source = "adc"                # needs --adc
+rect = [0.0, 0.75, 1.0, 0.25]
+```
+
+Without `[[panel]]` tables there is one panel per headstage, side by side. Wheel (Y scale),
+Shift+wheel or pinch (time base) and the keys `- = [ ] r` act on the panel under the pointer,
+marked by a bar along its top; `q` quits.
+
+**Latency** (sample arriving to its frame on screen, Hyprland 0.57.2, NVIDIA, 60 Hz):
+
+| mode | latency |
+|---|---|
+| window, composited, drawn just before each refresh | 20.2 ms |
+| fullscreen with tearing | 1.6 to 2 ms |
+
+Tearing shows frames mid-scan, about every 3 ms, so every scan line is at most a few ms old.
+Hyprland tears only when all of these hold (`hyprctl monitors` shows `activelyTearing` and
+`tearingBlockedBy`):
+
+- `general.allow_tearing = true`
+- `cursor.no_hardware_cursors = 1` (no tearing while a hardware cursor is visible)
+- the window is fullscreen and the only thing on that monitor: no popup, floating window,
+  overlay or notification over it. So panels are laid out inside oEZ's one surface, and
+  anything drawn on the neural display must be drawn by oEZ.
+
+Other routes tried are described at the top of `src/gui/main.zig`: Hyprland's direct scanout
+(3.5 ms but not dependable) and `--direct DP-2`, where oEZ drives the monitor with no
+compositor (1.45 ms at a 1 ms margin from a text console; it needs the monitor to itself).
+
 ## Changing settings while acquiring
 
 `Acquisition.applySettings` sorts a change (`acquisition.classify`):

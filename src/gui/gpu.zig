@@ -58,6 +58,15 @@ pub const TraceParams = extern struct {
     half_px: f32,
 };
 
+/// A rectangle of the display, in pixels.
+pub const PixelRect = struct { x: u32, y: u32, w: u32, h: u32 };
+
+/// One panel of traces: where on the display, and what to draw there.
+pub const PanelDraw = struct { rect: PixelRect, params: TraceParams };
+
+/// A solid rectangle (dividers, markers), drawn over the panels.
+pub const Fill = struct { rect: PixelRect, colour: [4]f32 };
+
 pub const Gpu = struct {
     gpa: std.mem.Allocator,
     vki: *vk.InstanceWrapper,
@@ -609,6 +618,15 @@ pub const Gpu = struct {
         return r == .success;
     }
 
+    /// `r` limited to the swapchain image, or null if nothing of it is on screen.
+    fn clip(self: *const Gpu, r: PixelRect) ?vk.Rect2D {
+        if (r.x >= self.extent.width or r.y >= self.extent.height or r.w == 0 or r.h == 0) return null;
+        return .{
+            .offset = .{ .x = @intCast(r.x), .y = @intCast(r.y) },
+            .extent = .{ .width = @min(r.w, self.extent.width - r.x), .height = @min(r.h, self.extent.height - r.y) },
+        };
+    }
+
     pub const DrawResult = enum {
         presented,
         /// The swapchain no longer fits the window: call `resize`.
@@ -617,10 +635,11 @@ pub const Gpu = struct {
         busy,
     };
 
-    /// Draws one frame of traces and presents it. `before_present` runs right before the
-    /// frame is handed to the compositor (frame callback and presentation feedback requests
-    /// must be made then, so they attach to this frame's commit).
-    pub fn draw(self: *Gpu, params: TraceParams, context: anytype, comptime before_present: fn (@TypeOf(context)) void) !DrawResult {
+    /// Draws one frame (each panel in its own viewport, then the fills) and presents it.
+    /// `before_present` runs right before the frame is handed to the compositor (frame
+    /// callback and presentation feedback requests must be made then, so they attach to
+    /// this frame's commit).
+    pub fn draw(self: *Gpu, panels: []const PanelDraw, fills: []const Fill, context: anytype, comptime before_present: fn (@TypeOf(context)) void) !DrawResult {
         const dev = self.dev;
         _ = try dev.waitForFences(&[_]vk.Fence{self.in_flight}, .true, std.math.maxInt(u64));
         const acquired = dev.acquireNextImageKHR(self.swapchain, 0, self.image_available, .null) catch |e| switch (e) {
@@ -641,13 +660,25 @@ pub const Gpu = struct {
             .clear_value_count = 1,
             .p_clear_values = &[_]vk.ClearValue{.{ .color = .{ .float_32 = .{ 0.04, 0.045, 0.055, 1.0 } } }},
         }, .@"inline");
-        if (params.rows > 0 and params.cols > 0 and self.hist_cap > 0) {
+        if (self.hist_cap > 0 and panels.len > 0) {
             dev.cmdBindPipeline(cmd, .graphics, self.pipeline);
-            dev.cmdSetViewport(cmd, 0, &[_]vk.Viewport{.{ .x = 0, .y = 0, .width = @floatFromInt(self.extent.width), .height = @floatFromInt(self.extent.height), .min_depth = 0, .max_depth = 1 }});
-            dev.cmdSetScissor(cmd, 0, &[_]vk.Rect2D{area});
             dev.cmdBindDescriptorSets(cmd, .graphics, self.pipeline_layout, 0, &[_]vk.DescriptorSet{self.desc_set}, null);
-            dev.cmdPushConstants(cmd, self.pipeline_layout, .{ .vertex = true }, 0, @sizeOf(TraceParams), @ptrCast(&params));
-            dev.cmdDraw(cmd, 2 * params.cols, params.rows, 0, 0);
+            for (panels) |pd| {
+                const r = self.clip(pd.rect) orelse continue;
+                if (pd.params.rows == 0 or pd.params.cols == 0) continue;
+                dev.cmdSetViewport(cmd, 0, &[_]vk.Viewport{.{ .x = @floatFromInt(r.offset.x), .y = @floatFromInt(r.offset.y), .width = @floatFromInt(r.extent.width), .height = @floatFromInt(r.extent.height), .min_depth = 0, .max_depth = 1 }});
+                dev.cmdSetScissor(cmd, 0, &[_]vk.Rect2D{r});
+                dev.cmdPushConstants(cmd, self.pipeline_layout, .{ .vertex = true }, 0, @sizeOf(TraceParams), @ptrCast(&pd.params));
+                dev.cmdDraw(cmd, 2 * pd.params.cols, pd.params.rows, 0, 0);
+            }
+        }
+        for (fills) |f| {
+            const r = self.clip(f.rect) orelse continue;
+            dev.cmdClearAttachments(
+                cmd,
+                &[_]vk.ClearAttachment{.{ .aspect_mask = .{ .color = true }, .color_attachment = 0, .clear_value = .{ .color = .{ .float_32 = f.colour } } }},
+                &[_]vk.ClearRect{.{ .rect = r, .base_array_layer = 0, .layer_count = 1 }},
+            );
         }
         dev.cmdEndRenderPass(cmd);
         try dev.endCommandBuffer(cmd);
