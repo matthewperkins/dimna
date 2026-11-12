@@ -332,6 +332,30 @@ recording that fails (disk full, say) is shown as failed; acquisition is not aff
 what was written before stays valid. Quitting while recording closes the recording
 properly first.
 
+**Notes.** On the neural display, `/` opens a note stamped at that moment; type, and
+Enter (or `\`) saves it, Esc drops it. While a note is open every key is its text, so no
+shortcut fires (q does not quit). Tab keeps the text as a draft instead, and `` ` `` stamps
+the oldest draft at the moment it is pressed: type what you are about to do, stamp it
+when you do it. `1` to `9` stamp preset notes from the config, where there is one:
+
+```toml
+[notes]
+preset1 = "lick"
+preset2 = "laser on"
+```
+
+The stamp is the newest sample acquired plus the time since it was acquired (so the
+display's latency is not in it; keys are read once per frame, so it can be a few ms
+late). A saved note goes into the recording's `events.tsv` as kind `note`, if one is
+running; into a log of every note, recorded or not
+(`~/.local/state/oez/notes.log`: local time, sample, session folder, text); and onto the
+traces as a line with the text beside it. The control window shows the last three, the
+presets as buttons, and how many drafts wait. Notes are limited to 200 bytes; the display
+font covers Latin-1, so other characters are stored as typed but drawn as "?".
+
+Digits that have a preset no longer pick a triggered panel's TTL line (the control
+window's stepper does that).
+
 **Board settings.** They start from the config file's `[board]` table (command-line
 options win over it):
 

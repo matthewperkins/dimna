@@ -25,6 +25,12 @@ pub const Key = enum(u32) {
     f = 'f',
     t = 't',
     s = 's',
+    slash = '/',
+    backslash = '\\',
+    grave = '`',
+    enter = 0xff0d,
+    backspace = 0xff08,
+    tab = 0xff09,
     /// '1'..'8' are used as numbers (see `digit`).
     comma = ',',
     dot = '.',
@@ -77,6 +83,9 @@ pub const Input = struct {
     num_keys: usize = 0,
     /// Presses of the left mouse button.
     clicks: u32 = 0,
+    /// What the keys pressed would type (UTF-8), for text entry.
+    text: [64]u8 = undefined,
+    text_len: usize = 0,
     shift: bool = false,
     ctrl: bool = false,
     pointer_x: f64 = 0,
@@ -267,6 +276,7 @@ pub const Window = struct {
         self.input.pinch = 1;
         self.input.num_keys = 0;
         self.input.clicks = 0;
+        self.input.text_len = 0;
         return in;
     }
 
@@ -504,6 +514,17 @@ pub const Window = struct {
                     if (xkb.xkb_keymap_key_get_syms_by_level(self.xkb_keymap, k.key + 8, layout, 0, &syms) >= 1) sym = syms[0];
                 }
                 if (self.key_debug) log.info("key code {d} {s}: symbol 0x{x}", .{ k.key, if (k.state == .pressed) "pressed" else "released", sym });
+                // What the key types, with the modifiers held (for notes).
+                if (k.state == .pressed) {
+                    if (self.xkb_state) |state| {
+                        var utf8: [16]u8 = undefined;
+                        const n = xkb.xkb_state_key_get_utf8(state, k.key + 8, &utf8, utf8.len);
+                        if (n > 0 and @as(usize, @intCast(n)) < utf8.len and utf8[0] >= 0x20 and utf8[0] != 0x7f and self.input.text_len + @as(usize, @intCast(n)) <= self.input.text.len) {
+                            @memcpy(self.input.text[self.input.text_len..][0..@intCast(n)], utf8[0..@intCast(n)]);
+                            self.input.text_len += @intCast(n);
+                        }
+                    }
+                }
                 if (k.state == .pressed and sym != 0 and self.input.num_keys < self.input.keys.len) {
                     self.input.keys[self.input.num_keys] = @enumFromInt(sym);
                     self.input.num_keys += 1;

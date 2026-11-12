@@ -61,6 +61,24 @@ pub const RecStatus = struct {
     }
 };
 
+/// Notes, as the control window shows them.
+pub const NotesStatus = struct {
+    pub const Line = struct {
+        seconds: f64 = 0,
+        buf: [72]u8 = undefined,
+        len: usize = 0,
+    };
+    /// A note is being typed on the display.
+    editing: bool = false,
+    num_drafts: usize = 0,
+    total: u64 = 0,
+    /// The newest notes, newest first.
+    recent: [3]Line = @splat(.{}),
+    num_recent: usize = 0,
+    /// The presets' texts (cut), "" where there is none.
+    presets: [9]Line = @splat(.{}),
+};
+
 /// The audio monitor, as the control window shows it.
 pub const AudioStatus = struct {
     settings: oez.audio.Settings = .{},
@@ -197,6 +215,8 @@ pub const Action = union(enum) {
     record: bool,
     board: BoardAction,
     audio: AudioAction,
+    /// Stamp this preset note (1 to 9) now.
+    note_preset: u8,
     quit_answer: QuitAnswer,
     quit,
 };
@@ -213,6 +233,7 @@ pub const Snapshot = struct {
     rec: RecStatus = .{},
     board: BoardStatus = .{},
     audio: AudioStatus = .{},
+    notes: NotesStatus = .{},
     quit_prompt: QuitPrompt = .{},
     /// One line about the source ("Open Ephys acquisition board   56 channels at 30000 Hz").
     about_buf: [160]u8 = undefined,
@@ -439,6 +460,28 @@ fn build(ui: *ui_mod.Ui, cfg: *const Config, snap: *const Snapshot, shared: *Sha
     }
     if (rec.path_len > 0) {
         ui.text(rec.path(), ui_mod.text_dim);
+        ui.newline();
+    }
+    ui.separator();
+
+    // Notes.
+    const nt = &snap.notes;
+    ui.text("Notes", ui_mod.text_bright);
+    ui.column(64);
+    var any_preset = false;
+    for (&nt.presets, 1..) |*pr, n| {
+        if (pr.len == 0) continue;
+        any_preset = true;
+        if (ui.button(std.fmt.bufPrint(&buf, "{d} {s}", .{ n, pr.buf[0..pr.len] }) catch "", false)) shared.push(.{ .action = .{ .note_preset = @intCast(n) } });
+    }
+    if (!any_preset) ui.text("on the display: / types a note, Enter saves it", ui_mod.text_dim);
+    if (nt.editing) ui.text("typing a note", ui_mod.text_warn);
+    if (nt.num_drafts > 0) ui.text(std.fmt.bufPrint(&buf, "{d} drafts (` stamps one)", .{nt.num_drafts}) catch "", ui_mod.text_dim);
+    ui.newline();
+    for (nt.recent[0..nt.num_recent]) |*line| {
+        var clock_buf: [16]u8 = undefined;
+        ui.space(16);
+        ui.text(std.fmt.bufPrint(&buf, "{s}  {s}", .{ fmtClock(&clock_buf, line.seconds), line.buf[0..line.len] }) catch "", ui_mod.text_dim);
         ui.newline();
     }
     ui.separator();

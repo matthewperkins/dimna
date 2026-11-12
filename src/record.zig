@@ -151,6 +151,8 @@ pub const Recorder = struct {
 
     /// Events from another thread (e.g. applied settings changes), written to events.tsv.
     events_in: ?*events.EventQueue = null,
+    /// Notes typed by the user (from the display thread), written to events.tsv too.
+    notes_in: ?*events.EventQueue = null,
 
     stats: Stats = .{},
     stop_flag: Atomic(bool) = .init(false),
@@ -461,8 +463,12 @@ pub const Recorder = struct {
     }
 
     fn drainEvents(self: *Recorder) !void {
-        const q = self.events_in orelse return;
-        while (q.pop()) |e| try self.event(e.sample, e.kind(), e.text());
+        if (self.events_in) |q| {
+            while (q.pop()) |e| try self.event(e.sample, e.kind(), e.text());
+        }
+        if (self.notes_in) |q| {
+            while (q.pop()) |e| try self.event(e.sample, e.kind(), e.text());
+        }
     }
 
     /// Appends an event line. Tabs and newlines in `text` become spaces.
@@ -495,6 +501,12 @@ fn maxStore(a: *Atomic(u64), v: u64) void {
 const LocalTime = struct { name: []const u8, created: []const u8 };
 
 /// Folder name `YYYY-MM-DD_HH-MM-SS` and an RFC 3339 timestamp, both in local time.
+/// The local time now, as "2026-11-12T14:03:22+01:00".
+pub fn localTime(buf: *[40]u8) []const u8 {
+    var name_buf: [64]u8 = undefined;
+    return localNow(&name_buf, buf).created;
+}
+
 fn localNow(name_buf: []u8, created_buf: []u8) LocalTime {
     var t: c.time_t = c.time(null);
     var tm: c.struct_tm = undefined;

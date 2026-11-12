@@ -27,7 +27,7 @@
 //!   of once per refresh just before it.
 //!
 //! --script feeds synthetic input for tests, as "SECONDS:STEP;SECONDS:STEP;...", where STEP is
-//! wheel=N, hwheel=N, cwheel=N (Ctrl+wheel; axis units, 15 = one click), pointer=FX,FY, click, cclick, pinch=F (scale factor), or keys such as
+//! wheel=N, hwheel=N, cwheel=N (Ctrl+wheel; axis units, 15 = one click), pointer=FX,FY, click, cclick, type=TEXT, enter, esc, tab, backspace, pinch=F (scale factor), or keys such as
 //! "]]==" (any of [ ] - = r m f t 1-8 , . ' q; ';' separates steps, so the high corner can only be
 //! stepped up by script). It goes through the same path as real input.
 //!
@@ -43,6 +43,8 @@
 //!                                  s switches to spikes on the row under the pointer (a slope
 //!                                  trigger; click another row to move it) and back,
 //!                                  [ ] and Shift+wheel zoom the window around the trigger
+//!   /                              type a note (Enter saves, Esc drops, Tab keeps it as a draft);
+//!                                  ` stamps a draft; 1-9 stamp the config's preset notes
 //!   click a row                    listen to that channel (Ctrl+click adds or removes one)
 //!   f                              display filter on/off (electrode panels): raw <-> band-pass
 //!   , .   ; '                      the band's low corner, high corner: down, up
@@ -108,6 +110,7 @@ const fmtSpan = format.fmtSpan;
 const fmtScale = format.fmtScale;
 const control = @import("control.zig");
 const audio_out = @import("audio_out.zig");
+const notes_mod = @import("notes.zig");
 const Status = control.Status;
 const Io = std.Io;
 const log = std.log.scoped(.oez);
@@ -178,6 +181,17 @@ fn runScript(script: []const u8, pos: *usize, elapsed_s: f64, in: *Input, displa
         } else if (std.mem.startsWith(u8, what, "panel=")) {
             const n = std.fmt.parseInt(usize, what[6..], 10) catch 1;
             display.scripted_target = std.math.clamp(n, 1, @max(display.set.len, 1)) - 1;
+        } else if (std.mem.startsWith(u8, what, "type=")) {
+            // Text as typed (for notes).
+            const t = what[5..];
+            const n = @min(t.len, in.text.len - in.text_len);
+            @memcpy(in.text[in.text_len..][0..n], t[0..n]);
+            in.text_len += n;
+        } else if (std.mem.eql(u8, what, "enter") or std.mem.eql(u8, what, "esc") or std.mem.eql(u8, what, "tab") or std.mem.eql(u8, what, "backspace")) {
+            if (in.num_keys < in.keys.len) {
+                in.keys[in.num_keys] = if (what[0] == 'e' and what[1] == 'n') .enter else if (what[0] == 'e') .escape else if (what[0] == 't') .tab else .backspace;
+                in.num_keys += 1;
+            }
         } else if (std.mem.eql(u8, what, "click")) {
             in.clicks += 1;
         } else if (std.mem.eql(u8, what, "cclick")) {
@@ -203,6 +217,10 @@ fn runScript(script: []const u8, pos: *usize, elapsed_s: f64, in: *Input, displa
                 'f' => .f,
                 't' => .t,
                 's' => .s,
+                '/' => .slash,
+                '`' => .grave,
+                '\\' => .backslash,
+                '9' => @enumFromInt(ch),
                 '1'...'8' => @enumFromInt(ch),
                 ',' => .comma,
                 '.' => .dot,
@@ -221,7 +239,7 @@ fn applyConfig(a: *Args, doc: oez.toml.Document) void {
     a.doc = doc;
     for (doc.entries) |e| {
         if (e.table.len != 0) {
-            if (!std.mem.eql(u8, e.table, "panel") and !std.mem.eql(u8, e.table, "board") and !std.mem.eql(u8, e.table, "ttl")) log.warn("config line {d}: unknown table [{s}]", .{ e.line, e.table });
+            if (!std.mem.eql(u8, e.table, "panel") and !std.mem.eql(u8, e.table, "board") and !std.mem.eql(u8, e.table, "ttl") and !std.mem.eql(u8, e.table, "notes")) log.warn("config line {d}: unknown table [{s}]", .{ e.line, e.table });
             continue;
         }
         if (std.mem.eql(u8, e.key, "monitor") and e.value == .string) {
@@ -579,7 +597,7 @@ const Display = struct {
             self.audio_dirty = true;
             return false;
         }
-        if (edit.action == .record or edit.action == .board or edit.action == .quit_answer or edit.panel >= self.set.len) return false;
+        if (edit.action == .record or edit.action == .board or edit.action == .quit_answer or edit.action == .note_preset or edit.panel >= self.set.len) return false;
         const p = &self.set.items[edit.panel];
         switch (edit.action) {
             .scale => |f| p.scale *= f,
@@ -616,7 +634,7 @@ const Display = struct {
             .trig_holdoff => |up| p.trig_holdoff_ms = oez.board_config.step(f64, &.{ 0, 1, 2, 5, 10, 20, 50, 100, 200, 500 }, p.trig_holdoff_ms, up),
             .overlay => |n| p.overlay = n,
             .reset => self.reset(edit.panel),
-            .quit, .record, .board, .quit_answer, .audio => {},
+            .quit, .record, .board, .quit_answer, .audio, .note_preset => {},
         }
         p.clamp();
         return false;
@@ -697,7 +715,7 @@ const Display = struct {
     /// What to draw: each panel's traces, then dividers and a bar marking the target panel,
     /// and into `batch` the text: each panel's title (name, time base, scale per row), its
     /// row labels, and the status read-out in the bottom right corner.
-    fn frame(self: *const Display, gpu: *const Gpu, layout: *const oez.types.Layout, newest: i64, status: Status, batch: *font.Batch, draws: *[max_draws]gpu_mod.PanelDraw, fills: *[max_fills]gpu_mod.Fill) struct { draws: []const gpu_mod.PanelDraw, fills: []const gpu_mod.Fill, text: []const font.Vertex } {
+    fn frame(self: *const Display, gpu: *const Gpu, layout: *const oez.types.Layout, newest: i64, status: Status, notes: *const notes_mod.Notes, batch: *font.Batch, draws: *[max_draws]gpu_mod.PanelDraw, fills: *[max_fills]gpu_mod.Fill) struct { draws: []const gpu_mod.PanelDraw, fills: []const gpu_mod.Fill, text: []const font.Vertex } {
         const width = gpu.extent.width;
         const height = gpu.extent.height;
         const nch = gpu.nch;
@@ -784,6 +802,24 @@ const Display = struct {
             } else if (nd < draws.len) {
                 draws[nd] = .{ .rect = rect, .params = params };
                 nd += 1;
+            }
+            if (p.mode != .triggered and span >= 1) {
+                // Notes: a line where each was stamped, with its text beside it.
+                const w: f64 = @floatFromInt(r.w);
+                const span_i: i64 = @intFromFloat(span);
+                const pass_start: i64 = if (p.mode == .sweep) newest - @as(i64, @intFromFloat(phase)) else newest - span_i;
+                var k: usize = 0;
+                while (notes.recentNote(k)) |note| : (k += 1) {
+                    const at = note.sample;
+                    if (at < pass_start - span_i) break;
+                    // This pass (or, scrolling, the window); else the previous pass, where
+                    // the cursor has not yet gone over it.
+                    const from: i64 = if (at >= pass_start) pass_start else if (p.mode == .sweep and at >= pass_start - span_i + (newest - pass_start)) pass_start - span_i else continue;
+                    if (at > newest) continue;
+                    const x = px + @as(f32, @floatCast(w * @as(f64, @floatFromInt(at - from)) / span));
+                    batch.rect(@round(x), py, 1, @floatFromInt(r.h), .{ 255, 205, 120, 190 });
+                    if (line_h > 0 and x + 60 < px + @as(f32, @floatCast(w))) _ = batch.label(x + 5, py + line_h + 12, note.text()[0..@min(note.len, 40)], .{ 255, 225, 150, 255 });
+                }
             }
             if (p.tint_line != 0 and p.mode != .triggered and span >= 1) {
                 // A tint over the panel wherever its tint line was high. Scrolling: time
@@ -884,6 +920,13 @@ if (p.kind == .ttl)
                     _ = batch.label(after + 4, y, fmtScale(&own_buf, &own), .{ 255, 205, 120, 255 });
                 }
             }
+        }
+        if (notes.editing and line_h > 0) {
+            // The note being typed, bottom left, with when it is stamped.
+            var buf: [notes_mod.max_text + 64]u8 = undefined;
+            var clock_buf: [16]u8 = undefined;
+            const text = std.fmt.bufPrint(&buf, "note at {s}:  {s}_", .{ control.fmtClock(&clock_buf, @as(f64, @floatFromInt(notes.draft.sample)) / layout.sample_rate), notes.draft.text() }) catch "note";
+            _ = batch.label(10, @as(f32, @floatFromInt(height)) - 2 * line_h - 14, text, .{ 255, 235, 170, 255 });
         }
         if (status.valid and line_h > 0) {
             var buf: [96]u8 = undefined;
@@ -1011,6 +1054,8 @@ fn runDirect(io: Io, gpa: std.mem.Allocator, args: Args, layout: oez.types.Layou
     };
     defer gpu.deinit();
     gpu.wait_render = true;
+    var notes = notes_mod.Notes.init(args.doc);
+    defer notes.deinit();
     var display = makeDisplay(args, &layout) orelse return 2;
     const history_samples: usize = @intFromFloat((Panel.span_max + 2.0) * fs);
     var feed = try oez.feed.Feed.init(gpa, &layout, &display.set, history_samples);
@@ -1091,7 +1136,7 @@ fn runDirect(io: Io, gpa: std.mem.Allocator, args: Args, layout: oez.types.Layou
                 return 1;
             }
         } else if (newest > 0 and now >= draw_at) {
-            const fr = display.frame(&gpu, &layout, newest, status, &batch, &draws, &fills);
+            const fr = display.frame(&gpu, &layout, newest, status, &notes, &batch, &draws, &fills);
             const result = try gpu.draw(fr.draws, fr.fills, fr.text, {}, struct {
                 fn f(_: void) void {}
             }.f);
@@ -1227,6 +1272,8 @@ pub fn main(init: std.process.Init) !u8 {
     if (args.tearing and !win.preferTearing()) log.warn("the compositor has no tearing control; frames will wait for the refresh", .{});
     var gpu = try Gpu.init(gpa, .{ .wayland = .{ .display = win.display, .surface = win.surface } }, args.present, null);
     defer gpu.deinit();
+    var notes = notes_mod.Notes.init(args.doc);
+    defer notes.deinit();
     var display = makeDisplay(args, &layout) orelse return 2;
     // The longest time base plus a margin, so new samples never overwrite what is drawn.
     var history_samples: usize = @intFromFloat((Panel.span_max + 2.0) * fs);
@@ -1271,6 +1318,8 @@ pub fn main(init: std.process.Init) !u8 {
     var rec_start_ns: i128 = 0;
     var rec_published_ns: i128 = 0;
     var rec_status: control.RecStatus = .{};
+    // Notes on their way into the recording (display thread to recorder thread).
+    var note_queue: oez.events.EventQueue = .{};
     var board_status: control.BoardStatus = .{};
     // Board settings: what the config (and command line) gave at launch, to tell whether
     // they were changed; and the rate and channel choices waiting for a restart.
@@ -1373,6 +1422,10 @@ pub fn main(init: std.process.Init) !u8 {
         if (args.script.len > 0) runScript(args.script, &script_pos, @as(f64, @floatFromInt(nowNs(io) - t_start)) / 1e9, &input, &display);
         // Input goes to the panel under the pointer.
         display.pointAt(input.pointer_x / @as(f64, @floatFromInt(@max(win.width, 1))), input.pointer_y / @as(f64, @floatFromInt(@max(win.height, 1))));
+        // Notes first: while one is being typed, every key is its text. "Now" is the
+        // newest sample acquired plus the time since.
+        const note_stamp: i64 = newest + if (newest_acquired_ns != 0) @as(i64, @intFromFloat(@as(f64, @floatFromInt(nowNs(io) - newest_acquired_ns)) * 1e-9 * fs)) else 0;
+        notes.handle(&input, note_stamp, if (rec != null) rec_status.path() else "");
         // Quitting (q or Esc here, Quit in the control window) asks first if the board
         // settings were changed; a second request quits.
         var quit = display.applyInput(input);
@@ -1380,6 +1433,7 @@ pub fn main(init: std.process.Init) !u8 {
         // What was clicked in the control window.
         while (shared.pop()) |e| {
             if (e.action == .quit_answer) quit_answer = e.action.quit_answer;
+            if (e.action == .note_preset) notes.stampPreset(e.action.note_preset, note_stamp, if (rec != null) rec_status.path() else "");
             if (display.applyEdit(e)) quit = true;
             snap_dirty = true;
             if (e.action == .board) {
@@ -1420,6 +1474,7 @@ pub fn main(init: std.process.Init) !u8 {
                 if (e.action.record and rec == null) {
                     // Changes applied before this recording are not its events.
                     while (acq.events.pop()) |_| {}
+                    while (note_queue.pop()) |_| {}
                     if (oez.record.Recorder.create(gpa, io, &ring, record_dir, .{
                         .layout = layout,
                         .settings = source.settings(),
@@ -1435,6 +1490,7 @@ pub fn main(init: std.process.Init) !u8 {
                         },
                     })) |r| {
                         r.events_in = &acq.events;
+                        r.notes_in = &note_queue;
                         if (r.start()) |_| {
                             rec = r;
                             rec_start_ns = nowNs(io);
@@ -1462,6 +1518,15 @@ pub fn main(init: std.process.Init) !u8 {
                     }
                 }
             }
+        }
+        // Notes saved this turn go into the recording, if there is one.
+        for (notes.fresh[0..notes.num_fresh]) |*note| {
+            if (rec != null) _ = note_queue.push(.init(note.sample, "note", "{s}", .{note.text()}));
+        }
+        notes.num_fresh = 0;
+        if (notes.dirty) {
+            notes.dirty = false;
+            snap_dirty = true;
         }
         display.refreshAudioCar();
         if (display.audio_dirty) {
@@ -1630,6 +1695,21 @@ pub fn main(init: std.process.Init) !u8 {
                 .ring_overflow = acq.ring_overflow.load(.monotonic),
                 .seconds = @as(f64, @floatFromInt(nowNs(io) - t_start)) / 1e9,
                 .quit_prompt = quit_prompt,
+                .notes = blk: {
+                    var st: control.NotesStatus = .{ .editing = notes.editing, .num_drafts = notes.num_drafts, .total = notes.total };
+                    for (&st.recent, 0..) |*line, k| {
+                        const note = notes.recentNote(k) orelse break;
+                        line.seconds = @as(f64, @floatFromInt(note.sample)) / fs;
+                        line.len = @min(note.len, line.buf.len);
+                        @memcpy(line.buf[0..line.len], note.buf[0..line.len]);
+                        st.num_recent = k + 1;
+                    }
+                    for (&st.presets, &notes.presets) |*line, *pr| {
+                        line.len = @min(pr.len, 20);
+                        @memcpy(line.buf[0..line.len], pr.buf[0..line.len]);
+                    }
+                    break :blk st;
+                },
                 .audio = blk: {
                     var st: control.AudioStatus = .{
                         .settings = display.audio,
@@ -1783,7 +1863,7 @@ pub fn main(init: std.process.Init) !u8 {
                 win.resized = false;
                 n_resize += 1;
             }
-            const fr = display.frame(&gpu, &layout, newest, status, &batch, &draws, &fills);
+            const fr = display.frame(&gpu, &layout, newest, status, &notes, &batch, &draws, &fills);
             frame_tag += 1;
             frame_acquired[frame_tag % frame_acquired.len] = newest_acquired_ns;
             const Ctx = struct { win: *Window, tag: u64 };
