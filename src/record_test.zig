@@ -79,9 +79,18 @@ const Producer = struct {
     /// While set, every `writeSlot()` that returns null is counted.
     count_nulls: Atomic(bool) = .init(false),
     nulls: Atomic(u64) = .init(0),
+    /// While `hold` is set the producer commits nothing; `held` says it has noticed.
+    hold: Atomic(bool) = .init(false),
+    held: Atomic(bool) = .init(false),
 
     fn run(self: *Producer) void {
         while (!self.stop.load(.acquire)) {
+            if (self.hold.load(.acquire)) {
+                self.held.store(true, .release);
+                testing.io.sleep(.fromMicroseconds(self.pause_us), .awake) catch {};
+                continue;
+            }
+            self.held.store(false, .release);
             const p = self.ring.headPosition();
             if (self.ring.writeSlot()) |b| {
                 fill(b, self.sampleAt(p), bs);
@@ -95,6 +104,19 @@ const Producer = struct {
 
     fn sampleAt(self: *const Producer, pos: usize) i64 {
         return self.base + @as(i64, @intCast(pos)) * bs;
+    }
+
+    /// Stops the producer between two blocks (it stays alive, committing nothing).
+    fn holdOn(self: *Producer) !void {
+        self.hold.store(true, .release);
+        const t0 = Io.Clock.awake.now(testing.io);
+        while (!self.held.load(.acquire)) {
+            if (t0.untilNow(testing.io, .awake).toMilliseconds() > wait_limit_ms) return error.ProducerStuck;
+            try testing.io.sleep(.fromMilliseconds(1), .awake);
+        }
+    }
+    fn letGo(self: *Producer) void {
+        self.hold.store(false, .release);
     }
 
     /// Waits until the producer has committed `n` more blocks.
@@ -445,14 +467,17 @@ test "recorder: attached to a running stream, it starts at a block boundary and 
         prod.stop.store(true, .release);
         t.join();
     };
-    // Running round the ring several times before anyone attaches.
+    // Running round the ring several times before anyone attaches. Held between two
+    // blocks while the recorder is created, so the block it must start with is known.
     try prod.waitBlocks(3 * ring_slots);
+    try prod.holdOn();
     const head_before = ring.headPosition();
     const r = try Recorder.create(gpa, testing.io, &ring, tmp.path(), testInfo());
-    const head_after = ring.headPosition();
+    try testing.expectEqual(head_before, ring.headPosition());
     const path = try dupePath(gpa, r);
     defer gpa.free(path);
     try r.start();
+    prod.letGo();
     try prod.waitBlocks(4 * ring_slots);
     prod.stop.store(true, .release);
     t.join();
@@ -464,9 +489,9 @@ test "recorder: attached to a running stream, it starts at a block boundary and 
     var rec = try Recording.load(gpa, path);
     defer rec.deinit();
     const c = try checkIndexed(&rec);
-    // Nothing committed before `create`, and starting with a whole block.
-    if (c.first < prod.sampleAt(head_before) or c.first > prod.sampleAt(head_after))
-        return failure("first sample {d}; blocks committed before create end at {d}, after create at {d}", .{ c.first, prod.sampleAt(head_before), prod.sampleAt(head_after) });
+    // Nothing committed before `create`, and starting with the first whole block after.
+    if (c.first != prod.sampleAt(head_before))
+        return failure("first sample {d}; the blocks committed before create end at {d}", .{ c.first, prod.sampleAt(head_before) });
     if (@mod(c.first - prod.base, bs) != 0) return failure("first sample {d} is not at a block boundary", .{c.first});
     // Everything after: no gaps, up to the last block committed.
     try testing.expectEqual(@as(u64, 0), c.gaps);
@@ -504,12 +529,17 @@ test "recorder: stopped while the producer keeps going, it ends at a block bound
         try prod.waitBlocks(3 * ring_slots);
         // Stop while blocks keep coming; everything committed before this is recorded.
         const head_at_stop = ring.headPosition();
-        const sum = try stop(r);
-        // Detached and freed: the producer goes round the ring three times and never waits.
+        r.requestStop();
+        try waitDone(r);
+        // Done (the thread has detached), not yet freed; then freed. Each time the producer
+        // goes round the ring three times and never has to wait.
         prod.count_nulls.store(true, .release);
         try prod.waitBlocks(3 * ring_slots);
+        if (prod.nulls.load(.monotonic) != 0) return failure("recorder {d}: done, but the producer waited {d} times", .{ k + 1, prod.nulls.load(.monotonic) });
+        const sum = r.finish();
+        try prod.waitBlocks(3 * ring_slots);
         prod.count_nulls.store(false, .release);
-        try testing.expectEqual(@as(u64, 0), prod.nulls.load(.monotonic));
+        if (prod.nulls.load(.monotonic) != 0) return failure("recorder {d}: finished, but the producer waited {d} times", .{ k + 1, prod.nulls.load(.monotonic) });
 
         var rec = try Recording.load(gpa, paths[k]);
         defer rec.deinit();
