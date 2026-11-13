@@ -69,26 +69,10 @@ pub fn build(b: *std.Build) void {
         .registry = std.Build.LazyPath{ .cwd_relative = vk_registry },
     }).module("vulkan-zig");
 
-    const gui_mod = b.createModule(.{
-        .root_source_file = b.path("src/gui/main.zig"),
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-        .imports = &.{
-            .{ .name = "oez", .module = oez },
-            .{ .name = "wayland", .module = wayland },
-            .{ .name = "vulkan", .module = vulkan },
-        },
-    });
-    gui_mod.linkSystemLibrary("wayland-client", .{});
-    gui_mod.linkSystemLibrary("vulkan", .{});
-    // Text: fontconfig finds the font, FreeType rasterizes it.
-    gui_mod.linkSystemLibrary("freetype2", .{});
-    gui_mod.linkSystemLibrary("fontconfig", .{});
-    // Keys by what they are labelled, whatever the keyboard layout.
-    gui_mod.linkSystemLibrary("xkbcommon", .{});
-    // Sound: ALSA's API (PipeWire serves it on a desktop).
-    gui_mod.linkSystemLibrary("alsa", .{});
+    // Two modules over the same files: the program (main.zig) and its unit tests
+    // (tests.zig), with the same imports and libraries so the test binary compiles the
+    // same code. The tests only link these libraries; none of them opens a window, a
+    // Vulkan instance or a sound device.
     const gui_c = b.addTranslateC(.{ .root_source_file = b.path("src/gui/c.h"), .target = target, .optimize = optimize });
     {
         // FreeType's headers live in their own directory; ask pkg-config where.
@@ -98,13 +82,31 @@ pub fn build(b: *std.Build) void {
             if (std.mem.startsWith(u8, f, "-I")) gui_c.addIncludePath(.{ .cwd_relative = f[2..] });
         }
     }
-    gui_mod.addImport("gui_c", gui_c.createModule());
+    const gui_c_mod = gui_c.createModule();
+    const gui_mod = b.createModule(.{ .root_source_file = b.path("src/gui/main.zig"), .target = target, .optimize = optimize, .link_libc = true });
+    const gui_test_mod = b.createModule(.{ .root_source_file = b.path("src/gui/tests.zig"), .target = target, .optimize = optimize, .link_libc = true });
+    for ([_]*std.Build.Module{ gui_mod, gui_test_mod }) |m| {
+        m.addImport("oez", oez);
+        m.addImport("wayland", wayland);
+        m.addImport("vulkan", vulkan);
+        m.addImport("gui_c", gui_c_mod);
+        m.linkSystemLibrary("wayland-client", .{});
+        m.linkSystemLibrary("vulkan", .{});
+        // Text: fontconfig finds the font, FreeType rasterizes it.
+        m.linkSystemLibrary("freetype2", .{});
+        m.linkSystemLibrary("fontconfig", .{});
+        // Keys by what they are labelled, whatever the keyboard layout.
+        m.linkSystemLibrary("xkbcommon", .{});
+        // Sound: ALSA's API (PipeWire serves it on a desktop).
+        m.linkSystemLibrary("alsa", .{});
+    }
     // Shaders: GLSL compiled to SPIR-V by glslc (shaderc) and embedded.
     inline for (.{ "traces.vert", "traces.frag", "text.vert", "text.frag" }) |name| {
         const glslc = b.addSystemCommand(&.{ "glslc", "--target-env=vulkan1.2", "-O", "-o" });
         const spv = glslc.addOutputFileArg(name ++ ".spv");
         glslc.addFileArg(b.path("src/gui/shaders/" ++ name));
         gui_mod.addAnonymousImport(name ++ ".spv", .{ .root_source_file = spv });
+        gui_test_mod.addAnonymousImport(name ++ ".spv", .{ .root_source_file = spv });
     }
     const gui = b.addExecutable(.{ .name = "oez", .root_module = gui_mod });
     b.installArtifact(gui);
@@ -114,5 +116,8 @@ pub fn build(b: *std.Build) void {
     b.step("gui", "Run the GUI").dependOn(&run_gui.step);
 
     const tests = b.addTest(.{ .root_module = oez });
-    b.step("test", "Run unit tests").dependOn(&b.addRunArtifact(tests).step);
+    const gui_tests = b.addTest(.{ .name = "gui-test", .root_module = gui_test_mod });
+    const test_step = b.step("test", "Run unit tests (the core's and the GUI's)");
+    test_step.dependOn(&b.addRunArtifact(tests).step);
+    test_step.dependOn(&b.addRunArtifact(gui_tests).step);
 }

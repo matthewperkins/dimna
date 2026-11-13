@@ -336,3 +336,75 @@ fn nowNs() i128 {
     _ = linux.clock_gettime(.MONOTONIC, &ts);
     return @as(i128, ts.sec) * std.time.ns_per_s + ts.nsec;
 }
+
+const testing = std.testing;
+
+test "the grid has as many columns as make tiles about 1.25 times as wide as tall" {
+    // 32 tiles on 1600 x 900: sqrt(32 * 1600 / 900 / 1.25) = 6.75, so 7 columns, 5 rows.
+    var g: Grid = .of(32, 1600, 900);
+    try testing.expectEqual(7, g.cols);
+    try testing.expectEqual(5, g.rows);
+    try testing.expectApproxEqAbs(1600.0 / 7.0, g.tile_w, 1e-3);
+    try testing.expectEqual(180, g.tile_h);
+    // 64 on 1920 x 1080: sqrt(91.0) = 9.54, so 10 columns, 7 rows.
+    g = .of(64, 1920, 1080);
+    try testing.expectEqual(10, g.cols);
+    try testing.expectEqual(7, g.rows);
+    // A tall, narrow window: one column.
+    g = .of(16, 200, 2000);
+    try testing.expectEqual(1, g.cols);
+    try testing.expectEqual(16, g.rows);
+    // A wide, low one: never more columns than tiles.
+    g = .of(4, 4000, 100);
+    try testing.expectEqual(4, g.cols);
+    try testing.expectEqual(1, g.rows);
+    // One tile fills the window.
+    g = .of(1, 640, 480);
+    try testing.expectEqual(1, g.cols);
+    try testing.expectEqual(1, g.rows);
+    try testing.expectEqual(640, g.tile_w);
+    try testing.expectEqual(480, g.tile_h);
+    // Every tile has a place, and no row is empty.
+    for ([_]usize{ 1, 2, 3, 5, 7, 16, 31, 32, 33, 62, 64, 128 }) |n| {
+        for ([_][2]f32{ .{ 1600, 900 }, .{ 900, 1600 }, .{ 300, 300 }, .{ 2560, 400 } }) |size| {
+            g = .of(n, size[0], size[1]);
+            try testing.expect(g.cols >= 1 and g.cols <= n);
+            try testing.expect(g.cols * g.rows >= n);
+            try testing.expect(g.cols * (g.rows - 1) < n);
+        }
+    }
+}
+
+test "the tile under a point" {
+    // 32 tiles, 7 x 5, each 228.57 x 180.
+    const g: Grid = .of(32, 1600, 900);
+    try testing.expectEqual(0, g.at(0, 0).?);
+    try testing.expectEqual(0, g.at(228, 179.9).?);
+    try testing.expectEqual(1, g.at(229, 0).?);
+    try testing.expectEqual(7, g.at(0, 180).?);
+    try testing.expectEqual(6, g.at(1599, 0).?);
+    // Row 4 holds tiles 28 to 31; its last three places are empty.
+    try testing.expectEqual(31, g.at(3 * 228.6 + 1, 899).?);
+    try testing.expectEqual(null, g.at(4 * 228.6 + 1, 899));
+    // Outside the window.
+    try testing.expectEqual(null, g.at(-1, 10));
+    try testing.expectEqual(null, g.at(10, -0.5));
+    try testing.expectEqual(null, g.at(1600, 10));
+    try testing.expectEqual(null, g.at(10, 900));
+    // No tiles: nothing is under any point.
+    const none: Grid = .of(0, 1600, 900);
+    try testing.expectEqual(1, none.cols);
+    try testing.expectEqual(null, none.at(10, 10));
+}
+
+test "a tile's rectangle is its cell less a 3-pixel gap, and holds the points that find it" {
+    const g: Grid = .of(32, 1600, 900);
+    try testing.expectEqual([4]f32{ 3, 3, 223, 174 }, g.rect(0));
+    // Tile 8: column 1, row 1.
+    try testing.expectEqual([4]f32{ 232, 183, 223, 174 }, g.rect(8));
+    for (0..32) |i| {
+        const r = g.rect(i);
+        try testing.expectEqual(i, g.at(r[0], r[1]).?);
+        try testing.expectEqual(i, g.at(r[0] + r[2] - 1, r[1] + r[3] - 1).?);
+    }
+}

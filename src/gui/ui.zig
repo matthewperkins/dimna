@@ -134,3 +134,156 @@ pub const Ui = struct {
         return step;
     }
 };
+
+// ---- Tests ----
+//
+// A font made by hand, without FreeType: every character 8 pixels wide and without a
+// bitmap, lines 16 pixels high. Text then adds no quads, so every quad in the batch is a
+// widget's rectangle.
+
+const testing = std.testing;
+
+var test_atlas: [1]u8 = .{0};
+const test_font: font.Font = .{ .atlas = &test_atlas, .px = 14, .ascent = 12, .line_height = 16, .glyphs = @splat(.{ .advance = 8 }) };
+
+const TestBatch = struct {
+    vertices: [64 * 6]font.Vertex = undefined,
+    batch: font.Batch = undefined,
+
+    fn ui(self: *TestBatch, width: f32, mouse_x: f32, mouse_y: f32, clicked: bool, wheel: f32) Ui {
+        self.batch = .{ .font = &test_font, .vertices = &self.vertices };
+        return .begin(&self.batch, width, mouse_x, mouse_y, clicked, wheel);
+    }
+
+    /// The `i`-th rectangle drawn, as x, y, w, h.
+    fn rect(self: *const TestBatch, i: usize) [4]f32 {
+        const v = self.vertices[i * 6 ..][0..6];
+        return .{ v[0].pos[0], v[0].pos[1], v[2].pos[0] - v[0].pos[0], v[2].pos[1] - v[0].pos[1] };
+    }
+
+    fn count(self: *const TestBatch) usize {
+        return self.batch.len / 6;
+    }
+};
+
+test "a button's rectangle: its label's width plus 18, a line plus 8 high, then a 6-pixel gap" {
+    var tb: TestBatch = .{};
+    var ui = tb.ui(800, -1, -1, false, 0);
+    try testing.expectEqual(28, ui.rowHeight());
+    try testing.expect(!ui.button("ab", false));
+    try testing.expectEqual([4]f32{ 12, 10, 34, 24 }, tb.rect(0));
+    try testing.expectEqual(52, ui.x);
+    _ = ui.button("Record", true);
+    try testing.expectEqual([4]f32{ 52, 10, 66, 24 }, tb.rect(1));
+    try testing.expectEqual(124, ui.x);
+    // A chip is 30 wide whatever its label, with a 3-pixel gap.
+    _ = ui.chip("12345", false);
+    try testing.expectEqual([4]f32{ 124, 10, 30, 24 }, tb.rect(2));
+    try testing.expectEqual(157, ui.x);
+    // Text moves on by its width plus 8; a value box by at least its minimum width plus 6.
+    ui.text("abc", text_dim);
+    try testing.expectEqual(157 + 24 + 8, ui.x);
+    ui.value("ab", 50);
+    try testing.expectEqual(157 + 32 + 56, ui.x);
+    ui.value("abcdefgh", 50);
+    try testing.expectEqual(157 + 32 + 56 + 70, ui.x);
+    try testing.expectEqual(3, tb.count());
+
+    ui.newline();
+    try testing.expectEqual(12, ui.x);
+    try testing.expectEqual(38, ui.y);
+    ui.column(100);
+    try testing.expectEqual(112, ui.x);
+    ui.column(50); // already past it
+    try testing.expectEqual(112, ui.x);
+    ui.space(5);
+    try testing.expectEqual(117, ui.x);
+    ui.separator();
+    try testing.expectEqual([4]f32{ 12, 40, 776, 1 }, tb.rect(3));
+    try testing.expectEqual(46, ui.y);
+    try testing.expectEqual(12, ui.x);
+}
+
+test "a row of chips wraps to an indented continuation row" {
+    var tb: TestBatch = .{};
+    // 200 wide: a widget must end by x = 192. Chips step by 33 from x = 12.
+    var ui = tb.ui(200, -1, -1, false, 0);
+    for (0..11) |_| _ = ui.chip("1", false);
+    const want = [_][2]f32{
+        .{ 12, 10 },  .{ 45, 10 },  .{ 78, 10 },  .{ 111, 10 }, .{ 144, 10 },
+        .{ 76, 38 },  .{ 109, 38 }, .{ 142, 38 }, .{ 76, 66 },  .{ 109, 66 },
+        .{ 142, 66 },
+    };
+    for (want, 0..) |xy, i| {
+        const r = tb.rect(i);
+        try testing.expectEqual(xy, [2]f32{ r[0], r[1] });
+    }
+    // A widget wider than the window starts one continuation row and is drawn there,
+    // overflowing (it does not wrap again from the indent); the next one starts another.
+    ui = tb.ui(100, -1, -1, false, 0);
+    _ = ui.chip("1", false);
+    _ = ui.chip("1", false);
+    _ = ui.button("a long label", false);
+    _ = ui.button("another long one", false);
+    try testing.expectEqual(4, tb.count());
+    try testing.expectEqual([2]f32{ 76, 38 }, [2]f32{ tb.rect(2)[0], tb.rect(2)[1] });
+    try testing.expectEqual([2]f32{ 76, 66 }, [2]f32{ tb.rect(3)[0], tb.rect(3)[1] });
+    // At the left edge nothing wraps, however wide.
+    ui = tb.ui(50, -1, -1, false, 0);
+    _ = ui.button("a long label", false);
+    try testing.expectEqual([2]f32{ 12, 10 }, [2]f32{ tb.rect(0)[0], tb.rect(0)[1] });
+}
+
+test "a button is clicked when the pointer is inside it as the button goes down" {
+    var tb: TestBatch = .{};
+    // The button "ab" spans x 12 to 46, y 10 to 34 (right and bottom edges excluded).
+    const cases = [_]struct { x: f32, y: f32, clicked: bool, want: bool }{
+        .{ .x = 12, .y = 10, .clicked = true, .want = true },
+        .{ .x = 45.9, .y = 33.9, .clicked = true, .want = true },
+        .{ .x = 46, .y = 20, .clicked = true, .want = false },
+        .{ .x = 20, .y = 34, .clicked = true, .want = false },
+        .{ .x = 11.9, .y = 20, .clicked = true, .want = false },
+        .{ .x = 20, .y = 20, .clicked = false, .want = false },
+    };
+    for (cases) |c| {
+        var ui = tb.ui(800, c.x, c.y, c.clicked, 0);
+        try testing.expectEqual(c.want, ui.button("ab", false));
+    }
+    // Only the button under the pointer reports the click.
+    var ui = tb.ui(800, 60, 20, true, 0);
+    try testing.expect(!ui.button("ab", false));
+    try testing.expect(ui.button("cd", false));
+    try testing.expect(!ui.chip("1", false));
+}
+
+test "a stepper steps on its buttons and on the wheel over it" {
+    var tb: TestBatch = .{};
+    // "gain" text 12..44 (x then 52), "-" 52..78, value 84..124, "+" 130..156, then x = 172.
+    const Case = struct { x: f32, y: f32, clicked: bool, wheel: f32, want: i32 };
+    const cases = [_]Case{
+        .{ .x = 60, .y = 20, .clicked = true, .wheel = 0, .want = -1 },
+        .{ .x = 140, .y = 20, .clicked = true, .wheel = 0, .want = 1 },
+        .{ .x = 100, .y = 20, .clicked = true, .wheel = 0, .want = 0 },
+        .{ .x = 60, .y = 20, .clicked = false, .wheel = 0, .want = 0 },
+        // The wheel anywhere over it, label included: up (negative) steps up.
+        .{ .x = 20, .y = 20, .clicked = false, .wheel = -15, .want = 1 },
+        .{ .x = 100, .y = 20, .clicked = false, .wheel = 15, .want = -1 },
+        .{ .x = 300, .y = 20, .clicked = false, .wheel = -15, .want = 0 },
+        .{ .x = 100, .y = 40, .clicked = false, .wheel = -15, .want = 0 },
+    };
+    for (cases) |c| {
+        var ui = tb.ui(800, c.x, c.y, c.clicked, c.wheel);
+        try testing.expectEqual(c.want, ui.stepper("gain", "1.0", 40));
+        try testing.expectEqual(172, ui.x);
+        try testing.expectEqual([4]f32{ 52, 10, 26, 24 }, tb.rect(0));
+        try testing.expectEqual([4]f32{ 130, 10, 26, 24 }, tb.rect(1));
+    }
+    // A stepper that does not fit moves to the continuation row as a whole.
+    var ui = tb.ui(300, -1, -1, false, 0);
+    // It needs 150 (label 40, buttons 26 + 26, value 40, gaps 18) and must end by 292.
+    ui.column(100);
+    ui.space(40); // x = 152: 152 + 150 > 292
+    _ = ui.stepper("gain", "1.0", 40);
+    try testing.expectEqual([4]f32{ 76 + 40, 38, 26, 24 }, tb.rect(0));
+    try testing.expectEqual([4]f32{ 76 + 118, 38, 26, 24 }, tb.rect(1));
+}
