@@ -158,9 +158,41 @@ is refiltered, so older overlaid sweeps keep the old corners until they are repl
 
 **Spike tiles.** A third window (class `oez-tiles`) with one tile per electrode: the
 channel's last spike waveforms on top of each other (the newest brightest), its threshold
-as a red line, its noise sigma in µV and its firing rate. Click a tile to listen to that
-channel, Ctrl+click to add or remove it; tiles listened to are drawn in the display's
-"listening" yellow with a frame.
+as a red line, its noise sigma in µV and its firing rate.
+
+*Focus and listening* are two things, in this window and on the display alike. Focus (one
+channel, or none) is the channel being looked at: its tile has an amber frame and its row
+on the display an amber label. Listening is marked by a note (♪) before the name.
+
+| on a tile, or on an electrode row of the display | |
+|---|---|
+| left click | focus that channel |
+| right click | listen to it; with Ctrl, add it to or take it out of what is listened to |
+| middle click (anywhere) | no focus |
+
+The focused channel's detection threshold is drawn on its trace on the display as a thin
+red line, in that row's own scale, so the threshold can be read against the signal. It is
+drawn only where the row shows about the detector's band (the row goes through the
+panel's filter, with corners within 250 to 350 Hz and 5 to 7 kHz); elsewhere the row's
+label says "thr" instead, because a line would not sit on what is shown. The threshold
+comes from the tile window's detector, so there is none with `--no-tiles`.
+
+*The tiles' vertical scale.* A tile's range is the µV from zero to its edge. At first every
+tile scales itself to its own waveforms. In the tile window:
+
+| | |
+|---|---|
+| wheel | all tiles shown, 5 % of the range per click. The first movement puts them on one common range, the largest of their own |
+| Ctrl+wheel | the tile under the pointer alone |
+| `r` | back to that first common range |
+| `a` | each tile to its own waveforms, as fixed ranges |
+| `u`, Shift+`u` | step back and forward through the last 16 states of all the ranges (a wheel movement counts once it has rested for 0.75 s) |
+
+A tile with a fixed range shows it bottom left where there is room; the strip along the
+bottom shows the common range, "auto" or "mixed", and chips for the ports that have a
+headstage and for all of them: the tiles shown are the chosen port's (detection goes on
+for every channel). The wheel, `r` and `a` act on the tiles shown. The ranges and the port
+are saved by "Save view", in a `[tiles]` table of `views.toml`.
 
 Detection (`src/spikes.zig`) is the slope trigger's, for every electrode at once: 300 Hz
 to 6 kHz, a threshold 4.5 sigma below zero with sigma from a running median (spikes
@@ -175,9 +207,9 @@ out. A Hyprland rule keeps it off the neural display's monitor:
                      workspace = "1", float = true, move = "966 624", size = "938 560" })
 
 **Spike audio.** oEZ plays the channels you choose through the default sound device.
-Click an electrode row on the display to listen to it; Ctrl+click adds or removes a
-channel (up to 8, spread across the stereo field). The rows listened to have a bright
-label. The control window's Audio section has on / off, mute, volume, shaped / plain,
+Right-click an electrode row on the display, or a spike tile, to listen to it; Ctrl+right
+click adds or removes a channel (up to 8, spread across the stereo field). The channels
+listened to have a note (♪) before their label. The control window's Audio section has on / off, mute, volume, shaped / plain,
 and recalibrate, and shows the held noise level, the latency and any gaps.
 
 The chain (`src/audio.zig`, carried over from oers) is built to keep what makes one
@@ -453,8 +485,8 @@ The control window's Headstages section changes them for the run:
   default and quit, quit without saving, or cancel. A second q quits without saving.
 
 **Alarms.** Anything that means samples are not being kept puts a red bar across the top
-of the neural display (and the control window) that stays until it is acknowledged (`a`,
-or the button), and sounds a short tone every second through the audio output, also
+of the neural display (and the control window) that stays until it is acknowledged (Shift+`a`
+on the display, or the button), and sounds a short tone every second through the audio output, also
 when the monitor is muted or off:
 
 - the recording failed (a write error such as a full disk), or could not be started;

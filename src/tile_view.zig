@@ -43,7 +43,9 @@ pub const TileView = struct {
         try w.writeAll("\"\nrange_uv = [");
         for (self.range_uv[0..@min(n, max_tiles)], 0..) |r, i| {
             if (i > 0) try w.writeAll(", ");
-            try w.print("{d}", .{r});
+            // To a hundredth of a µV: a range that went through the wheel is not a round
+            // number, and seven digits of it say nothing.
+            try w.print("{d}", .{@round(@as(f64, r) * 100) / 100});
         }
         try w.writeAll("]\n");
     }
