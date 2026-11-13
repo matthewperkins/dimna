@@ -288,6 +288,7 @@ pub fn main(init: std.process.Init) !u8 {
         // Quitting (q or Esc here, Quit in the control window) asks first if the board
         // settings were changed; a second request quits.
         var quit = display.applyInput(input);
+        win.setCursor(display.cursor);
         var quit_answer: ?control.QuitAnswer = null;
         // What was clicked in the control window.
         while (shared.pop()) |e| {

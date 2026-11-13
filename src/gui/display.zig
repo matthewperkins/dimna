@@ -16,6 +16,8 @@ const tiles_mod = @import("tiles.zig");
 const tile_link = @import("tile_link.zig");
 const Args = @import("args.zig").Args;
 const Input = @import("window.zig").Input;
+const Cursor = @import("window.zig").Cursor;
+const Key = @import("window.zig").Key;
 const panels_mod = oez.panels;
 const Panel = panels_mod.Panel;
 const log = std.log.scoped(.oez);
@@ -154,6 +156,40 @@ pub fn levelPixelY(p: *const Panel, r: panels_mod.Rect, row: usize, value: f64) 
     return @floatCast(@floor(y));
 }
 
+/// The inverse of `levelPixelY`: the value (in the panel's unit) at the centre of pixel row
+/// `y` on panel row `row` of `p`, drawn in `r`, so that `levelPixelY` of it is `y` again;
+/// null if the row is hidden. Beyond ±1.5 rows from the row's centre, the value there (as
+/// `levelPixelY` clamps).
+pub fn levelAtPixelY(p: *const Panel, r: panels_mod.Rect, row: usize, y: f32) ?f64 {
+    const k = p.shownIndex(row) orelse return null;
+    const row_h = @as(f64, @floatFromInt(r.h)) / @as(f64, @floatFromInt(@max(p.shownRows(), 1)));
+    const centre = @as(f64, @floatFromInt(r.y)) + (@as(f64, @floatFromInt(k)) + 0.5) * row_h;
+    const d = std.math.clamp((centre - (@floor(@as(f64, y)) + 0.5)) / row_h, -1.5, 1.5);
+    return d * p.rowScale(row);
+}
+
+/// A threshold line drawn on a panel: whose threshold, on which of its rows, at which pixel
+/// row, and whether it is drawn dashed (a triggered panel's trigger row) or solid (the
+/// focused row).
+pub const ThresholdLine = struct { ch: u32, row: usize, y: f32, dashed: bool };
+
+/// The threshold lines of one panel, at most two (one per channel).
+pub const ThresholdLines = struct {
+    items: [2]ThresholdLine = undefined,
+    len: usize = 0,
+
+    pub fn slice(self: *const ThresholdLines) []const ThresholdLine {
+        return self.items[0..self.len];
+    }
+};
+
+/// How near (in pixel rows) the pointer must be to a threshold line to take hold of it.
+pub const grab_px = 4;
+
+/// A threshold line being dragged: in panel `panel`, channel `ch` on row `row`. `from_y` is
+/// the pixel row it was taken at; nothing changes until the pointer has left it.
+pub const Drag = struct { panel: usize, ch: u32, row: usize, from_y: f32, moved: bool = false };
+
 /// The label of one row: the electrode's number on its headstage (with the headstage's name
 /// when the panel spans more than one), or AUXn / ADCn.
 pub fn rowLabel(buf: []u8, p: *const Panel, row: u32, layout: *const oez.types.Layout, set: *const panels_mod.Set) []const u8 {
@@ -196,9 +232,25 @@ pub const Display = struct {
     target: usize = 0,
     /// Set by a test script (`panel=`, `pointer=`); then it overrides the pointer.
     scripted_target: ?usize = null,
-    /// Where the pointer is, as a fraction of the display's height (for the row under it).
+    /// Where the pointer is, as fractions of the display's width and height (for the row
+    /// under it, and whether it is over the panel input goes to).
     pointer_fy: f64 = 0,
+    pointer_fx: f64 = 0,
     scripted_pointer: bool = false,
+    /// A test script holds the left button down (`press` until `release`).
+    scripted_left: bool = false,
+    /// The display's size in pixels when it was last drawn: where input finds the lines
+    /// drawn (0 before the first frame).
+    size: [2]u32 = .{ 0, 0 },
+    /// What the pointer is to look like (over a threshold line: a hand); the loop sets it
+    /// on the window once per turn.
+    cursor: Cursor = .default,
+    /// A threshold line being dragged with the left button.
+    drag: ?Drag = null,
+    /// Per panel: the channel it triggers on (in triggered mode, on a channel) as last
+    /// seen, and whether it still owes that channel a latch (see `updateLatches`).
+    trig_on: [panels_mod.max_panels]?u32 = @splat(null),
+    owes_latch: [panels_mod.max_panels]bool = @splat(false),
     /// The triggers of each panel's TTL line (used by panels in triggered mode).
     triggers: [panels_mod.max_panels]oez.sweeps.Triggers = @splat(.{}),
 
@@ -346,6 +398,9 @@ pub const Display = struct {
     /// Looks for triggers in a block that starts at sample `first`: `samples` (`nch`
     /// interleaved, as acquired) for slope triggers, the digital `words` for TTL edges.
     pub fn feedBlock(self: *Display, first: i64, samples: []const i16, nch: usize, fs: f64, words: []const u16) void {
+        // A latch owed is paid as soon as the tile window has reported (and at start-up, a
+        // panel the config has triggering on a channel begins to owe one).
+        self.updateLatches();
         for (self.set.items[0..self.set.len], self.triggers[0..self.set.len], self.pulses[0..self.set.len], 0..) |*p, *t, *pl, i| {
             const channel = p.triggerChannel();
             const made_from: u64 = if (channel != null) 0x100 + @as(u64, p.trigger.row) else p.trigger.line;
@@ -362,13 +417,10 @@ pub const Display = struct {
     }
 
     /// Panel `i`'s slope trigger on channel `ch`, fed a block, at that channel's threshold.
-    /// A panel in triggered mode latches the threshold: if it follows the noise, it becomes
-    /// fixed at what the tile window reported, or failing that at the trigger's own level
-    /// once it has seen a second of signal.
+    /// A panel that owes its channel a latch (`updateLatches`) and has no report to latch
+    /// at fixes it at the trigger's own level once it has seen a second of signal.
     fn feedSlope(self: *Display, i: usize, ch: u32, first: i64, samples: []const i16, nch: usize, fs: f64) void {
         const p = &self.set.items[i];
-        const triggering = p.mode == .triggered;
-        if (triggering) self.latch(ch);
         const want = self.slopeSettings(ch, p.trigger.holdoff_ms);
         // A threshold that changed sides: the trigger starts afresh, as what it holds (the
         // previous sample and a search, folded for the slope) is the other slope's.
@@ -382,10 +434,13 @@ pub const Display = struct {
         var ref: [oez.audio.max_car_ref]u32 = undefined;
         const nref = self.carChannels(ch, &ref);
         sl.feed(first, samples, nch, ch, ref[0..nref], &self.triggers[i]);
-        if (triggering and !self.thresholds.isFixed(ch) and sl.seen >= @as(u64, @intFromFloat(fs))) {
+        if (self.owes_latch[i] and !self.thresholds.isFixed(ch) and sl.seen >= @as(u64, @intFromFloat(fs))) {
             // Following the noise, the level is below zero; anything else is no estimate.
             const level_uv = sl.level() * oez.types.electrode_uv_per_bit;
-            if (level_uv < 0) self.setThreshold(ch, level_uv);
+            if (level_uv < 0) {
+                self.setThreshold(ch, level_uv);
+                self.owes_latch[i] = false;
+            }
         }
     }
 
@@ -398,32 +453,42 @@ pub const Display = struct {
     }
 
     /// If channel `ch`'s threshold follows the noise and the tile window has reported what
-    /// it is, fixes it there: a channel that a panel triggers on has a fixed threshold.
+    /// it is, fixes it there.
     fn latch(self: *Display, ch: u32) void {
         if (self.thresholds.isFixed(ch)) return;
         const uv = self.reported.get(ch) orelse return;
         self.setThreshold(ch, uv);
     }
 
-    /// Latches the threshold of every channel a panel in triggered mode triggers on.
-    fn latchTriggered(self: *Display) void {
-        for (self.set.items[0..self.set.len]) |*p| {
-            if (p.mode != .triggered) continue;
-            if (p.triggerChannel()) |ch| self.latch(ch);
+    /// Latching once: a panel that begins to trigger on a channel (into triggered mode, onto
+    /// a channel source, onto another row, or at start-up with a config that has it so)
+    /// owes that channel a latch, paid at once if a value is known (the threshold fixed
+    /// where the tile window reported it), else as soon as one is (a report, or the slope
+    /// trigger's own level after a second: `feedSlope`); a channel already fixed owes
+    /// nothing. Paid, the channel is left as the user sets it: put back to following the
+    /// noise, it triggers at `sigmas` x sigma and is not latched again until the panel
+    /// begins anew. Runs after input, after a control-window edit and with every block.
+    fn updateLatches(self: *Display) void {
+        for (self.set.items[0..self.set.len], 0..) |*p, i| {
+            const on: ?u32 = if (p.mode == .triggered) p.triggerChannel() else null;
+            if (on != self.trig_on[i]) {
+                self.trig_on[i] = on;
+                self.owes_latch[i] = on != null;
+            }
+            if (!self.owes_latch[i]) continue;
+            self.latch(on.?);
+            if (self.thresholds.isFixed(on.?)) self.owes_latch[i] = false;
         }
     }
 
-    /// A panel in triggered mode triggers on channel `ch`.
-    fn triggeredOn(self: *const Display, ch: u32) bool {
-        for (self.set.items[0..self.set.len]) |*p| {
-            if (p.mode == .triggered and p.triggerChannel() == ch) return true;
-        }
-        return false;
+    /// `n`: channel `ch`'s threshold from fixed to following the noise, or from following
+    /// the noise to fixed at its present value (nothing if that is not known).
+    pub fn toggleFollow(self: *Display, ch: u32) void {
+        if (self.thresholds.isFixed(ch)) self.setThreshold(ch, 0) else self.latch(ch);
     }
 
     /// A change to the thresholds, from the control window (or a request of the tile
-    /// window's). A channel a panel triggers on stays fixed: it is not returned to the
-    /// noise; scaling or flipping one that follows the noise latches it first.
+    /// window's). Scaling or flipping one that follows the noise latches it first.
     pub fn applyThreshold(self: *Display, edit: control.ThresholdEdit) void {
         switch (edit) {
             .sigmas => |up| {
@@ -440,7 +505,7 @@ pub const Display = struct {
                 if (self.thresholds.isFixed(ch)) self.setThreshold(ch, -self.thresholds.fixed_uv[ch]);
             },
             .set => |s| if (s.uv != 0) self.setThreshold(s.channel, s.uv) else self.applyThreshold(.{ .follow = s.channel }),
-            .follow => |ch| if (!self.triggeredOn(ch)) self.setThreshold(ch, 0),
+            .follow => |ch| self.setThreshold(ch, 0),
         }
     }
 
@@ -450,7 +515,12 @@ pub const Display = struct {
 
     /// Points input at the panel under the pointer (fractions of the display).
     pub fn pointAt(self: *Display, fx: f64, fy: f64) void {
-        if (!self.scripted_pointer) self.pointer_fy = fy;
+        if (!self.scripted_pointer) {
+            self.pointer_fy = fy;
+            self.pointer_fx = fx;
+        }
+        // A drag keeps the panel it began in.
+        if (self.drag != null) return;
         if (self.scripted_target) |t| {
             self.target = t;
         } else if (self.set.at(fx, fy)) |t| self.target = t;
@@ -513,18 +583,49 @@ pub const Display = struct {
         }
         p.clamp();
         // A panel that has begun to trigger on a channel (its mode, source or row).
-        self.latchTriggered();
+        self.updateLatches();
     }
 
     /// Applies what the user did to the target panel. True means quit.
-    pub fn applyInput(self: *Display, in: Input) bool {
-        if (self.scripted_target) |t| self.target = t;
+    pub fn applyInput(self: *Display, in_given: Input) bool {
+        if (self.drag == null) {
+            if (self.scripted_target) |t| self.target = t;
+        }
         var quit = false;
-        for (in.keys[0..in.num_keys]) |k| {
+        for (in_given.keys[0..in_given.num_keys]) |k| {
             if (k.isNamed(.escape) or k.is('q')) quit = true;
         }
         if (self.set.len == 0) return quit;
+        var in = in_given;
+        // A press on a threshold line, and what follows it while the button is held, are
+        // the line's: no focus, no trigger moved.
+        if (self.dragInput(in)) in.clicks = 0;
         const p = &self.set.items[self.target];
+        self.wheel(p, in);
+        for (in.keys[0..in.num_keys]) |k| self.key(p, k, in.shift);
+        // On an electrode row a left click focuses its channel, a right click listens to it
+        // (Ctrl: adds or removes it). A middle click anywhere clears the focus.
+        if (p.kind == .electrode) {
+            if (p.rowAt(self.pointer_fy)) |row| {
+                const channel = p.first_ch + @as(u32, @intCast(row));
+                if (in.clicks > 0) self.setFocus(channel);
+                if (in.right_clicks > 0) self.listenClick(channel, in.ctrl);
+            }
+        }
+        if (in.middle_clicks > 0) self.setFocus(null);
+        // A click on a row of a spike-triggered panel moves the trigger to that row.
+        if (in.clicks > 0 and p.mode == .triggered and p.trigger.source == .channel) {
+            if (p.rowAt(self.pointer_fy)) |row| p.trigger.row = @intCast(row);
+        }
+        p.clamp();
+        // A panel that has begun to trigger on a channel (s, t, r, or that click).
+        self.updateLatches();
+        return quit;
+    }
+
+    /// The wheel, pinch and `[` `]` on panel `p` (the target): its scale, a row's scale, its
+    /// time base (in triggered mode, the window around the trigger).
+    fn wheel(self: *Display, p: *Panel, in: Input) void {
         // One wheel click (about 15 units) changes a scale by 15 %.
         const per_unit = 0.0093;
         var sx = in.scroll_x;
@@ -552,7 +653,11 @@ pub const Display = struct {
             p.trigger.pre_ms *= zoom;
             p.trigger.post_ms *= zoom;
         } else p.span_s *= zoom;
-        for (in.keys[0..in.num_keys]) |k| switch (k) {
+    }
+
+    /// What key `k` does to panel `p` (the target); `shift` held.
+    fn key(self: *Display, p: *Panel, k: Key, shift: bool) void {
+        switch (k) {
             .named => {},
             .char => |c| switch (c) {
                 '-' => p.scale *= 1.25,
@@ -565,7 +670,7 @@ pub const Display = struct {
                 '\'' => if (p.filter.on) p.stepCorner(true, true),
                 'm' => p.mode = if (p.mode == .scroll) .sweep else .scroll,
                 // Shift+a; plain a is the tile window's autoscale key.
-                'a' => if (in.shift) {
+                'a' => if (shift) {
                     self.acknowledged = true;
                 },
                 // Triggered mode: s switches between a TTL line and spikes on the row under
@@ -577,38 +682,112 @@ pub const Display = struct {
                     } else p.setTrigSource(.ttl);
                 },
                 't' => p.mode = if (p.mode == .triggered) .scroll else .triggered,
+                // The threshold of the electrode row under the pointer: fixed <-> following
+                // the noise.
+                'n' => if (p.kind == .electrode) {
+                    if (p.rowAt(self.pointer_fy)) |row| self.toggleFollow(p.first_ch + @as(u32, @intCast(row)));
+                },
                 // Triggered on a TTL line: the digits pick the line.
                 '1'...'8' => if (p.mode == .triggered and p.trigger.source == .ttl) {
                     p.trigger.line = c - '0';
                 },
                 else => {},
             },
-        };
-        // On an electrode row a left click focuses its channel, a right click listens to it
-        // (Ctrl: adds or removes it). A middle click anywhere clears the focus.
-        if (p.kind == .electrode) {
-            if (p.rowAt(self.pointer_fy)) |row| {
-                const channel = p.first_ch + @as(u32, @intCast(row));
-                if (in.clicks > 0) self.setFocus(channel);
-                if (in.right_clicks > 0) self.listenClick(channel, in.ctrl);
+        }
+    }
+
+    /// The threshold lines under the pointer: a hand over one (within `grab_px` pixel rows,
+    /// inside the panel input goes to), a press there takes hold of it, moving drags it
+    /// (the threshold fixed at the value under the pointer), releasing lets go. True if the
+    /// left button's press this turn was the line's.
+    fn dragInput(self: *Display, in: Input) bool {
+        const py: f32 = @floatCast(self.pointer_fy * @as(f64, @floatFromInt(self.size[1])));
+        if (self.drag) |*d| {
+            if (in.left_down) {
+                self.dragTo(d, py);
+                self.cursor = .grabbing;
+                return true;
             }
+            self.drag = null;
         }
-        if (in.middle_clicks > 0) self.setFocus(null);
-        // A click on a row of a spike-triggered panel moves the trigger to that row.
-        if (in.clicks > 0 and p.mode == .triggered and p.trigger.source == .channel) {
-            if (p.rowAt(self.pointer_fy)) |row| p.trigger.row = @intCast(row);
+        const line = self.lineAtPointer(py);
+        self.cursor = if (line != null) .grab else .default;
+        const l = line orelse return false;
+        if (in.clicks == 0) return false;
+        // Pressed and let go within one turn: a click on the line, which does nothing.
+        if (in.left_down) {
+            self.drag = .{ .panel = self.target, .ch = l.ch, .row = l.row, .from_y = @floor(py) };
+            self.cursor = .grabbing;
         }
-        p.clamp();
-        // A panel that has begun to trigger on a channel (s, t, r, or that click).
-        self.latchTriggered();
-        return quit;
+        return true;
+    }
+
+    /// The dragged threshold follows the pointer at pixel height `py`: fixed at the value
+    /// under it (`levelAtPixelY`), clamped as `Thresholds.set` clamps. Crossing the row's
+    /// centre changes the sign (the slope). Nothing until the pointer leaves the pixel row
+    /// the line was taken at.
+    fn dragTo(self: *Display, d: *Drag, py: f32) void {
+        if (!d.moved and @floor(py) == d.from_y) return;
+        d.moved = true;
+        if (d.panel >= self.set.len) return;
+        const p = &self.set.items[d.panel];
+        const r = p.pixelRect(self.size[0], self.size[1]);
+        var uv = levelAtPixelY(p, r, d.row, @floor(py)) orelse return;
+        // Exactly on the centre: the smallest threshold on the side it was (0 would put it
+        // back to following the noise).
+        if (uv == 0) uv = std.math.copysign(@as(f64, oez.thresholds.min_uv), @as(f64, self.thresholdUv(d.ch) orelse -1));
+        self.setThreshold(d.ch, uv);
+    }
+
+    /// The threshold line under the pointer (at pixel height `py`), if there is one within
+    /// `grab_px` pixel rows, in the panel input goes to, with the pointer inside it (the
+    /// nearest, if both of its lines are).
+    fn lineAtPointer(self: *const Display, py: f32) ?ThresholdLine {
+        if (self.size[1] == 0 or self.target >= self.set.len) return null;
+        if (self.set.at(self.pointer_fx, self.pointer_fy) != self.target) return null;
+        const p = &self.set.items[self.target];
+        const lines = self.panelLines(p, p.pixelRect(self.size[0], self.size[1]));
+        var best: ?ThresholdLine = null;
+        for (lines.slice()) |l| {
+            const dist = @abs(@floor(py) - l.y);
+            if (dist > grab_px) continue;
+            if (best) |b| {
+                if (@abs(@floor(py) - b.y) <= dist) continue;
+            }
+            best = l;
+        }
+        return best;
+    }
+
+    /// The threshold lines panel `p` draws in `r`: a triggered panel's trigger channel's
+    /// threshold across the trigger's row, dashed, once known; the focused channel's across
+    /// its row, solid, where the row shows about the detector's band, unless it is the
+    /// trigger channel (one line per channel).
+    pub fn panelLines(self: *const Display, p: *const Panel, r: panels_mod.Rect) ThresholdLines {
+        var out: ThresholdLines = .{};
+        if (p.mode == .triggered) if (p.triggerChannel()) |ch| if (self.thresholdUv(ch)) |uv| {
+            if (levelPixelY(p, r, p.trigger.row, uv)) |y| {
+                out.items[out.len] = .{ .ch = ch, .row = p.trigger.row, .y = y, .dashed = true };
+                out.len += 1;
+            }
+        };
+        const row = self.focusedRow(p) orelse return out;
+        const ch = self.focus.?;
+        if (out.len > 0 and out.items[0].ch == ch) return out;
+        const uv = self.thresholdUv(ch) orelse return out;
+        if (!showsDetectorBand(p, row)) return out;
+        const y = levelPixelY(p, r, row, uv) orelse return out;
+        out.items[out.len] = .{ .ch = ch, .row = row, .y = y, .dashed = false };
+        out.len += 1;
+        return out;
     }
 
     /// What to draw: each panel's traces, then dividers and a bar marking the target panel,
     /// and into `batch` the text: each panel's title (name, time base, scale per row), its
-    /// row labels, and the status read-out in the bottom right corner.
+    /// row labels, and the status read-out in the bottom right corner. Keeps the display's
+    /// size (`size`), for input to find what was drawn where.
     pub fn frame(
-        self: *const Display,
+        self: *Display,
         surface: Surface,
         layout: *const oez.types.Layout,
         newest: i64,
@@ -622,6 +801,7 @@ pub const Display = struct {
         const width = surface.width;
         const height = surface.height;
         const fs = layout.sample_rate;
+        self.size = .{ width, height };
         batch.clear();
         var o: Output = .{ .draws = draws, .fills = fills, .batch = batch, .line_h = @round(batch.font.line_height) };
         const scene: Scene = .{ .surface = surface, .layout = layout, .newest = newest, .review = review, .notes = notes };
@@ -730,20 +910,16 @@ pub const Display = struct {
         const window = win.window;
         const px: f32 = @floatFromInt(r.x);
         const py: f32 = @floatFromInt(r.y);
-        const shown = p.shownRows();
         const w: f32 = @floatFromInt(r.w);
         const x0 = px + w * @as(f32, @floatFromInt(pre)) / @as(f32, @floatCast(window));
         if (p.trigger.source == .channel) {
-            // The level (the trigger channel's threshold, once known), as a line across the
-            // trigger's row (in the row's own scale: it sits on the trace when the panel
-            // shows the spike band).
-            const row_h = @as(f32, @floatFromInt(r.h)) / @as(f32, @floatFromInt(@max(shown, 1)));
-            const centre = py + (@as(f32, @floatFromInt(p.shownIndex(p.trigger.row) orelse 0)) + 0.5) * row_h;
-            if (self.thresholdUv(p.first_ch + p.trigger.row)) |uv| {
-                const dy: f32 = @floatCast(std.math.clamp(uv / p.rowScale(p.trigger.row), -1.5, 1.5));
+            // The level (the trigger channel's threshold, once known), as a dashed line
+            // across the trigger's row where a sample of that value is drawn (in the row's
+            // own scale: it sits on the trace when the panel shows the spike band).
+            for (self.panelLines(p, r).slice()) |l| {
+                if (!l.dashed) continue;
                 var x = px;
-                if (p.shownIndex(p.trigger.row) != null)
-                    while (x < px + w) : (x += 12) batch.rect(x, @round(centre - dy * row_h), 6, 1, theme.trigger_level);
+                while (x < px + w) : (x += 12) batch.rect(x, l.y, 6, 1, theme.trigger_level);
             }
         } else if (trig.recent(0)) |s| {
             const until = @min(s.fall orelse newest, s.t0 + post);
@@ -761,13 +937,12 @@ pub const Display = struct {
     }
 
     /// The focused channel's detection threshold (if known), as a line across its row where
-    /// the row is drawn and shows about the detector's band.
+    /// the row is drawn and shows about the detector's band (`panelLines`; not where the
+    /// trigger's dashed line is already that channel's).
     fn thresholdLine(self: *const Display, o: *Output, p: *const Panel, r: panels_mod.Rect) void {
-        const row = self.focusedRow(p) orelse return;
-        const uv = self.thresholdUv(self.focus.?) orelse return;
-        if (!showsDetectorBand(p, row)) return;
-        const y = levelPixelY(p, r, row, uv) orelse return;
-        o.batch.rect(@floatFromInt(r.x), y, @floatFromInt(r.w), 1, theme.tile_threshold);
+        for (self.panelLines(p, r).slice()) |l| {
+            if (!l.dashed) o.batch.rect(@floatFromInt(r.x), l.y, @floatFromInt(r.w), 1, theme.tile_threshold);
+        }
     }
 
     /// The row is in focus or listened to: its label carries a mark, so it is always shown.
@@ -1455,6 +1630,8 @@ const frame_states = [_][]const u8{
     "focus in a triggered panel and a sweep panel",
     "focus: a threshold beyond the row's extent, clamped",
     "thinned labels: the focused row and the rows listened to are labelled all the same",
+    "dragging the focused row's line: drawn at the value dragged to",
+    "the trigger row in focus: one line, dashed, in the threshold's colour",
 };
 
 /// Puts state `k` of `frame_states` into `st`.
@@ -1477,6 +1654,8 @@ fn frameState(st: *FrameState, k: usize) void {
         21 => focusHiddenState(st),
         22 => focusModesState(st),
         24 => thinnedMarksState(st),
+        25 => dragState(st),
+        26 => triggerFocusState(st),
         else => unreachable,
     }
 }
@@ -1766,6 +1945,32 @@ fn focusModesState(st: *FrameState) void {
     st.feed(8, false);
 }
 
+/// As state 15 (the line on pixel row 103), the line taken hold of and dragged, the left
+/// button still down, to pixel row 130: its centre 130.5 is 28.887 px = 1.2793 R below row
+/// 5's centre at 101.6129, at 800 µV/row -1023.4 µV, fixed; the line drawn on 130.
+fn dragState(st: *FrameState) void {
+    focusLineState(st, 15);
+    st.display.size = .{ st.width, st.height };
+    st.display.pointAt(0.5, 103.5 / 700.0);
+    _ = st.display.applyInput(.{ .clicks = 1, .left_down = true });
+    st.display.pointAt(0.5, 130.5 / 700.0);
+    _ = st.display.applyInput(.{ .left_down = true });
+}
+
+/// Port A triggered on row 4 (channel 4, which has spikes), and channel 4 in focus: the
+/// trigger's dashed line alone, where the solid one would be: row 4's centre 4.5 R =
+/// 98.4375, -50 µV at 400 µV/row 0.125 R below: 101.17, the pixel row 101.
+fn triggerFocusState(st: *FrameState) void {
+    var a = focusPanel();
+    a.mode = .triggered;
+    a.setTrigSource(.channel);
+    a.trigger.row = 4;
+    st.panels(&.{a});
+    st.display.focus = 4;
+    st.reportAll(-50);
+    st.feed(2, true);
+}
+
 /// Writes the batch's quads as rectangles and runs of text (glyphs on one row, of one
 /// colour, 8 pixels apart). Returns how many of each; with `w` null, only counts.
 fn writeQuads(w: ?*std.Io.Writer, verts: []const font.Vertex) !struct { rects: usize, runs: usize } {
@@ -1802,7 +2007,7 @@ fn writeQuads(w: ?*std.Io.Writer, verts: []const font.Vertex) !struct { rects: u
 }
 
 /// Runs `frame` on `st` and writes what it returned.
-fn writeFrame(w: *std.Io.Writer, name: []const u8, st: *const FrameState, gains: []f32, vertices: []font.Vertex) !void {
+fn writeFrame(w: *std.Io.Writer, name: []const u8, st: *FrameState, gains: []f32, vertices: []font.Vertex) !void {
     const layout = frameLayout();
     const face = frameFont(if (st.no_text) 0 else 16);
     var batch: font.Batch = .{ .font = &face, .vertices = vertices };
@@ -1909,6 +2114,51 @@ test "the threshold line is on the pixel row where the shader draws a sample of 
     }
 }
 
+test "script steps: press, move and release drag a line; n toggles" {
+    const runScript = @import("script.zig").runScript;
+    var d = lineDisplay();
+    d.pointer_fy = 0;
+    const script = "0:pointer=0.25,0.1764;0:press;1:move=0.25,0.2;2:release;3:pointer=0.25,0.0186;3:n";
+    var pos: usize = 0;
+    var t: f64 = 0;
+    while (t < 4) : (t += 1) {
+        var in: Input = .{};
+        runScript(script, &pos, t, &in, &d);
+        if (d.scripted_target) |s| d.target = s;
+        _ = d.applyInput(in);
+        switch (@as(u32, @intFromFloat(t))) {
+            // 0.1764 x 700 = 123.5: on the focused row's line, pressed.
+            0 => try testing.expect(d.drag != null and d.drag.?.ch == 5 and in.left_down and in.clicks == 1),
+            // Held down without a step saying so; 0.2 x 700 = 140: channel 5 dragged there.
+            1 => {
+                try testing.expect(in.left_down and in.clicks == 0);
+                const p = &d.set.items[0];
+                try testing.expectEqual(140, levelPixelY(p, p.pixelRect(1000, 700), 5, d.thresholds.fixed_uv[5]).?);
+            },
+            2 => try testing.expect(d.drag == null and !in.left_down and !d.scripted_left),
+            // Row 0 (13 px down): n fixes channel 0 where it was reported.
+            else => try testing.expectEqual(-50, d.thresholds.fixed_uv[0]),
+        }
+    }
+}
+
+test "a dragged line is drawn where the shader draws a sample of the value it set" {
+    const st = try testing.allocator.create(FrameState);
+    defer testing.allocator.destroy(st);
+    const vertices = try testing.allocator.alloc(font.Vertex, max_text_vertices);
+    defer testing.allocator.free(vertices);
+    frameState(st, 25);
+    const p = &st.display.set.items[0];
+    const r = p.pixelRect(st.width, st.height);
+    const uv = st.display.thresholds.fixed_uv[5];
+    try testing.expectApproxEqAbs(-1023.4, uv, 0.05);
+    try testing.expectEqual(130, levelPixelY(p, r, 5, uv).?);
+    try testing.expect(@abs(130 + 0.5 - shaderPixelY(p, r, 5, uv)) <= 0.5 + 1e-3);
+    const quads = try thresholdRects(st, vertices);
+    try testing.expectEqual(1, quads.len);
+    try testing.expectEqual([4]f32{ 0, 130, 1000, 1 }, quads.items[0]);
+}
+
 const ThresholdRects = struct {
     items: [8][4]f32 = undefined,
     len: usize = 0,
@@ -1919,7 +2169,7 @@ const ThresholdRects = struct {
 
 /// The rectangles in the colour of the threshold line that `frame` draws for `st`, as
 /// x, y, w, h.
-fn thresholdRects(st: *const FrameState, vertices: []font.Vertex) !ThresholdRects {
+fn thresholdRects(st: *FrameState, vertices: []font.Vertex) !ThresholdRects {
     const layout = frameLayout();
     const face = frameFont(16);
     var batch: font.Batch = .{ .font = &face, .vertices = vertices };
@@ -2115,7 +2365,7 @@ test "latching: without a report, after the trigger's first second of signal" {
     try testing.expectEqual(-33, e.thresholds.fixed_uv[9]);
 }
 
-test "latching: only a panel in triggered mode latches; a triggered channel is not returned to the noise" {
+test "latching: only a panel in triggered mode latches; a trigger channel can be returned to the noise" {
     var d = clickDisplay(0);
     d.reported.uv[3] = -42;
     d.reported.len = 32;
@@ -2129,10 +2379,13 @@ test "latching: only a panel in triggered mode latches; a triggered channel is n
     in.keys[0] = .{ .char = 't' };
     _ = d.applyInput(in);
     try testing.expectEqual(-42, d.thresholds.fixed_uv[3]);
-    // Back to the noise: refused while triggered on; another channel goes.
+    // Back to the noise: allowed while triggered on (the control window's "follow", and
+    // the tile window's request with 0), and so is any other channel.
     d.applyThreshold(.{ .follow = 3 });
+    try testing.expect(!d.thresholds.isFixed(3));
+    d.setThreshold(3, -42);
     d.applyThreshold(.{ .set = .{ .channel = 3, .uv = 0 } });
-    try testing.expectEqual(-42, d.thresholds.fixed_uv[3]);
+    try testing.expect(!d.thresholds.isFixed(3));
     d.thresholds.set(12, -70);
     d.applyThreshold(.{ .follow = 12 });
     try testing.expect(!d.thresholds.isFixed(12));
@@ -2148,6 +2401,255 @@ test "latching: only a panel in triggered mode latches; a triggered channel is n
     // The global sigmas: one step.
     d.applyThreshold(.{ .sigmas = true });
     try testing.expectEqual(5, d.thresholds.sigmas);
+}
+
+/// The `n` key, over whatever row the pointer is on.
+fn keyInput(c: u8) Input {
+    var in: Input = .{ .num_keys = 1 };
+    in.keys[0] = .{ .char = c };
+    return in;
+}
+
+test "latching once: a trigger channel put back to the noise stays there until triggering starts anew" {
+    var d = triggeredDisplay(7);
+    for (0..32) |ch| d.reported.uv[ch] = -40 - @as(f32, @floatFromInt(ch));
+    d.reported.len = 32;
+    _ = d.applyInput(keyInput('s'));
+    try testing.expectEqual(-47, d.thresholds.fixed_uv[7]);
+    // n over row 7: back to the noise. Neither input, nor blocks with reports, nor the
+    // slope trigger's own second of signal latch it again.
+    _ = d.applyInput(keyInput('n'));
+    try testing.expect(!d.thresholds.isFixed(7));
+    _ = d.applyInput(.{});
+    _ = feedNoise(&d, 0, 1.5);
+    try testing.expect(!d.thresholds.isFixed(7));
+    // It triggers at sigmas x its own sigma, continuously.
+    try testing.expect(d.slopes[0].?.settings.auto and d.slopes[0].?.settings.auto_sigmas == 4.5);
+    // Starting anew (t out of triggered mode and back): latched again where reported.
+    _ = d.applyInput(keyInput('t'));
+    try testing.expect(!d.thresholds.isFixed(7));
+    d.reported.uv[7] = -52;
+    _ = d.applyInput(keyInput('t'));
+    try testing.expectEqual(-52, d.thresholds.fixed_uv[7]);
+    // The control window's "follow" the same: it stays with the noise.
+    d.applyThreshold(.{ .follow = 7 });
+    _ = feedNoise(&d, 45000, 0.1);
+    try testing.expect(!d.thresholds.isFixed(7));
+    // A config that triggers on a channel from the start owes it a latch: paid with the
+    // first block that comes with a report.
+    var e = triggeredDisplay(0);
+    e.set.items[0].setTrigSource(.channel);
+    e.set.items[0].trigger.row = 3;
+    _ = feedNoise(&e, 0, 0.01);
+    try testing.expect(!e.thresholds.isFixed(3) and e.owes_latch[0]);
+    e.reported.uv[3] = -61;
+    e.reported.len = 32;
+    _ = feedNoise(&e, 300, 0.01);
+    try testing.expectEqual(-61, e.thresholds.fixed_uv[3]);
+    try testing.expect(!e.owes_latch[0]);
+    // A channel already fixed when the panel begins owes nothing.
+    var f = triggeredDisplay(0);
+    f.thresholds.set(3, 75);
+    f.applyPanelEdit(0, .{ .trig_source = .channel });
+    f.applyPanelEdit(0, .{ .trig_row = 3 });
+    try testing.expect(!f.owes_latch[0]);
+    f.applyThreshold(.{ .follow = 3 });
+    f.reported.uv[3] = -30;
+    f.reported.len = 32;
+    _ = feedNoise(&f, 0, 0.01);
+    try testing.expect(!f.thresholds.isFixed(3));
+}
+
+test "n: fixed -> following the noise -> fixed at its present value; nothing without a value or off an electrode row" {
+    var d = clickDisplay(5);
+    d.reported.uv[5] = -50;
+    d.reported.len = 6;
+    d.setThreshold(5, 80);
+    _ = d.applyInput(keyInput('n'));
+    try testing.expect(!d.thresholds.isFixed(5));
+    _ = d.applyInput(keyInput('n'));
+    try testing.expectEqual(-50, d.thresholds.fixed_uv[5]);
+    _ = d.applyInput(keyInput('n'));
+    try testing.expect(!d.thresholds.isFixed(5));
+    // Row 9: no value known; nothing happens.
+    d.pointer_fy = 9.5 / 32.0;
+    _ = d.applyInput(keyInput('n'));
+    try testing.expect(!d.thresholds.isFixed(9));
+    // Over AUX: nothing (channel 48 + row is not an electrode).
+    d.target = 1;
+    d.setThreshold(5, -70);
+    d.pointer_fy = 5.5 / 32.0;
+    _ = d.applyInput(keyInput('n'));
+    try testing.expectEqual(-70, d.thresholds.fixed_uv[5]);
+}
+
+test "the value at a pixel row and the pixel row of a value round-trip" {
+    // Rows of every height the stored states have, with hidden rows and own scales.
+    var a = framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0.25, .w = 0.5, .h = 0.7 });
+    a.per_row.hidden.set(2, true);
+    a.per_row.gain[5] = 2;
+    a.per_row.gain[6] = 0.37;
+    a.scale = 137;
+    for ([_][2]u32{ .{ 1000, 700 }, .{ 320, 180 }, .{ 1920, 1080 }, .{ 777, 333 } }) |size| {
+        const r = a.pixelRect(size[0], size[1]);
+        for ([_]usize{ 0, 5, 6, 31 }) |row| {
+            const top = levelPixelY(&a, r, row, a.rowScale(row) * 1.5).?;
+            const bottom = levelPixelY(&a, r, row, -a.rowScale(row) * 1.5).?;
+            // Every pixel row within ±1.5 rows: its value is drawn on that row again.
+            var y = top;
+            while (y <= bottom) : (y += 1) {
+                const v = levelAtPixelY(&a, r, row, y).?;
+                try testing.expectEqual(y, levelPixelY(&a, r, row, v).?);
+            }
+            // And a value's pixel row gives back that value to within half a pixel.
+            var v: f64 = -1.4 * a.rowScale(row);
+            while (v < 1.4 * a.rowScale(row)) : (v += 0.0371 * a.rowScale(row)) {
+                const back = levelAtPixelY(&a, r, row, levelPixelY(&a, r, row, v).?).?;
+                const half_px = 0.5 * a.rowScale(row) / (@as(f64, @floatFromInt(r.h)) / 31.0);
+                try testing.expect(@abs(back - v) <= half_px + 1e-9);
+            }
+            // Beyond ±1.5 rows: the value at the clamp.
+            try testing.expectEqual(1.5 * a.rowScale(row), levelAtPixelY(&a, r, row, top - 30).?);
+        }
+        // A hidden row has neither.
+        try testing.expectEqual(null, levelAtPixelY(&a, r, 2, 100));
+    }
+}
+
+/// Port A (left half, 1000 x 700 drawn) filtered 300-6000 Hz, triggered on row 9, channel
+/// 5 in focus, every channel reported at -50 µV: the focus line on pixel row 123 (as in
+/// the stored state 22), the trigger's at 210 (row 9's centre 9.5 R = 207.8125, -50 µV at
+/// 400 µV/row 0.125 R below: 210.547).
+fn lineDisplay() Display {
+    var d = clickDisplay(0);
+    const p = &d.set.items[0];
+    p.filter.on = true;
+    p.mode = .triggered;
+    p.setTrigSource(.channel);
+    p.trigger.row = 9;
+    d.focus = 5;
+    for (0..32) |ch| d.reported.uv[ch] = -50;
+    d.reported.len = 32;
+    d.size = .{ 1000, 700 };
+    d.updateLatches();
+    return d;
+}
+
+/// The pointer at pixel (x, y) of the 1000 x 700 display (the panel under it found as
+/// `pointAt` would).
+fn pointerAt(d: *Display, x: f64, y: f64) void {
+    d.pointAt(x / 1000, (y + 0.5) / 700);
+}
+
+test "a threshold line is taken hold of within 4 px, inside its panel, only where one is drawn" {
+    var d = lineDisplay();
+    const r = d.set.items[0].pixelRect(1000, 700);
+    const lines = d.panelLines(&d.set.items[0], r);
+    try testing.expectEqual(2, lines.len);
+    try testing.expect(lines.items[0].dashed and lines.items[0].ch == 9 and lines.items[0].y == 210);
+    try testing.expect(!lines.items[1].dashed and lines.items[1].ch == 5 and lines.items[1].y == 123);
+    // Over each line and up to 4 pixel rows from it: a hand; 5 away: not.
+    for ([_]f32{ 123, 210 }) |at| {
+        for ([_]f32{ -5, -4, 0, 4, 5 }) |off| {
+            pointerAt(&d, 250, at + off);
+            _ = d.applyInput(.{});
+            try testing.expectEqual(if (@abs(off) <= 4) Cursor.grab else Cursor.default, d.cursor);
+        }
+    }
+    // The pointer outside the panel (over AUX, at the same height), with input still
+    // going to Port A: nothing.
+    d.pointer_fx = 0.6;
+    d.pointer_fy = 123.5 / 700.0;
+    _ = d.applyInput(.{});
+    try testing.expectEqual(Cursor.default, d.cursor);
+    // No line where none is drawn: the focused row raw ("thr"), the trigger's level not
+    // known (no report, following the noise).
+    d = lineDisplay();
+    d.set.items[0].per_row.raw.set(5, true);
+    d.thresholds.follow(9);
+    d.reported.len = 0;
+    for ([_]f32{ 123, 210 }) |at| {
+        pointerAt(&d, 250, at);
+        _ = d.applyInput(.{});
+        try testing.expectEqual(Cursor.default, d.cursor);
+    }
+    // Before anything is drawn the display has no size: nothing to take hold of.
+    d = lineDisplay();
+    d.size = .{ 0, 0 };
+    pointerAt(&d, 250, 123);
+    _ = d.applyInput(.{});
+    try testing.expectEqual(Cursor.default, d.cursor);
+}
+
+test "dragging a threshold line: fixed at the value under the pointer, the sign by the side; no focus, no trigger moved" {
+    var d = lineDisplay();
+    const p = &d.set.items[0];
+    const r = p.pixelRect(1000, 700);
+    // Press on the trigger's line (channel 9): the line's, not a click on row 9 (which
+    // would focus channel 9).
+    pointerAt(&d, 250, 211);
+    _ = d.applyInput(.{ .clicks = 1, .left_down = true });
+    try testing.expectEqual(Cursor.grabbing, d.cursor);
+    try testing.expectEqual(5, d.focus.?);
+    try testing.expectEqual(-50, d.thresholds.fixed_uv[9]);
+    // Not moved off the pixel row yet: unchanged.
+    _ = d.applyInput(.{ .left_down = true });
+    try testing.expectEqual(-50, d.thresholds.fixed_uv[9]);
+    // Down to 230: below the centre, falling, under the pointer.
+    pointerAt(&d, 250, 230);
+    _ = d.applyInput(.{ .left_down = true });
+    try testing.expectApproxEqAbs(@as(f32, (207.8125 - 230.5) / 21.875 * 400), d.thresholds.fixed_uv[9], 1e-3);
+    try testing.expectEqual(230, levelPixelY(p, r, 9, d.thresholds.fixed_uv[9]).?);
+    // Up across the centre to 205 (over row 9, with the pointer off the panel's other
+    // line): rising.
+    pointerAt(&d, 250, 205);
+    _ = d.applyInput(.{ .left_down = true });
+    try testing.expect(d.thresholds.fixed_uv[9] > 0);
+    try testing.expectEqual(205, levelPixelY(p, r, 9, d.thresholds.fixed_uv[9]).?);
+    // Through the focused row's line and beyond the panel's other rows: still channel 9's
+    // drag, clamped at 1.5 rows.
+    pointerAt(&d, 600, 120);
+    _ = d.applyInput(.{ .left_down = true, .clicks = 1 });
+    try testing.expectEqual(600, d.thresholds.fixed_uv[9]);
+    try testing.expectEqual(0, d.target);
+    try testing.expect(d.focus.? == 5 and p.trigger.row == 9);
+    // Released: the drag ends, the threshold stays; the line is at the clamp (175), and the
+    // pointer over it is a hand.
+    _ = d.applyInput(.{});
+    try testing.expectEqual(null, d.drag);
+    try testing.expectEqual(600, d.thresholds.fixed_uv[9]);
+    pointerAt(&d, 250, 175);
+    _ = d.applyInput(.{});
+    try testing.expectEqual(Cursor.grab, d.cursor);
+    // The focused row's line: a press there does not move the trigger to row 5.
+    pointerAt(&d, 250, 123);
+    _ = d.applyInput(.{ .clicks = 1, .left_down = true });
+    pointerAt(&d, 250, 130);
+    _ = d.applyInput(.{ .left_down = true });
+    _ = d.applyInput(.{});
+    try testing.expectEqual(9, p.trigger.row);
+    try testing.expectEqual(130, levelPixelY(p, r, 5, d.thresholds.fixed_uv[5]).?);
+    // Pressed and let go within one turn on a line: nothing at all.
+    const was = d.thresholds.fixed_uv[5];
+    pointerAt(&d, 250, 132);
+    _ = d.applyInput(.{ .clicks = 1 });
+    try testing.expect(d.drag == null and d.thresholds.fixed_uv[5] == was and p.trigger.row == 9 and d.focus.? == 5);
+    // A click elsewhere does what it did: focus row 12, and the trigger moves there.
+    pointerAt(&d, 250, 12.5 * 21.875);
+    _ = d.applyInput(.{ .clicks = 1 });
+    try testing.expect(d.focus.? == 12 and p.trigger.row == 12);
+    // Clamped as Thresholds.set clamps: at 50 µV/row, pixel row 119 (just above row 5's
+    // centre at 120.3125) is 1.86 µV, kept at 5 µV, rising; 120 just below, -5 µV.
+    d = lineDisplay();
+    d.set.items[0].scale = 50;
+    pointerAt(&d, 250, levelPixelY(&d.set.items[0], r, 5, -50).?);
+    _ = d.applyInput(.{ .clicks = 1, .left_down = true });
+    pointerAt(&d, 250, 119);
+    _ = d.applyInput(.{ .left_down = true });
+    try testing.expectEqual(5, d.thresholds.fixed_uv[5]);
+    pointerAt(&d, 250, 120);
+    _ = d.applyInput(.{ .left_down = true });
+    try testing.expectEqual(-5, d.thresholds.fixed_uv[5]);
 }
 
 test "a trigger channel's threshold that changes sides starts the slope trigger afresh" {

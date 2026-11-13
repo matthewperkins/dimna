@@ -7,11 +7,14 @@
 //!   pinch=F                         a pinch by that scale factor
 //!   pointer=FX,FY, panel=N          put the pointer there (fractions of the display), or on
 //!                                   panel N (1-based)
+//!   move=FX,FY                      move the pointer there (as pointer=; for a drag)
 //!   click, cclick                   a left click, a Ctrl+left click
+//!   press, release                  press the left button and hold it (from then on every
+//!                                   turn has it down, as dragging does), let it go
 //!   rclick, crclick, mclick         a right click, a Ctrl+right click, a middle click
 //!   type=TEXT                       typed text
 //!   enter, esc, tab, backspace, space, left, right, pgup, pgdn, home, end
-//!   or keys such as "]]==" (any of [ ] - = r m f t s a / ` 1-9 , . ' q, and A for
+//!   or keys such as "]]==" (any of [ ] - = r m f t s a n / ` 1-9 , . ' q, and A for
 //!   Shift+a). ';' separates steps, so the ';' key itself cannot be scripted.
 
 const std = @import("std");
@@ -22,6 +25,8 @@ const Display = @import("display.zig").Display;
 /// `panel=N` (1-based) and `pointer=FX,FY` (fractions of the display) choose the panel that
 /// input goes to, as moving the pointer would.
 pub fn runScript(script: []const u8, pos: *usize, elapsed_s: f64, in: *Input, display: *Display) void {
+    // A button pressed by the script stays down until it releases it.
+    if (display.scripted_left) in.left_down = true;
     while (pos.* < script.len) {
         const rest = script[pos.*..];
         const end = std.mem.indexOfScalar(u8, rest, ';') orelse rest.len;
@@ -95,17 +100,25 @@ pub fn runScript(script: []const u8, pos: *usize, elapsed_s: f64, in: *Input, di
             in.ctrl = true;
         } else if (std.mem.eql(u8, what, "mclick")) {
             in.middle_clicks += 1;
-        } else if (std.mem.startsWith(u8, what, "pointer=")) {
-            var it = std.mem.tokenizeScalar(u8, what[8..], ',');
+        } else if (std.mem.eql(u8, what, "press")) {
+            in.clicks += 1;
+            in.left_down = true;
+            display.scripted_left = true;
+        } else if (std.mem.eql(u8, what, "release")) {
+            in.left_down = false;
+            display.scripted_left = false;
+        } else if (std.mem.startsWith(u8, what, "pointer=") or std.mem.startsWith(u8, what, "move=")) {
+            var it = std.mem.tokenizeScalar(u8, what[std.mem.indexOfScalar(u8, what, '=').? + 1 ..], ',');
             const fx = std.fmt.parseFloat(f64, it.next() orelse "0") catch 0;
             const fy = std.fmt.parseFloat(f64, it.next() orelse "0") catch 0;
             if (display.set.at(fx, fy)) |i| display.scripted_target = i;
             display.pointer_fy = fy;
+            display.pointer_fx = fx;
             display.scripted_pointer = true;
         } else for (what) |ch| {
             if (in.num_keys == in.keys.len) break;
             // The keys that are shortcuts somewhere; anything else is not a key step.
-            if (std.mem.indexOfScalar(u8, "[]-=rmftsaA/`\\123456789,.'q", ch) == null) continue;
+            if (std.mem.indexOfScalar(u8, "[]-=rmftsanA/`\\123456789,.'q", ch) == null) continue;
             // A is Shift+a: the key's character without modifiers, with Shift held (as
             // `window.zig` reports keys).
             if (ch == 'A') in.shift = true;

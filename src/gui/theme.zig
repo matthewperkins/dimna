@@ -52,8 +52,10 @@ pub const tint_pulse: Colour = .{ 90, 150, 255, 30 };
 
 /// The vertical line at the trigger (t0).
 pub const trigger_line: Colour = .{ 200, 210, 230, 150 };
-/// A slope trigger's level: the dashed line across its row.
-pub const trigger_level: Colour = .{ 255, 205, 120, 200 };
+/// A slope trigger's level: the dashed line across its row. It is the trigger channel's
+/// detection threshold, so it is in the threshold's colour; the dashes say it is the
+/// trigger's.
+pub const trigger_level: Colour = tile_threshold;
 
 // Display: bars and badges.
 
