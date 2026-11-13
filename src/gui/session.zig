@@ -633,9 +633,6 @@ pub fn carryOver(new: *panels_mod.Set, old: *const panels_mod.Set) void {
         p.trigger.line = o.trigger.line;
         p.trigger.source = o.trigger.source;
         p.trigger.row = @min(o.trigger.row, p.rows -| 1);
-        p.trigger.rising = o.trigger.rising;
-        p.trigger.auto = o.trigger.auto;
-        p.trigger.level_uv = o.trigger.level_uv;
         p.trigger.holdoff_ms = o.trigger.holdoff_ms;
         p.trigger.other_pre_ms = o.trigger.other_pre_ms;
         p.trigger.other_post_ms = o.trigger.other_post_ms;

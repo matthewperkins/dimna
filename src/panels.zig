@@ -9,9 +9,8 @@
 //!   scale = 400                   # optional: µV per row (V per row for aux and adc)
 //!   mode = "sweep"                # optional: see `Mode`; a top-level `mode` sets all panels
 //!   trigger = 2                   # optional, with mode = "triggered": the TTL input line
-//!   trigger_channel = 5           # or: a slope trigger on this row of the panel (spikes);
-//!                                 # then level_uv = -60 (else the level follows the noise),
-//!                                 # slope = "rising" (else falling), holdoff_ms = 0
+//!   trigger_channel = 5           # or: a slope trigger on this row of the panel (spikes),
+//!                                 # at that channel's threshold; holdoff_ms = 0
 //!   pre_ms = 10                   # optional: time shown before the trigger (slope: 1)
 //!   post_ms = 40                  # optional: and after it (slope: 2)
 //!   sweeps = 10                   # optional: how many sweeps are overlaid
@@ -97,15 +96,10 @@ pub const Trigger = struct {
     source: TrigSource = .ttl,
     /// The TTL input line (1-based).
     line: u8 = 2,
-    /// Slope trigger: the panel row it listens to, the slope, whether the level follows
-    /// the noise or is fixed (µV), and the holdoff after each trigger.
+    /// Slope trigger: the panel row it listens to, and the holdoff after each trigger. Its
+    /// level and slope are that channel's detection threshold (thresholds.zig).
     row: u32 = 0,
-    rising: bool = false,
-    auto: bool = true,
-    level_uv: f64 = -50,
     holdoff_ms: f64 = 0,
-    /// The level in use right now, µV (set by the display, for showing).
-    level_now_uv: f64 = 0,
     /// The window around the trigger in ms, and how many sweeps are overlaid.
     pre_ms: f64 = 10,
     post_ms: f64 = 40,
@@ -221,6 +215,12 @@ pub const Panel = struct {
         self.trigger.source = source;
         std.mem.swap(f64, &self.trigger.pre_ms, &self.trigger.other_pre_ms);
         std.mem.swap(f64, &self.trigger.post_ms, &self.trigger.other_post_ms);
+    }
+
+    /// The channel the panel's slope trigger listens to, if it has one (whatever the mode).
+    pub fn triggerChannel(self: *const Panel) ?u32 {
+        if (self.trigger.source != .channel or self.kind != .electrode) return null;
+        return self.first_ch + self.trigger.row;
     }
 
     /// Units per row of one row.
@@ -364,7 +364,6 @@ pub const Panel = struct {
         self.trigger.post_ms = std.math.clamp(self.trigger.post_ms, 0.2, 2000);
         self.trigger.row = @min(self.trigger.row, self.rows -| 1);
         self.trigger.holdoff_ms = std.math.clamp(self.trigger.holdoff_ms, 0, 1000);
-        self.trigger.level_uv = std.math.clamp(self.trigger.level_uv, -5000, 5000);
         self.trigger.overlay = std.math.clamp(self.trigger.overlay, 1, @import("sweeps.zig").max_sweeps);
         self.trigger.line = std.math.clamp(self.trigger.line, 1, 8);
     }
@@ -428,11 +427,19 @@ pub const Set = struct {
 
 pub const Error = error{BadPanel};
 
+/// A slope trigger's level, whether it followed the noise, and its slope were a panel's
+/// settings once; they are the trigger channel's threshold now (thresholds.zig). A config
+/// or view file that has them is read all the same, without them.
+pub const retired_keys = [_][]const u8{ "level_uv", "level_auto", "slope" };
+
 /// What `fromConfig` or `applyViews` found wrong, for the caller's message. The caller
 /// owns it and passes a pointer.
 pub const Diagnostics = struct {
     buf: [200]u8 = undefined,
     len: usize = 0,
+    /// Set when a table had one of `retired_keys` (which is not an error): for the caller
+    /// to say once that they are no longer used.
+    retired: bool = false,
 
     /// After `error.BadPanel`, what was wrong with the config or the view file.
     pub fn message(self: *const Diagnostics) []const u8 {
@@ -559,16 +566,9 @@ fn applyKeys(p: *Panel, doc: toml.Document, table: []const u8, i: usize, diag: *
         p.setTrigSource(.channel);
         p.trigger.row = @intFromFloat(v - 1);
     }
-    if (doc.number(table, i, "level_uv")) |v| {
-        p.trigger.auto = false;
-        p.trigger.level_uv = v;
-    }
-    if (doc.boolean(table, i, "level_auto")) |on| p.trigger.auto = on;
-    if (doc.string(table, i, "slope")) |v| {
-        if (std.mem.eql(u8, v, "rising"))
-            p.trigger.rising = true
-        else if (!std.mem.eql(u8, v, "falling"))
-            return diag.fail("panel {d}: slope must be \"falling\" or \"rising\"", .{i + 1});
+    // Keys an earlier version wrote: accepted, whatever their value, and not used.
+    for (retired_keys) |key| {
+        if (doc.get(table, i, key) != null) diag.retired = true;
     }
     if (doc.number(table, i, "holdoff_ms")) |v| p.trigger.holdoff_ms = v;
     if (doc.number(table, i, "pre_ms")) |v| p.trigger.pre_ms = v;
@@ -902,15 +902,14 @@ test "slope trigger from the config, with its own window" {
         \\rect = [0, 0, 1, 1]
         \\mode = "triggered"
         \\trigger_channel = 5
-        \\level_uv = -80
-        \\slope = "rising"
+        \\holdoff_ms = 5
         \\post_ms = 3
     , null), &l, &diag);
     const p = &set.items[0];
     try testing.expectEqual(TrigSource.channel, p.trigger.source);
     try testing.expectEqual(4, p.trigger.row);
-    try testing.expect(p.trigger.rising and !p.trigger.auto);
-    try testing.expectEqual(-80, p.trigger.level_uv);
+    try testing.expectEqual(5, p.trigger.holdoff_ms);
+    try testing.expect(!diag.retired);
     try testing.expectEqual(1, p.trigger.pre_ms);
     try testing.expectEqual(3, p.trigger.post_ms);
     // Back to TTL: its own window returns, and the slope's is kept for next time.
@@ -1124,8 +1123,7 @@ pub fn renderViews(w: *std.Io.Writer, set: *const Set) !void {
         if (p.kind == .electrode) {
             try w.print("trigger_source = \"{s}\"\n", .{if (p.trigger.source == .channel) "spikes" else "ttl"});
             if (p.trigger.source == .channel) try w.print("trigger_channel = {d}\n", .{p.trigger.row + 1});
-            try w.print("level_uv = {d}\nlevel_auto = {}\n", .{ p.trigger.level_uv, p.trigger.auto });
-            try w.print("slope = \"{s}\"\nholdoff_ms = {d}\n", .{ if (p.trigger.rising) "rising" else "falling", p.trigger.holdoff_ms });
+            try w.print("holdoff_ms = {d}\n", .{p.trigger.holdoff_ms});
         }
         try w.print("pre_ms = {d}\npost_ms = {d}\n", .{ p.trigger.pre_ms, p.trigger.post_ms });
         if (p.kind == .electrode) {
@@ -1173,8 +1171,7 @@ test "a view file brings back what the control window had set" {
     pa.mode = .triggered;
     pa.setTrigSource(.channel);
     pa.trigger.row = 4;
-    pa.trigger.auto = false;
-    pa.trigger.level_uv = -75;
+    pa.trigger.holdoff_ms = 20;
     pa.trigger.post_ms = 3.5;
     pa.span_s = 0.5;
     const pb = &set.items[1];
@@ -1201,9 +1198,11 @@ test "a view file brings back what the control window had set" {
     try testing.expectEqual(Mode.triggered, qa.mode);
     try testing.expectEqual(TrigSource.channel, qa.trigger.source);
     try testing.expectEqual(4, qa.trigger.row);
-    try testing.expect(!qa.trigger.auto);
-    try testing.expectEqual(-75, qa.trigger.level_uv);
+    try testing.expectEqual(20, qa.trigger.holdoff_ms);
     try testing.expectEqual(3.5, qa.trigger.post_ms);
+    // The keys that are no longer panel settings are not written.
+    for (retired_keys) |key| try testing.expect(std.mem.indexOf(u8, w.buffered(), key) == null);
+    try testing.expect(!diag.retired);
     try testing.expectEqual(0.5, qa.span_s);
     const qb = &again.items[1];
     try testing.expectEqual(250, qb.scale);
@@ -1228,6 +1227,67 @@ test "a view file brings back what the control window had set" {
     ));
 }
 
+test "a view file of the version before, with level_uv, level_auto and slope, is read without an error" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const l = testLayout();
+    var diag: Diagnostics = .{};
+    var set = try fromConfig(try toml.parse(a, "[[panel]]\nname = \"Port A\"\nsource = \"A1\"\nrect = [0, 0, 1, 1]", null), &l, &diag);
+    // As that version's `renderViews` wrote a slope-triggered electrode panel, and a TTL
+    // panel that never wrote them.
+    const old =
+        \\# oEZ view settings, written by "Save view" in the control window and applied on top
+        \\# of config.toml at launch (panels are matched by name). Delete the file to go back to
+        \\# the config's own settings.
+        \\
+        \\[[view]]
+        \\name = "Port A"
+        \\rows = 16
+        \\span_s = 0.5
+        \\scale = 250
+        \\mode = "triggered"
+        \\trigger = 2
+        \\sweeps = 10
+        \\trigger_source = "spikes"
+        \\trigger_channel = 5
+        \\level_uv = -75
+        \\level_auto = false
+        \\slope = "rising"
+        \\holdoff_ms = 2
+        \\pre_ms = 1
+        \\post_ms = 3.5
+        \\band = [300, 6000]
+        \\filtered = true
+        \\raw_rows = []
+        \\hide = []
+        \\car = false
+        \\car_ref = []
+        \\car_subtract = []
+        \\
+        \\[tiles]
+        \\port = "all"
+        \\range_uv = [0, 0]
+    ;
+    try testing.expectEqual(1, try applyViews(&set, try toml.parse(a, old, null), &diag));
+    try testing.expect(diag.retired);
+    const p = &set.items[0];
+    try testing.expectEqual(Mode.triggered, p.mode);
+    try testing.expectEqual(TrigSource.channel, p.trigger.source);
+    try testing.expectEqual(4, p.trigger.row);
+    try testing.expectEqual(2, p.trigger.holdoff_ms);
+    try testing.expectEqual(3.5, p.trigger.post_ms);
+    try testing.expectEqual(250, p.scale);
+    // Whatever their value: a slope that was never valid is no longer an error either.
+    diag = .{};
+    _ = try applyViews(&set, try toml.parse(a, "[[view]]\nname = \"Port A\"\nslope = \"up\"\nlevel_auto = 3", null), &diag);
+    try testing.expect(diag.retired);
+    // Without them, nothing to say.
+    diag = .{};
+    _ = try applyViews(&set, try toml.parse(a, "[[view]]\nname = \"Port A\"\nholdoff_ms = 3", null), &diag);
+    try testing.expect(!diag.retired);
+}
+
 test "two parses with different errors each report their own message" {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
@@ -1243,10 +1303,10 @@ test "two parses with different errors each report their own message" {
     var set = try fromConfig(try toml.parse(a, "[[panel]]\nname = \"P\"\nsource = \"A1\"\nrect = [0,0,1,1]", null), &l, &view_diag);
     try testing.expectError(
         error.BadPanel,
-        applyViews(&set, try toml.parse(a, "[[view]]\nname = \"P\"\nslope = \"up\"", null), &view_diag),
+        applyViews(&set, try toml.parse(a, "[[view]]\nname = \"P\"\ntrigger_source = \"laser\"", null), &view_diag),
     );
     try testing.expectEqualStrings("panel 1: trigger is a TTL input line, 1 to 8", config_diag.message());
-    try testing.expectEqualStrings("panel 1: slope must be \"falling\" or \"rising\"", view_diag.message());
+    try testing.expectEqualStrings("panel 1: trigger_source must be \"ttl\" or \"spikes\"", view_diag.message());
     // The top-level mode reaches the default panels through the call, not a global: one
     // config's mode does not carry over to the next.
     var diag: Diagnostics = .{};

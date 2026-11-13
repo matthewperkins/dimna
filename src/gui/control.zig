@@ -213,15 +213,24 @@ pub const PanelAction = union(enum) {
     trig_source: panels.TrigSource,
     /// Move the slope trigger to the next (+1) or previous row.
     trig_row: i32,
-    trig_rising: bool,
-    /// The level follows the noise (true) or is fixed.
-    trig_auto: bool,
-    /// Multiply the fixed level.
-    trig_level: f64,
     /// One step up (true) or down through the holdoff values.
     trig_holdoff: bool,
     overlay: u32,
     reset,
+};
+
+/// A change to the detection thresholds (thresholds.zig), which the display owns.
+pub const ThresholdEdit = union(enum) {
+    /// The global sigmas, one step up (true) or down.
+    sigmas: bool,
+    /// Multiply a channel's fixed threshold (one that follows the noise is latched first).
+    scale: struct { channel: u32, factor: f32 },
+    /// Fix a channel's threshold at `uv` µV (its sign the slope; 0: back to the noise).
+    set: struct { channel: u32, uv: f32 },
+    /// Back to the noise.
+    follow: u32,
+    /// Change the sign, so the slope (one that follows the noise is latched first).
+    flip: u32,
 };
 
 /// What a click in the control window asks for, by who carries it out. The display's loop
@@ -229,6 +238,7 @@ pub const PanelAction = union(enum) {
 pub const Edit = union(enum) {
     /// A change to one panel (the display's own settings).
     panel: struct { index: usize, action: PanelAction },
+    threshold: ThresholdEdit,
     audio: AudioAction,
     board: BoardAction,
     /// Start (true) or stop a recording.
@@ -246,6 +256,9 @@ pub const Edit = union(enum) {
 
 pub const Snapshot = struct {
     set: panels.Set = .{},
+    /// The detection thresholds, and what the tile window last reported as in use.
+    thresholds: oez.thresholds.Thresholds = .{},
+    reported: oez.thresholds.Reported = .{},
     /// The panel that keys and the wheel act on, on the display.
     target: usize = 0,
     status: Status = .{},
@@ -430,8 +443,9 @@ fn build(ui: *ui_mod.Ui, cfg: *const Config, snap: *const Snapshot, shared: *Sha
     reviewSection(ui, &snap.review, shared);
     notesSection(ui, &snap.notes, shared);
     audioSection(ui, &snap.audio, shared);
+    thresholdSection(ui, &snap.thresholds, shared);
     boardSection(ui, &snap.board, snap.rec.state, shared);
-    for (snap.set.items[0..snap.set.len], 0..) |*p, i| panelSection(ui, p, i, shared);
+    for (snap.set.items[0..snap.set.len], 0..) |*p, i| panelSection(ui, p, i, snap, shared);
     ui.text("On the display: wheel = scale, Ctrl+wheel = one row, Shift+wheel = time,", theme.text_dim);
     ui.newline();
     ui.text("keys  - =  [ ]  m  t  f  , .  ; '  r  q", theme.text_dim);
@@ -625,6 +639,19 @@ fn audioSection(ui: *ui_mod.Ui, au: *const AudioStatus, shared: *Shared) void {
     ui.separator();
 }
 
+/// The spike detection threshold of every channel that follows the noise: how many sigmas
+/// below zero.
+fn thresholdSection(ui: *ui_mod.Ui, th: *const oez.thresholds.Thresholds, shared: *Shared) void {
+    var buf: [32]u8 = undefined;
+    ui.text("spike threshold", theme.text_dim);
+    ui.column(136);
+    const ds = ui.stepper("", format.fmt(&buf, "{d} σ", .{th.sigmas}), 60);
+    if (ds != 0) shared.push(.{ .threshold = .{ .sigmas = ds > 0 } });
+    ui.text("below zero, where a channel's threshold follows the noise", theme.text_dim);
+    ui.newline();
+    ui.separator();
+}
+
 /// The headstage chips: these change what is recorded. The amplifier band and the DSP
 /// apply without a gap; the sample rate and half-channel mode need a restart, which waits
 /// while `rec` records.
@@ -685,13 +712,13 @@ fn boardSection(ui: *ui_mod.Ui, bd: *const BoardStatus, rec: RecStatus.State, sh
 }
 
 /// One panel `i` of the display: what it shows and every setting of it.
-fn panelSection(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Shared) void {
+fn panelSection(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, snap: *const Snapshot, shared: *Shared) void {
     panelView(ui, p, i, shared);
     if (p.kind == .electrode) {
         panelFilter(ui, p, i, shared);
         panelCar(ui, p, i, shared);
     }
-    if (p.mode == .triggered) panelTrigger(ui, p, i, shared);
+    if (p.mode == .triggered) panelTrigger(ui, p, i, snap, shared);
     ui.separator();
 }
 
@@ -797,8 +824,10 @@ fn panelCar(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Shared) v
     } else ui.newline();
 }
 
-/// A triggered panel's trigger: a TTL line, or (electrodes) a level crossing on a row.
-fn panelTrigger(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Shared) void {
+/// A triggered panel's trigger: a TTL line, or (electrodes) a crossing of a row's channel's
+/// threshold: its level, which a stepper scales, and its slope, which the falling / rising
+/// pair flips.
+fn panelTrigger(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, snap: *const Snapshot, shared: *Shared) void {
     var value_buf: [48]u8 = undefined;
     ui.text("trigger", theme.text_dim);
     ui.column(64);
@@ -818,24 +847,23 @@ fn panelTrigger(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Share
     } else {
         const dw = ui.stepper("", format.fmt(&value_buf, "row {d}", .{p.trigger.row + 1}), 60);
         if (dw != 0) shared.push(.{ .panel = .{ .index = i, .action = .{ .trig_row = dw } } });
-        if (ui.button("falling", !p.trigger.rising) and p.trigger.rising)
-            shared.push(.{ .panel = .{ .index = i, .action = .{ .trig_rising = false } } });
-        if (ui.button("rising", p.trigger.rising) and !p.trigger.rising)
-            shared.push(.{ .panel = .{ .index = i, .action = .{ .trig_rising = true } } });
+        // The trigger channel's threshold, if known (it is latched once known); until then
+        // it follows the noise, falling.
+        const ch = p.first_ch + p.trigger.row;
+        const uv = snap.thresholds.known(&snap.reported, ch);
+        const rising = if (uv) |v| v > 0 else false;
+        if (ui.button("falling", !rising) and rising) shared.push(.{ .threshold = .{ .flip = ch } });
+        if (ui.button("rising", rising) and !rising) shared.push(.{ .threshold = .{ .flip = ch } });
         ui.newline();
         ui.text("level", theme.text_dim);
         ui.column(64);
-        if (ui.button("follows noise", p.trigger.auto) and !p.trigger.auto)
-            shared.push(.{ .panel = .{ .index = i, .action = .{ .trig_auto = true } } });
-        if (ui.button("fixed", !p.trigger.auto) and p.trigger.auto)
-            shared.push(.{ .panel = .{ .index = i, .action = .{ .trig_auto = false } } });
-        if (p.trigger.auto) {
-            ui.text(format.fmt(&value_buf, "{d:.0} µV", .{p.trigger.level_now_uv}), theme.text_bright);
-        } else {
-            // "+" makes the level larger in size, whichever its sign.
-            const dv = ui.stepper("", format.fmt(&value_buf, "{d:.0} µV", .{p.trigger.level_uv}), 70);
-            if (dv != 0) shared.push(.{ .panel = .{ .index = i, .action = .{ .trig_level = if (dv > 0) 1.15 else 1.0 / 1.15 } } });
-        }
+        // "+" makes the level larger in size, whichever its sign.
+        const level_text = if (uv) |v|
+            format.fmt(&value_buf, "{d:.0} µV", .{v})
+        else
+            format.fmt(&value_buf, "{d} σ", .{snap.thresholds.sigmas});
+        const dv = ui.stepper("", level_text, 70);
+        if (dv != 0) shared.push(.{ .threshold = .{ .scale = .{ .channel = ch, .factor = if (dv > 0) 1.15 else 1.0 / 1.15 } } });
         const dh = ui.stepper("holdoff", format.fmt(&value_buf, "{d} ms", .{p.trigger.holdoff_ms}), 60);
         if (dh != 0) shared.push(.{ .panel = .{ .index = i, .action = .{ .trig_holdoff = dh > 0 } } });
     }
@@ -1090,8 +1118,7 @@ fn panelSnapshots(out: []Snapshot, base: *const Snapshot) void {
     a.mode = .triggered;
     a.trigger.source = .channel;
     a.trigger.row = 4;
-    a.trigger.auto = false;
-    a.trigger.level_uv = -62;
+    s.thresholds.set(4, -62);
     a.trigger.holdoff_ms = 2;
     a.trigger.pre_ms = 1;
     a.trigger.post_ms = 2;
@@ -1112,8 +1139,8 @@ fn panelSnapshots(out: []Snapshot, base: *const Snapshot) void {
     s.audio.listen_len = 0;
     out[5] = s;
 
-    // Other panels: a slope trigger whose level follows the noise, rising; AUX, ADC and a
-    // TTL panel triggered on TTL; the status not yet valid; the recording finishing.
+    // Other panels: a slope trigger at a fixed level, rising; AUX, ADC and a TTL panel
+    // triggered on TTL; the status not yet valid; the recording finishing.
     s = base.*;
     s.status = .{};
     s.rec.state = .stopping;
@@ -1122,8 +1149,7 @@ fn panelSnapshots(out: []Snapshot, base: *const Snapshot) void {
     var e = layoutPanel("Port C", .electrode, 4);
     e.mode = .triggered;
     e.trigger.source = .channel;
-    e.trigger.rising = true;
-    e.trigger.level_now_uv = -48.4;
+    s.thresholds.set(0, 48.4);
     s.set.items[0] = e;
     s.set.items[1] = layoutPanel("AUX", .aux, 3);
     s.set.items[2] = layoutPanel("ADC", .adc, 8);

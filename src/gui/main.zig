@@ -292,6 +292,7 @@ pub fn main(init: std.process.Init) !u8 {
             snap_dirty = true;
             switch (e) {
                 .panel => |p| display.applyPanelEdit(p.index, p.action),
+                .threshold => |t| display.applyThreshold(t),
                 .audio => |a| display.applyAudio(a),
                 .board => |b| board_ctl.edit(b, acq, pl.fs, recording.active(), io, gpa, config_path),
                 .record => |on| {
@@ -452,6 +453,8 @@ pub fn main(init: std.process.Init) !u8 {
             snap_target = display.target;
             shared.publish(&.{
                 .set = display.set,
+                .thresholds = display.thresholds,
+                .reported = display.reported,
                 .target = display.target,
                 .status = status,
                 .ring_overflow = acq.ring_overflow.load(.monotonic),

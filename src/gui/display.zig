@@ -110,14 +110,12 @@ pub const ReviewView = struct {
     behind_s: f64,
 };
 
-/// What triggers a panel's sweeps: "TTL2", or "row 5 falling -62 µV".
-pub fn trigText(buf: []u8, p: *const Panel) []const u8 {
-    return if (p.trigger.source == .ttl)
-        format.fmt(buf, "TTL{d}", .{p.trigger.line})
-    else
-        format.fmt(buf, "row {d} {s} {d:.0} µV", .{
-            p.trigger.row + 1, if (p.trigger.rising) "rising" else "falling", p.trigger.level_now_uv,
-        });
+/// What triggers a panel's sweeps: "TTL2", or "row 5 falling -62 µV" (the trigger channel's
+/// threshold `uv`, its sign the slope), or before that is known "row 5 falling 4.5 σ".
+pub fn trigText(buf: []u8, p: *const Panel, uv: ?f32, sigmas: f32) []const u8 {
+    if (p.trigger.source == .ttl) return format.fmt(buf, "TTL{d}", .{p.trigger.line});
+    const v = uv orelse return format.fmt(buf, "row {d} falling {d} σ", .{ p.trigger.row + 1, sigmas });
+    return format.fmt(buf, "row {d} {s} {d:.0} µV", .{ p.trigger.row + 1, if (v > 0) "rising" else "falling", v });
 }
 
 /// How many recent samples to filter again when a panel's corners change: what its window
@@ -324,7 +322,7 @@ pub const Display = struct {
             .focus => |channel| self.setFocus(channel),
             .unfocus => self.setFocus(null),
             .listen => |l| self.listenClick(l.channel, l.add),
-            .threshold => |t| self.setThreshold(t.channel, t.uv),
+            .threshold => |t| self.applyThreshold(.{ .set = .{ .channel = t.channel, .uv = t.uv } }),
         }
     }
 
@@ -349,32 +347,100 @@ pub const Display = struct {
     /// interleaved, as acquired) for slope triggers, the digital `words` for TTL edges.
     pub fn feedBlock(self: *Display, first: i64, samples: []const i16, nch: usize, fs: f64, words: []const u16) void {
         for (self.set.items[0..self.set.len], self.triggers[0..self.set.len], self.pulses[0..self.set.len], 0..) |*p, *t, *pl, i| {
-            const channel = p.trigger.source == .channel and p.kind == .electrode;
-            const made_from: u64 = if (channel) 0x100 + @as(u64, p.trigger.row) else p.trigger.line;
+            const channel = p.triggerChannel();
+            const made_from: u64 = if (channel != null) 0x100 + @as(u64, p.trigger.row) else p.trigger.line;
             if (self.trig_made_from[i] != made_from) {
                 self.trig_made_from[i] = made_from;
                 t.reset(p.trigger.line);
                 self.slopes[i] = null;
             }
-            if (channel) {
-                const want: oez.slope.Settings = .{
-                    .rising = p.trigger.rising,
-                    .auto = p.trigger.auto,
-                    .level = p.trigger.level_uv / oez.types.electrode_uv_per_bit,
-                    .holdoff_ms = p.trigger.holdoff_ms,
-                };
-                if (self.slopes[i] == null) self.slopes[i] = .init(fs, want);
-                const sl = &self.slopes[i].?;
-                sl.settings = want;
-                // With the panel's reference, if the trigger's row is one it applies to.
-                var ref: [oez.audio.max_car_ref]u32 = undefined;
-                const nref = self.carChannels(p.first_ch + p.trigger.row, &ref);
-                sl.feed(first, samples, nch, p.first_ch + p.trigger.row, ref[0..nref], t);
-                p.trigger.level_now_uv = sl.level() * oez.types.electrode_uv_per_bit;
-            } else t.feed(first, words);
+            if (channel) |ch| self.feedSlope(i, ch, first, samples, nch, fs) else t.feed(first, words);
             if (p.tint_line == 0) continue;
             if (pl.line != p.tint_line) pl.reset(p.tint_line);
             pl.feed(first, words);
+        }
+    }
+
+    /// Panel `i`'s slope trigger on channel `ch`, fed a block, at that channel's threshold.
+    /// A panel in triggered mode latches the threshold: if it follows the noise, it becomes
+    /// fixed at what the tile window reported, or failing that at the trigger's own level
+    /// once it has seen a second of signal.
+    fn feedSlope(self: *Display, i: usize, ch: u32, first: i64, samples: []const i16, nch: usize, fs: f64) void {
+        const p = &self.set.items[i];
+        const triggering = p.mode == .triggered;
+        if (triggering) self.latch(ch);
+        const want = self.slopeSettings(ch, p.trigger.holdoff_ms);
+        // A threshold that changed sides: the trigger starts afresh, as what it holds (the
+        // previous sample and a search, folded for the slope) is the other slope's.
+        if (self.slopes[i]) |sl| {
+            if (sl.settings.rising != want.rising) self.slopes[i] = null;
+        }
+        if (self.slopes[i] == null) self.slopes[i] = .init(fs, want);
+        const sl = &self.slopes[i].?;
+        sl.settings = want;
+        // With the panel's reference, if the trigger's row is one it applies to.
+        var ref: [oez.audio.max_car_ref]u32 = undefined;
+        const nref = self.carChannels(ch, &ref);
+        sl.feed(first, samples, nch, ch, ref[0..nref], &self.triggers[i]);
+        if (triggering and !self.thresholds.isFixed(ch) and sl.seen >= @as(u64, @intFromFloat(fs))) {
+            // Following the noise, the level is below zero; anything else is no estimate.
+            const level_uv = sl.level() * oez.types.electrode_uv_per_bit;
+            if (level_uv < 0) self.setThreshold(ch, level_uv);
+        }
+    }
+
+    /// What the slope trigger on channel `ch` is to do: trigger at its fixed threshold (the
+    /// sign the slope), or follow the noise as a threshold that is not fixed does.
+    fn slopeSettings(self: *const Display, ch: u32, holdoff_ms: f64) oez.slope.Settings {
+        if (!self.thresholds.isFixed(ch)) return .{ .auto = true, .auto_sigmas = self.thresholds.sigmas, .holdoff_ms = holdoff_ms };
+        const uv = self.thresholds.fixed_uv[ch];
+        return .{ .rising = uv > 0, .auto = false, .level = uv / oez.types.electrode_uv_per_bit, .holdoff_ms = holdoff_ms };
+    }
+
+    /// If channel `ch`'s threshold follows the noise and the tile window has reported what
+    /// it is, fixes it there: a channel that a panel triggers on has a fixed threshold.
+    fn latch(self: *Display, ch: u32) void {
+        if (self.thresholds.isFixed(ch)) return;
+        const uv = self.reported.get(ch) orelse return;
+        self.setThreshold(ch, uv);
+    }
+
+    /// Latches the threshold of every channel a panel in triggered mode triggers on.
+    fn latchTriggered(self: *Display) void {
+        for (self.set.items[0..self.set.len]) |*p| {
+            if (p.mode != .triggered) continue;
+            if (p.triggerChannel()) |ch| self.latch(ch);
+        }
+    }
+
+    /// A panel in triggered mode triggers on channel `ch`.
+    fn triggeredOn(self: *const Display, ch: u32) bool {
+        for (self.set.items[0..self.set.len]) |*p| {
+            if (p.mode == .triggered and p.triggerChannel() == ch) return true;
+        }
+        return false;
+    }
+
+    /// A change to the thresholds, from the control window (or a request of the tile
+    /// window's). A channel a panel triggers on stays fixed: it is not returned to the
+    /// noise; scaling or flipping one that follows the noise latches it first.
+    pub fn applyThreshold(self: *Display, edit: control.ThresholdEdit) void {
+        switch (edit) {
+            .sigmas => |up| {
+                const was = self.thresholds.sigmas;
+                self.thresholds.stepSigmas(up);
+                if (self.thresholds.sigmas != was) self.thresholds_changed = true;
+            },
+            .scale => |s| {
+                self.latch(s.channel);
+                if (self.thresholds.isFixed(s.channel)) self.setThreshold(s.channel, self.thresholds.fixed_uv[s.channel] * s.factor);
+            },
+            .flip => |ch| {
+                self.latch(ch);
+                if (self.thresholds.isFixed(ch)) self.setThreshold(ch, -self.thresholds.fixed_uv[ch]);
+            },
+            .set => |s| if (s.uv != 0) self.setThreshold(s.channel, s.uv) else self.applyThreshold(.{ .follow = s.channel }),
+            .follow => |ch| if (!self.triggeredOn(ch)) self.setThreshold(ch, 0),
         }
     }
 
@@ -436,20 +502,6 @@ pub const Display = struct {
             .car_sub_all => |on| p.reference.sub = if (on) .all(p.rows) else .{},
             .trig_source => |s| p.setTrigSource(s),
             .trig_row => |d| p.trigger.row = @intCast(std.math.clamp(@as(i64, p.trigger.row) + d, 0, @as(i64, p.rows) - 1)),
-            .trig_rising => |on| {
-                // The fixed level changes side with the slope.
-                if (on != p.trigger.rising) p.trigger.level_uv = -p.trigger.level_uv;
-                p.trigger.rising = on;
-            },
-            .trig_auto => |on| {
-                // Going to a fixed level starts from where the level is now.
-                if (!on and p.trigger.auto and p.trigger.level_now_uv != 0) p.trigger.level_uv = @round(p.trigger.level_now_uv);
-                p.trigger.auto = on;
-            },
-            .trig_level => |f| p.trigger.level_uv = if (@abs(p.trigger.level_uv * f) < 5)
-                (if (p.trigger.level_uv < 0) -5.0 else 5.0)
-            else
-                p.trigger.level_uv * f,
             .trig_holdoff => |up| p.trigger.holdoff_ms = oez.board_config.step(
                 f64,
                 &.{ 0, 1, 2, 5, 10, 20, 50, 100, 200, 500 },
@@ -460,6 +512,8 @@ pub const Display = struct {
             .reset => self.reset(index),
         }
         p.clamp();
+        // A panel that has begun to trigger on a channel (its mode, source or row).
+        self.latchTriggered();
     }
 
     /// Applies what the user did to the target panel. True means quit.
@@ -545,6 +599,8 @@ pub const Display = struct {
             if (p.rowAt(self.pointer_fy)) |row| p.trigger.row = @intCast(row);
         }
         p.clamp();
+        // A panel that has begun to trigger on a channel (s, t, r, or that click).
+        self.latchTriggered();
         return quit;
     }
 
@@ -603,7 +659,9 @@ pub const Display = struct {
         if (t.sweeping) sweepCursor(o, r, t);
         dividers(o, r);
         if (o.line_h <= 0) return;
-        panelTitle(o, p, r, t.in_review, shown_sweeps);
+        var trig_buf: [48]u8 = undefined;
+        const trig_uv = if (p.triggerChannel()) |ch| self.thresholdUv(ch) else null;
+        panelTitle(o, p, r, t.in_review, shown_sweeps, trigText(&trig_buf, p, trig_uv, self.thresholds.sigmas));
         if (p.mode == .triggered) timeAxis(o, p, r);
         self.rowLabels(o, p, r, scene.layout);
     }
@@ -676,14 +734,17 @@ pub const Display = struct {
         const w: f32 = @floatFromInt(r.w);
         const x0 = px + w * @as(f32, @floatFromInt(pre)) / @as(f32, @floatCast(window));
         if (p.trigger.source == .channel) {
-            // The level, as a line across the trigger's row (in the row's own
-            // scale: it sits on the trace when the panel shows the spike band).
+            // The level (the trigger channel's threshold, once known), as a line across the
+            // trigger's row (in the row's own scale: it sits on the trace when the panel
+            // shows the spike band).
             const row_h = @as(f32, @floatFromInt(r.h)) / @as(f32, @floatFromInt(@max(shown, 1)));
             const centre = py + (@as(f32, @floatFromInt(p.shownIndex(p.trigger.row) orelse 0)) + 0.5) * row_h;
-            const dy: f32 = @floatCast(std.math.clamp(p.trigger.level_now_uv / p.rowScale(p.trigger.row), -1.5, 1.5));
-            var x = px;
-            if (p.shownIndex(p.trigger.row) != null)
-                while (x < px + w) : (x += 12) batch.rect(x, @round(centre - dy * row_h), 6, 1, theme.trigger_level);
+            if (self.thresholdUv(p.first_ch + p.trigger.row)) |uv| {
+                const dy: f32 = @floatCast(std.math.clamp(uv / p.rowScale(p.trigger.row), -1.5, 1.5));
+                var x = px;
+                if (p.shownIndex(p.trigger.row) != null)
+                    while (x < px + w) : (x += 12) batch.rect(x, @round(centre - dy * row_h), 6, 1, theme.trigger_level);
+            }
         } else if (trig.recent(0)) |s| {
             const until = @min(s.fall orelse newest, s.t0 + post);
             const x1 = px + w * @as(f32, @floatFromInt(until - s.t0 + pre)) / @as(f32, @floatCast(window));
@@ -980,8 +1041,8 @@ fn dividers(o: *Output, r: panels_mod.Rect) void {
 }
 
 /// A panel's title, top left (a TTL lane strip's top right): its name, time base or
-/// trigger window, scale and band.
-fn panelTitle(o: *Output, p: *const Panel, r: panels_mod.Rect, in_review: bool, shown_sweeps: usize) void {
+/// trigger window (and what triggers it, `trig`), scale and band.
+fn panelTitle(o: *Output, p: *const Panel, r: panels_mod.Rect, in_review: bool, shown_sweeps: usize, trig: []const u8) void {
     const batch = o.batch;
     const px: f32 = @floatFromInt(r.x);
     const py: f32 = @floatFromInt(r.y);
@@ -990,14 +1051,13 @@ fn panelTitle(o: *Output, p: *const Panel, r: panels_mod.Rect, in_review: bool, 
     var scale_buf: [24]u8 = undefined;
     var title_buf: [128]u8 = undefined;
     var band_buf: [48]u8 = undefined;
-    var trig_buf: [48]u8 = undefined;
     // A TTL panel has no scale to name.
     var per_row_buf: [32]u8 = undefined;
     const per_row = if (p.kind == .ttl) "" else format.fmt(&per_row_buf, "   {s}/row", .{fmtScale(&scale_buf, p.kind, p.scale)});
     const title = if (p.mode == .triggered)
         format.fmt(&title_buf, "{s}   {s}   -{d:.1}/+{d:.1} ms{s}{s}   {d} sweeps{s}", .{
             p.name(),
-            trigText(&trig_buf, p),
+            trig,
             p.trigger.pre_ms,
             p.trigger.post_ms,
             per_row,
@@ -1149,10 +1209,14 @@ pub fn makeDisplay(args: Args, layout: *const oez.types.Layout) ?Display {
         log.err("config: {s}", .{diag.message()});
         return null;
     };
+    const retired = "level_uv, level_auto and slope are no longer used (a slope trigger is at its channel's threshold)";
+    if (diag.retired) log.info("config: {s}", .{retired});
+    diag.retired = false;
     const applied = panels_mod.applyViews(&set, args.views_doc, &diag) catch blk: {
         log.warn("view file: {s}; the rest of it is ignored", .{diag.message()});
         break :blk 0;
     };
+    if (diag.retired) log.info("view file: {s}", .{retired});
     if (applied > 0) log.info("view file: settings for {d} panels", .{applied});
     if (args.sweep) for (set.slice()) |*p| {
         p.mode = .sweep;
@@ -1369,7 +1433,7 @@ const frame_states = [_][]const u8{
     "scrolling: filter, raw, hidden, row scale, reference; AUX, ADC, TTL lanes",
     "sweep: cursor, tint line high across it",
     "triggered on TTL: sweeps, the newest part-filled, pulse shading",
-    "triggered on a slope: fixed level, and following the noise",
+    "triggered on a slope: a fixed level, and one latched from following the noise",
     "notes: this pass, the previous pass, one being typed",
     "review from the file",
     "review from the file, still reading",
@@ -1483,8 +1547,6 @@ fn slopeState(st: *FrameState) void {
     a.mode = .triggered;
     a.setTrigSource(.channel);
     a.trigger.row = 4;
-    a.trigger.auto = false;
-    a.trigger.level_uv = -62;
     a.trigger.holdoff_ms = 2;
     a.per_row.hidden.set(1, true);
     a.per_row.gain[4] = 1.5;
@@ -1493,10 +1555,11 @@ fn slopeState(st: *FrameState) void {
     b.mode = .triggered;
     b.setTrigSource(.channel);
     b.trigger.row = 2;
-    b.trigger.rising = true;
-    b.trigger.level_uv = 50;
     b.trigger.overlay = 5;
     st.panels(&.{ a, b });
+    // Port A's trigger channel (4) fixed; Port B's (34) follows the noise, without a tile
+    // window to report it: the trigger latches it after its first second of signal.
+    st.display.thresholds.set(4, -62);
     st.feed(3, true);
 }
 
@@ -1960,6 +2023,151 @@ test "a channel's threshold: fixed, else as reported; the tile window's request 
     d.thresholds_changed = false;
     d.tileRequest(.{ .threshold = .{ .channel = 5, .uv = 0 } });
     try testing.expect(!d.thresholds_changed);
+}
+
+/// Feeds `d` `seconds` of `frameSample` from sample `from` (in blocks of 256, no TTL),
+/// as acquisition would. Returns the sample after the last.
+fn feedNoise(d: *Display, from: i64, seconds: f64) i64 {
+    var samples: [256 * frame_nch]i16 = undefined;
+    const words: [256]u16 = @splat(0);
+    var first = from;
+    const end = from + @as(i64, @intFromFloat(seconds * frame_fs));
+    while (first < end) : (first += 256) {
+        for (0..256) |k| for (0..frame_nch) |ch| {
+            samples[k * frame_nch + ch] = frameSample(first + @as(i64, @intCast(k)), ch);
+        };
+        d.feedBlock(first, &samples, frame_nch, frame_fs, &words);
+    }
+    return first;
+}
+
+/// `clickDisplay` with Port A in triggered mode (on TTL to begin with).
+fn triggeredDisplay(row: usize) Display {
+    var d = clickDisplay(row);
+    d.set.items[0].mode = .triggered;
+    return d;
+}
+
+test "latching: a channel a panel starts triggering on is fixed at its reported threshold" {
+    var d = triggeredDisplay(7);
+    for (0..32) |ch| d.reported.uv[ch] = -40 - @as(f32, @floatFromInt(ch));
+    d.reported.len = 32;
+    // s over row 7: spikes on row 7; channel 7 is fixed where it was reported.
+    var in: Input = .{ .num_keys = 1 };
+    in.keys[0] = .{ .char = 's' };
+    _ = d.applyInput(in);
+    try testing.expectEqual(7, d.set.items[0].triggerChannel().?);
+    try testing.expect(d.thresholds.isFixed(7) and d.thresholds_changed);
+    try testing.expectEqual(-47, d.thresholds.fixed_uv[7]);
+    try testing.expect(!d.thresholds.isFixed(6) and !d.thresholds.isFixed(9));
+    // The report moving on does not move it.
+    d.reported.uv[7] = -60;
+    _ = feedNoise(&d, 0, 0.05);
+    try testing.expectEqual(-47, d.thresholds.fixed_uv[7]);
+    var buf: [48]u8 = undefined;
+    try testing.expectEqualStrings("row 8 falling -47 µV", trigText(&buf, &d.set.items[0], d.thresholdUv(7), 4.5));
+    // A fixed one is left alone: a click on row 9 moves the trigger there, and channel 9
+    // keeps its rising 80 µV. Channel 7 stays as it was latched.
+    d.thresholds.set(9, 80);
+    d.pointer_fy = 9.5 / 32.0;
+    _ = d.applyInput(.{ .clicks = 1 });
+    try testing.expectEqual(9, d.set.items[0].triggerChannel().?);
+    try testing.expectEqual(80, d.thresholds.fixed_uv[9]);
+    try testing.expectEqual(-47, d.thresholds.fixed_uv[7]);
+    try testing.expectEqualStrings("row 10 rising 80 µV", trigText(&buf, &d.set.items[0], d.thresholdUv(9), 4.5));
+    // The row stepper in the control window: row 10 to 11, latched at -50.
+    d.applyPanelEdit(0, .{ .trig_row = 1 });
+    try testing.expectEqual(-50, d.thresholds.fixed_uv[10]);
+}
+
+test "latching: without a report, after the trigger's first second of signal" {
+    var d = triggeredDisplay(0);
+    d.applyPanelEdit(0, .{ .trig_source = .channel });
+    d.applyPanelEdit(0, .{ .trig_row = 4 });
+    // No tile window has reported: the trigger follows the noise, at 4.5 sigma of its own.
+    var next = feedNoise(&d, 0, 0.9);
+    try testing.expect(!d.thresholds.isFixed(4));
+    try testing.expectEqual(null, d.thresholdUv(4));
+    var buf: [48]u8 = undefined;
+    try testing.expectEqualStrings("row 5 falling 4.5 σ", trigText(&buf, &d.set.items[0], d.thresholdUv(4), d.thresholds.sigmas));
+    const sl = &d.slopes[0].?;
+    try testing.expect(sl.settings.auto and sl.settings.auto_sigmas == 4.5 and !sl.settings.rising);
+    // Past one second: fixed, at the trigger's level then, below zero.
+    next = feedNoise(&d, next, 0.2);
+    try testing.expect(d.thresholds.isFixed(4));
+    const latched = d.thresholds.fixed_uv[4];
+    try testing.expect(latched < -5);
+    try testing.expectApproxEqRel(@as(f32, @floatCast(4.5 * sl.sigma() * 0.195)), -latched, 0.05);
+    // From then on the trigger is at that fixed level, and so is the tile detector.
+    _ = feedNoise(&d, next, 0.1);
+    try testing.expect(!d.slopes[0].?.settings.auto);
+    try testing.expectApproxEqRel(@as(f64, latched) / 0.195, d.slopes[0].?.settings.level, 1e-6);
+    try testing.expectEqual(latched, d.tileConfig().thresholds.fixed_uv[4]);
+    // A report arriving before the second is up wins: the same again on row 9 with one.
+    var e = triggeredDisplay(0);
+    e.applyPanelEdit(0, .{ .trig_source = .channel });
+    e.applyPanelEdit(0, .{ .trig_row = 9 });
+    _ = feedNoise(&e, 0, 0.3);
+    try testing.expect(!e.thresholds.isFixed(9));
+    e.reported.uv[9] = -33;
+    e.reported.len = 32;
+    _ = feedNoise(&e, 9000, 0.01);
+    try testing.expectEqual(-33, e.thresholds.fixed_uv[9]);
+}
+
+test "latching: only a panel in triggered mode latches; a triggered channel is not returned to the noise" {
+    var d = clickDisplay(0);
+    d.reported.uv[3] = -42;
+    d.reported.len = 32;
+    // Spikes on row 4, but the panel scrolls: nothing latched, even after seconds.
+    d.applyPanelEdit(0, .{ .trig_source = .channel });
+    d.applyPanelEdit(0, .{ .trig_row = 3 });
+    _ = feedNoise(&d, 0, 1.5);
+    try testing.expect(!d.thresholds.isFixed(3));
+    // Into triggered mode (the t key): latched.
+    var in: Input = .{ .num_keys = 1 };
+    in.keys[0] = .{ .char = 't' };
+    _ = d.applyInput(in);
+    try testing.expectEqual(-42, d.thresholds.fixed_uv[3]);
+    // Back to the noise: refused while triggered on; another channel goes.
+    d.applyThreshold(.{ .follow = 3 });
+    d.applyThreshold(.{ .set = .{ .channel = 3, .uv = 0 } });
+    try testing.expectEqual(-42, d.thresholds.fixed_uv[3]);
+    d.thresholds.set(12, -70);
+    d.applyThreshold(.{ .follow = 12 });
+    try testing.expect(!d.thresholds.isFixed(12));
+    // Scaling and flipping: of the fixed value; a channel following the noise is latched
+    // first (with a report), and without one nothing happens.
+    d.applyThreshold(.{ .scale = .{ .channel = 3, .factor = 2 } });
+    try testing.expectEqual(-84, d.thresholds.fixed_uv[3]);
+    d.reported.uv[20] = -30;
+    d.applyThreshold(.{ .flip = 20 });
+    try testing.expectEqual(30, d.thresholds.fixed_uv[20]);
+    d.applyThreshold(.{ .scale = .{ .channel = 40, .factor = 2 } });
+    try testing.expect(!d.thresholds.isFixed(40));
+    // The global sigmas: one step.
+    d.applyThreshold(.{ .sigmas = true });
+    try testing.expectEqual(5, d.thresholds.sigmas);
+}
+
+test "a trigger channel's threshold that changes sides starts the slope trigger afresh" {
+    var d = triggeredDisplay(0);
+    d.applyPanelEdit(0, .{ .trig_source = .channel });
+    d.applyPanelEdit(0, .{ .trig_row = 4 });
+    d.thresholds.set(4, -100);
+    var next = feedNoise(&d, 0, 0.5);
+    const seen = d.slopes[0].?.seen;
+    try testing.expect(seen > 10000 and !d.slopes[0].?.settings.rising);
+    // Larger, the same side: the same trigger, at the new level.
+    d.applyThreshold(.{ .scale = .{ .channel = 4, .factor = 1.5 } });
+    next = feedNoise(&d, next, 0.01);
+    try testing.expect(d.slopes[0].?.seen > seen);
+    try testing.expectApproxEqRel(@as(f64, -150) / 0.195, d.slopes[0].?.settings.level, 1e-6);
+    // The other side: a new trigger, rising.
+    d.applyThreshold(.{ .flip = 4 });
+    _ = feedNoise(&d, next, 0.01);
+    try testing.expect(d.slopes[0].?.settings.rising);
+    try testing.expect(d.slopes[0].?.seen < 1000);
 }
 
 test "Shift+a acknowledges an alarm, a alone does not" {
