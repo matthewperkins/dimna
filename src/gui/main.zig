@@ -140,6 +140,7 @@ const renderViews = files.renderViews;
 const writeAtomic = files.writeAtomic;
 const saveBoard = files.saveBoard;
 const runDirect = @import("direct.zig").runDirect;
+const session = @import("session.zig");
 
 pub const std_options: std.Options = .{ .log_level = .info };
 
@@ -230,8 +231,7 @@ pub fn main(init: std.process.Init) !u8 {
     defer ring.deinit(gpa);
     var health: oez.types.Health = .{};
     // What of the loss counters the user has acknowledged (the alarm shows the rest).
-    var alarm_seen: struct { overflow: u64 = 0, dropped: u64 = 0, gaps: u64 = 0 } = .{};
-    var rec_failed_alarm = false;
+    var alarms: session.Alarms = .{};
     var acq: oez.acquisition.Acquisition = .{ .io = io, .source = source, .ring = &ring, .health = &health, .scratch = try .init(gpa, nch, bs) };
     defer acq.scratch.deinit(gpa);
     var reader = oez.ring.LossyReader.init(&ring);
@@ -306,30 +306,10 @@ pub fn main(init: std.process.Init) !u8 {
     var rec_start_ns: i128 = 0;
     var rec_published_ns: i128 = 0;
     var rec_status: control.RecStatus = .{};
-    // The panels' settings as a view file: as they are now, and as last saved (at launch:
-    // as loaded), to tell whether there is something to save.
-    const view_now = try gpa.alloc(u8, 96 * 1024);
-    defer gpa.free(view_now);
-    const view_saved = try gpa.alloc(u8, 96 * 1024);
-    defer gpa.free(view_saved);
-    var view_saved_len: usize = 0;
-    if (renderViews(view_saved, &display.set)) |rendered| view_saved_len = rendered.len;
-    // Scroll-back review (see review.zig): where the display is looking when it is not
-    // looking at now. From the recording's file while there is one; else a freeze of the
-    // last seconds the live history still holds.
-    var rv: ?oez.review.Review = null;
-    defer if (rv) |*r| r.deinit();
-    var reviewing = false;
-    var review_from_file = false;
-    var review_ready = false;
-    // The right edge asked for, and the one drawn (the last the history was ready for).
-    var view_end: i64 = 0;
-    var shown_end: i64 = 0;
-    var review_first: i64 = 0;
-    var review_file_end: i64 = 0;
-    var review_dir_buf: [std.fs.max_path_bytes]u8 = undefined;
-    var review_dir_len: usize = 0;
-    var review_cmds: [16]control.ReviewAction = undefined;
+    var view_file = try session.ViewFile.init(gpa, &display.set);
+    defer view_file.deinit(gpa);
+    var review: session.ReviewSession = .{};
+    defer review.deinit();
     // Notes on their way into the recording (display thread to recorder thread).
     var note_queue: oez.events.EventQueue = .{};
     var board_status: control.BoardStatus = .{};
@@ -446,7 +426,6 @@ pub fn main(init: std.process.Init) !u8 {
         const note_stamp: i64 = newest + if (newest_acquired_ns != 0) @as(i64, @intFromFloat(@as(f64, @floatFromInt(nowNs(io) - newest_acquired_ns)) * 1e-9 * fs)) else 0;
         notes.handle(&input, note_stamp, if (rec != null) rec_status.path() else "");
         // Review keys (what is left of them after a note took its own).
-        var num_review_cmds: usize = 0;
         for (input.keys[0..input.num_keys]) |k| {
             const cmd: control.ReviewAction = switch (k) {
                 .space => .toggle,
@@ -458,10 +437,7 @@ pub fn main(init: std.process.Init) !u8 {
                 .end => .live,
                 else => continue,
             };
-            if (num_review_cmds < review_cmds.len) {
-                review_cmds[num_review_cmds] = cmd;
-                num_review_cmds += 1;
-            }
+            review.queue(cmd);
         }
         // Quitting (q or Esc here, Quit in the control window) asks first if the board
         // settings were changed; a second request quits.
@@ -470,18 +446,11 @@ pub fn main(init: std.process.Init) !u8 {
         // What was clicked in the control window.
         while (shared.pop()) |e| {
             if (e.action == .quit_answer) quit_answer = e.action.quit_answer;
-            if (e.action == .review and num_review_cmds < review_cmds.len) {
-                review_cmds[num_review_cmds] = e.action.review;
-                num_review_cmds += 1;
-            }
+            if (e.action == .review) review.queue(e.action.review);
             if (e.action == .save_view) {
-                if (renderViews(view_now, &display.set)) |rendered| {
-                    if (writeAtomic(io, views_path, rendered)) |_| {
-                        @memcpy(view_saved[0..rendered.len], rendered);
-                        view_saved_len = rendered.len;
-                        board_status.setNote("view saved to {s}", .{views_path});
-                    } else |err| board_status.setNote("could not save {s}: {t}", .{ views_path, err });
-                } else board_status.setNote("the view is too large to save", .{});
+                if (view_file.save(io, views_path, &display.set)) |_| {
+                    board_status.setNote("view saved to {s}", .{views_path});
+                } else |err| board_status.setNote("could not save {s}: {t}", .{ views_path, err });
             }
             if (e.action == .note_preset) notes.stampPreset(e.action.note_preset, note_stamp, if (rec != null) rec_status.path() else "");
             if (display.applyEdit(e)) quit = true;
@@ -523,7 +492,7 @@ pub fn main(init: std.process.Init) !u8 {
             if (e.action == .record) {
                 if (e.action.record and rec == null) {
                     // Review of an earlier recording ends where a new one begins.
-                    reviewing = false;
+                    review.active = false;
                     // Changes applied before this recording are not its events.
                     while (acq.events.pop()) |_| {}
                     while (note_queue.pop()) |_| {}
@@ -550,25 +519,25 @@ pub fn main(init: std.process.Init) !u8 {
                             r.test_stall_after = std.fmt.parseInt(u64, it.next() orelse "", 10) catch null;
                             r.test_stall_ms = std.fmt.parseInt(u32, it.next() orelse "", 10) catch 0;
                         }
-                        alarm_seen.gaps = 0;
+                        alarms.seen.gaps = 0;
                         if (r.start()) |_| {
                             rec = r;
                             rec_start_ns = nowNs(io);
                             rec_status = .{ .state = .recording };
                             // The session folder is the parent of ephys/.
-                            const session = std.fs.path.dirname(r.path) orelse r.path;
-                            rec_status.path_len = @min(session.len, rec_status.path_buf.len);
-                            @memcpy(rec_status.path_buf[0..rec_status.path_len], session[0..rec_status.path_len]);
+                            const session_dir = std.fs.path.dirname(r.path) orelse r.path;
+                            rec_status.path_len = @min(session_dir.len, rec_status.path_buf.len);
+                            @memcpy(rec_status.path_buf[0..rec_status.path_len], session_dir[0..rec_status.path_len]);
                         } else |err| {
                             _ = r.finish();
                             rec_status.state = .failed;
                             rec_status.setNote("could not start the recorder: {t}", .{err});
-                            rec_failed_alarm = true;
+                            alarms.recording_failed = true;
                         }
                     } else |err| {
                         rec_status.state = .failed;
                         rec_status.setNote("could not create a recording under {s}: {t}", .{ record_dir, err });
-                        rec_failed_alarm = true;
+                        alarms.recording_failed = true;
                         log.err("could not create a recording under {s}: {t}", .{ record_dir, err });
                     }
                 } else if (!e.action.record) {
@@ -581,92 +550,7 @@ pub fn main(init: std.process.Init) !u8 {
                 }
             }
         }
-        // ---- scroll-back review ----
-        {
-            // The longest stretch a panel in review shows, and one step of the keys.
-            var longest: i64 = 0;
-            for (display.set.items[0..display.set.len]) |*p| {
-                if (p.mode != .triggered) longest = @max(longest, @as(i64, @intFromFloat(@ceil(p.span_s * fs))) + 2);
-            }
-            if (longest == 0) longest = @intFromFloat(2 * fs);
-            const tp = &display.set.items[display.target];
-            const window: i64 = if (tp.mode != .triggered) @intFromFloat(tp.span_s * fs) else longest;
-            for (review_cmds[0..num_review_cmds]) |cmd| {
-                snap_dirty = true;
-                if (cmd == .live or (cmd == .toggle and reviewing)) {
-                    reviewing = false;
-                    continue;
-                }
-                if (!reviewing) {
-                    // Enter where the display is now. From the file if one is being written.
-                    reviewing = true;
-                    view_end = newest;
-                    shown_end = newest;
-                    review_ready = false;
-                    review_from_file = false;
-                    if (rec) |r| {
-                        const first = r.first_sample_shared.load(.acquire);
-                        if (first != std.math.minInt(i64)) from_file: {
-                            if (rv == null) {
-                                gpu.createReview() catch |err| {
-                                    log.warn("no memory for the review history ({t}); review is limited to the last seconds", .{err});
-                                    break :from_file;
-                                };
-                                rv = oez.review.Review.init(gpa, &layout, &display.set, gpu.rev, gpu.hist_cap) catch break :from_file;
-                            }
-                            if (!rv.?.isOpen() or !std.mem.eql(u8, review_dir_buf[0..review_dir_len], r.path)) {
-                                rv.?.open(r.path, first) catch |err| {
-                                    log.warn("review cannot read the recording ({t}); limited to the last seconds", .{err});
-                                    break :from_file;
-                                };
-                                review_dir_len = @min(r.path.len, review_dir_buf.len);
-                                @memcpy(review_dir_buf[0..review_dir_len], r.path[0..review_dir_len]);
-                            }
-                            review_first = first;
-                            review_from_file = true;
-                        }
-                    }
-                }
-                switch (cmd) {
-                    .back => view_end -= @max(1, @divTrunc(window, 10)),
-                    .forward => view_end += @max(1, @divTrunc(window, 10)),
-                    .page_back => view_end -= @max(1, @divTrunc(window * 9, 10)),
-                    .page_forward => view_end += @max(1, @divTrunc(window * 9, 10)),
-                    .start => view_end = std.math.minInt(i64) / 2,
-                    .toggle, .live => {},
-                }
-            }
-            if (reviewing and review_from_file) {
-                const r = &rv.?;
-                // The file grows while the recording runs.
-                if (rec) |live_rec| review_file_end = review_first + @as(i64, @intCast(live_rec.stats.samples.load(.monotonic)));
-                view_end = std.math.clamp(view_end, @min(review_first + longest, review_file_end), review_file_end);
-                var ok = true;
-                r.follow(&display.set) catch {
-                    ok = false;
-                };
-                // A bounded amount per turn of the loop: a long jump fills over a few frames.
-                const covered = if (ok) r.fill(view_end - longest, view_end, review_file_end, 30000) catch |err| blk: {
-                    log.warn("review stopped: {t}", .{err});
-                    ok = false;
-                    break :blk false;
-                } else false;
-                if (!ok) {
-                    reviewing = false;
-                } else {
-                    if (covered) shown_end = view_end;
-                    review_ready = r.holds(shown_end - longest, shown_end, review_file_end);
-                }
-            } else if (reviewing) {
-                // The live history: a freeze, for as long as the samples are still there.
-                const oldest = newest - @as(i64, @intCast(gpu.hist_cap)) + @as(i64, @intFromFloat(fs));
-                view_end = @min(view_end, newest);
-                if (view_end - longest < oldest) view_end = oldest + longest;
-                if (view_end >= newest and newest - oldest <= longest) reviewing = false;
-                shown_end = view_end;
-                review_ready = true;
-            }
-        }
+        if (review.step(.{ .gpa = gpa, .gpu = &gpu, .layout = &layout, .set = &display.set, .target = display.target, .newest = newest, .rec = rec })) snap_dirty = true;
         // Notes saved this turn go into the recording, if there is one.
         for (notes.fresh[0..notes.num_fresh]) |*note| {
             if (rec != null) _ = note_queue.push(.init(note.sample, "note", "{s}", .{note.text()}));
@@ -707,14 +591,12 @@ pub fn main(init: std.process.Init) !u8 {
                             failed = true;
                         }
                     }
-                    if (renderViews(view_now, &display.set)) |rendered| {
-                        if (!std.mem.eql(u8, rendered, view_saved[0..view_saved_len])) {
-                            if (writeAtomic(io, views_path, rendered)) |_| {
-                                log.info("view saved to {s}", .{views_path});
-                            } else |err| {
-                                board_status.setNote("could not save {s}: {t}", .{ views_path, err });
-                                failed = true;
-                            }
+                    if (view_file.unsaved(&display.set)) {
+                        if (view_file.save(io, views_path, &display.set)) |_| {
+                            log.info("view saved to {s}", .{views_path});
+                        } else |err| {
+                            board_status.setNote("could not save {s}: {t}", .{ views_path, err });
+                            failed = true;
                         }
                     }
                     if (!failed) break;
@@ -728,12 +610,10 @@ pub fn main(init: std.process.Init) !u8 {
         if (quit) {
             var changed = oez.board_config.diff(&saved_settings, &acq.requested, &quit_prompt.lines, &quit_prompt.lens);
             // And the panels' settings, as one line.
-            if (renderViews(view_now, &display.set)) |rendered| {
-                if (!std.mem.eql(u8, rendered, view_saved[0..view_saved_len]) and changed < quit_prompt.lines.len) {
-                    const line: []const u8 = std.fmt.bufPrint(&quit_prompt.lines[changed], "panel views (saved to views.toml)", .{}) catch "";
-                    quit_prompt.lens[changed] = line.len;
-                    changed += 1;
-                }
+            if (view_file.unsaved(&display.set) and changed < quit_prompt.lines.len) {
+                const line: []const u8 = std.fmt.bufPrint(&quit_prompt.lines[changed], "panel views (saved to views.toml)", .{}) catch "";
+                quit_prompt.lens[changed] = line.len;
+                changed += 1;
             }
             if (changed > 0 and !quit_prompt.active and control_thread != null and !shared.closed.load(.acquire)) {
                 quit_prompt.active = true;
@@ -750,10 +630,7 @@ pub fn main(init: std.process.Init) !u8 {
                 board_status.setNote("stop the recording first: this changes the shape of the data", .{});
             } else {
                 // Review looks into a history that is about to be replaced.
-                reviewing = false;
-                if (rv) |*r| r.deinit();
-                rv = null;
-                review_dir_len = 0;
+                review.drop();
                 // The tiles and the audio threads read the ring that is about to be replaced.
                 if (tiles_win) |t| t.stop();
                 tiles_win = null;
@@ -859,7 +736,7 @@ pub fn main(init: std.process.Init) !u8 {
                 if (sum.failure) |err| {
                     rec_status.state = .failed;
                     rec_status.setNote("recording failed: {t}; what was written before is intact", .{err});
-                    rec_failed_alarm = true;
+                    alarms.recording_failed = true;
                 } else {
                     rec_status.state = .idle;
                     var clock_buf: [16]u8 = undefined;
@@ -868,37 +745,17 @@ pub fn main(init: std.process.Init) !u8 {
             }
         }
         // While recording, the control window's counts move four times a second.
-        if ((rec != null or reviewing) and nowNs(io) - rec_published_ns > 250 * std.time.ns_per_ms) {
+        if ((rec != null or review.active) and nowNs(io) - rec_published_ns > 250 * std.time.ns_per_ms) {
             rec_published_ns = nowNs(io);
             snap_dirty = true;
         }
-        // ---- alarms: anything that means samples are not being kept ----
-        {
-            const overflow = acq.ring_overflow.load(.monotonic);
-            const dropped = health.dropped_samples.load(.monotonic);
-            const gaps: u64 = if (rec) |r| r.stats.gaps.load(.monotonic) else 0;
-            if (display.acknowledged) {
-                display.acknowledged = false;
-                alarm_seen = .{ .overflow = overflow, .dropped = dropped, .gaps = gaps };
-                rec_failed_alarm = false;
-            }
-            var w: Io.Writer = .fixed(&status.alarm_buf);
-            if (rec_failed_alarm) w.writeAll("RECORDING FAILED: nothing is being recorded") catch {};
-            if (overflow > alarm_seen.overflow) w.print("{s}{d} BLOCKS LOST: the disk fell 30 s behind", .{ if (w.buffered().len > 0) "   |   " else "", overflow - alarm_seen.overflow }) catch {};
-            if (dropped > alarm_seen.dropped) w.print("{s}THE BOARD DROPPED {d} SAMPLES", .{ if (w.buffered().len > 0) "   |   " else "", dropped - alarm_seen.dropped }) catch {};
-            if (gaps > alarm_seen.gaps) w.print("{s}THE RECORDING HAS {d} GAPS", .{ if (w.buffered().len > 0) "   |   " else "", gaps - alarm_seen.gaps }) catch {};
-            const alarm_len = w.buffered().len;
-            // Not yet lost, but on the way: the recorder is far behind acquisition.
-            var ww: Io.Writer = .fixed(&status.warning_buf);
-            if (rec) |r| {
-                const behind = @as(f64, @floatFromInt(r.backlog() * bs)) / fs;
-                if (behind > 5) ww.print("the disk is {d:.0} s behind (samples are lost at 30 s)", .{behind}) catch {};
-            }
-            if (alarm_len != status.alarm_len or ww.buffered().len != status.warning_len) snap_dirty = true;
-            status.alarm_len = alarm_len;
-            status.warning_len = ww.buffered().len;
-            audio_shared.alarm.store(alarm_len > 0, .monotonic);
-        }
+        // Alarms: anything that means samples are not being kept.
+        if (alarms.update(&status, .{
+            .overflow = acq.ring_overflow.load(.monotonic),
+            .dropped = health.dropped_samples.load(.monotonic),
+            .gaps = if (rec) |r| r.stats.gaps.load(.monotonic) else 0,
+        }, if (rec) |r| @as(f64, @floatFromInt(r.backlog() * bs)) / fs else null, &display.acknowledged)) snap_dirty = true;
+        audio_shared.alarm.store(status.alarm_len > 0, .monotonic);
         status.recording = rec != null;
         if (rec != null) status.rec_seconds = @as(f64, @floatFromInt(nowNs(io) - rec_start_ns)) / 1e9;
         if (input.num_keys > 0 or input.scroll_x != 0 or input.scroll_y != 0 or input.pinch != 1 or display.target != snap_target) snap_dirty = true;
@@ -912,14 +769,8 @@ pub fn main(init: std.process.Init) !u8 {
                 .ring_overflow = acq.ring_overflow.load(.monotonic),
                 .seconds = @as(f64, @floatFromInt(nowNs(io) - t_start)) / 1e9,
                 .quit_prompt = quit_prompt,
-                .review = .{
-                    .active = reviewing,
-                    .behind_s = @as(f64, @floatFromInt(newest - shown_end)) / fs,
-                    .at_s = @as(f64, @floatFromInt(shown_end)) / fs,
-                    .from_file = review_from_file,
-                    .loading = reviewing and !review_ready,
-                },
-                .view_unsaved = if (renderViews(view_now, &display.set)) |rendered| !std.mem.eql(u8, rendered, view_saved[0..view_saved_len]) else false,
+                .review = review.status(newest, fs),
+                .view_unsaved = view_file.unsaved(&display.set),
                 .notes = blk: {
                     var st: control.NotesStatus = .{ .editing = notes.editing, .num_drafts = notes.num_drafts, .total = notes.total };
                     for (&st.recent, 0..) |*line, k| {
@@ -1088,7 +939,7 @@ pub fn main(init: std.process.Init) !u8 {
                 win.resized = false;
                 n_resize += 1;
             }
-            const fr = display.frame(&gpu, &layout, newest, if (reviewing) ReviewView{ .end = shown_end, .from_file = review_from_file, .ready = review_ready, .behind_s = @as(f64, @floatFromInt(newest - shown_end)) / fs } else null, status, &notes, &batch, &draws, &fills);
+            const fr = display.frame(&gpu, &layout, newest, review.view(newest, fs), status, &notes, &batch, &draws, &fills);
             frame_tag += 1;
             frame_acquired[frame_tag % frame_acquired.len] = newest_acquired_ns;
             const Ctx = struct { win: *Window, tag: u64 };
