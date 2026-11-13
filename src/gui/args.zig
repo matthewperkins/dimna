@@ -63,7 +63,7 @@ pub const usage =
     \\  --help
     \\
     \\Config file: $XDG_CONFIG_HOME/dimna/config.toml (default ~/.config/dimna); options above
-    \\win. See the README for its keys and the [[panel]] tables.
+    \\win. docs/display.md has its keys and the [[panel]] tables.
     \\
     \\On the display (? shows these there, with the spike-tile window's):
     \\  wheel                          Y scale (µV per row; also a two-finger scroll)

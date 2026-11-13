@@ -15,7 +15,7 @@
 //! between turns is in session.zig (recording, review, alarms, view file, board settings),
 //! pacing.zig (when to draw, latency figures) and display.zig (panels, input, drawing).
 //!
-//! Options: args.zig (`dimna --help`). Keys and the mouse: README, "The display". The config
+//! Options: args.zig (`dimna --help`). Keys and the mouse: docs/display.md. The config
 //! file ($XDG_CONFIG_HOME/dimna/config.toml; command-line options win) and `[[panel]]`
 //! tables: args.zig and src/panels.zig. How frames are paced and what latency was
 //! measured: docs/latency.md. Scripted input for tests (--script): script.zig.

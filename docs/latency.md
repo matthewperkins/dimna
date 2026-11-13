@@ -1,11 +1,38 @@
 # Display latency: what was measured, and how frames are paced
 
+[Back to the README](../README.md)
+
 Design notes that used to sit at the top of `src/gui/main.zig`. The code is in
 `src/gui/pacing.zig` (when to draw, the margin, the recovery skip) and `src/gui/window.zig`
 (presentation feedback, the tearing request). Figures are from the rig: Hyprland 0.57,
 NVIDIA RTX 2000 Ada, 60 Hz, measured with the program's own once-a-second log line (the
 time from a sample's block reaching the ring to the frame showing it being presented, from
 Wayland presentation feedback).
+
+## In short
+
+Sample arriving to its frame on screen (Hyprland 0.57.2, NVIDIA, 60 Hz):
+
+| mode | latency |
+|---|---|
+| window, composited, drawn just before each refresh | 20.2 ms |
+| fullscreen with tearing | 1.6 to 2 ms |
+
+Tearing shows frames mid-scan, about every 3 ms, so every scan line is at most a few ms old.
+Hyprland tears only when all of these hold (`hyprctl monitors` shows `activelyTearing` and
+`tearingBlockedBy`):
+
+- `general.allow_tearing = true`
+- `cursor.no_hardware_cursors = 1` (no tearing while a hardware cursor is visible)
+- the window is fullscreen and the only thing on that monitor: no popup, floating window,
+  overlay or notification over it. So panels are laid out inside dimna's one surface, and
+  anything drawn on the neural display must be drawn by dimna.
+
+Other routes tried: Hyprland's direct scanout (3.5 ms but not dependable; described at the
+top of `src/gui/main.zig`), and driving the monitor with no compositor at all (`--direct`,
+1.45 ms at a 1 ms margin from a text console; it needs the monitor to itself). That second
+loop had none of the later features and was removed; the last commit that has it is
+`5112336` (`src/gui/direct.zig`, `lease_probe.zig`).
 
 ## Tearing (`--tearing`, the mode in use)
 
