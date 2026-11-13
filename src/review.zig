@@ -58,7 +58,7 @@ pub const Review = struct {
     /// panels in the same order).
     pub fn init(gpa: std.mem.Allocator, layout: *const types.Layout, set: *const panels.Set, ring: []i16, cap: usize) !Review {
         var copy = set.*;
-        var feed = try Feed.init(gpa, layout, &copy, chunk);
+        var feed = try Feed.init(gpa, layout, &copy, chunk, chunk);
         errdefer feed.deinit(gpa);
         const read_buf = try gpa.alloc(i16, chunk * layout.numChannels());
         errdefer gpa.free(read_buf);
@@ -97,7 +97,7 @@ pub const Review = struct {
         const sig = signatureOf(set);
         if (sig == self.signature) return;
         var copy = set.*;
-        const feed = try Feed.init(self.gpa, &self.layout, &copy, chunk);
+        const feed = try Feed.init(self.gpa, &self.layout, &copy, chunk, chunk);
         self.feed.deinit(self.gpa);
         self.feed = feed;
         self.signature = sig;
@@ -216,7 +216,7 @@ pub const Review = struct {
                 got += rc;
             }
             self.words(at, self.ttl_buf[0..n]);
-            const rows = try self.feed.rows(self.gpa, at, samples, self.ttl_buf[0..n]);
+            const rows = try self.feed.rows(at, samples, self.ttl_buf[0..n]);
             // The lead-in is filtered but not kept.
             if (at + @as(i64, @intCast(n)) > a) {
                 const skip: usize = if (at < a) @intCast(a - at) else 0;
@@ -320,7 +320,7 @@ test "review reads a recording back through the feed, in pieces, in any order" {
 
     const cap = 16384;
     var probe = set;
-    var live = try Feed.init(gpa, &layout, &probe, 64);
+    var live = try Feed.init(gpa, &layout, &probe, 64, 64);
     defer live.deinit(gpa);
     const ring = try gpa.alloc(i16, cap * live.width);
     defer gpa.free(ring);

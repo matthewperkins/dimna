@@ -186,9 +186,7 @@ pub const QuitAnswer = enum { save, discard, cancel };
 /// Shown instead of the controls when quitting with changed board settings.
 pub const QuitPrompt = struct {
     active: bool = false,
-    lines: [12][64]u8 = undefined,
-    lens: [12]usize = @splat(0),
-    count: usize = 0,
+    changes: oez.board_config.Diff = .{},
     /// The config file the settings would be saved to.
     path_buf: [200]u8 = undefined,
     path_len: usize = 0,
@@ -466,9 +464,9 @@ fn quitPrompt(ui: *ui_mod.Ui, q: *const QuitPrompt, shared: *Shared) void {
     ui.separator();
     ui.text("Settings changed since they were last saved:", theme.text_bright);
     ui.newline();
-    for (q.lines[0..q.count], q.lens[0..q.count]) |*line, len| {
+    for (0..q.changes.count) |i| {
         ui.space(16);
-        ui.text(line[0..len], theme.text_warn);
+        ui.text(q.changes.line(i), theme.text_warn);
         ui.newline();
     }
     ui.text(q.path_buf[0..q.path_len], theme.text_dim);
@@ -1000,11 +998,7 @@ fn stateSnapshots(out: []Snapshot, base: *const Snapshot) void {
     // The quit prompt.
     s = base.*;
     s.quit_prompt.active = true;
-    for (0..3) |k| {
-        const line = std.fmt.bufPrint(&s.quit_prompt.lines[k], "setting {d} changed", .{k}) catch unreachable;
-        s.quit_prompt.lens[k] = line.len;
-    }
-    s.quit_prompt.count = 3;
+    for (0..3) |k| s.quit_prompt.changes.add("setting {d} changed", .{k});
     setText(&s.quit_prompt.path_buf, &s.quit_prompt.path_len, "/home/user/.config/oez/oez.toml");
     out[3] = s;
 
