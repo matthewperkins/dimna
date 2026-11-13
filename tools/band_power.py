@@ -21,7 +21,6 @@ def main(paths):
     for path in paths:
         r = Recording(path)
         fs = r.sample_rate
-        names = r.channel_names
         x = np.asarray(r.samples[int(3 * fs):int(13 * fs)], dtype=np.float64)
         if x.shape[0] < fs:
             print(f"{path}: too short (needs 13 s)")
@@ -36,10 +35,11 @@ def main(paths):
 
         low, high = band(2, 100), band(1000, 5000)
         print(Path(path).resolve().name)
-        groups = {}
-        for i, name in enumerate(names):
-            if "-" in name:  # electrodes are named "A1-5"
-                groups.setdefault(name.split("-")[0], []).append(i)
+        # meta.toml lists the headstages in channel order, electrodes first.
+        groups, at = {}, 0
+        for hs in r.meta.get("headstage", []):
+            groups[hs["slot"]] = list(range(at, at + hs["num_channels"]))
+            at += hs["num_channels"]
         for hs, idx in groups.items():
             print(f"  {hs}: 2-100 Hz rms median {np.median(low[idx]):9.2f} uV   "
                   f"1-5 kHz rms median {np.median(high[idx]):6.2f} uV")
