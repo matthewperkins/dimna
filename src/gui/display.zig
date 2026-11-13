@@ -499,7 +499,7 @@ pub const Display = struct {
                 } else if (trig.recent(0)) |s| {
                     const until = @min(s.fall orelse newest, s.t0 + post);
                     const x1 = px + w * @as(f32, @floatFromInt(until - s.t0 + pre)) / @as(f32, @floatCast(window));
-                    if (shown_sweeps > 0 and x1 > x0) batch.rect(x0, py, x1 - x0, @floatFromInt(r.h), theme.sweep_pulse);
+                    if (shown_sweeps > 0 and x1 > x0) batch.rect(x0, py, x1 - x0, @floatFromInt(r.h), theme.tint_pulse);
                 }
                 batch.rect(@round(x0), py, 1, @floatFromInt(r.h), theme.trigger_line);
             } else if (nd < draws.len and !(in_review and !review.?.ready)) {

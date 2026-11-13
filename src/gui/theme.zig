@@ -40,13 +40,13 @@ pub const row_scale_text: Colour = .{ 255, 205, 120, 255 };
 pub const note_line: Colour = .{ heard[0], heard[1], heard[2], 190 };
 /// The note being typed, bottom left.
 pub const note_draft_text: Colour = .{ 255, 235, 170, 255 };
-/// A panel's tint line was high (scrolling and sweep panels).
+/// A TTL line was high: the wash over a scrolling or sweep panel while its tint line was
+/// high, and over a triggered panel where the trigger line was high in the newest sweep
+/// (the laser).
 pub const tint_pulse: Colour = .{ 90, 150, 255, 30 };
 
 // Display: triggered sweeps.
 
-/// The trigger line was high in the newest sweep (the laser).
-pub const sweep_pulse: Colour = .{ 90, 150, 255, 34 };
 /// The vertical line at the trigger (t0).
 pub const trigger_line: Colour = .{ 200, 210, 230, 150 };
 /// A slope trigger's level: the dashed line across its row.
