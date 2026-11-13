@@ -8,7 +8,12 @@ Linux only. Successor to oers (Rust, `../oers`), whose driver it ports.
 Zig 0.17.1 (pinned in `build.zig.zon`).
 
     zig build --release=safe     # zig-out/bin/oez-headless (safety checks stay on)
-    zig build test               # unit tests
+    zig build test               # unit tests: the core (src/root.zig) and the GUI (src/gui/tests.zig)
+
+The GUI's tests cover its pure logic only (typed notes, the tile grid, the widget layout, the
+control window's queue and snapshot); none opens a window, connects to Wayland, creates a
+Vulkan instance or opens a sound device, so they pass without a display. A GUI file's tests
+run only if the file is listed in `src/gui/tests.zig`.
 
 The display also needs the Wayland and Vulkan development files, `glslc`, and FreeType and
 fontconfig (text).

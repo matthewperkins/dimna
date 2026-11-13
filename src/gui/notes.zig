@@ -200,3 +200,286 @@ fn mkdirs(path: [:0]const u8) void {
         _ = linux.mkdir(buf[0..i :0], 0o755);
     }
 }
+
+// ---- Tests ----
+//
+// None of these calls `Notes.init`, which opens $XDG_STATE_HOME/oez/notes.log (default
+// ~/.local/state/oez/notes.log): a `Notes` made with `.{}` has `log_fd == -1` and logs
+// nowhere. The test of the log line gives it a file under /tmp instead.
+
+const testing = std.testing;
+
+/// One frame of input: these keys, and the text they would type.
+fn frame(keys: []const Key, text: []const u8) Input {
+    var in: Input = .{};
+    @memcpy(in.keys[0..keys.len], keys);
+    in.num_keys = keys.len;
+    @memcpy(in.text[0..text.len], text);
+    in.text_len = text.len;
+    return in;
+}
+
+fn digit(d: u8) Key {
+    return @fromBackingInt(@as(u32, d));
+}
+
+/// Feeds one frame to `notes` and returns what is left of it for the other shortcuts.
+fn feed(notes: *Notes, keys: []const Key, text: []const u8, now: i64) Input {
+    var in = frame(keys, text);
+    notes.handle(&in, now, "");
+    return in;
+}
+
+/// Opens a note at `now` and types `text` into it, in frames of at most 64 bytes.
+fn openAndType(notes: *Notes, now: i64, text: []const u8) !void {
+    _ = feed(notes, &.{.slash}, "/", now);
+    try testing.expect(notes.editing);
+    var rest = text;
+    while (rest.len > 0) {
+        const n = @min(rest.len, 64);
+        _ = feed(notes, &.{}, rest[0..n], now + 1);
+        rest = rest[n..];
+    }
+}
+
+test "a new Notes logs nowhere" {
+    const notes: Notes = .{};
+    try testing.expectEqual(-1, notes.log_fd);
+    try testing.expect(!notes.editing);
+}
+
+test "slash opens a note; the keys that follow are its text, not shortcuts" {
+    var notes: Notes = .{};
+    notes.presets[2].set("preset three");
+    // The '/' itself is not the note's first character, and the other keys pass through.
+    var in = feed(&notes, &.{ .q, .slash }, "q/", 100);
+    try testing.expect(notes.editing);
+    try testing.expectEqual(100, notes.draft.sample);
+    try testing.expectEqual(0, notes.draft.len);
+    try testing.expectEqual(0, in.text_len);
+    try testing.expectEqual(1, in.num_keys);
+    try testing.expectEqual(Key.q, in.keys[0]);
+    // While it is open, nothing is left for the other shortcuts, a preset's digit and
+    // backtick included: they are text.
+    in = feed(&notes, &.{ .q, .m, digit('3'), .grave, .slash, .space }, "qm3`/ ", 200);
+    try testing.expectEqual(0, in.num_keys);
+    try testing.expectEqual(0, in.text_len);
+    try testing.expectEqualStrings("qm3`/ ", notes.draft.text());
+    try testing.expectEqual(0, notes.total);
+    try testing.expect(notes.editing);
+}
+
+test "Enter or backslash saves the note with the stamp it was opened at" {
+    var notes: Notes = .{};
+    try openAndType(&notes, 1000, "cell 3 ");
+    // The text typed in the frame that ends it is kept; the ending key's own text is not.
+    _ = feed(&notes, &.{.enter}, "lost\r", 5000);
+    try testing.expect(!notes.editing);
+    try testing.expectEqual(1, notes.total);
+    try testing.expectEqual(1000, notes.recentNote(0).?.sample);
+    try testing.expectEqualStrings("cell 3 lost", notes.recentNote(0).?.text());
+
+    try openAndType(&notes, 7000, "second");
+    _ = feed(&notes, &.{.backslash}, "\\", 9000);
+    try testing.expect(!notes.editing);
+    try testing.expectEqual(2, notes.total);
+    try testing.expectEqual(7000, notes.recentNote(0).?.sample);
+    try testing.expectEqualStrings("second", notes.recentNote(0).?.text());
+    try testing.expectEqualStrings("cell 3 lost", notes.recentNote(1).?.text());
+    try testing.expectEqual(null, notes.recentNote(2));
+
+    // An empty note is not saved.
+    _ = feed(&notes, &.{.slash}, "/", 10000);
+    _ = feed(&notes, &.{.enter}, "", 10001);
+    try testing.expect(!notes.editing);
+    try testing.expectEqual(2, notes.total);
+}
+
+test "Esc drops the note" {
+    var notes: Notes = .{};
+    try openAndType(&notes, 1000, "never mind");
+    const in = feed(&notes, &.{.escape}, "x", 2000);
+    try testing.expect(!notes.editing);
+    try testing.expectEqual(0, in.num_keys);
+    try testing.expectEqual(0, notes.total);
+    try testing.expectEqual(0, notes.num_fresh);
+    try testing.expectEqual(0, notes.num_drafts);
+}
+
+test "Tab keeps the note as a draft; backtick stamps the oldest draft now" {
+    var notes: Notes = .{};
+    try openAndType(&notes, 1000, "laser on");
+    _ = feed(&notes, &.{.tab}, "\t", 1100);
+    try openAndType(&notes, 2000, "laser off");
+    _ = feed(&notes, &.{.tab}, "\t", 2100);
+    try testing.expect(!notes.editing);
+    try testing.expectEqual(2, notes.num_drafts);
+    try testing.expectEqual(0, notes.total);
+    try testing.expectEqualStrings("laser on", notes.drafts[0].text());
+
+    // Backtick is a note command when no note is open: taken out of the input.
+    var in = feed(&notes, &.{ .grave, .m }, "`m", 50_000);
+    try testing.expectEqual(1, in.num_keys);
+    try testing.expectEqual(Key.m, in.keys[0]);
+    try testing.expectEqual(1, notes.total);
+    try testing.expectEqual(50_000, notes.recentNote(0).?.sample);
+    try testing.expectEqualStrings("laser on", notes.recentNote(0).?.text());
+    try testing.expectEqual(1, notes.num_drafts);
+    try testing.expectEqualStrings("laser off", notes.drafts[0].text());
+
+    _ = feed(&notes, &.{.grave}, "`", 60_000);
+    try testing.expectEqual(60_000, notes.recentNote(0).?.sample);
+    try testing.expectEqualStrings("laser off", notes.recentNote(0).?.text());
+    try testing.expectEqual(0, notes.num_drafts);
+    // With no drafts left, backtick does nothing (and is still taken).
+    in = feed(&notes, &.{.grave}, "`", 70_000);
+    try testing.expectEqual(0, in.num_keys);
+    try testing.expectEqual(2, notes.total);
+
+    // An empty note is not kept as a draft.
+    _ = feed(&notes, &.{.slash}, "/", 80_000);
+    _ = feed(&notes, &.{.tab}, "\t", 80_001);
+    try testing.expectEqual(0, notes.num_drafts);
+}
+
+test "Backspace removes one whole UTF-8 character" {
+    var notes: Notes = .{};
+    // a, é (2 bytes), → (3 bytes)
+    try openAndType(&notes, 0, "a\u{e9}\u{2192}");
+    try testing.expectEqual(6, notes.draft.len);
+    _ = feed(&notes, &.{.backspace}, "", 1);
+    try testing.expectEqualStrings("a\u{e9}", notes.draft.text());
+    _ = feed(&notes, &.{.backspace}, "", 2);
+    try testing.expectEqualStrings("a", notes.draft.text());
+    _ = feed(&notes, &.{.backspace}, "", 3);
+    try testing.expectEqualStrings("", notes.draft.text());
+    // At an empty note it does nothing, and the note stays open.
+    _ = feed(&notes, &.{ .backspace, .backspace }, "", 4);
+    try testing.expectEqual(0, notes.draft.len);
+    try testing.expect(notes.editing);
+    // Two in one frame remove two characters.
+    _ = feed(&notes, &.{}, "\u{2192}x\u{e9}", 5);
+    _ = feed(&notes, &.{ .backspace, .backspace }, "", 6);
+    try testing.expectEqualStrings("\u{2192}", notes.draft.text());
+}
+
+test "a note longer than the buffer is cut at max_text bytes" {
+    var notes: Notes = .{};
+    var long: [250]u8 = undefined;
+    for (&long, 0..) |*ch, i| ch.* = '0' + @as(u8, @intCast(i % 10));
+    try openAndType(&notes, 42, &long);
+    try testing.expectEqual(max_text, notes.draft.len);
+    _ = feed(&notes, &.{.enter}, "", 43);
+    try testing.expectEqualStrings(long[0..max_text], notes.recentNote(0).?.text());
+    try testing.expectEqual(42, notes.recentNote(0).?.sample);
+}
+
+test "presets 1 to 9 stamp only when no note is open, and only if they are set" {
+    var notes: Notes = .{};
+    notes.presets[0].set("one");
+    notes.presets[8].set("nine");
+    // 1 and 9 have presets and are taken; 2 has none and passes through to the display.
+    var in = feed(&notes, &.{ digit('1'), digit('2'), digit('9') }, "129", 500);
+    try testing.expectEqual(1, in.num_keys);
+    try testing.expectEqual(digit('2'), in.keys[0]);
+    try testing.expectEqual(2, notes.total);
+    try testing.expectEqualStrings("nine", notes.recentNote(0).?.text());
+    try testing.expectEqualStrings("one", notes.recentNote(1).?.text());
+    try testing.expectEqual(500, notes.recentNote(0).?.sample);
+
+    // With a note open the digit is text.
+    _ = feed(&notes, &.{.slash}, "/", 600);
+    in = feed(&notes, &.{digit('1')}, "1", 700);
+    try testing.expectEqual(0, in.num_keys);
+    try testing.expectEqual(2, notes.total);
+    try testing.expectEqualStrings("1", notes.draft.text());
+
+    // The control window's buttons: only 1 to 9, only presets that are set.
+    notes.stampPreset(9, 800, "");
+    notes.stampPreset(2, 800, "");
+    notes.stampPreset(0, 800, "");
+    notes.stampPreset(10, 800, "");
+    try testing.expectEqual(3, notes.total);
+}
+
+test "fresh holds what was saved since the caller last took it" {
+    var notes: Notes = .{};
+    notes.presets[3].set("four");
+    try testing.expectEqual(0, notes.num_fresh);
+    try openAndType(&notes, 10, "typed");
+    _ = feed(&notes, &.{.enter}, "", 11);
+    _ = feed(&notes, &.{digit('4')}, "4", 12);
+    try testing.expectEqual(2, notes.num_fresh);
+    try testing.expectEqualStrings("typed", notes.fresh[0].text());
+    try testing.expectEqual(10, notes.fresh[0].sample);
+    try testing.expectEqualStrings("four", notes.fresh[1].text());
+    try testing.expectEqual(12, notes.fresh[1].sample);
+    // The caller takes them (as main.zig does) and the next turn starts empty.
+    notes.num_fresh = 0;
+    _ = feed(&notes, &.{digit('4')}, "4", 13);
+    try testing.expectEqual(1, notes.num_fresh);
+    try testing.expectEqual(13, notes.fresh[0].sample);
+    // More than `fresh` holds in one turn: the first ones are kept, all are counted.
+    notes.num_fresh = 0;
+    for (0..notes.fresh.len + 3) |i| _ = feed(&notes, &.{digit('4')}, "4", @intCast(100 + i));
+    try testing.expectEqual(notes.fresh.len, notes.num_fresh);
+    try testing.expectEqual(100, notes.fresh[0].sample);
+    try testing.expectEqual(3 + notes.fresh.len + 3, notes.total);
+}
+
+test "recent keeps the last 32 notes, newest first" {
+    var notes: Notes = .{};
+    notes.presets[0].set("p");
+    for (0..40) |i| {
+        _ = feed(&notes, &.{digit('1')}, "1", @intCast(i));
+        notes.num_fresh = 0;
+    }
+    try testing.expectEqual(40, notes.total);
+    try testing.expectEqual(39, notes.recentNote(0).?.sample);
+    try testing.expectEqual(8, notes.recentNote(31).?.sample);
+    try testing.expectEqual(null, notes.recentNote(32));
+}
+
+test "a saved note is one line in the log: time, sample, session, text" {
+    var dir_buf: [64]u8 = undefined;
+    const dir = try std.fmt.bufPrintSentinel(&dir_buf, "/tmp/oez-notes-test-{d}", .{linux.getpid()}, 0);
+    var file_buf: [96]u8 = undefined;
+    const file = try std.fmt.bufPrintSentinel(&file_buf, "{s}/notes.log", .{dir}, 0);
+    _ = linux.mkdir(dir, 0o755);
+    defer {
+        _ = linux.unlink(file);
+        _ = linux.rmdir(dir);
+    }
+    const rc = linux.open(file, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true, .CLOEXEC = true }, 0o644);
+    try testing.expectEqual(.SUCCESS, linux.errno(rc));
+    var notes: Notes = .{ .log_fd = @intCast(rc) };
+    defer notes.deinit();
+    notes.presets[0].set("baseline");
+    try openAndType(&notes, 12345, "cell 1");
+    var in = frame(&.{.enter}, "");
+    notes.handle(&in, 99999, "/data/2026-11-12_10-00-00");
+    in = frame(&.{digit('1')}, "1");
+    notes.handle(&in, 67890, "");
+
+    var buf: [1024]u8 = undefined;
+    const fd = linux.open(file, .{ .ACCMODE = .RDONLY, .CLOEXEC = true }, 0);
+    try testing.expectEqual(.SUCCESS, linux.errno(fd));
+    defer _ = linux.close(@intCast(fd));
+    const n = linux.read(@intCast(fd), &buf, buf.len);
+    try testing.expectEqual(.SUCCESS, linux.errno(n));
+    var lines = std.mem.splitScalar(u8, buf[0..n], '\n');
+    const expect = [_][3][]const u8{
+        .{ "12345", "/data/2026-11-12_10-00-00", "cell 1" },
+        .{ "67890", "-", "baseline" },
+    };
+    for (expect) |e| {
+        var fields = std.mem.splitScalar(u8, lines.next().?, '\t');
+        try testing.expect(fields.next().?.len > 0); // local time
+        try testing.expectEqualStrings(e[0], fields.next().?);
+        try testing.expectEqualStrings(e[1], fields.next().?);
+        try testing.expectEqualStrings(e[2], fields.next().?);
+        try testing.expectEqual(null, fields.next());
+    }
+    try testing.expectEqualStrings("", lines.next().?);
+    try testing.expectEqual(null, lines.next());
+}
