@@ -463,340 +463,534 @@ pub const Display = struct {
     ) struct { draws: []const gpu_mod.PanelDraw, fills: []const gpu_mod.Fill, text: []const font.Vertex } {
         const width = surface.width;
         const height = surface.height;
-        const nch = surface.nch;
         const fs = layout.sample_rate;
-        var nf: usize = 0;
-        var nd: usize = 0;
         batch.clear();
-        const line_h = @round(batch.font.line_height);
-        for (self.set.items[0..self.set.len], 0..) |*p, i| {
-            const r = p.pixelRect(width, height);
-            // Sweep: a whole number of samples per pass, so the picture stands still.
-            const span: f64 = if (p.mode == .sweep) @max(1, @round(p.span_s * fs)) else p.span_s * fs;
-            // In review a panel shows a fixed stretch that ends at the review position
-            // (triggered panels stay live: their sweeps are about now).
-            const in_review = review != null and p.mode != .triggered;
-            const t_end: i64 = if (in_review) review.?.end else newest;
-            const sweeping = p.mode == .sweep and !in_review;
-            const phase: f64 = if (sweeping) @floatFromInt(@mod(t_end, @as(i64, @intFromFloat(span)))) else -1;
-            const px: f32 = @floatFromInt(r.x);
-            const py: f32 = @floatFromInt(r.y);
-            const shown = p.shownRows();
-            var params: gpu_mod.TraceParams = .{
-                .nch = @intCast(nch),
-                .cap_mask = @intCast(surface.hist_cap - 1),
-                .newest = @truncate(@as(u64, @bitCast(t_end))),
-                .first_ch = p.drawColumn(),
-                .cols = r.w,
-                .rows = shown,
-                .span = @floatCast(span),
-                .lsb_per_row = @floatCast(p.scale / p.unitsPerLsb()),
-                .half_px = 1.5 / @as(f32, @floatFromInt(r.h)),
-                .phase = @floatCast(phase),
-                .gain_base = @intCast(i * gpu_mod.max_rows),
-            };
-            // The rows' own scales, for the shader, in the order the rows are drawn.
-            if (surface.row_gains.len >= (i + 1) * gpu_mod.max_rows) {
-                const gains = surface.row_gains[i * gpu_mod.max_rows ..][0..gpu_mod.max_rows];
-                for (0..@min(shown, gpu_mod.max_rows)) |k| gains[k] = p.per_row.gain[p.rowOfShown(k) orelse k];
-            }
-            const rect: gpu_mod.PixelRect = .{ .x = r.x, .y = r.y, .w = r.w, .h = r.h };
-            var shown_sweeps: usize = 0;
-            if (p.mode == .triggered) {
-                // One draw per sweep, oldest first and dimmest, the newest on top.
-                const trig = &self.triggers[i];
-                const pre: i64 = @intFromFloat(@round(p.trigger.pre_ms * 1e-3 * fs));
-                const post: i64 = @max(1, @as(i64, @intFromFloat(@round(p.trigger.post_ms * 1e-3 * fs))));
-                const window: f64 = @floatFromInt(pre + post);
-                // Sweeps whose samples the history may no longer hold are left out.
-                const keep: i64 = @as(i64, @intCast(surface.hist_cap)) - @as(i64, @intFromFloat(fs));
-                var k: usize = @min(p.trigger.overlay, trig.len);
-                while (k > 0) {
-                    k -= 1;
-                    const s = trig.recent(k).?;
-                    if (newest - (s.t0 - pre) > keep) continue;
-                    const end = s.t0 + post;
-                    const future: f64 = @floatFromInt(@max(0, end - newest));
-                    if (window - future < 2 * window / @as(f64, @floatFromInt(r.w)) + 2) continue;
-                    params.newest = @truncate(@as(u64, @bitCast(end)));
-                    params.span = @floatCast(window);
-                    params.phase = -1;
-                    params.future = @floatCast(future);
-                    params.gain = if (k == 0) 1.0 else 0.6 - 0.4 * @as(f32, @floatFromInt(k - 1)) /
-                        @as(f32, @floatFromInt(@max(1, p.trigger.overlay -| 2)));
-                    if (nd < draws.len) {
-                        draws[nd] = .{ .rect = rect, .params = params };
-                        nd += 1;
-                        shown_sweeps += 1;
-                    }
-                }
-                // Over the traces: when the trigger line was high in the newest sweep
-                // (the laser), and a line at the trigger.
-                const w: f32 = @floatFromInt(r.w);
-                const x0 = px + w * @as(f32, @floatFromInt(pre)) / @as(f32, @floatCast(window));
-                if (p.trigger.source == .channel) {
-                    // The level, as a line across the trigger's row (in the row's own
-                    // scale: it sits on the trace when the panel shows the spike band).
-                    const row_h = @as(f32, @floatFromInt(r.h)) / @as(f32, @floatFromInt(@max(shown, 1)));
-                    const centre = py + (@as(f32, @floatFromInt(p.shownIndex(p.trigger.row) orelse 0)) + 0.5) * row_h;
-                    const dy: f32 = @floatCast(std.math.clamp(p.trigger.level_now_uv / p.rowScale(p.trigger.row), -1.5, 1.5));
-                    var x = px;
-                    if (p.shownIndex(p.trigger.row) != null)
-                        while (x < px + w) : (x += 12) batch.rect(x, @round(centre - dy * row_h), 6, 1, theme.trigger_level);
-                } else if (trig.recent(0)) |s| {
-                    const until = @min(s.fall orelse newest, s.t0 + post);
-                    const x1 = px + w * @as(f32, @floatFromInt(until - s.t0 + pre)) / @as(f32, @floatCast(window));
-                    if (shown_sweeps > 0 and x1 > x0) batch.rect(x0, py, x1 - x0, @floatFromInt(r.h), theme.tint_pulse);
-                }
-                batch.rect(@round(x0), py, 1, @floatFromInt(r.h), theme.trigger_line);
-            } else if (nd < draws.len and !(in_review and !review.?.ready)) {
-                draws[nd] = .{ .rect = rect, .params = params, .review = in_review and review.?.from_file };
-                nd += 1;
-            }
-            if (p.mode != .triggered and span >= 1) {
-                // Notes: a line where each was stamped, with its text beside it.
-                const w: f64 = @floatFromInt(r.w);
-                const span_i: i64 = @intFromFloat(span);
-                const pass_start: i64 = if (sweeping) t_end - @as(i64, @intFromFloat(phase)) else t_end - span_i;
-                var k: usize = 0;
-                while (notes.recentNote(k)) |note| : (k += 1) {
-                    const at = note.sample;
-                    if (at < pass_start - span_i) break;
-                    // This pass (or, scrolling, the window); else the previous pass, where
-                    // the cursor has not yet gone over it.
-                    const from: i64 = if (at >= pass_start)
-                        pass_start
-                    else if (sweeping and at >= pass_start - span_i + (t_end - pass_start))
-                        pass_start - span_i
-                    else
-                        continue;
-                    if (at > t_end) continue;
-                    const x = px + @as(f32, @floatCast(w * @as(f64, @floatFromInt(at - from)) / span));
-                    batch.rect(@round(x), py, 1, @floatFromInt(r.h), theme.note_line);
-                    if (line_h > 0 and x + 60 < px + @as(f32, @floatCast(w)))
-                        _ = batch.label(x + 5, py + line_h + 12, notes_mod.prefix(note.text(), 40), theme.heard);
-                }
-            }
-            if (p.tint_line != 0 and p.mode != .triggered and span >= 1) {
-                // A tint over the panel wherever its tint line was high. Scrolling: time
-                // runs to the newest sample at the right edge. Sweep: this pass left of the cursor,
-                // the previous pass right of it.
-                const pulses = &self.pulses[i];
-                const w: f64 = @floatFromInt(r.w);
-                const span_i: i64 = @intFromFloat(span);
-                const pass_start: i64 = if (sweeping) t_end - @as(i64, @intFromFloat(phase)) else t_end - span_i;
-                var k: usize = 0;
-                while (pulses.recent(k)) |pulse| : (k += 1) {
-                    const t0 = pulse.t0;
-                    const t1 = pulse.fall orelse t_end;
-                    if (t1 < t_end - 2 * span_i) break;
-                    // The stretch of the pulse in this pass (or, scrolling, in the window).
-                    const a0 = @max(t0, pass_start);
-                    const a1 = @min(t1, t_end);
-                    if (a1 > a0) batch.rect(
-                        px + @as(f32, @floatCast(w * @as(f64, @floatFromInt(a0 - pass_start)) / span)),
-                        py,
-                        @floatCast(@max(1.0, w * @as(f64, @floatFromInt(a1 - a0)) / span)),
-                        @floatFromInt(r.h),
-                        theme.tint_pulse,
-                    );
-                    if (p.mode != .sweep) continue;
-                    // And in the previous pass, as far as the cursor has not overwritten it.
-                    const prev = pass_start - span_i;
-                    const b0 = @max(t0, prev + (t_end - pass_start));
-                    const b1 = @min(t1, pass_start);
-                    if (b1 > b0) batch.rect(
-                        px + @as(f32, @floatCast(w * @as(f64, @floatFromInt(b0 - prev)) / span)),
-                        py,
-                        @floatCast(@max(1.0, w * @as(f64, @floatFromInt(b1 - b0)) / span)),
-                        @floatFromInt(r.h),
-                        theme.tint_pulse,
-                    );
-                }
-            }
-            if (sweeping) {
-                // The cursor: a line where the newest sample is, and a blank stretch ahead.
-                const cx: u32 = @min(r.w - 1, @as(u32, @intFromFloat(phase / span * @as(f64, @floatFromInt(r.w)))));
-                fills[nf] = .{ .rect = .{ .x = r.x + cx, .y = r.y, .w = @min(10, r.w - cx), .h = r.h }, .colour = theme.background };
-                fills[nf + 1] = .{ .rect = .{ .x = r.x + cx, .y = r.y, .w = 1, .h = r.h }, .colour = theme.sweep_cursor };
-                nf += 2;
-            }
-            // A line along the left and top edges that are not the display's own.
-            if (r.x > 0) {
-                fills[nf] = .{ .rect = .{ .x = r.x, .y = r.y, .w = 1, .h = r.h }, .colour = theme.panel_divider };
-                nf += 1;
-            }
-            if (r.y > 0) {
-                fills[nf] = .{ .rect = .{ .x = r.x, .y = r.y, .w = r.w, .h = 1 }, .colour = theme.panel_divider };
-                nf += 1;
-            }
-            if (line_h <= 0) continue;
-            // Title, top left.
-            const title_y = py + 6;
-            var span_buf: [24]u8 = undefined;
-            var scale_buf: [24]u8 = undefined;
-            var title_buf: [128]u8 = undefined;
-            var band_buf: [48]u8 = undefined;
-            var trig_buf: [48]u8 = undefined;
-            const title = if (p.mode == .triggered)
-                format.fmt(&title_buf, "{s}   {s}   -{d:.1}/+{d:.1} ms   {s}/row{s}   {d} sweeps{s}", .{
-                    p.name(),
-                    trigText(&trig_buf, p),
-                    p.trigger.pre_ms,
-                    p.trigger.post_ms,
-                    fmtScale(&scale_buf, p.kind, p.scale),
-                    fmtBand(&band_buf, p),
-                    shown_sweeps,
-                    if (shown_sweeps == 0) " (waiting for a trigger)" else "",
-                })
-            else if (p.kind == .ttl)
-                format.fmt(&title_buf, "{s}   {s}{s}", .{
-                    p.name(),
-                    fmtSpan(&span_buf, p.span_s),
-                    if (in_review) "   review" else if (p.mode == .sweep) "   sweep" else "",
-                })
-            else
-                format.fmt(&title_buf, "{s}   {s}   {s}/row{s}{s}", .{
-                    p.name(),
-                    fmtSpan(&span_buf, p.span_s),
-                    fmtScale(&scale_buf, p.kind, p.scale),
-                    fmtBand(&band_buf, p),
-                    if (in_review) "   review" else if (p.mode == .sweep) "   sweep" else "",
-                });
-            // A lane strip is short: its title goes to the right, clear of the lane labels.
-            _ = batch.label(
-                if (p.kind == .ttl) px + @as(f32, @floatFromInt(r.w)) - batch.font.width(title) - 8 else px + 8,
-                title_y,
-                title,
-                theme.text_bright,
-            );
-            if (p.mode == .triggered) {
-                // The time axis along the bottom: the ends of the window and the trigger.
-                const bottom = py + @as(f32, @floatFromInt(r.h)) - line_h - 4;
-                const w: f32 = @floatFromInt(r.w);
-                var t_buf: [24]u8 = undefined;
-                const right = format.fmt(&t_buf, "+{d:.1} ms", .{p.trigger.post_ms});
-                _ = batch.label(px + w - batch.font.width(right) - 8, bottom, right, theme.text_dim);
-                if (p.trigger.pre_ms > 0) {
-                    _ = batch.label(
-                        px + w * @as(f32, @floatCast(p.trigger.pre_ms / (p.trigger.pre_ms + p.trigger.post_ms))) + 4,
-                        bottom,
-                        "0",
-                        theme.text_dim,
-                    );
-                    var l_buf: [24]u8 = undefined;
-                    const left = format.fmt(&l_buf, "-{d:.1} ms", .{p.trigger.pre_ms});
-                    // Only where it fits between the row labels and the trigger line.
-                    if (px + 48 + batch.font.width(left) + 8 <
-                        px + w * @as(f32, @floatCast(p.trigger.pre_ms / (p.trigger.pre_ms + p.trigger.post_ms))))
-                        _ = batch.label(px + 48, bottom, left, theme.text_dim);
-                }
-            }
-            // Row labels down the left edge, thinned when rows are shorter than a line.
-            if (shown == 0) continue;
-            const row_h = @as(f32, @floatFromInt(r.h)) / @as(f32, @floatFromInt(shown));
-            const step: u32 = @max(1, @as(u32, @intFromFloat(@ceil((line_h + 3) / row_h))));
-            var k: u32 = 0;
-            while (k < shown) : (k += step) {
-                // The `k`-th row drawn is panel row `row` (hidden rows are left out).
-                const row: u32 = @intCast(p.rowOfShown(k) orelse continue);
-                const y = py + (@as(f32, @floatFromInt(k)) + 0.5) * row_h - 0.5 * line_h;
-                if (p.kind != .ttl and y < title_y + line_h + 3) continue;
-                var label_buf: [16]u8 = undefined;
-                // The rows listened to stand out.
-                const heard = p.kind == .electrode and self.audio.enabled and self.listening(p.first_ch + row);
-                var after = batch.label(
-                    px + 5,
-                    y,
-                    rowLabel(&label_buf, p, row, layout, &self.set),
-                    if (heard) theme.heard else theme.text_dim,
-                );
-                // In a filtered panel, the rows shown as they are say so.
-                if (p.filter.on and p.kind == .electrode and !p.rowFiltered(row)) after = batch.label(after + 4, y, "raw", theme.text_dim);
-                // A row with a scale of its own says so.
-                if (row < panels_mod.max_rows and p.per_row.gain[row] != 1) {
-                    var own_buf: [24]u8 = undefined;
-                    _ = batch.label(after + 4, y, fmtScale(&own_buf, p.kind, p.rowScale(row)), theme.row_scale_text);
-                }
-            }
-        }
-        if (line_h > 0 and (status.alarm_len > 0 or status.warning_len > 0)) {
-            // Samples are being lost, or the recording has failed: a bar across the whole
-            // display that stays until it is acknowledged. A warning (the disk falling
-            // behind) is amber and goes when its cause does.
-            const is_alarm = status.alarm_len > 0;
-            const text = if (is_alarm) status.alarm() else status.warning();
-            const bar_h = 2 * line_h + 14;
-            const bar_y = if (review != null) line_h + 18 else 0;
-            batch.rect(0, bar_y, @floatFromInt(width), bar_h, if (is_alarm) theme.alarm_bar else theme.warning_bar);
-            const tw = batch.font.width(text);
-            _ = batch.text((@as(f32, @floatFromInt(width)) - tw) / 2, bar_y + 5, text, theme.bar_text);
-            if (is_alarm) {
-                const hint = "press a to acknowledge";
-                _ = batch.text(
-                    (@as(f32, @floatFromInt(width)) - batch.font.width(hint)) / 2,
-                    bar_y + line_h + 7,
-                    hint,
-                    theme.alarm_hint_text,
-                );
-            }
-        }
+        var o: Output = .{ .draws = draws, .fills = fills, .batch = batch, .line_h = @round(batch.font.line_height) };
+        const scene: Scene = .{ .surface = surface, .layout = layout, .newest = newest, .review = review, .notes = notes };
+        for (self.set.items[0..self.set.len], 0..) |*p, i| self.drawPanel(&o, &scene, p, i);
+        if (o.line_h > 0 and (status.alarm_len > 0 or status.warning_len > 0)) alarmBar(&o, status, review != null, width);
         if (review) |v| {
-            if (line_h > 0) {
-                // Unmistakable: this is not what the electrodes see now.
-                var buf: [120]u8 = undefined;
-                var clock_buf: [16]u8 = undefined;
-                const text = std.fmt.bufPrint(
-                    &buf,
-                    "REVIEW   {d:.1} s behind live   at {s}{s}   End = live",
-                    .{
-                        v.behind_s,
-                        control.fmtClock(&clock_buf, @as(f64, @floatFromInt(v.end)) / layout.sample_rate),
-                        if (v.ready) "" else "   (reading)",
-                    },
-                ) catch "REVIEW";
-                const tw = batch.font.width(text);
-                const x = (@as(f32, @floatFromInt(width)) - tw) / 2;
-                batch.rect(x - 10, 4, tw + 20, line_h + 10, theme.warning_bar);
-                _ = batch.text(x, 9, text, theme.review_badge_text);
+            if (o.line_h > 0) reviewBadge(&o, v, width, fs);
+        }
+        if (notes.editing and o.line_h > 0) noteDraft(&o, notes, height, fs);
+        if (status.valid and o.line_h > 0) statusReadout(&o, status, width, height);
+        if (self.set.len > 1) targetBar(&o, self.set.items[self.target].pixelRect(width, height));
+        return .{ .draws = draws[0..o.nd], .fills = fills[0..o.nf], .text = batch.vertices[0..batch.len] };
+    }
+
+    /// One panel, from the bottom up: its traces (and, triggered, the marks over them), the
+    /// notes, the tint, the sweep cursor, the dividers, then its text.
+    fn drawPanel(self: *const Display, o: *Output, scene: *const Scene, p: *const Panel, i: usize) void {
+        const fs = scene.layout.sample_rate;
+        const r = p.pixelRect(scene.surface.width, scene.surface.height);
+        const t = panelTime(p, scene.newest, scene.review, fs);
+        const params = traceParams(p, i, r, t, scene.surface);
+        setRowGains(scene.surface.row_gains, p, i);
+        const rect: gpu_mod.PixelRect = .{ .x = r.x, .y = r.y, .w = r.w, .h = r.h };
+        var shown_sweeps: usize = 0;
+        if (t.trig) |win| {
+            shown_sweeps = self.sweepDraws(o, p, i, rect, params, win, scene.newest, scene.surface.hist_cap, fs);
+            self.triggerMarks(o, p, i, r, win, scene.newest, shown_sweeps);
+        } else if (o.nd < o.draws.len and !t.waiting) {
+            o.draws[o.nd] = .{ .rect = rect, .params = params, .review = t.from_file };
+            o.nd += 1;
+        }
+        if (p.mode != .triggered and t.span >= 1) noteMarks(o, r, t, scene.notes);
+        if (p.tint_line != 0 and p.mode != .triggered and t.span >= 1) tintPulses(o, p, r, t, &self.pulses[i]);
+        if (t.sweeping) sweepCursor(o, r, t);
+        dividers(o, r);
+        if (o.line_h <= 0) return;
+        panelTitle(o, p, r, t.in_review, shown_sweeps);
+        if (p.mode == .triggered) timeAxis(o, p, r);
+        self.rowLabels(o, p, r, scene.layout);
+    }
+
+    /// One draw per sweep of a triggered panel, oldest first and dimmest, the newest on
+    /// top. Returns how many were drawn.
+    fn sweepDraws(
+        self: *const Display,
+        o: *Output,
+        p: *const Panel,
+        i: usize,
+        rect: gpu_mod.PixelRect,
+        base: gpu_mod.TraceParams,
+        win: TrigWindow,
+        newest: i64,
+        hist_cap: usize,
+        fs: f64,
+    ) usize {
+        const trig = &self.triggers[i];
+        const pre = win.pre;
+        const post = win.post;
+        const window = win.window;
+        var params = base;
+        var shown_sweeps: usize = 0;
+        // Sweeps whose samples the history may no longer hold are left out.
+        const keep: i64 = @as(i64, @intCast(hist_cap)) - @as(i64, @intFromFloat(fs));
+        var k: usize = @min(p.trigger.overlay, trig.len);
+        while (k > 0) {
+            k -= 1;
+            const s = trig.recent(k).?;
+            if (newest - (s.t0 - pre) > keep) continue;
+            const end = s.t0 + post;
+            const future: f64 = @floatFromInt(@max(0, end - newest));
+            if (window - future < 2 * window / @as(f64, @floatFromInt(rect.w)) + 2) continue;
+            params.newest = @truncate(@as(u64, @bitCast(end)));
+            params.span = @floatCast(window);
+            params.phase = -1;
+            params.future = @floatCast(future);
+            params.gain = if (k == 0) 1.0 else 0.6 - 0.4 * @as(f32, @floatFromInt(k - 1)) /
+                @as(f32, @floatFromInt(@max(1, p.trigger.overlay -| 2)));
+            if (o.nd < o.draws.len) {
+                o.draws[o.nd] = .{ .rect = rect, .params = params };
+                o.nd += 1;
+                shown_sweeps += 1;
             }
         }
-        if (notes.editing and line_h > 0) {
-            // The note being typed, bottom left, with when it is stamped.
-            var buf: [notes_mod.max_text + 64]u8 = undefined;
-            var clock_buf: [16]u8 = undefined;
-            const text = std.fmt.bufPrint(
-                &buf,
-                "note at {s}:  {s}_",
-                .{ control.fmtClock(&clock_buf, @as(f64, @floatFromInt(notes.draft.sample)) / layout.sample_rate), notes.draft.text() },
-            ) catch "note";
-            _ = batch.label(10, @as(f32, @floatFromInt(height)) - 2 * line_h - 14, text, theme.note_draft_text);
+        return shown_sweeps;
+    }
+
+    /// Over a triggered panel's traces: the slope trigger's level, or when the trigger line
+    /// was high in the newest sweep (the laser); then a line at the trigger.
+    fn triggerMarks(
+        self: *const Display,
+        o: *Output,
+        p: *const Panel,
+        i: usize,
+        r: panels_mod.Rect,
+        win: TrigWindow,
+        newest: i64,
+        shown_sweeps: usize,
+    ) void {
+        const batch = o.batch;
+        const trig = &self.triggers[i];
+        const pre = win.pre;
+        const post = win.post;
+        const window = win.window;
+        const px: f32 = @floatFromInt(r.x);
+        const py: f32 = @floatFromInt(r.y);
+        const shown = p.shownRows();
+        const w: f32 = @floatFromInt(r.w);
+        const x0 = px + w * @as(f32, @floatFromInt(pre)) / @as(f32, @floatCast(window));
+        if (p.trigger.source == .channel) {
+            // The level, as a line across the trigger's row (in the row's own
+            // scale: it sits on the trace when the panel shows the spike band).
+            const row_h = @as(f32, @floatFromInt(r.h)) / @as(f32, @floatFromInt(@max(shown, 1)));
+            const centre = py + (@as(f32, @floatFromInt(p.shownIndex(p.trigger.row) orelse 0)) + 0.5) * row_h;
+            const dy: f32 = @floatCast(std.math.clamp(p.trigger.level_now_uv / p.rowScale(p.trigger.row), -1.5, 1.5));
+            var x = px;
+            if (p.shownIndex(p.trigger.row) != null)
+                while (x < px + w) : (x += 12) batch.rect(x, @round(centre - dy * row_h), 6, 1, theme.trigger_level);
+        } else if (trig.recent(0)) |s| {
+            const until = @min(s.fall orelse newest, s.t0 + post);
+            const x1 = px + w * @as(f32, @floatFromInt(until - s.t0 + pre)) / @as(f32, @floatCast(window));
+            if (shown_sweeps > 0 and x1 > x0) batch.rect(x0, py, x1 - x0, @floatFromInt(r.h), theme.tint_pulse);
         }
-        if (status.valid and line_h > 0) {
-            var buf: [96]u8 = undefined;
-            const text = if (status.lost > 0)
-                format.fmt(&buf, "{d:.1} ms   {d} fps   display skipped {d} blocks", .{ status.latency_ms, status.fps, status.lost })
-            else
-                format.fmt(&buf, "{d:.1} ms   {d} fps", .{ status.latency_ms, status.fps });
-            const w = batch.font.width(text);
-            const x = @as(f32, @floatFromInt(width)) - w - 8;
-            const y = @as(f32, @floatFromInt(height)) - line_h - 6;
-            _ = batch.label(x, y, text, if (status.lost > 0) theme.text_warn else theme.text_dim);
-            if (status.recording) {
-                var clock_buf: [16]u8 = undefined;
-                var rec_buf: [32]u8 = undefined;
-                const rec_text = std.fmt.bufPrint(&rec_buf, "REC {s}", .{control.fmtClock(&clock_buf, status.rec_seconds)}) catch "REC";
-                _ = batch.label(x - batch.font.width(rec_text) - 14, y, rec_text, theme.text_rec);
+        batch.rect(@round(x0), py, 1, @floatFromInt(r.h), theme.trigger_line);
+    }
+
+    /// Row labels down the left edge, thinned when rows are shorter than a line.
+    fn rowLabels(self: *const Display, o: *Output, p: *const Panel, r: panels_mod.Rect, layout: *const oez.types.Layout) void {
+        const batch = o.batch;
+        const line_h = o.line_h;
+        const px: f32 = @floatFromInt(r.x);
+        const py: f32 = @floatFromInt(r.y);
+        const title_y = py + 6;
+        const shown = p.shownRows();
+        if (shown == 0) return;
+        const row_h = @as(f32, @floatFromInt(r.h)) / @as(f32, @floatFromInt(shown));
+        const step: u32 = @max(1, @as(u32, @intFromFloat(@ceil((line_h + 3) / row_h))));
+        var k: u32 = 0;
+        while (k < shown) : (k += step) {
+            // The `k`-th row drawn is panel row `row` (hidden rows are left out).
+            const row: u32 = @intCast(p.rowOfShown(k) orelse continue);
+            const y = py + (@as(f32, @floatFromInt(k)) + 0.5) * row_h - 0.5 * line_h;
+            if (p.kind != .ttl and y < title_y + line_h + 3) continue;
+            var label_buf: [16]u8 = undefined;
+            // The rows listened to stand out.
+            const heard = p.kind == .electrode and self.audio.enabled and self.listening(p.first_ch + row);
+            var after = batch.label(
+                px + 5,
+                y,
+                rowLabel(&label_buf, p, row, layout, &self.set),
+                if (heard) theme.heard else theme.text_dim,
+            );
+            // In a filtered panel, the rows shown as they are say so.
+            if (p.filter.on and p.kind == .electrode and !p.rowFiltered(row)) after = batch.label(after + 4, y, "raw", theme.text_dim);
+            // A row with a scale of its own says so.
+            if (row < panels_mod.max_rows and p.per_row.gain[row] != 1) {
+                var own_buf: [24]u8 = undefined;
+                _ = batch.label(after + 4, y, fmtScale(&own_buf, p.kind, p.rowScale(row)), theme.row_scale_text);
             }
         }
-        if (self.set.len > 1) {
-            const r = self.set.items[self.target].pixelRect(width, height);
-            fills[nf] = .{ .rect = .{ .x = r.x, .y = r.y, .w = r.w, .h = 3 }, .colour = theme.target_bar };
-            nf += 1;
-        }
-        return .{ .draws = draws[0..nd], .fills = fills[0..nf], .text = batch.vertices[0..batch.len] };
     }
 };
+
+/// What one frame is drawn into: the trace draws, the fills and the batch of text and
+/// rectangles, each in the order drawn (later is on top).
+const Output = struct {
+    draws: *[max_draws]gpu_mod.PanelDraw,
+    fills: *[max_fills]gpu_mod.Fill,
+    batch: *font.Batch,
+    nd: usize = 0,
+    nf: usize = 0,
+    /// The font's line height in whole pixels; 0 without a font, and then no text.
+    line_h: f32,
+};
+
+/// What one frame is drawn from, besides the display's own state.
+const Scene = struct {
+    surface: Surface,
+    layout: *const oez.types.Layout,
+    newest: i64,
+    review: ?ReviewView,
+    notes: *const notes_mod.Notes,
+};
+
+/// The window around each trigger of a triggered panel, in samples.
+const TrigWindow = struct {
+    pre: i64,
+    post: i64,
+    /// `pre + post`.
+    window: f64,
+};
+
+/// What stretch of time a panel shows.
+const PanelTime = struct {
+    /// Samples across the panel (a whole number of them in sweep mode).
+    span: f64,
+    /// The sample at the right edge (sweep: at the cursor): the review position in review,
+    /// else the newest sample.
+    t_end: i64,
+    /// The panel shows the review stretch.
+    in_review: bool,
+    /// In review from the recording's file: drawn from the review history.
+    from_file: bool,
+    /// In review, and the stretch is not there to draw yet.
+    waiting: bool,
+    /// Sweep mode, live: the cursor runs across the panel.
+    sweeping: bool,
+    /// Sweeping: samples since the current pass began; else -1.
+    phase: f64,
+    /// Triggered: the window around each trigger.
+    trig: ?TrigWindow,
+
+    /// The first sample of the current pass (sweeping), or at the left edge.
+    fn passStart(self: PanelTime) i64 {
+        const span_i: i64 = @intFromFloat(self.span);
+        return if (self.sweeping) self.t_end - @as(i64, @intFromFloat(self.phase)) else self.t_end - span_i;
+    }
+};
+
+/// What time panel `p` shows: live or the review stretch, the sweep's pass and phase, the
+/// window around a trigger.
+fn panelTime(p: *const Panel, newest: i64, review: ?ReviewView, fs: f64) PanelTime {
+    // Sweep: a whole number of samples per pass, so the picture stands still.
+    const span: f64 = if (p.mode == .sweep) @max(1, @round(p.span_s * fs)) else p.span_s * fs;
+    // In review a panel shows a fixed stretch that ends at the review position
+    // (triggered panels stay live: their sweeps are about now).
+    const in_review = review != null and p.mode != .triggered;
+    const t_end: i64 = if (in_review) review.?.end else newest;
+    const sweeping = p.mode == .sweep and !in_review;
+    const phase: f64 = if (sweeping) @floatFromInt(@mod(t_end, @as(i64, @intFromFloat(span)))) else -1;
+    var trig: ?TrigWindow = null;
+    if (p.mode == .triggered) {
+        const pre: i64 = @intFromFloat(@round(p.trigger.pre_ms * 1e-3 * fs));
+        const post: i64 = @max(1, @as(i64, @intFromFloat(@round(p.trigger.post_ms * 1e-3 * fs))));
+        trig = .{ .pre = pre, .post = post, .window = @floatFromInt(pre + post) };
+    }
+    return .{
+        .span = span,
+        .t_end = t_end,
+        .in_review = in_review,
+        .from_file = in_review and review.?.from_file,
+        .waiting = in_review and !review.?.ready,
+        .sweeping = sweeping,
+        .phase = phase,
+        .trig = trig,
+    };
+}
+
+/// The shader's parameters for panel `i`, showing the stretch `t` (a triggered panel's
+/// sweeps change some of them).
+fn traceParams(p: *const Panel, i: usize, r: panels_mod.Rect, t: PanelTime, surface: Surface) gpu_mod.TraceParams {
+    return .{
+        .nch = @intCast(surface.nch),
+        .cap_mask = @intCast(surface.hist_cap - 1),
+        .newest = @truncate(@as(u64, @bitCast(t.t_end))),
+        .first_ch = p.drawColumn(),
+        .cols = r.w,
+        .rows = p.shownRows(),
+        .span = @floatCast(t.span),
+        .lsb_per_row = @floatCast(p.scale / p.unitsPerLsb()),
+        .half_px = 1.5 / @as(f32, @floatFromInt(r.h)),
+        .phase = @floatCast(t.phase),
+        .gain_base = @intCast(i * gpu_mod.max_rows),
+    };
+}
+
+/// The rows' own scales of panel `i`, for the shader, in the order the rows are drawn.
+fn setRowGains(row_gains: []f32, p: *const Panel, i: usize) void {
+    const shown = p.shownRows();
+    if (row_gains.len >= (i + 1) * gpu_mod.max_rows) {
+        const gains = row_gains[i * gpu_mod.max_rows ..][0..gpu_mod.max_rows];
+        for (0..@min(shown, gpu_mod.max_rows)) |k| gains[k] = p.per_row.gain[p.rowOfShown(k) orelse k];
+    }
+}
+
+/// Notes: a line where each was stamped, with its text beside it.
+fn noteMarks(o: *Output, r: panels_mod.Rect, t: PanelTime, notes: *const notes_mod.Notes) void {
+    const batch = o.batch;
+    const line_h = o.line_h;
+    const span = t.span;
+    const t_end = t.t_end;
+    const sweeping = t.sweeping;
+    const px: f32 = @floatFromInt(r.x);
+    const py: f32 = @floatFromInt(r.y);
+    const w: f64 = @floatFromInt(r.w);
+    const span_i: i64 = @intFromFloat(span);
+    const pass_start: i64 = t.passStart();
+    var k: usize = 0;
+    while (notes.recentNote(k)) |note| : (k += 1) {
+        const at = note.sample;
+        if (at < pass_start - span_i) break;
+        // This pass (or, scrolling, the window); else the previous pass, where
+        // the cursor has not yet gone over it.
+        const from: i64 = if (at >= pass_start)
+            pass_start
+        else if (sweeping and at >= pass_start - span_i + (t_end - pass_start))
+            pass_start - span_i
+        else
+            continue;
+        if (at > t_end) continue;
+        const x = px + @as(f32, @floatCast(w * @as(f64, @floatFromInt(at - from)) / span));
+        batch.rect(@round(x), py, 1, @floatFromInt(r.h), theme.note_line);
+        if (line_h > 0 and x + 60 < px + @as(f32, @floatCast(w)))
+            _ = batch.label(x + 5, py + line_h + 12, notes_mod.prefix(note.text(), 40), theme.heard);
+    }
+}
+
+/// A tint over the panel wherever its tint line was high. Scrolling: time runs to the
+/// newest sample at the right edge. Sweep: this pass left of the cursor, the previous pass
+/// right of it.
+fn tintPulses(o: *Output, p: *const Panel, r: panels_mod.Rect, t: PanelTime, pulses: *const oez.sweeps.Pulses) void {
+    const batch = o.batch;
+    const span = t.span;
+    const t_end = t.t_end;
+    const px: f32 = @floatFromInt(r.x);
+    const py: f32 = @floatFromInt(r.y);
+    const w: f64 = @floatFromInt(r.w);
+    const span_i: i64 = @intFromFloat(span);
+    const pass_start: i64 = t.passStart();
+    var k: usize = 0;
+    while (pulses.recent(k)) |pulse| : (k += 1) {
+        const t0 = pulse.t0;
+        const t1 = pulse.fall orelse t_end;
+        if (t1 < t_end - 2 * span_i) break;
+        // The stretch of the pulse in this pass (or, scrolling, in the window).
+        const a0 = @max(t0, pass_start);
+        const a1 = @min(t1, t_end);
+        if (a1 > a0) batch.rect(
+            px + @as(f32, @floatCast(w * @as(f64, @floatFromInt(a0 - pass_start)) / span)),
+            py,
+            @floatCast(@max(1.0, w * @as(f64, @floatFromInt(a1 - a0)) / span)),
+            @floatFromInt(r.h),
+            theme.tint_pulse,
+        );
+        if (p.mode != .sweep) continue;
+        // And in the previous pass, as far as the cursor has not overwritten it.
+        const prev = pass_start - span_i;
+        const b0 = @max(t0, prev + (t_end - pass_start));
+        const b1 = @min(t1, pass_start);
+        if (b1 > b0) batch.rect(
+            px + @as(f32, @floatCast(w * @as(f64, @floatFromInt(b0 - prev)) / span)),
+            py,
+            @floatCast(@max(1.0, w * @as(f64, @floatFromInt(b1 - b0)) / span)),
+            @floatFromInt(r.h),
+            theme.tint_pulse,
+        );
+    }
+}
+
+/// The sweep's cursor: a line where the newest sample is, and a blank stretch ahead.
+fn sweepCursor(o: *Output, r: panels_mod.Rect, t: PanelTime) void {
+    const cx: u32 = @min(r.w - 1, @as(u32, @intFromFloat(t.phase / t.span * @as(f64, @floatFromInt(r.w)))));
+    o.fills[o.nf] = .{ .rect = .{ .x = r.x + cx, .y = r.y, .w = @min(10, r.w - cx), .h = r.h }, .colour = theme.background };
+    o.fills[o.nf + 1] = .{ .rect = .{ .x = r.x + cx, .y = r.y, .w = 1, .h = r.h }, .colour = theme.sweep_cursor };
+    o.nf += 2;
+}
+
+/// A line along the left and top edges of a panel that are not the display's own.
+fn dividers(o: *Output, r: panels_mod.Rect) void {
+    if (r.x > 0) {
+        o.fills[o.nf] = .{ .rect = .{ .x = r.x, .y = r.y, .w = 1, .h = r.h }, .colour = theme.panel_divider };
+        o.nf += 1;
+    }
+    if (r.y > 0) {
+        o.fills[o.nf] = .{ .rect = .{ .x = r.x, .y = r.y, .w = r.w, .h = 1 }, .colour = theme.panel_divider };
+        o.nf += 1;
+    }
+}
+
+/// A panel's title, top left (a TTL lane strip's top right): its name, time base or
+/// trigger window, scale and band.
+fn panelTitle(o: *Output, p: *const Panel, r: panels_mod.Rect, in_review: bool, shown_sweeps: usize) void {
+    const batch = o.batch;
+    const px: f32 = @floatFromInt(r.x);
+    const py: f32 = @floatFromInt(r.y);
+    const title_y = py + 6;
+    var span_buf: [24]u8 = undefined;
+    var scale_buf: [24]u8 = undefined;
+    var title_buf: [128]u8 = undefined;
+    var band_buf: [48]u8 = undefined;
+    var trig_buf: [48]u8 = undefined;
+    const title = if (p.mode == .triggered)
+        format.fmt(&title_buf, "{s}   {s}   -{d:.1}/+{d:.1} ms   {s}/row{s}   {d} sweeps{s}", .{
+            p.name(),
+            trigText(&trig_buf, p),
+            p.trigger.pre_ms,
+            p.trigger.post_ms,
+            fmtScale(&scale_buf, p.kind, p.scale),
+            fmtBand(&band_buf, p),
+            shown_sweeps,
+            if (shown_sweeps == 0) " (waiting for a trigger)" else "",
+        })
+    else if (p.kind == .ttl)
+        format.fmt(&title_buf, "{s}   {s}{s}", .{
+            p.name(),
+            fmtSpan(&span_buf, p.span_s),
+            if (in_review) "   review" else if (p.mode == .sweep) "   sweep" else "",
+        })
+    else
+        format.fmt(&title_buf, "{s}   {s}   {s}/row{s}{s}", .{
+            p.name(),
+            fmtSpan(&span_buf, p.span_s),
+            fmtScale(&scale_buf, p.kind, p.scale),
+            fmtBand(&band_buf, p),
+            if (in_review) "   review" else if (p.mode == .sweep) "   sweep" else "",
+        });
+    // A lane strip is short: its title goes to the right, clear of the lane labels.
+    _ = batch.label(
+        if (p.kind == .ttl) px + @as(f32, @floatFromInt(r.w)) - batch.font.width(title) - 8 else px + 8,
+        title_y,
+        title,
+        theme.text_bright,
+    );
+}
+
+/// A triggered panel's time axis along the bottom: the ends of the window and the trigger.
+fn timeAxis(o: *Output, p: *const Panel, r: panels_mod.Rect) void {
+    const batch = o.batch;
+    const line_h = o.line_h;
+    const px: f32 = @floatFromInt(r.x);
+    const py: f32 = @floatFromInt(r.y);
+    const bottom = py + @as(f32, @floatFromInt(r.h)) - line_h - 4;
+    const w: f32 = @floatFromInt(r.w);
+    var t_buf: [24]u8 = undefined;
+    const right = format.fmt(&t_buf, "+{d:.1} ms", .{p.trigger.post_ms});
+    _ = batch.label(px + w - batch.font.width(right) - 8, bottom, right, theme.text_dim);
+    if (p.trigger.pre_ms > 0) {
+        _ = batch.label(
+            px + w * @as(f32, @floatCast(p.trigger.pre_ms / (p.trigger.pre_ms + p.trigger.post_ms))) + 4,
+            bottom,
+            "0",
+            theme.text_dim,
+        );
+        var l_buf: [24]u8 = undefined;
+        const left = format.fmt(&l_buf, "-{d:.1} ms", .{p.trigger.pre_ms});
+        // Only where it fits between the row labels and the trigger line.
+        if (px + 48 + batch.font.width(left) + 8 <
+            px + w * @as(f32, @floatCast(p.trigger.pre_ms / (p.trigger.pre_ms + p.trigger.post_ms))))
+            _ = batch.label(px + 48, bottom, left, theme.text_dim);
+    }
+}
+
+/// Samples are being lost, or the recording has failed: a bar across the whole display
+/// that stays until it is acknowledged. A warning (the disk falling behind) is amber and
+/// goes when its cause does. Below the review badge when there is one.
+fn alarmBar(o: *Output, status: Status, below_badge: bool, width: u32) void {
+    const batch = o.batch;
+    const line_h = o.line_h;
+    const is_alarm = status.alarm_len > 0;
+    const text = if (is_alarm) status.alarm() else status.warning();
+    const bar_h = 2 * line_h + 14;
+    const bar_y = if (below_badge) line_h + 18 else 0;
+    batch.rect(0, bar_y, @floatFromInt(width), bar_h, if (is_alarm) theme.alarm_bar else theme.warning_bar);
+    const tw = batch.font.width(text);
+    _ = batch.text((@as(f32, @floatFromInt(width)) - tw) / 2, bar_y + 5, text, theme.bar_text);
+    if (is_alarm) {
+        const hint = "press a to acknowledge";
+        _ = batch.text(
+            (@as(f32, @floatFromInt(width)) - batch.font.width(hint)) / 2,
+            bar_y + line_h + 7,
+            hint,
+            theme.alarm_hint_text,
+        );
+    }
+}
+
+/// In review, top centre. Unmistakable: this is not what the electrodes see now.
+fn reviewBadge(o: *Output, v: ReviewView, width: u32, fs: f64) void {
+    const batch = o.batch;
+    const line_h = o.line_h;
+    var buf: [120]u8 = undefined;
+    var clock_buf: [16]u8 = undefined;
+    const text = std.fmt.bufPrint(
+        &buf,
+        "REVIEW   {d:.1} s behind live   at {s}{s}   End = live",
+        .{
+            v.behind_s,
+            control.fmtClock(&clock_buf, @as(f64, @floatFromInt(v.end)) / fs),
+            if (v.ready) "" else "   (reading)",
+        },
+    ) catch "REVIEW";
+    const tw = batch.font.width(text);
+    const x = (@as(f32, @floatFromInt(width)) - tw) / 2;
+    batch.rect(x - 10, 4, tw + 20, line_h + 10, theme.warning_bar);
+    _ = batch.text(x, 9, text, theme.review_badge_text);
+}
+
+/// The note being typed, bottom left, with when it is stamped.
+fn noteDraft(o: *Output, notes: *const notes_mod.Notes, height: u32, fs: f64) void {
+    const batch = o.batch;
+    const line_h = o.line_h;
+    var buf: [notes_mod.max_text + 64]u8 = undefined;
+    var clock_buf: [16]u8 = undefined;
+    const text = std.fmt.bufPrint(
+        &buf,
+        "note at {s}:  {s}_",
+        .{ control.fmtClock(&clock_buf, @as(f64, @floatFromInt(notes.draft.sample)) / fs), notes.draft.text() },
+    ) catch "note";
+    _ = batch.label(10, @as(f32, @floatFromInt(height)) - 2 * line_h - 14, text, theme.note_draft_text);
+}
+
+/// The latency, frame rate and display losses in the bottom right corner, and the
+/// recording's clock beside them.
+fn statusReadout(o: *Output, status: Status, width: u32, height: u32) void {
+    const batch = o.batch;
+    const line_h = o.line_h;
+    var buf: [96]u8 = undefined;
+    const text = if (status.lost > 0)
+        format.fmt(&buf, "{d:.1} ms   {d} fps   display skipped {d} blocks", .{ status.latency_ms, status.fps, status.lost })
+    else
+        format.fmt(&buf, "{d:.1} ms   {d} fps", .{ status.latency_ms, status.fps });
+    const w = batch.font.width(text);
+    const x = @as(f32, @floatFromInt(width)) - w - 8;
+    const y = @as(f32, @floatFromInt(height)) - line_h - 6;
+    _ = batch.label(x, y, text, if (status.lost > 0) theme.text_warn else theme.text_dim);
+    if (status.recording) {
+        var clock_buf: [16]u8 = undefined;
+        var rec_buf: [32]u8 = undefined;
+        const rec_text = std.fmt.bufPrint(&rec_buf, "REC {s}", .{control.fmtClock(&clock_buf, status.rec_seconds)}) catch "REC";
+        _ = batch.label(x - batch.font.width(rec_text) - 14, y, rec_text, theme.text_rec);
+    }
+}
+
+/// A bar along the top of the panel that input goes to.
+fn targetBar(o: *Output, r: panels_mod.Rect) void {
+    o.fills[o.nf] = .{ .rect = .{ .x = r.x, .y = r.y, .w = r.w, .h = 3 }, .colour = theme.target_bar };
+    o.nf += 1;
+}
 
 /// The panels for this run: from the config, or one per headstage.
 pub fn makeDisplay(args: Args, layout: *const oez.types.Layout) ?Display {
@@ -1037,166 +1231,187 @@ const frame_states = [_][]const u8{
 fn frameState(st: *FrameState, k: usize) void {
     st.* = .{};
     switch (k) {
-        0 => {
-            var a = framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0, .w = 0.5, .h = 0.55 });
-            a.filter.on = true;
-            // Rows are labelled every second one here: these are among the labelled.
-            a.per_row.raw.set(4, true);
-            a.per_row.hidden.set(7, true);
-            a.per_row.hidden.set(9, true);
-            a.per_row.gain[6] = 2;
-            a.per_row.gain[9] = 0.5;
-            a.per_row.gain[10] = 0.5;
-            a.setCar(true);
-            a.reference.ref.set(2, false);
-            a.reference.sub.set(0, false);
-            var b = framePanel("Port B", .electrode, 32, 16, .{ .x = 0.5, .y = 0, .w = 0.5, .h = 0.55 });
-            b.span_s = 0.5;
-            b.setCar(true);
-            var adc = framePanel("ADC", .adc, 54, 8, .{ .x = 0.3, .y = 0.55, .w = 0.7, .h = 0.2 });
-            adc.scale = 2.5;
-            var ttl = framePanel("TTL", .ttl, 0, 5, .{ .x = 0, .y = 0.75, .w = 1, .h = 0.25 });
-            ttl.ttl_lines = .{ 1, 2, 3, 5, 8, 6, 7, 4 };
-            st.panels(&.{ a, b, framePanel("AUX", .aux, 48, 6, .{ .x = 0, .y = 0.55, .w = 0.3, .h = 0.2 }), adc, ttl });
-        },
-        1 => {
-            var a = framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0, .w = 1, .h = 0.6 });
-            a.mode = .sweep;
-            a.span_s = 1;
-            a.tint_line = 3;
-            a.filter.on = true;
-            a.filter.low_hz = 10;
-            a.filter.high_hz = 0;
-            var adc = framePanel("ADC", .adc, 54, 8, .{ .x = 0, .y = 0.6, .w = 0.5, .h = 0.4 });
-            adc.tint_line = 3;
-            var ttl = framePanel("TTL", .ttl, 0, 8, .{ .x = 0.5, .y = 0.6, .w = 0.5, .h = 0.4 });
-            ttl.mode = .sweep;
-            ttl.span_s = 1;
-            st.panels(&.{ a, adc, ttl });
-            st.display.target = 1;
-            st.feed(3, false);
-        },
-        2, 14 => {
-            var a = framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0, .w = 0.6, .h = 0.7 });
-            a.mode = .triggered;
-            a.trigger.overlay = 12;
-            a.filter.on = true;
-            var adc = framePanel("ADC", .adc, 54, 8, .{ .x = 0.6, .y = 0, .w = 0.4, .h = 0.7 });
-            adc.mode = .triggered;
-            adc.trigger.line = 6;
-            adc.trigger.pre_ms = 2;
-            adc.trigger.post_ms = 8;
-            var ttl = framePanel("TTL", .ttl, 0, 3, .{ .x = 0, .y = 0.7, .w = 1, .h = 0.3 });
-            ttl.mode = .triggered;
-            ttl.trigger.line = 4;
-            st.panels(&.{ a, adc, ttl });
-            // The oldest sweeps are no longer in a history this short.
-            st.hist_cap = 1 << 16;
-            st.no_text = k == 14;
-            st.feed(8, false);
-        },
-        3 => {
-            var a = framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0, .w = 0.5, .h = 1 });
-            a.mode = .triggered;
-            a.setTrigSource(.channel);
-            a.trigger.row = 4;
-            a.trigger.auto = false;
-            a.trigger.level_uv = -62;
-            a.trigger.holdoff_ms = 2;
-            a.per_row.hidden.set(1, true);
-            a.per_row.gain[4] = 1.5;
-            a.filter.on = true;
-            var b = framePanel("Port B", .electrode, 32, 16, .{ .x = 0.5, .y = 0, .w = 0.5, .h = 1 });
-            b.mode = .triggered;
-            b.setTrigSource(.channel);
-            b.trigger.row = 2;
-            b.trigger.rising = true;
-            b.trigger.level_uv = 50;
-            b.trigger.overlay = 5;
-            st.panels(&.{ a, b });
-            st.feed(3, true);
-        },
-        4 => {
-            var a = framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0, .w = 1, .h = 0.5 });
-            a.mode = .sweep;
-            a.span_s = 1;
-            const b = framePanel("Port B", .electrode, 32, 16, .{ .x = 0, .y = 0.5, .w = 1, .h = 0.5 });
-            st.panels(&.{ a, b });
-            st.note(2_940_000, "older than the window");
-            st.note(2_975_000, "where the cursor has been");
-            st.note(2_990_000, "previous pass");
-            // Cut at 40 bytes, in the middle of the "µ".
-            st.note(3_005_000, "this pass: cell 3 at 2100 um, depth 2.1µm, more");
-            st.note(3_012_300, "at the right edge");
-            st.note(3_012_400, "after the newest sample");
-            st.typeNote(3_012_000, "spike at 2 µm");
-        },
-        5, 6, 7 => {
-            var a = framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0, .w = 0.5, .h = 0.6 });
-            a.tint_line = 3;
-            a.span_s = 5;
-            var b = framePanel("Port B", .electrode, 32, 16, .{ .x = 0.5, .y = 0, .w = 0.5, .h = 0.6 });
-            b.mode = .sweep;
-            b.span_s = 1;
-            var c = framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0.6, .w = 0.7, .h = 0.4 });
-            c.mode = .triggered;
-            const ttl = framePanel("TTL", .ttl, 0, 8, .{ .x = 0.7, .y = 0.6, .w = 0.3, .h = 0.4 });
-            st.panels(&.{ a, b, c, ttl });
-            st.feed(20, false);
-            const end = frame_newest - 375_000;
-            st.note(end - 10_000, "in the review stretch");
-            st.note(frame_newest - 1000, "after it");
-            st.review = .{ .end = end, .from_file = k != 7, .ready = k != 6, .behind_s = 12.5 };
-            if (k == 7) setText(&st.status.warning_buf, &st.status.warning_len, "the disk is falling behind");
-        },
-        8, 9, 10 => {
-            st.panels(&.{
-                framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0, .w = 0.5, .h = 1 }),
-                framePanel("Port B", .electrode, 32, 16, .{ .x = 0.5, .y = 0, .w = 0.5, .h = 1 }),
-            });
-            st.status = .{ .valid = true, .latency_ms = 4.25, .fps = 144 };
-            if (k != 9) setText(&st.status.warning_buf, &st.status.warning_len, "the disk is falling behind");
-            if (k == 8) setText(&st.status.alarm_buf, &st.status.alarm_len, "SAMPLES LOST: 3 blocks");
-            // Acknowledged: the alarms (session.zig) take the alarm out of the status.
-            st.display.acknowledged = k == 9;
-        },
-        11, 12 => {
-            var aux = framePanel("AUX", .aux, 48, 6, .{ .x = 0.5, .y = 0.5, .w = 0.5, .h = 0.5 });
-            aux.mode = .sweep;
-            st.panels(&.{
-                framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0, .w = 0.5, .h = 1 }),
-                // Across both headstages.
-                framePanel("A and B", .electrode, 28, 8, .{ .x = 0.5, .y = 0, .w = 0.5, .h = 0.5 }),
-                aux,
-            });
-            st.display.audio.enabled = k == 11;
-            st.display.audio.channels[0] = 5;
-            st.display.audio.channels[1] = 30;
-            st.display.audio.channels[2] = 33;
-            st.display.audio.num_channels = 3;
-            st.display.target = 1;
-            st.status = .{ .valid = true, .latency_ms = 4.25, .fps = 144 };
-            if (k == 12) {
-                st.status.lost = 7;
-                st.status.recording = true;
-                st.status.rec_seconds = 3725.5;
-            }
-        },
-        13 => {
-            var a = framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0, .w = 0.5, .h = 1 });
-            a.mode = .triggered;
-            st.panels(&.{
-                a,
-                framePanel("Port B", .electrode, 32, 16, .{ .x = 0.5, .y = 0, .w = 0.5, .h = 0.5 }),
-                framePanel("ADC", .adc, 54, 8, .{ .x = 0.5, .y = 0.5, .w = 0.5, .h = 0.5 }),
-            });
-            st.width = 320;
-            st.height = 180;
-            st.status = .{ .valid = true, .latency_ms = 12.5, .fps = 60, .recording = true, .rec_seconds = 61 };
-            st.feed(2, false);
-        },
+        0 => scrollingState(st),
+        1 => sweepState(st),
+        2, 14 => ttlTriggeredState(st, k == 14),
+        3 => slopeState(st),
+        4 => notesState(st),
+        5, 6, 7 => reviewState(st, k),
+        8, 9, 10 => alarmState(st, k),
+        11, 12 => heardState(st, k),
+        13 => smallState(st),
         else => unreachable,
     }
+}
+
+fn scrollingState(st: *FrameState) void {
+    var a = framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0, .w = 0.5, .h = 0.55 });
+    a.filter.on = true;
+    // Rows are labelled every second one here: these are among the labelled.
+    a.per_row.raw.set(4, true);
+    a.per_row.hidden.set(7, true);
+    a.per_row.hidden.set(9, true);
+    a.per_row.gain[6] = 2;
+    a.per_row.gain[9] = 0.5;
+    a.per_row.gain[10] = 0.5;
+    a.setCar(true);
+    a.reference.ref.set(2, false);
+    a.reference.sub.set(0, false);
+    var b = framePanel("Port B", .electrode, 32, 16, .{ .x = 0.5, .y = 0, .w = 0.5, .h = 0.55 });
+    b.span_s = 0.5;
+    b.setCar(true);
+    var adc = framePanel("ADC", .adc, 54, 8, .{ .x = 0.3, .y = 0.55, .w = 0.7, .h = 0.2 });
+    adc.scale = 2.5;
+    var ttl = framePanel("TTL", .ttl, 0, 5, .{ .x = 0, .y = 0.75, .w = 1, .h = 0.25 });
+    ttl.ttl_lines = .{ 1, 2, 3, 5, 8, 6, 7, 4 };
+    st.panels(&.{ a, b, framePanel("AUX", .aux, 48, 6, .{ .x = 0, .y = 0.55, .w = 0.3, .h = 0.2 }), adc, ttl });
+}
+
+fn sweepState(st: *FrameState) void {
+    var a = framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0, .w = 1, .h = 0.6 });
+    a.mode = .sweep;
+    a.span_s = 1;
+    a.tint_line = 3;
+    a.filter.on = true;
+    a.filter.low_hz = 10;
+    a.filter.high_hz = 0;
+    var adc = framePanel("ADC", .adc, 54, 8, .{ .x = 0, .y = 0.6, .w = 0.5, .h = 0.4 });
+    adc.tint_line = 3;
+    var ttl = framePanel("TTL", .ttl, 0, 8, .{ .x = 0.5, .y = 0.6, .w = 0.5, .h = 0.4 });
+    ttl.mode = .sweep;
+    ttl.span_s = 1;
+    st.panels(&.{ a, adc, ttl });
+    st.display.target = 1;
+    st.feed(3, false);
+}
+
+fn ttlTriggeredState(st: *FrameState, no_text: bool) void {
+    var a = framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0, .w = 0.6, .h = 0.7 });
+    a.mode = .triggered;
+    a.trigger.overlay = 12;
+    a.filter.on = true;
+    var adc = framePanel("ADC", .adc, 54, 8, .{ .x = 0.6, .y = 0, .w = 0.4, .h = 0.7 });
+    adc.mode = .triggered;
+    adc.trigger.line = 6;
+    adc.trigger.pre_ms = 2;
+    adc.trigger.post_ms = 8;
+    var ttl = framePanel("TTL", .ttl, 0, 3, .{ .x = 0, .y = 0.7, .w = 1, .h = 0.3 });
+    ttl.mode = .triggered;
+    ttl.trigger.line = 4;
+    st.panels(&.{ a, adc, ttl });
+    // The oldest sweeps are no longer in a history this short.
+    st.hist_cap = 1 << 16;
+    st.no_text = no_text;
+    st.feed(8, false);
+}
+
+fn slopeState(st: *FrameState) void {
+    var a = framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0, .w = 0.5, .h = 1 });
+    a.mode = .triggered;
+    a.setTrigSource(.channel);
+    a.trigger.row = 4;
+    a.trigger.auto = false;
+    a.trigger.level_uv = -62;
+    a.trigger.holdoff_ms = 2;
+    a.per_row.hidden.set(1, true);
+    a.per_row.gain[4] = 1.5;
+    a.filter.on = true;
+    var b = framePanel("Port B", .electrode, 32, 16, .{ .x = 0.5, .y = 0, .w = 0.5, .h = 1 });
+    b.mode = .triggered;
+    b.setTrigSource(.channel);
+    b.trigger.row = 2;
+    b.trigger.rising = true;
+    b.trigger.level_uv = 50;
+    b.trigger.overlay = 5;
+    st.panels(&.{ a, b });
+    st.feed(3, true);
+}
+
+fn notesState(st: *FrameState) void {
+    var a = framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0, .w = 1, .h = 0.5 });
+    a.mode = .sweep;
+    a.span_s = 1;
+    const b = framePanel("Port B", .electrode, 32, 16, .{ .x = 0, .y = 0.5, .w = 1, .h = 0.5 });
+    st.panels(&.{ a, b });
+    st.note(2_940_000, "older than the window");
+    st.note(2_975_000, "where the cursor has been");
+    st.note(2_990_000, "previous pass");
+    // Cut at 40 bytes, in the middle of the "µ".
+    st.note(3_005_000, "this pass: cell 3 at 2100 um, depth 2.1µm, more");
+    st.note(3_012_300, "at the right edge");
+    st.note(3_012_400, "after the newest sample");
+    st.typeNote(3_012_000, "spike at 2 µm");
+}
+
+/// `k`: 5 from the file, 6 from the file and still reading, 7 frozen (without a file).
+fn reviewState(st: *FrameState, k: usize) void {
+    var a = framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0, .w = 0.5, .h = 0.6 });
+    a.tint_line = 3;
+    a.span_s = 5;
+    var b = framePanel("Port B", .electrode, 32, 16, .{ .x = 0.5, .y = 0, .w = 0.5, .h = 0.6 });
+    b.mode = .sweep;
+    b.span_s = 1;
+    var c = framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0.6, .w = 0.7, .h = 0.4 });
+    c.mode = .triggered;
+    const ttl = framePanel("TTL", .ttl, 0, 8, .{ .x = 0.7, .y = 0.6, .w = 0.3, .h = 0.4 });
+    st.panels(&.{ a, b, c, ttl });
+    st.feed(20, false);
+    const end = frame_newest - 375_000;
+    st.note(end - 10_000, "in the review stretch");
+    st.note(frame_newest - 1000, "after it");
+    st.review = .{ .end = end, .from_file = k != 7, .ready = k != 6, .behind_s = 12.5 };
+    if (k == 7) setText(&st.status.warning_buf, &st.status.warning_len, "the disk is falling behind");
+}
+
+/// `k`: 8 an alarm (and a warning), 9 the alarm acknowledged, 10 a warning.
+fn alarmState(st: *FrameState, k: usize) void {
+    st.panels(&.{
+        framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0, .w = 0.5, .h = 1 }),
+        framePanel("Port B", .electrode, 32, 16, .{ .x = 0.5, .y = 0, .w = 0.5, .h = 1 }),
+    });
+    st.status = .{ .valid = true, .latency_ms = 4.25, .fps = 144 };
+    if (k != 9) setText(&st.status.warning_buf, &st.status.warning_len, "the disk is falling behind");
+    if (k == 8) setText(&st.status.alarm_buf, &st.status.alarm_len, "SAMPLES LOST: 3 blocks");
+    // Acknowledged: the alarms (session.zig) take the alarm out of the status.
+    st.display.acknowledged = k == 9;
+}
+
+/// `k`: 11 rows listened to, 12 not listening, display losses and recording.
+fn heardState(st: *FrameState, k: usize) void {
+    var aux = framePanel("AUX", .aux, 48, 6, .{ .x = 0.5, .y = 0.5, .w = 0.5, .h = 0.5 });
+    aux.mode = .sweep;
+    st.panels(&.{
+        framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0, .w = 0.5, .h = 1 }),
+        // Across both headstages.
+        framePanel("A and B", .electrode, 28, 8, .{ .x = 0.5, .y = 0, .w = 0.5, .h = 0.5 }),
+        aux,
+    });
+    st.display.audio.enabled = k == 11;
+    st.display.audio.channels[0] = 5;
+    st.display.audio.channels[1] = 30;
+    st.display.audio.channels[2] = 33;
+    st.display.audio.num_channels = 3;
+    st.display.target = 1;
+    st.status = .{ .valid = true, .latency_ms = 4.25, .fps = 144 };
+    if (k == 12) {
+        st.status.lost = 7;
+        st.status.recording = true;
+        st.status.rec_seconds = 3725.5;
+    }
+}
+
+fn smallState(st: *FrameState) void {
+    var a = framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0, .w = 0.5, .h = 1 });
+    a.mode = .triggered;
+    st.panels(&.{
+        a,
+        framePanel("Port B", .electrode, 32, 16, .{ .x = 0.5, .y = 0, .w = 0.5, .h = 0.5 }),
+        framePanel("ADC", .adc, 54, 8, .{ .x = 0.5, .y = 0.5, .w = 0.5, .h = 0.5 }),
+    });
+    st.width = 320;
+    st.height = 180;
+    st.status = .{ .valid = true, .latency_ms = 12.5, .fps = 60, .recording = true, .rec_seconds = 61 };
+    st.feed(2, false);
 }
 
 /// Writes the batch's quads as rectangles and runs of text (glyphs on one row, of one
