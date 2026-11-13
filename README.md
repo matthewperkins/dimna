@@ -544,6 +544,12 @@ the FT600 protocol from D3XX.
 
 Use explicit little-endian dtypes (`'<i2'`, `'<i8'`, `'<u2'`) in other readers.
 
+Display features (filters, reference, hidden rows, spike detection, slope trigger, audio) never
+change what is recorded. `src/independence_test.zig` (in `zig build test`) records one
+deterministic stream with and without all of them running beside the recorder and checks that
+both recordings are byte for byte what was generated. `tools/display-independence-test.sh` does
+the same through the GUI on the simulator; it opens windows, so never run it during an experiment.
+
 ## Hardware safety
 
 Only volatile FPGA and Intan-chip registers are written (same sequence as oers and stock).
