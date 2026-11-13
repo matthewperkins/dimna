@@ -943,7 +943,9 @@ const LayoutRig = struct {
     }
 };
 
-fn writeLayout(w: *std.Io.Writer, rig: *LayoutRig, name: []const u8, snap: *const Snapshot) !void {
+fn writeLayout(w: *std.Io.Writer, rig: *LayoutRig, name: []const u8, snap: *const Snapshot, open: LayoutOpen) !void {
+    // Every section is always open: what is open does not change the layout yet.
+    _ = open;
     const ui = rig.frame(snap, -1, -1, false);
     const quads = rig.batch.len / 6;
     // A full batch drops quads silently: the comparison would then miss them.
@@ -1007,22 +1009,43 @@ fn layoutPanel(name: []const u8, kind: panels.Kind, rows: u32) panels.Panel {
     return p;
 }
 
-/// The snapshots the layout is frozen for, written into `out`; returns their names.
-fn layoutSnapshots(out: []Snapshot) []const []const u8 {
-    const names = &[_][]const u8{
-        "not recording",
-        "recording",
-        "review active",
-        "quit prompt",
-        "restart pending",
-        "two panels: slope trigger, reference",
-        "alarm",
-        "other panels",
-    };
+/// Which sections a frozen state has open.
+const LayoutOpen = struct {
+    all: bool = false,
+    notes: bool = false,
+    audio: bool = false,
+    headstages: bool = false,
+    /// The panels open, by name.
+    panels: []const []const u8 = &.{},
+};
+
+const LayoutState = struct { name: []const u8, open: LayoutOpen };
+
+const layout_states = [_]LayoutState{
+    .{ .name = "not recording, all open", .open = .{ .all = true } },
+    .{ .name = "recording, all open", .open = .{ .all = true } },
+    .{ .name = "review active, all open", .open = .{ .all = true } },
+    .{ .name = "quit prompt, all open", .open = .{ .all = true } },
+    .{ .name = "restart pending, all open", .open = .{ .all = true } },
+    .{ .name = "two panels: slope trigger, reference; all open", .open = .{ .all = true } },
+    .{ .name = "alarm, all open", .open = .{ .all = true } },
+    .{ .name = "other panels, all open", .open = .{ .all = true } },
+    .{ .name = "notes open", .open = .{ .notes = true } },
+    .{ .name = "audio open", .open = .{ .audio = true } },
+    .{ .name = "headstages open", .open = .{ .headstages = true } },
+    .{ .name = "Port B open of two panels", .open = .{ .panels = &.{"Port B"} } },
+};
+
+/// The snapshots the layout is frozen for (one per `layout_states`), written into `out`.
+fn layoutSnapshots(out: []Snapshot) void {
     out[0] = layoutBase();
     stateSnapshots(out, &out[0]);
     panelSnapshots(out, &out[0]);
-    return names;
+    // One section open at a time.
+    out[8] = out[0];
+    out[9] = out[0];
+    out[10] = out[0];
+    out[11] = out[5];
 }
 
 fn layoutBase() Snapshot {
@@ -1170,13 +1193,13 @@ test "the control window's layout is unchanged" {
     rig.* = .{ .face = layoutFont(), .vertices = vertices };
     const no_env: Env = .{};
     rig.cfg = .{ .gpa = gpa, .shared = &rig.shared, .display_gpu = undefined, .env = &no_env };
-    const snaps = try gpa.alloc(Snapshot, 8);
+    const snaps = try gpa.alloc(Snapshot, layout_states.len);
     defer gpa.free(snaps);
-    const names = layoutSnapshots(snaps);
+    layoutSnapshots(snaps);
 
     var out: std.Io.Writer.Allocating = .init(gpa);
     defer out.deinit();
-    for (names, snaps) |name, *snap| try writeLayout(&out.writer, rig, name, snap);
+    for (layout_states, snaps) |state, *snap| try writeLayout(&out.writer, rig, state.name, snap, state.open);
     const got = out.written();
     if (std.c.getenv("OEZ_CONTROL_LAYOUT_OUT")) |path| {
         const file = try std.Io.Dir.cwd().createFile(testing.io, std.mem.span(path), .{});
