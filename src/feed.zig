@@ -14,9 +14,26 @@
 //! taken from the samples as acquired, is subtracted from its subtract rows before the
 //! filter (or instead of one, for rows shown unfiltered).
 //!
-//! When a panel's corners or reference change, the recent past of its slot is filtered again from a copy
-//! of the raw samples kept here (`refilter`), so the whole trace changes, not only what
-//! arrives afterwards.
+//! When a panel's corners or reference change, the recent past of its slot is filtered
+//! again from a copy of the raw samples kept here (`refilter`), so the whole trace changes,
+//! not only what arrives afterwards.
+//!
+//! Words, as this file, `panels.zig`, the display and the shader use them. "Row" and
+//! "column" each mean two things, so they always come with their noun:
+//!
+//!   sample          one instant: `nch` values as acquired, plus a TTL word.
+//!   history row     one sample as the display keeps it: `width` int16 (this file's `rows`
+//!                   returns history rows).
+//!   history column  a position in a history row, 0 to `width` - 1. Columns 0 to `nch` - 1
+//!                   are the channels as acquired.
+//!   slot            the history columns that belong to one panel, from `Panel.slot` on.
+//!   panel row       one trace of a panel: a channel, or a TTL line. Counted from 0 in the
+//!                   code and from 1 in the config file and on screen.
+//!   shown row       a panel row that is not hidden. The k-th shown row is history column
+//!                   `slot + k`, and the k-th trace from the top (`Panel.shownIndex`,
+//!                   `rowOfShown`).
+//!   pixel column    one pixel across a panel; the shader draws each trace's minimum to
+//!                   maximum over the samples that fall in it (`traces.vert`: "cols").
 
 const std = @import("std");
 const types = @import("types.zig");
