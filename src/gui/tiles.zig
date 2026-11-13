@@ -18,7 +18,6 @@ const Window = @import("window.zig").Window;
 const gpu_mod = @import("gpu.zig");
 const font = @import("font.zig");
 const Atomic = std.atomic.Value;
-const linux = std.os.linux;
 const log = std.log.scoped(.tiles);
 
 /// What the tile window needs to know from the display.
@@ -33,33 +32,17 @@ pub const Config = struct {
 pub const Click = struct { channel: u32, add: bool };
 
 pub const Shared = struct {
-    seq: Atomic(u32) = .init(0),
-    cfg: Config = .{},
+    cfg: oez.published.Published(Config) = .{},
     clicks: oez.events.Spsc(Click, 32) = .{},
     stop: Atomic(bool) = .init(false),
 
     /// Display thread.
     pub fn publish(self: *Shared, cfg: *const Config) void {
-        _ = self.seq.fetchAdd(1, .acq_rel);
-        self.cfg = cfg.*;
-        _ = self.seq.fetchAdd(1, .release);
+        self.cfg.publish(cfg);
     }
 
     fn read(self: *Shared, out: *Config, seen: *u32) void {
-        var tries: usize = 0;
-        while (tries < 100) : (tries += 1) {
-            const before = self.seq.load(.acquire);
-            if (before == seen.*) return;
-            if (before & 1 != 0) {
-                std.atomic.spinLoopHint();
-                continue;
-            }
-            const copy = self.cfg;
-            if (self.seq.load(.acquire) != before) continue;
-            out.* = copy;
-            seen.* = before;
-            return;
-        }
+        _ = self.cfg.read(out, seen);
     }
 };
 
@@ -268,7 +251,7 @@ fn draw(batch: *font.Batch, det: *const spikes.Detector, layout: *const oez.type
         // Name and firing rate along the top.
         var buf: [32]u8 = undefined;
         var name_buf: [16]u8 = undefined;
-        const name = channelName(&name_buf, layout, i);
+        const name = layout.channelName(&name_buf, i);
         _ = batch.text(x + 5, y + 3, name, if (listened) heard else text_dim);
         if (w > 110) {
             const rate = std.fmt.bufPrint(&buf, "{d:.1} Hz", .{u.rate}) catch "";
@@ -322,17 +305,4 @@ fn draw(batch: *font.Batch, det: *const spikes.Detector, layout: *const oez.type
     }
 }
 
-/// "A1-5": headstage and the electrode's number on it.
-fn channelName(buf: []u8, layout: *const oez.types.Layout, ch: usize) []const u8 {
-    for (layout.headstageSlice()) |h| {
-        if (ch >= h.first_channel and ch < h.first_channel + h.num_channels)
-            return std.fmt.bufPrint(buf, "{s}-{d}", .{ oez.types.headstage_names[h.slot], ch - h.first_channel + 1 }) catch "";
-    }
-    return std.fmt.bufPrint(buf, "ch {d}", .{ch + 1}) catch "";
-}
-
-fn nowNs() i128 {
-    var ts: linux.timespec = undefined;
-    _ = linux.clock_gettime(.MONOTONIC, &ts);
-    return @as(i128, ts.sec) * std.time.ns_per_s + ts.nsec;
-}
+const nowNs = oez.clock.nowNs;

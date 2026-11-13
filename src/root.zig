@@ -25,6 +25,8 @@ pub const usbfs = @import("usbfs.zig");
 pub const ft600 = @import("ft600.zig");
 pub const oni_usb = @import("oni_usb.zig");
 pub const independence_test = @import("independence_test.zig");
+pub const published = @import("published.zig");
+pub const clock = @import("clock.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());

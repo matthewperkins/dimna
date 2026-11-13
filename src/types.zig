@@ -138,7 +138,35 @@ pub const Layout = struct {
     pub fn headstageSlice(self: *const Layout) []const HeadstageInfo {
         return self.headstages[0..self.num_headstages];
     }
+
+    /// An electrode channel by headstage and its number there ("A1-5"), or "ch 37" (the
+    /// channel's number in the stream, from 1) if it is not an electrode. "" if `buf` is
+    /// too short.
+    pub fn channelName(self: *const Layout, buf: []u8, ch: usize) []const u8 {
+        for (self.headstageSlice()) |h| {
+            if (ch >= h.first_channel and ch < h.first_channel + h.num_channels)
+                return std.fmt.bufPrint(buf, "{s}-{d}", .{ headstage_names[h.slot], ch - h.first_channel + 1 }) catch "";
+        }
+        return std.fmt.bufPrint(buf, "ch {d}", .{ch + 1}) catch "";
+    }
 };
+
+test "channel names: electrodes by headstage, the rest by number" {
+    var l: Layout = .{ .sample_rate = 30000, .hw_clock_hz = 50e6, .num_electrodes = 48, .num_aux = 6, .num_adc = 8 };
+    l.headstages[0] = .{ .slot = 0, .chip = "RHD2132", .num_channels = 32, .first_channel = 0, .has_bno = false };
+    l.headstages[1] = .{ .slot = 2, .chip = "RHD2216", .num_channels = 16, .first_channel = 32, .has_bno = false };
+    l.num_headstages = 2;
+    var buf: [16]u8 = undefined;
+    try std.testing.expectEqualStrings("A1-1", l.channelName(&buf, 0));
+    try std.testing.expectEqualStrings("A1-32", l.channelName(&buf, 31));
+    try std.testing.expectEqualStrings("B1-1", l.channelName(&buf, 32));
+    try std.testing.expectEqualStrings("B1-16", l.channelName(&buf, 47));
+    // AUX (48..53) and ADC (54..61) channels have no headstage name.
+    try std.testing.expectEqualStrings("ch 49", l.channelName(&buf, 48));
+    try std.testing.expectEqualStrings("ch 62", l.channelName(&buf, 61));
+    var short: [3]u8 = undefined;
+    try std.testing.expectEqualStrings("", l.channelName(&short, 31));
+}
 
 /// Commands that may be applied while acquiring (executed by the acquisition thread).
 pub const LiveCommand = union(enum) {

@@ -47,11 +47,7 @@ pub fn fmtBand(buf: []u8, p: *const Panel) []const u8 {
 
 /// An electrode channel by headstage and number ("A1-5"), or "ch 37" if it is not one.
 pub fn channelName(buf: []u8, layout: *const oez.types.Layout, ch: u32) []const u8 {
-    for (layout.headstageSlice()) |h| {
-        if (ch >= h.first_channel and ch < h.first_channel + h.num_channels)
-            return std.fmt.bufPrint(buf, "{s}-{d}", .{ oez.types.headstage_names[h.slot], ch - h.first_channel + 1 }) catch "";
-    }
-    return std.fmt.bufPrint(buf, "ch {d}", .{ch + 1}) catch "";
+    return layout.channelName(buf, ch);
 }
 
 /// The display in scroll-back review: where it is looking.
@@ -96,7 +92,8 @@ pub fn rowLabel(buf: []u8, p: *const Panel, row: u32, layout: *const oez.types.L
                 if (ch < h.first_channel or ch >= h.first_channel + h.num_channels) continue;
                 const n = ch - h.first_channel + 1;
                 const within = p.first_ch >= h.first_channel and p.first_ch + p.rows <= h.first_channel + h.num_channels;
-                return (if (within) std.fmt.bufPrint(buf, "{d}", .{n}) else std.fmt.bufPrint(buf, "{s}-{d}", .{ oez.types.headstage_names[h.slot], n })) catch "";
+                if (!within) return layout.channelName(buf, ch);
+                return std.fmt.bufPrint(buf, "{d}", .{n}) catch "";
             }
             return std.fmt.bufPrint(buf, "{d}", .{ch + 1}) catch "";
         },

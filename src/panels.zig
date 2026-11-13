@@ -467,6 +467,21 @@ fn parseMode(value: ?toml.Value, what: []const u8, n: usize) Error!?Mode {
     return if (n == 0) fail("{s} must be \"scroll\", \"sweep\" or \"triggered\"", .{what}) else fail("{s} {d}: mode must be \"scroll\", \"sweep\" or \"triggered\"", .{ what, n });
 }
 
+/// The rows a list key of table `table`'s `i`-th element names (numbered from 1 in the
+/// file), or null if the key is not there. A value that is not a list of numbers names no
+/// rows. Only electrode panels take these keys.
+fn rowSetFrom(doc: toml.Document, table: []const u8, i: usize, key: []const u8, p: *const Panel) Error!?RowSet {
+    const v = doc.get(table, i, key) orelse return null;
+    const list: []const f64 = if (v == .numbers) v.numbers else &.{};
+    if (p.kind != .electrode) return fail("panel {d}: {s} is for electrode panels", .{ i + 1, key });
+    var rows: RowSet = .{};
+    for (list) |n| {
+        if (n < 1 or n > @as(f64, @floatFromInt(p.rows)) or n != @floor(n)) return fail("panel {d}: {s} lists rows of the panel, 1 to {d}", .{ i + 1, key, p.rows });
+        rows.set(@intFromFloat(n - 1), true);
+    }
+    return rows;
+}
+
 /// Applies the settings keys of table `table`'s `i`-th element to a panel: the keys a
 /// `[[panel]]` of the config and a `[[view]]` of the view file share (everything but the
 /// panel's source, place and name).
@@ -509,35 +524,21 @@ fn applyKeys(p: *Panel, doc: toml.Document, table: []const u8, i: usize) Error!v
         p.car_ref = .all(p.rows);
         p.car_sub = .all(p.rows);
     }
-    inline for (.{ "car_ref", "car_subtract" }) |key| {
-        if (doc.get(table, i, key)) |v| {
-            const list: []const f64 = if (v == .numbers) v.numbers else &.{};
-            if (p.kind != .electrode) return fail("panel {d}: {s} is for electrode panels", .{ i + 1, key });
-            var rows: RowSet = .{};
-            for (list) |n| {
-                if (n < 1 or n > @as(f64, @floatFromInt(p.rows)) or n != @floor(n)) return fail("panel {d}: {s} lists rows of the panel, 1 to {d}", .{ i + 1, key, p.rows });
-                rows.set(@intFromFloat(n - 1), true);
-            }
-            if (comptime std.mem.eql(u8, key, "car_ref")) p.car_ref = rows else p.car_sub = rows;
-            // Naming rows turns the reference on unless `car = false` says otherwise.
-            if (doc.boolean(table, i, "car") == null) p.car = true;
-            if (doc.get(table, i, if (comptime std.mem.eql(u8, key, "car_ref")) "car_subtract" else "car_ref") == null and doc.boolean(table, i, "car") == null) {
-                if (comptime std.mem.eql(u8, key, "car_ref")) p.car_sub = .all(p.rows) else p.car_ref = .all(p.rows);
-            }
-        }
+    if (try rowSetFrom(doc, table, i, "car_ref", p)) |rows| {
+        p.car_ref = rows;
+        // Naming rows turns the reference on unless `car = false` says otherwise, and
+        // without `car` or `car_subtract` it is subtracted from every row.
+        if (doc.boolean(table, i, "car") == null) p.car = true;
+        if (doc.get(table, i, "car_subtract") == null and doc.boolean(table, i, "car") == null) p.car_sub = .all(p.rows);
     }
-    inline for (.{ "raw_rows", "hide" }) |key| {
-        if (doc.get(table, i, key)) |v| {
-            const list: []const f64 = if (v == .numbers) v.numbers else &.{};
-            if (p.kind != .electrode) return fail("panel {d}: {s} is for electrode panels", .{ i + 1, key });
-            var rows: RowSet = .{};
-            for (list) |n| {
-                if (n < 1 or n > @as(f64, @floatFromInt(p.rows)) or n != @floor(n)) return fail("panel {d}: {s} lists rows of the panel, 1 to {d}", .{ i + 1, key, p.rows });
-                rows.set(@intFromFloat(n - 1), true);
-            }
-            if (comptime std.mem.eql(u8, key, "hide")) p.hidden = rows else p.raw_rows = rows;
-        }
+    if (try rowSetFrom(doc, table, i, "car_subtract", p)) |rows| {
+        p.car_sub = rows;
+        // The same the other way round: without `car` or `car_ref`, every row is averaged.
+        if (doc.boolean(table, i, "car") == null) p.car = true;
+        if (doc.get(table, i, "car_ref") == null and doc.boolean(table, i, "car") == null) p.car_ref = .all(p.rows);
     }
+    if (try rowSetFrom(doc, table, i, "raw_rows", p)) |rows| p.raw_rows = rows;
+    if (try rowSetFrom(doc, table, i, "hide", p)) |rows| p.hidden = rows;
     if (doc.number(table, i, "raw_scale")) |v| {
         // The raw rows' own scale, as a factor on the panel's.
         const lim = p.scaleLimits();
@@ -905,6 +906,18 @@ test "rows shown raw beside filtered ones, and hidden rows" {
     try testing.expectEqual(3, p.rowOfShown(2).?);
     try testing.expectEqual(2, p.shownIndex(3).?);
     try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"adc\"\nrect = [0,0,1,1]\nhide = [1]"), &l));
+}
+
+test "a row list naming a row the panel does not have is explained" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const l = testLayout();
+    inline for (.{ "car_ref", "car_subtract", "raw_rows", "hide" }) |key| {
+        const text = "[[panel]]\nsource = \"A1\"\nrect = [0,0,1,1]\n[[panel]]\nsource = \"B1\"\nrect = [0,0,1,1]\n" ++ key ++ " = [3, 17]";
+        try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, text), &l));
+        try testing.expectEqualStrings("panel 2: " ++ key ++ " lists rows of the panel, 1 to 16", error_message);
+    }
 }
 
 test "sweep mode: per panel or for all, with a shorter longest time base" {
