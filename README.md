@@ -46,6 +46,13 @@ their value in red (A1-4 at −85 µV), the others follow the noise.
 |---|---|
 | ![Port A triggered on spikes on row 4](docs/images/triggered.png) | ![The spike tiles with some thresholds fixed](docs/images/tiles-fixed.png) |
 
+**Triggered on the laser.** The same panel triggered on TTL line 2 (the laser), 10 ms
+before to 40 ms after each pulse, the last 20 sweeps overlaid, the pulse shaded. Rows 10
+and 11 respond at a fixed latency after the light comes on (row 10 about 6-7 ms in), the
+kind of response opto-tagging looks for.
+
+![Port A triggered on the laser](docs/images/laser.png)
+
 ## Status
 
 Used on one rig (RHD2132 and RHD2216 headstages, 30 kHz). What has been checked and how
