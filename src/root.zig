@@ -27,4 +27,5 @@ pub const oni_usb = @import("oni_usb.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());
+    _ = @import("record_test.zig");
 }

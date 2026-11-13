@@ -59,6 +59,19 @@ pub const IndexRecord = struct {
         std.mem.writeInt(u32, out[40..44], self.crc32, .little);
         std.mem.writeInt(u32, out[44..48], 0, .little);
     }
+
+    /// The inverse of `encode` (the padding word is ignored).
+    pub fn decode(in: *const [size]u8) IndexRecord {
+        return .{
+            .first_sample = std.mem.readInt(i64, in[0..8], .little),
+            .n_samples = std.mem.readInt(u32, in[8..12], .little),
+            .flags = std.mem.readInt(u32, in[12..16], .little),
+            .byte_offset = std.mem.readInt(u64, in[16..24], .little),
+            .wall_ns = std.mem.readInt(i64, in[24..32], .little),
+            .board_clock = std.mem.readInt(u64, in[32..40], .little),
+            .crc32 = std.mem.readInt(u32, in[40..44], .little),
+        };
+    }
 };
 
 /// What goes into meta.toml besides the counts.
