@@ -118,6 +118,7 @@ pub const Input = struct {
     text_len: usize = 0,
     shift: bool = false,
     ctrl: bool = false,
+    alt: bool = false,
     pointer_x: f64 = 0,
     pointer_y: f64 = 0,
 };
@@ -636,6 +637,7 @@ pub const Window = struct {
                 // Standard xkb modifier bits: Shift = 1, Control = 4.
                 self.input.shift = (m.mods_depressed & 1) != 0;
                 self.input.ctrl = (m.mods_depressed & 4) != 0;
+                self.input.alt = (m.mods_depressed & 8) != 0;
             },
             else => {},
         }
