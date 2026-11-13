@@ -462,9 +462,7 @@ pub const BoardControl = struct {
 
     /// The settings in use differ from the config file's.
     pub fn unsaved(self: *const BoardControl, in_use: *const oez.types.Settings) bool {
-        var lines: [12][64]u8 = undefined;
-        var lens: [12]usize = undefined;
-        return oez.board_config.diff(&self.saved, in_use, &lines, &lens) > 0;
+        return oez.board_config.diff(&self.saved, in_use).count > 0;
     }
 
     /// Answering "save" to the quit prompt: writes the settings in use to the config file if
@@ -485,16 +483,12 @@ pub const BoardControl = struct {
     /// was already up, or there is no control window to ask in).
     pub fn askBeforeQuit(self: *BoardControl, in_use: *const oez.types.Settings, view_unsaved: bool, can_ask: bool) bool {
         const prompt = &self.quit_prompt;
-        var changed = oez.board_config.diff(&self.saved, in_use, &prompt.lines, &prompt.lens);
+        var changes = oez.board_config.diff(&self.saved, in_use);
         // And the panels' settings, as one line.
-        if (view_unsaved and changed < prompt.lines.len) {
-            const line: []const u8 = std.fmt.bufPrint(&prompt.lines[changed], "panel views (saved to views.toml)", .{}) catch "";
-            prompt.lens[changed] = line.len;
-            changed += 1;
-        }
-        if (changed == 0 or prompt.active or !can_ask) return false;
+        if (view_unsaved) changes.add("panel views (saved to views.toml)", .{});
+        if (changes.count == 0 or prompt.active or !can_ask) return false;
         prompt.active = true;
-        prompt.count = changed;
+        prompt.changes = changes;
         return true;
     }
 

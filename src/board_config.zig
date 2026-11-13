@@ -151,31 +151,46 @@ pub fn replaceTable(gpa: std.mem.Allocator, text: []const u8, table: []const u8)
     return out.toOwnedSlice(gpa);
 }
 
-/// One line per setting that differs: "sample_rate  30000 -> 20000". Returns how many.
-pub fn diff(old: *const Settings, new: *const Settings, lines: [][64]u8, lens: []usize) usize {
-    var n: usize = 0;
-    const add = struct {
-        fn f(ls: [][64]u8, ln: []usize, count: *usize, comptime fmt: []const u8, args: anytype) void {
-            if (count.* >= ls.len) return;
-            const text: []const u8 = std.fmt.bufPrint(&ls[count.*], fmt, args) catch return;
-            ln[count.*] = text.len;
-            count.* += 1;
-        }
-    }.f;
-    if (old.sample_rate != new.sample_rate) add(lines, lens, &n, "sample_rate   {d} -> {d}", .{ old.sample_rate, new.sample_rate });
-    if (old.lower_bandwidth != new.lower_bandwidth) add(lines, lens, &n, "lower_hz   {d} -> {d}", .{ old.lower_bandwidth, new.lower_bandwidth });
-    if (old.upper_bandwidth != new.upper_bandwidth) add(lines, lens, &n, "upper_hz   {d} -> {d}", .{ old.upper_bandwidth, new.upper_bandwidth });
-    if (old.dsp_enabled != new.dsp_enabled) add(lines, lens, &n, "dsp   {} -> {}", .{ old.dsp_enabled, new.dsp_enabled });
-    if (old.dsp_cutoff != new.dsp_cutoff) add(lines, lens, &n, "dsp_cutoff_hz   {d:.3} -> {d:.3}", .{ old.dsp_cutoff, new.dsp_cutoff });
+/// Lines of text saying what changed, kept as plain data (it is copied between threads).
+pub const Diff = struct {
+    pub const max_lines = 12;
+    pub const max_len = 64;
+
+    bufs: [max_lines][max_len]u8 = undefined,
+    lens: [max_lines]usize = @splat(0),
+    count: usize = 0,
+
+    pub fn line(self: *const Diff, i: usize) []const u8 {
+        return self.bufs[i][0..self.lens[i]];
+    }
+
+    /// Adds a line; one that does not fit (more than `max_len` bytes, or no room left)
+    /// is left out.
+    pub fn add(self: *Diff, comptime fmt: []const u8, args: anytype) void {
+        if (self.count >= max_lines) return;
+        const text: []const u8 = std.fmt.bufPrint(&self.bufs[self.count], fmt, args) catch return;
+        self.lens[self.count] = text.len;
+        self.count += 1;
+    }
+};
+
+/// One line per setting that differs: "sample_rate  30000 -> 20000".
+pub fn diff(old: *const Settings, new: *const Settings) Diff {
+    var d: Diff = .{};
+    if (old.sample_rate != new.sample_rate) d.add("sample_rate   {d} -> {d}", .{ old.sample_rate, new.sample_rate });
+    if (old.lower_bandwidth != new.lower_bandwidth) d.add("lower_hz   {d} -> {d}", .{ old.lower_bandwidth, new.lower_bandwidth });
+    if (old.upper_bandwidth != new.upper_bandwidth) d.add("upper_hz   {d} -> {d}", .{ old.upper_bandwidth, new.upper_bandwidth });
+    if (old.dsp_enabled != new.dsp_enabled) d.add("dsp   {} -> {}", .{ old.dsp_enabled, new.dsp_enabled });
+    if (old.dsp_cutoff != new.dsp_cutoff) d.add("dsp_cutoff_hz   {d:.3} -> {d:.3}", .{ old.dsp_cutoff, new.dsp_cutoff });
     if (!std.mem.eql(bool, &old.rhd2132_16ch, &new.rhd2132_16ch)) {
         var a: [40]u8 = undefined;
         var b: [40]u8 = undefined;
-        add(lines, lens, &n, "half_channels   \"{s}\" -> \"{s}\"", .{ halfList(&a, old), halfList(&b, new) });
+        d.add("half_channels   \"{s}\" -> \"{s}\"", .{ halfList(&a, old), halfList(&b, new) });
     }
-    if (old.acquire_aux != new.acquire_aux) add(lines, lens, &n, "aux   {} -> {}", .{ old.acquire_aux, new.acquire_aux });
-    if (old.acquire_adc != new.acquire_adc) add(lines, lens, &n, "adc   {} -> {}", .{ old.acquire_adc, new.acquire_adc });
-    if (old.leds != new.leds) add(lines, lens, &n, "leds   {} -> {}", .{ old.leds, new.leds });
-    return n;
+    if (old.acquire_aux != new.acquire_aux) d.add("aux   {} -> {}", .{ old.acquire_aux, new.acquire_aux });
+    if (old.acquire_adc != new.acquire_adc) d.add("adc   {} -> {}", .{ old.acquire_adc, new.acquire_adc });
+    if (old.leds != new.leds) d.add("leds   {} -> {}", .{ old.leds, new.leds });
+    return d;
 }
 
 /// The neighbour of `current` in `list` (ascending), one step up or down; `current` itself
@@ -300,15 +315,26 @@ test "replacing the [board] table leaves the rest of the file alone" {
 test "diff lists what changed; steps walk the offered values" {
     var old: Settings = .{};
     var new: Settings = .{};
-    var lines: [12][64]u8 = undefined;
-    var lens: [12]usize = undefined;
-    try testing.expectEqual(0, diff(&old, &new, &lines, &lens));
+    try testing.expectEqual(0, diff(&old, &new).count);
     new.sample_rate = 20000;
     new.rhd2132_16ch[0] = true;
     new.dsp_enabled = false;
-    try testing.expectEqual(3, diff(&old, &new, &lines, &lens));
-    try testing.expectEqualStrings("sample_rate   30000 -> 20000", lines[0][0..lens[0]]);
-    try testing.expectEqualStrings("half_channels   \"\" -> \"A1\"", lines[2][0..lens[2]]);
+    var d = diff(&old, &new);
+    try testing.expectEqual(3, d.count);
+    try testing.expectEqualStrings("sample_rate   30000 -> 20000", d.line(0));
+    try testing.expectEqualStrings("dsp   true -> false", d.line(1));
+    try testing.expectEqualStrings("half_channels   \"\" -> \"A1\"", d.line(2));
+    // A line added after, as the quit prompt does; one too long and one too many are
+    // left out.
+    d.add("panel views", .{});
+    try testing.expectEqual(4, d.count);
+    try testing.expectEqualStrings("panel views", d.line(3));
+    d.add("{s}", .{&@as([Diff.max_len + 1]u8, @splat('x'))});
+    try testing.expectEqual(4, d.count);
+    for (4..Diff.max_lines) |_| d.add("more", .{});
+    d.add("one too many", .{});
+    try testing.expectEqual(Diff.max_lines, d.count);
+    try testing.expectEqualStrings("more", d.line(Diff.max_lines - 1));
     old = new;
 
     try testing.expectEqual(25000, step(u32, &sample_rates, 20000, true));
