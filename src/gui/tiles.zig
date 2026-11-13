@@ -17,6 +17,8 @@ const spikes = oez.spikes;
 const Window = @import("window.zig").Window;
 const gpu_mod = @import("gpu.zig");
 const font = @import("font.zig");
+const theme = @import("theme.zig");
+const format = @import("format.zig");
 const Atomic = std.atomic.Value;
 const log = std.log.scoped(.tiles);
 
@@ -219,13 +221,6 @@ const Grid = struct {
     }
 };
 
-const tile_bg: font.Colour = .{ 17, 19, 25, 255 };
-const tile_bg_hover: font.Colour = .{ 26, 29, 38, 255 };
-const text_dim: font.Colour = .{ 150, 160, 178, 255 };
-const heard: font.Colour = .{ 255, 225, 120, 255 };
-const trace: font.Colour = .{ 140, 217, 255, 255 };
-const threshold_red: font.Colour = .{ 225, 80, 75, 210 };
-
 fn draw(batch: *font.Batch, det: *const spikes.Detector, layout: *const oez.types.Layout, cfg: *const Config, grid: Grid, mouse_x: f32, mouse_y: f32) void {
     const line_h = @round(batch.font.line_height);
     const uv = oez.types.electrode_uv_per_bit;
@@ -240,22 +235,22 @@ fn draw(batch: *font.Batch, det: *const spikes.Detector, layout: *const oez.type
         const w = r[2];
         const h = r[3];
         const listened = std.mem.indexOfScalar(u32, cfg.listening[0..cfg.num_listening], @intCast(i)) != null;
-        batch.rect(x, y, w, h, if (hover == i) tile_bg_hover else tile_bg);
+        batch.rect(x, y, w, h, if (hover == i) theme.tile_bg_hover else theme.tile_bg);
         if (listened) {
             // A frame in the colour of the rows listened to on the display.
-            batch.rect(x, y, w, 1, heard);
-            batch.rect(x, y + h - 1, w, 1, heard);
-            batch.rect(x, y, 1, h, heard);
-            batch.rect(x + w - 1, y, 1, h, heard);
+            batch.rect(x, y, w, 1, theme.heard);
+            batch.rect(x, y + h - 1, w, 1, theme.heard);
+            batch.rect(x, y, 1, h, theme.heard);
+            batch.rect(x + w - 1, y, 1, h, theme.heard);
         }
         // Name and firing rate along the top.
         var buf: [32]u8 = undefined;
         var name_buf: [16]u8 = undefined;
         const name = layout.channelName(&name_buf, i);
-        _ = batch.text(x + 5, y + 3, name, if (listened) heard else text_dim);
+        _ = batch.text(x + 5, y + 3, name, if (listened) theme.heard else theme.text_dim);
         if (w > 110) {
-            const rate = std.fmt.bufPrint(&buf, "{d:.1} Hz", .{u.rate}) catch "";
-            _ = batch.text(x + w - batch.font.width(rate) - 5, y + 3, rate, text_dim);
+            const rate = format.fmt(&buf, "{d:.1} Hz", .{u.rate});
+            _ = batch.text(x + w - batch.font.width(rate) - 5, y + 3, rate, theme.text_dim);
         }
 
         // The waveforms: zero at two fifths of the height, so troughs have the room.
@@ -278,13 +273,13 @@ fn draw(batch: *font.Batch, det: *const spikes.Detector, layout: *const oez.type
         }.f;
         // The threshold, and the trough's place in time.
         const thr_y = yOf(zero, per_unit, top, bottom, det.threshold(u));
-        batch.rect(x + 3, @round(thr_y), w - 6, 1, threshold_red);
+        batch.rect(x + 3, @round(thr_y), w - 6, 1, theme.tile_threshold);
         // Oldest first, so the newest is on top and brightest.
         var k = shown;
         while (k > 0) {
             k -= 1;
             const wave = u.wave(k).?;
-            var colour = if (listened) heard else trace;
+            var colour = if (listened) theme.heard else theme.tile_wave;
             colour[3] = @intFromFloat(70.0 + 170.0 * (1.0 - @as(f32, @floatFromInt(k)) / @as(f32, @floatFromInt(@max(shown, 1)))));
             for (1..det.len) |s| {
                 batch.line(
@@ -299,8 +294,8 @@ fn draw(batch: *font.Batch, det: *const spikes.Detector, layout: *const oez.type
         }
         // The noise, bottom right.
         if (h > 3 * line_h and w > 80) {
-            const sigma = std.fmt.bufPrint(&buf, "\u{03C3} {d:.1}", .{u.sigma() * uv}) catch "";
-            _ = batch.text(x + w - batch.font.width(sigma) - 5, y + h - line_h - 2, sigma, text_dim);
+            const sigma = format.fmt(&buf, "\u{03C3} {d:.1}", .{u.sigma() * uv});
+            _ = batch.text(x + w - batch.font.width(sigma) - 5, y + h - line_h - 2, sigma, theme.text_dim);
         }
     }
 }

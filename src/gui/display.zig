@@ -6,6 +6,7 @@ const oez = @import("oez");
 const gpu_mod = @import("gpu.zig");
 const Gpu = gpu_mod.Gpu;
 const font = @import("font.zig");
+const theme = @import("theme.zig");
 const format = @import("format.zig");
 const fmtSpan = format.fmtSpan;
 const fmtScale = format.fmtScale;
@@ -35,14 +36,14 @@ pub fn fmtBand(buf: []u8, p: *const Panel) []const u8 {
     const lo = p.band_low_hz;
     const hi = p.band_high_hz;
     const car: []const u8 = if (p.carActive()) "   CAR" else "";
-    return (if (lo > 0 and hi > 0)
-        std.fmt.bufPrint(buf, "   {d}-{d} Hz{s}", .{ lo, hi, car })
+    return if (lo > 0 and hi > 0)
+        format.fmt(buf, "   {d}-{d} Hz{s}", .{ lo, hi, car })
     else if (lo > 0)
-        std.fmt.bufPrint(buf, "   > {d} Hz{s}", .{ lo, car })
+        format.fmt(buf, "   > {d} Hz{s}", .{ lo, car })
     else if (hi > 0)
-        std.fmt.bufPrint(buf, "   < {d} Hz{s}", .{ hi, car })
+        format.fmt(buf, "   < {d} Hz{s}", .{ hi, car })
     else
-        std.fmt.bufPrint(buf, "   filter: no corners{s}", .{car})) catch "";
+        format.fmt(buf, "   filter: no corners{s}", .{car});
 }
 
 /// An electrode channel by headstage and number ("A1-5"), or "ch 37" if it is not one.
@@ -63,10 +64,10 @@ pub const ReviewView = struct {
 
 /// What triggers a panel's sweeps: "TTL2", or "row 5 falling -62 µV".
 pub fn trigText(buf: []u8, p: *const Panel) []const u8 {
-    return (if (p.trig_source == .ttl)
-        std.fmt.bufPrint(buf, "TTL{d}", .{p.trig_line})
+    return if (p.trig_source == .ttl)
+        format.fmt(buf, "TTL{d}", .{p.trig_line})
     else
-        std.fmt.bufPrint(buf, "row {d} {s} {d:.0} µV", .{ p.trig_row + 1, if (p.trig_rising) "rising" else "falling", p.trig_level_now_uv })) catch "";
+        format.fmt(buf, "row {d} {s} {d:.0} µV", .{ p.trig_row + 1, if (p.trig_rising) "rising" else "falling", p.trig_level_now_uv });
 }
 
 /// How many recent samples to filter again when a panel's corners change: what its window
@@ -85,7 +86,7 @@ pub fn rowLabel(buf: []u8, p: *const Panel, row: u32, layout: *const oez.types.L
         .ttl => {
             const line = p.ttl_lines[@min(row, 7)];
             const name = set.ttlName(line);
-            return if (name.len > 0) name else std.fmt.bufPrint(buf, "TTL{d}", .{line}) catch "";
+            return if (name.len > 0) name else format.fmt(buf, "TTL{d}", .{line});
         },
         .electrode => {
             for (layout.headstageSlice()) |h| {
@@ -93,12 +94,12 @@ pub fn rowLabel(buf: []u8, p: *const Panel, row: u32, layout: *const oez.types.L
                 const n = ch - h.first_channel + 1;
                 const within = p.first_ch >= h.first_channel and p.first_ch + p.rows <= h.first_channel + h.num_channels;
                 if (!within) return layout.channelName(buf, ch);
-                return std.fmt.bufPrint(buf, "{d}", .{n}) catch "";
+                return format.fmt(buf, "{d}", .{n});
             }
-            return std.fmt.bufPrint(buf, "{d}", .{ch + 1}) catch "";
+            return format.fmt(buf, "{d}", .{ch + 1});
         },
-        .aux => return std.fmt.bufPrint(buf, "AUX{d}", .{row + 1}) catch "",
-        .adc => return std.fmt.bufPrint(buf, "ADC{d}", .{row + 1}) catch "",
+        .aux => return format.fmt(buf, "AUX{d}", .{row + 1}),
+        .adc => return format.fmt(buf, "ADC{d}", .{row + 1}),
     }
 }
 
@@ -423,8 +424,6 @@ pub const Display = struct {
         var nd: usize = 0;
         batch.clear();
         const line_h = @round(batch.font.line_height);
-        const bright: font.Colour = .{ 225, 230, 240, 255 };
-        const dim: font.Colour = .{ 150, 160, 178, 255 };
         for (self.set.items[0..self.set.len], 0..) |*p, i| {
             const r = p.pixelRect(width, height);
             // Sweep: a whole number of samples per pass, so the picture stands still.
@@ -496,13 +495,13 @@ pub const Display = struct {
                     const centre = py + (@as(f32, @floatFromInt(p.shownIndex(p.trig_row) orelse 0)) + 0.5) * row_h;
                     const dy: f32 = @floatCast(std.math.clamp(p.trig_level_now_uv / p.rowScale(p.trig_row), -1.5, 1.5));
                     var x = px;
-                    if (p.shownIndex(p.trig_row) != null) while (x < px + w) : (x += 12) batch.rect(x, @round(centre - dy * row_h), 6, 1, .{ 255, 205, 120, 200 });
+                    if (p.shownIndex(p.trig_row) != null) while (x < px + w) : (x += 12) batch.rect(x, @round(centre - dy * row_h), 6, 1, theme.trigger_level);
                 } else if (trig.recent(0)) |s| {
                     const until = @min(s.fall orelse newest, s.t0 + post);
                     const x1 = px + w * @as(f32, @floatFromInt(until - s.t0 + pre)) / @as(f32, @floatCast(window));
-                    if (shown_sweeps > 0 and x1 > x0) batch.rect(x0, py, x1 - x0, @floatFromInt(r.h), .{ 90, 150, 255, 34 });
+                    if (shown_sweeps > 0 and x1 > x0) batch.rect(x0, py, x1 - x0, @floatFromInt(r.h), theme.sweep_pulse);
                 }
-                batch.rect(@round(x0), py, 1, @floatFromInt(r.h), .{ 200, 210, 230, 150 });
+                batch.rect(@round(x0), py, 1, @floatFromInt(r.h), theme.trigger_line);
             } else if (nd < draws.len and !(in_review and !review.?.ready)) {
                 draws[nd] = .{ .rect = rect, .params = params, .review = in_review and review.?.from_file };
                 nd += 1;
@@ -521,8 +520,8 @@ pub const Display = struct {
                     const from: i64 = if (at >= pass_start) pass_start else if (sweeping and at >= pass_start - span_i + (t_end - pass_start)) pass_start - span_i else continue;
                     if (at > t_end) continue;
                     const x = px + @as(f32, @floatCast(w * @as(f64, @floatFromInt(at - from)) / span));
-                    batch.rect(@round(x), py, 1, @floatFromInt(r.h), .{ 255, 205, 120, 190 });
-                    if (line_h > 0 and x + 60 < px + @as(f32, @floatCast(w))) _ = batch.label(x + 5, py + line_h + 12, notes_mod.prefix(note.text(), 40), .{ 255, 225, 150, 255 });
+                    batch.rect(@round(x), py, 1, @floatFromInt(r.h), theme.note_line);
+                    if (line_h > 0 and x + 60 < px + @as(f32, @floatCast(w))) _ = batch.label(x + 5, py + line_h + 12, notes_mod.prefix(note.text(), 40), theme.note_text);
                 }
             }
             if (p.tint_line != 0 and p.mode != .triggered and span >= 1) {
@@ -531,7 +530,6 @@ pub const Display = struct {
                 // the previous pass right of it.
                 const pulses = &self.pulses[i];
                 const w: f64 = @floatFromInt(r.w);
-                const tint: font.Colour = .{ 90, 150, 255, 30 };
                 const span_i: i64 = @intFromFloat(span);
                 const pass_start: i64 = if (sweeping) t_end - @as(i64, @intFromFloat(phase)) else t_end - span_i;
                 var k: usize = 0;
@@ -542,30 +540,29 @@ pub const Display = struct {
                     // The stretch of the pulse in this pass (or, scrolling, in the window).
                     const a0 = @max(t0, pass_start);
                     const a1 = @min(t1, t_end);
-                    if (a1 > a0) batch.rect(px + @as(f32, @floatCast(w * @as(f64, @floatFromInt(a0 - pass_start)) / span)), py, @floatCast(@max(1.0, w * @as(f64, @floatFromInt(a1 - a0)) / span)), @floatFromInt(r.h), tint);
+                    if (a1 > a0) batch.rect(px + @as(f32, @floatCast(w * @as(f64, @floatFromInt(a0 - pass_start)) / span)), py, @floatCast(@max(1.0, w * @as(f64, @floatFromInt(a1 - a0)) / span)), @floatFromInt(r.h), theme.tint_pulse);
                     if (p.mode != .sweep) continue;
                     // And in the previous pass, as far as the cursor has not overwritten it.
                     const prev = pass_start - span_i;
                     const b0 = @max(t0, prev + (t_end - pass_start));
                     const b1 = @min(t1, pass_start);
-                    if (b1 > b0) batch.rect(px + @as(f32, @floatCast(w * @as(f64, @floatFromInt(b0 - prev)) / span)), py, @floatCast(@max(1.0, w * @as(f64, @floatFromInt(b1 - b0)) / span)), @floatFromInt(r.h), tint);
+                    if (b1 > b0) batch.rect(px + @as(f32, @floatCast(w * @as(f64, @floatFromInt(b0 - prev)) / span)), py, @floatCast(@max(1.0, w * @as(f64, @floatFromInt(b1 - b0)) / span)), @floatFromInt(r.h), theme.tint_pulse);
                 }
             }
             if (sweeping) {
                 // The cursor: a line where the newest sample is, and a blank stretch ahead.
                 const cx: u32 = @min(r.w - 1, @as(u32, @intFromFloat(phase / span * @as(f64, @floatFromInt(r.w)))));
-                fills[nf] = .{ .rect = .{ .x = r.x + cx, .y = r.y, .w = @min(10, r.w - cx), .h = r.h }, .colour = .{ 0.04, 0.045, 0.055, 1.0 } };
-                fills[nf + 1] = .{ .rect = .{ .x = r.x + cx, .y = r.y, .w = 1, .h = r.h }, .colour = .{ 0.45, 0.48, 0.55, 1.0 } };
+                fills[nf] = .{ .rect = .{ .x = r.x + cx, .y = r.y, .w = @min(10, r.w - cx), .h = r.h }, .colour = theme.background };
+                fills[nf + 1] = .{ .rect = .{ .x = r.x + cx, .y = r.y, .w = 1, .h = r.h }, .colour = theme.sweep_cursor };
                 nf += 2;
             }
             // A line along the left and top edges that are not the display's own.
-            const grey: [4]f32 = .{ 0.22, 0.24, 0.28, 1.0 };
             if (r.x > 0) {
-                fills[nf] = .{ .rect = .{ .x = r.x, .y = r.y, .w = 1, .h = r.h }, .colour = grey };
+                fills[nf] = .{ .rect = .{ .x = r.x, .y = r.y, .w = 1, .h = r.h }, .colour = theme.panel_divider };
                 nf += 1;
             }
             if (r.y > 0) {
-                fills[nf] = .{ .rect = .{ .x = r.x, .y = r.y, .w = r.w, .h = 1 }, .colour = grey };
+                fills[nf] = .{ .rect = .{ .x = r.x, .y = r.y, .w = r.w, .h = 1 }, .colour = theme.panel_divider };
                 nf += 1;
             }
             if (line_h <= 0) continue;
@@ -577,26 +574,26 @@ pub const Display = struct {
             var band_buf: [48]u8 = undefined;
             var trig_buf: [48]u8 = undefined;
             const title = if (p.mode == .triggered)
-                std.fmt.bufPrint(&title_buf, "{s}   {s}   -{d:.1}/+{d:.1} ms   {s}/row{s}   {d} sweeps{s}", .{ p.name(), trigText(&trig_buf, p), p.pre_ms, p.post_ms, fmtScale(&scale_buf, p), fmtBand(&band_buf, p), shown_sweeps, if (shown_sweeps == 0) " (waiting for a trigger)" else "" }) catch ""
+                format.fmt(&title_buf, "{s}   {s}   -{d:.1}/+{d:.1} ms   {s}/row{s}   {d} sweeps{s}", .{ p.name(), trigText(&trig_buf, p), p.pre_ms, p.post_ms, fmtScale(&scale_buf, p), fmtBand(&band_buf, p), shown_sweeps, if (shown_sweeps == 0) " (waiting for a trigger)" else "" })
             else if (p.kind == .ttl)
-                std.fmt.bufPrint(&title_buf, "{s}   {s}{s}", .{ p.name(), fmtSpan(&span_buf, p.span_s), if (in_review) "   review" else if (p.mode == .sweep) "   sweep" else "" }) catch ""
+                format.fmt(&title_buf, "{s}   {s}{s}", .{ p.name(), fmtSpan(&span_buf, p.span_s), if (in_review) "   review" else if (p.mode == .sweep) "   sweep" else "" })
             else
-                std.fmt.bufPrint(&title_buf, "{s}   {s}   {s}/row{s}{s}", .{ p.name(), fmtSpan(&span_buf, p.span_s), fmtScale(&scale_buf, p), fmtBand(&band_buf, p), if (in_review) "   review" else if (p.mode == .sweep) "   sweep" else "" }) catch "";
+                format.fmt(&title_buf, "{s}   {s}   {s}/row{s}{s}", .{ p.name(), fmtSpan(&span_buf, p.span_s), fmtScale(&scale_buf, p), fmtBand(&band_buf, p), if (in_review) "   review" else if (p.mode == .sweep) "   sweep" else "" });
             // A lane strip is short: its title goes to the right, clear of the lane labels.
-            _ = batch.label(if (p.kind == .ttl) px + @as(f32, @floatFromInt(r.w)) - batch.font.width(title) - 8 else px + 8, title_y, title, bright);
+            _ = batch.label(if (p.kind == .ttl) px + @as(f32, @floatFromInt(r.w)) - batch.font.width(title) - 8 else px + 8, title_y, title, theme.text_bright);
             if (p.mode == .triggered) {
                 // The time axis along the bottom: the ends of the window and the trigger.
                 const bottom = py + @as(f32, @floatFromInt(r.h)) - line_h - 4;
                 const w: f32 = @floatFromInt(r.w);
                 var t_buf: [24]u8 = undefined;
-                const right = std.fmt.bufPrint(&t_buf, "+{d:.1} ms", .{p.post_ms}) catch "";
-                _ = batch.label(px + w - batch.font.width(right) - 8, bottom, right, dim);
+                const right = format.fmt(&t_buf, "+{d:.1} ms", .{p.post_ms});
+                _ = batch.label(px + w - batch.font.width(right) - 8, bottom, right, theme.text_dim);
                 if (p.pre_ms > 0) {
-                    _ = batch.label(px + w * @as(f32, @floatCast(p.pre_ms / (p.pre_ms + p.post_ms))) + 4, bottom, "0", dim);
+                    _ = batch.label(px + w * @as(f32, @floatCast(p.pre_ms / (p.pre_ms + p.post_ms))) + 4, bottom, "0", theme.text_dim);
                     var l_buf: [24]u8 = undefined;
-                    const left = std.fmt.bufPrint(&l_buf, "-{d:.1} ms", .{p.pre_ms}) catch "";
+                    const left = format.fmt(&l_buf, "-{d:.1} ms", .{p.pre_ms});
                     // Only where it fits between the row labels and the trigger line.
-                    if (px + 48 + batch.font.width(left) + 8 < px + w * @as(f32, @floatCast(p.pre_ms / (p.pre_ms + p.post_ms)))) _ = batch.label(px + 48, bottom, left, dim);
+                    if (px + 48 + batch.font.width(left) + 8 < px + w * @as(f32, @floatCast(p.pre_ms / (p.pre_ms + p.post_ms)))) _ = batch.label(px + 48, bottom, left, theme.text_dim);
                 }
             }
             // Row labels down the left edge, thinned when rows are shorter than a line.
@@ -612,15 +609,15 @@ pub const Display = struct {
                 var label_buf: [16]u8 = undefined;
                 // The rows listened to stand out.
                 const heard = p.kind == .electrode and self.audio.enabled and self.listening(p.first_ch + row);
-                var after = batch.label(px + 5, y, rowLabel(&label_buf, p, row, layout, &self.set), if (heard) .{ 255, 225, 120, 255 } else dim);
+                var after = batch.label(px + 5, y, rowLabel(&label_buf, p, row, layout, &self.set), if (heard) theme.heard else theme.text_dim);
                 // In a filtered panel, the rows shown as they are say so.
-                if (p.filtered and p.kind == .electrode and !p.rowFiltered(row)) after = batch.label(after + 4, y, "raw", dim);
+                if (p.filtered and p.kind == .electrode and !p.rowFiltered(row)) after = batch.label(after + 4, y, "raw", theme.text_dim);
                 // A row with a scale of its own says so.
                 if (row < panels_mod.max_rows and p.row_gain[row] != 1) {
                     var own: Panel = p.*;
                     own.scale = p.rowScale(row);
                     var own_buf: [24]u8 = undefined;
-                    _ = batch.label(after + 4, y, fmtScale(&own_buf, &own), .{ 255, 205, 120, 255 });
+                    _ = batch.label(after + 4, y, fmtScale(&own_buf, &own), theme.row_scale_text);
                 }
             }
         }
@@ -632,12 +629,12 @@ pub const Display = struct {
             const text = if (is_alarm) status.alarm() else status.warning();
             const bar_h = 2 * line_h + 14;
             const bar_y = if (review != null) line_h + 18 else 0;
-            batch.rect(0, bar_y, @floatFromInt(width), bar_h, if (is_alarm) .{ 190, 25, 25, 245 } else .{ 150, 100, 10, 235 });
+            batch.rect(0, bar_y, @floatFromInt(width), bar_h, if (is_alarm) theme.alarm_bar else theme.warning_bar);
             const tw = batch.font.width(text);
-            _ = batch.text((@as(f32, @floatFromInt(width)) - tw) / 2, bar_y + 5, text, .{ 255, 255, 255, 255 });
+            _ = batch.text((@as(f32, @floatFromInt(width)) - tw) / 2, bar_y + 5, text, theme.bar_text);
             if (is_alarm) {
                 const hint = "press a to acknowledge";
-                _ = batch.text((@as(f32, @floatFromInt(width)) - batch.font.width(hint)) / 2, bar_y + line_h + 7, hint, .{ 255, 210, 210, 255 });
+                _ = batch.text((@as(f32, @floatFromInt(width)) - batch.font.width(hint)) / 2, bar_y + line_h + 7, hint, theme.alarm_hint_text);
             }
         }
         if (review) |v| {
@@ -648,8 +645,8 @@ pub const Display = struct {
                 const text = std.fmt.bufPrint(&buf, "REVIEW   {d:.1} s behind live   at {s}{s}   End = live", .{ v.behind_s, control.fmtClock(&clock_buf, @as(f64, @floatFromInt(v.end)) / layout.sample_rate), if (v.ready) "" else "   (reading)" }) catch "REVIEW";
                 const tw = batch.font.width(text);
                 const x = (@as(f32, @floatFromInt(width)) - tw) / 2;
-                batch.rect(x - 10, 4, tw + 20, line_h + 10, .{ 150, 90, 10, 235 });
-                _ = batch.text(x, 9, text, .{ 255, 240, 200, 255 });
+                batch.rect(x - 10, 4, tw + 20, line_h + 10, theme.review_badge);
+                _ = batch.text(x, 9, text, theme.review_badge_text);
             }
         }
         if (notes.editing and line_h > 0) {
@@ -657,28 +654,28 @@ pub const Display = struct {
             var buf: [notes_mod.max_text + 64]u8 = undefined;
             var clock_buf: [16]u8 = undefined;
             const text = std.fmt.bufPrint(&buf, "note at {s}:  {s}_", .{ control.fmtClock(&clock_buf, @as(f64, @floatFromInt(notes.draft.sample)) / layout.sample_rate), notes.draft.text() }) catch "note";
-            _ = batch.label(10, @as(f32, @floatFromInt(height)) - 2 * line_h - 14, text, .{ 255, 235, 170, 255 });
+            _ = batch.label(10, @as(f32, @floatFromInt(height)) - 2 * line_h - 14, text, theme.note_draft_text);
         }
         if (status.valid and line_h > 0) {
             var buf: [96]u8 = undefined;
-            const text = (if (status.lost > 0)
-                std.fmt.bufPrint(&buf, "{d:.1} ms   {d} fps   display skipped {d} blocks", .{ status.latency_ms, status.fps, status.lost })
+            const text = if (status.lost > 0)
+                format.fmt(&buf, "{d:.1} ms   {d} fps   display skipped {d} blocks", .{ status.latency_ms, status.fps, status.lost })
             else
-                std.fmt.bufPrint(&buf, "{d:.1} ms   {d} fps", .{ status.latency_ms, status.fps })) catch "";
+                format.fmt(&buf, "{d:.1} ms   {d} fps", .{ status.latency_ms, status.fps });
             const w = batch.font.width(text);
             const x = @as(f32, @floatFromInt(width)) - w - 8;
             const y = @as(f32, @floatFromInt(height)) - line_h - 6;
-            _ = batch.label(x, y, text, if (status.lost > 0) .{ 255, 190, 90, 255 } else dim);
+            _ = batch.label(x, y, text, if (status.lost > 0) theme.text_warn else theme.text_dim);
             if (status.recording) {
                 var clock_buf: [16]u8 = undefined;
                 var rec_buf: [32]u8 = undefined;
                 const rec_text = std.fmt.bufPrint(&rec_buf, "REC {s}", .{control.fmtClock(&clock_buf, status.rec_seconds)}) catch "REC";
-                _ = batch.label(x - batch.font.width(rec_text) - 14, y, rec_text, .{ 255, 96, 96, 255 });
+                _ = batch.label(x - batch.font.width(rec_text) - 14, y, rec_text, theme.text_rec);
             }
         }
         if (self.set.len > 1) {
             const r = self.set.items[self.target].pixelRect(width, height);
-            fills[nf] = .{ .rect = .{ .x = r.x, .y = r.y, .w = r.w, .h = 3 }, .colour = .{ 0.30, 0.55, 0.95, 1.0 } };
+            fills[nf] = .{ .rect = .{ .x = r.x, .y = r.y, .w = r.w, .h = 3 }, .colour = theme.target_bar };
             nf += 1;
         }
         return .{ .draws = draws[0..nd], .fills = fills[0..nf], .text = batch.vertices[0..batch.len] };
