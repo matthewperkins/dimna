@@ -23,31 +23,9 @@ const format = @import("format.zig");
 const Atomic = std.atomic.Value;
 const log = std.log.scoped(.tiles);
 
-/// What the tile window needs to know from the display.
-pub const Config = struct {
-    listening: [oez.audio.max_channels]u32 = @splat(0),
-    num_listening: usize = 0,
-    /// The panels' common average references, for the detection.
-    car: spikes.Car = .{},
-    use_car: bool = false,
-};
-
-pub const Click = struct { channel: u32, add: bool };
-
-pub const Shared = struct {
-    cfg: oez.published.Published(Config) = .{},
-    clicks: oez.events.Spsc(Click, 32) = .{},
-    stop: Atomic(bool) = .init(false),
-
-    /// Display thread.
-    pub fn publish(self: *Shared, cfg: *const Config) void {
-        self.cfg.publish(cfg);
-    }
-
-    fn read(self: *Shared, out: *Config, seen: *u32) void {
-        _ = self.cfg.read(out, seen);
-    }
-};
+const link = @import("tile_link.zig");
+pub const Config = link.Config;
+pub const Shared = link.Shared;
 
 pub const Tiles = struct {
     gpa: std.mem.Allocator,
@@ -173,9 +151,8 @@ pub const Tiles = struct {
             pointer = .{ in.pointer_x, in.pointer_y };
             const grid: Grid = .of(det.units.len, @floatFromInt(win.width), @floatFromInt(win.height));
             if (in.clicks > 0) {
-                if (grid.at(@floatCast(in.pointer_x), @floatCast(in.pointer_y))) |ch| _ = shared.clicks.push(.{
-                    .channel = @intCast(ch),
-                    .add = in.ctrl,
+                if (grid.at(@floatCast(in.pointer_x), @floatCast(in.pointer_y))) |ch| _ = shared.requests.push(.{
+                    .listen = .{ .channel = @intCast(ch), .add = in.ctrl },
                 });
             }
             // At most 20 pictures a second: the tiles are for looking at, not for timing.

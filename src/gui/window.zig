@@ -92,8 +92,10 @@ pub const Input = struct {
     pinch: f64 = 1,
     keys: [16]Key = undefined,
     num_keys: usize = 0,
-    /// Presses of the left mouse button.
+    /// Presses of the left, right and middle mouse buttons.
     clicks: u32 = 0,
+    right_clicks: u32 = 0,
+    middle_clicks: u32 = 0,
     /// What the keys pressed would type (UTF-8), for text entry.
     text: [64]u8 = undefined,
     text_len: usize = 0,
@@ -289,6 +291,8 @@ pub const Window = struct {
         self.input.pinch = 1;
         self.input.num_keys = 0;
         self.input.clicks = 0;
+        self.input.right_clicks = 0;
+        self.input.middle_clicks = 0;
         self.input.text_len = 0;
         return in;
     }
@@ -472,9 +476,12 @@ pub const Window = struct {
                 self.input.pointer_x = m.surface_x.toDouble();
                 self.input.pointer_y = m.surface_y.toDouble();
             },
-            // 0x110 is BTN_LEFT.
-            .button => |b| if (b.button == 0x110 and b.state == .pressed) {
-                self.input.clicks += 1;
+            // BTN_LEFT, BTN_RIGHT, BTN_MIDDLE.
+            .button => |b| if (b.state == .pressed) switch (b.button) {
+                0x110 => self.input.clicks += 1,
+                0x111 => self.input.right_clicks += 1,
+                0x112 => self.input.middle_clicks += 1,
+                else => {},
             },
             .axis => |a| switch (a.axis) {
                 .vertical_scroll => self.input.scroll_y += a.value.toDouble(),

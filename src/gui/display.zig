@@ -157,6 +157,10 @@ pub const Display = struct {
     set: panels_mod.Set,
     /// The panels as configured, for `r` (reset).
     initial: panels_mod.Set,
+    /// The channel in focus (chosen by a click on its tile or its row), if any, and its
+    /// detection threshold in µV as the tile window last reported it.
+    focus: ?u32 = null,
+    focus_threshold_uv: ?f32 = null,
     /// The panel that wheel, pinch and keys act on.
     target: usize = 0,
     /// Set by a test script (`panel=`, `pointer=`); then it overrides the pointer.
@@ -207,6 +211,7 @@ pub const Display = struct {
     /// it).
     pub fn tileConfig(self: *const Display) tiles_mod.Config {
         var cfg: tiles_mod.Config = .{
+            .focus = self.focus,
             .listening = self.audio.channels,
             .num_listening = if (self.audio.enabled) self.audio.num_channels else 0,
         };

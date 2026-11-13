@@ -6,9 +6,10 @@ const panels_mod = oez.panels;
 const Io = std.Io;
 
 /// The panels' settings as the text of a view file, in `buf`; null if it does not fit.
-pub fn renderViews(buf: []u8, set: *const panels_mod.Set) ?[]const u8 {
+pub fn renderViews(buf: []u8, set: *const panels_mod.Set, tiles: *const oez.tile_view.TileView, electrodes: usize) ?[]const u8 {
     var w: Io.Writer = .fixed(buf);
     panels_mod.renderViews(&w, set) catch return null;
+    tiles.render(&w, electrodes) catch return null;
     return w.buffered();
 }
 

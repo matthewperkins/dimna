@@ -76,43 +76,26 @@ pub const Font = struct {
             .line_height = @as(f32, @floatFromInt(metrics.height)) / 64.0,
         };
         // Shelf packing, one pixel of padding around each glyph.
-        var pen_x: usize = white_block + 1;
-        var pen_y: usize = 1;
-        var shelf_h: usize = white_block;
+        var pen: Pen = .{};
         var index: usize = 0;
         while (index < font.glyphs.len) : (index += 1) {
-            const cp: u32 = if (index <= last_cp - first_cp) @intCast(first_cp + index) else extra_cps[index - (last_cp - first_cp + 1)];
-            // A character the font lacks stays empty (it is then drawn as "?").
-            if (c.FT_Get_Char_Index(face, cp) == 0) continue;
-            if (c.FT_Load_Char(face, cp, c.FT_LOAD_RENDER) != 0) continue;
-            const slot = face.*.glyph;
-            const bm = slot.*.bitmap;
-            const w: usize = bm.width;
-            const h: usize = bm.rows;
-            if (pen_x + w + 1 > atlas_size) {
-                pen_x = 1;
-                pen_y += shelf_h + 1;
-                shelf_h = 0;
-            }
-            if (pen_y + h + 1 > atlas_size) {
-                log.warn("font atlas full at code point {d}; later glyphs are missing", .{cp});
-                break;
-            }
-            for (0..h) |row| {
-                const src: [*]const u8 = bm.buffer + row * @as(usize, @intCast(bm.pitch));
-                @memcpy(atlas[(pen_y + row) * atlas_size + pen_x ..][0..w], src[0..w]);
-            }
-            font.glyphs[index] = .{
-                .x = @intCast(pen_x),
-                .y = @intCast(pen_y),
-                .w = @intCast(w),
-                .h = @intCast(h),
-                .left = @intCast(slot.*.bitmap_left),
-                .top = @intCast(slot.*.bitmap_top),
-                .advance = @as(f32, @floatFromInt(slot.*.advance.x)) / 64.0,
-            };
-            pen_x += w + 1;
-            shelf_h = @max(shelf_h, h);
+            // A character the font lacks stays empty for now.
+            if (!font.place(face, codepointAt(index), index, &pen)) continue;
+        }
+        // The few characters beyond Latin-1 that the font lacks (the note that marks a
+        // channel listened to, say) are taken from whatever font fontconfig offers for
+        // that character. One still missing is drawn as "?".
+        for (extra_cps, last_cp - first_cp + 1..) |cp, at| {
+            if (font.glyphs[at].advance > 0) continue;
+            var want_buf: [48:0]u8 = undefined;
+            const want = std.fmt.bufPrintSentinel(&want_buf, "sans-serif:charset={x}", .{cp}, 0) catch continue;
+            var other_buf: [std.fs.max_path_bytes:0]u8 = undefined;
+            const other_path = findFont(want, &other_buf) catch continue;
+            var other: c.FT_Face = null;
+            if (c.FT_New_Face(lib, other_path.ptr, 0, &other) != 0) continue;
+            defer _ = c.FT_Done_Face(other);
+            if (c.FT_Set_Pixel_Sizes(other, 0, px) != 0) continue;
+            if (font.place(other, cp, at, &pen)) log.info("U+{X:0>4} from {s}", .{ cp, other_path });
         }
         log.info("font {s} at {d} px", .{ path, px });
         return font;
@@ -120,6 +103,54 @@ pub const Font = struct {
 
     pub fn deinit(self: *Font, gpa: std.mem.Allocator) void {
         gpa.free(self.atlas);
+    }
+
+    /// Where the next glyph goes in the atlas.
+    const Pen = struct {
+        x: usize = white_block + 1,
+        y: usize = 1,
+        shelf_h: usize = white_block,
+    };
+
+    /// The code point of glyph slot `index`.
+    fn codepointAt(index: usize) u32 {
+        return if (index <= last_cp - first_cp) @intCast(first_cp + index) else extra_cps[index - (last_cp - first_cp + 1)];
+    }
+
+    /// Renders `cp` from `face` into the atlas as glyph slot `index`. False if the face
+    /// has no such character, or the atlas is full.
+    fn place(self: *Font, face: c.FT_Face, cp: u32, index: usize, pen: *Pen) bool {
+        if (c.FT_Get_Char_Index(face, cp) == 0) return false;
+        if (c.FT_Load_Char(face, cp, c.FT_LOAD_RENDER) != 0) return false;
+        const slot = face.*.glyph;
+        const bm = slot.*.bitmap;
+        const w: usize = bm.width;
+        const h: usize = bm.rows;
+        if (pen.x + w + 1 > atlas_size) {
+            pen.x = 1;
+            pen.y += pen.shelf_h + 1;
+            pen.shelf_h = 0;
+        }
+        if (pen.y + h + 1 > atlas_size) {
+            log.warn("font atlas full at code point {d}; it and later glyphs are missing", .{cp});
+            return false;
+        }
+        for (0..h) |row| {
+            const src: [*]const u8 = bm.buffer + row * @as(usize, @intCast(bm.pitch));
+            @memcpy(self.atlas[(pen.y + row) * atlas_size + pen.x ..][0..w], src[0..w]);
+        }
+        self.glyphs[index] = .{
+            .x = @intCast(pen.x),
+            .y = @intCast(pen.y),
+            .w = @intCast(w),
+            .h = @intCast(h),
+            .left = @intCast(slot.*.bitmap_left),
+            .top = @intCast(slot.*.bitmap_top),
+            .advance = @as(f32, @floatFromInt(slot.*.advance.x)) / 64.0,
+        };
+        pen.x += w + 1;
+        pen.shelf_h = @max(pen.shelf_h, h);
+        return true;
     }
 
     fn glyph(self: *const Font, cp: u21) *const Glyph {

@@ -56,6 +56,7 @@ const session = @import("session.zig");
 const Pacer = @import("pacing.zig").Pacer;
 const Env = @import("env.zig").Env;
 const Pipeline = @import("pipeline.zig").Pipeline;
+const tile_link = @import("tile_link.zig");
 
 pub const std_options: std.Options = .{ .log_level = .info };
 
@@ -151,6 +152,11 @@ pub fn main(init: std.process.Init) !u8 {
     // restart by the same code (see pipeline.zig).
     var audio_shared: audio_out.Shared = .{};
     var tiles_shared: tiles_mod.Shared = .{};
+    // The tile window's view (port shown, tile ranges): from the view file at first, then
+    // as the tile window reports it; saved with the panels by "Save view".
+    var tile_view = oez.tile_view.TileView.read(args.views_doc);
+    tiles_shared.initial_view = tile_view;
+    var tile_report_seen: u32 = 0;
     var pl: Pipeline = .{
         .gpa = gpa,
         .io = io,
@@ -210,7 +216,10 @@ pub fn main(init: std.process.Init) !u8 {
     // However the loop ends, a recording in progress is closed properly.
     defer recording.deinit();
     var rec_published_ns: i128 = 0;
-    var view_file = try session.ViewFile.init(gpa, &display.set);
+    // What "Save view" saves: the panels and the tile window's view. (Pointers that stay
+    // valid; what they point to changes.)
+    const view: session.ViewFile.View = .{ .set = &display.set, .tiles = &tile_view, .layout = layout };
+    var view_file = try session.ViewFile.init(gpa, view);
     defer view_file.deinit(gpa);
     var review: session.ReviewSession = .{};
     defer review.deinit();
@@ -309,7 +318,7 @@ pub fn main(init: std.process.Init) !u8 {
                 .review => |r| review.queue(r),
                 .note_preset => |n| notes.stampPreset(n, note_stamp, recording.sessionPath()),
                 .acknowledge => display.acknowledged = true,
-                .save_view => if (view_file.save(io, views_path, &display.set)) |_| {
+                .save_view => if (view_file.save(io, views_path, view)) |_| {
                     board_ctl.status.setNote("view saved to {s}", .{views_path});
                 } else |err| board_ctl.status.setNote("could not save {s}: {t}", .{ views_path, err }),
                 .quit_answer => |answer| quit_answer = answer,
@@ -335,7 +344,26 @@ pub fn main(init: std.process.Init) !u8 {
             snap_dirty = true;
         }
         // A click on a spike tile listens to its channel, as a click on a row does.
-        while (tiles_shared.clicks.pop()) |c| display.listenClick(c.channel, c.add);
+        while (tiles_shared.requests.pop()) |request| switch (request) {
+            .focus => |channel| display.focus = channel,
+            .unfocus => display.focus = null,
+            .listen => |l| display.listenClick(l.channel, l.add),
+        };
+        // What the tile window reports: the focused channel's threshold, and its view.
+        {
+            var report: tile_link.Report = undefined;
+            if (tiles_shared.report.read(&report, &tile_report_seen)) {
+                display.focus_threshold_uv = if (report.threshold_valid and display.focus == report.threshold_channel)
+                    report.threshold_uv
+                else
+                    null;
+                if (!report.view.eql(&tile_view)) {
+                    tile_view = report.view;
+                    snap_dirty = true;
+                }
+            }
+            if (display.focus == null) display.focus_threshold_uv = null;
+        }
         if (pl.tiles_win != null and nowNs() - tiles_published_ns > 200 * std.time.ns_per_ms) {
             tiles_published_ns = nowNs();
             tiles_shared.publish(&display.tileConfig());
@@ -356,8 +384,8 @@ pub fn main(init: std.process.Init) !u8 {
                     // Whichever of the two changed.
                     const board_ok = board_ctl.saveIfChanged(io, gpa, config_path, &acq.requested);
                     var view_ok = true;
-                    if (view_file.unsaved(&display.set)) {
-                        if (view_file.save(io, views_path, &display.set)) |_| {
+                    if (view_file.unsaved(view)) {
+                        if (view_file.save(io, views_path, view)) |_| {
                             log.info("view saved to {s}", .{views_path});
                         } else |err| {
                             board_ctl.status.setNote("could not save {s}: {t}", .{ views_path, err });
@@ -375,7 +403,7 @@ pub fn main(init: std.process.Init) !u8 {
         if (quit) {
             if (!board_ctl.askBeforeQuit(
                 &acq.requested,
-                view_file.unsaved(&display.set),
+                view_file.unsaved(view),
                 control_thread != null and !shared.closed.load(.acquire),
             )) break;
             snap_dirty = true;
@@ -390,6 +418,8 @@ pub fn main(init: std.process.Init) !u8 {
             } else {
                 // Review looks into a history that is about to be replaced.
                 review.drop();
+                // The tile window starts again: with the view it had.
+                tiles_shared.initial_view = tile_view;
                 if (try pl.restart(board_ctl.pending)) |refused| {
                     board_ctl.status.setNote("the board refused the new settings: {t}", .{refused});
                 }
@@ -431,7 +461,7 @@ pub fn main(init: std.process.Init) !u8 {
                 .seconds = @as(f64, @floatFromInt(nowNs() - t_start)) / 1e9,
                 .quit_prompt = board_ctl.quit_prompt,
                 .review = review.status(newest, pl.fs),
-                .view_unsaved = view_file.unsaved(&display.set),
+                .view_unsaved = view_file.unsaved(view),
                 .notes = session.notesStatus(&notes, pl.fs),
                 .audio = session.audioStatus(display, &audio_shared, layout),
                 .about_buf = about: {
