@@ -242,6 +242,7 @@ fn runScript(script: []const u8, pos: *usize, elapsed_s: f64, in: *Input, displa
                 'f' => .f,
                 't' => .t,
                 's' => .s,
+                'a' => .a,
                 '/' => .slash,
                 '`' => .grave,
                 '\\' => .backslash,
