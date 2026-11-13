@@ -246,6 +246,12 @@ pub const Review = struct {
         }
     }
 
+    /// The digital input word of each sample from `first` on, from the TTL edges read so
+    /// far (by `fill`).
+    pub fn ttlWords(self: *const Review, first: i64, out: []u16) void {
+        self.words(first, out);
+    }
+
     /// The digital input word of each sample from `first` on, from the edges.
     fn words(self: *const Review, first: i64, out: []u16) void {
         const es = self.edge_samples.items;
