@@ -14,43 +14,48 @@ const linux = std.os.linux;
 const xkb = @import("gui_c");
 const log = std.log.scoped(.window);
 
-/// The keys oez acts on, by what the key is labelled in the user's keyboard layout (its
+/// A key oez acts on, by what the key is labelled in the user's keyboard layout (its
 /// symbol without modifiers, from the compositor's keymap through xkbcommon), not by where
-/// it sits: on Dvorak, `r` is the key marked r. The values are X keysyms.
-pub const Key = enum(u32) {
-    escape = 0xff1b,
-    q = 'q',
-    r = 'r',
-    m = 'm',
-    f = 'f',
-    t = 't',
-    s = 's',
-    a = 'a',
-    slash = '/',
-    backslash = '\\',
-    grave = '`',
-    space = ' ',
-    home = 0xff50,
-    end = 0xff57,
-    page_up = 0xff55,
-    page_down = 0xff56,
-    enter = 0xff0d,
-    backspace = 0xff08,
-    tab = 0xff09,
-    /// '1'..'8' are used as numbers (see `digit`).
-    comma = ',',
-    dot = '.',
-    semicolon = ';',
-    apostrophe = '\'',
-    minus = '-',
-    equal = '=',
-    left_bracket = '[',
-    right_bracket = ']',
-    left = 0xff51,
-    up = 0xff52,
-    right = 0xff53,
-    down = 0xff54,
-    _,
+/// it sits: on Dvorak, 'r' is the key marked r.
+pub const Key = union(enum) {
+    /// A key that types a character: that character without modifiers ('r', '/', '1', ' ').
+    char: u8,
+    named: Named,
+
+    pub const Named = enum { escape, enter, backspace, tab, home, end, page_up, page_down, left, up, right, down };
+
+    /// From an X keysym; null for a key oez has no use for.
+    pub fn fromKeysym(sym: u32) ?Key {
+        return switch (sym) {
+            0x20...0x7e => .{ .char = @intCast(sym) },
+            0xff1b => .{ .named = .escape },
+            0xff0d => .{ .named = .enter },
+            0xff08 => .{ .named = .backspace },
+            0xff09 => .{ .named = .tab },
+            0xff50 => .{ .named = .home },
+            0xff57 => .{ .named = .end },
+            0xff55 => .{ .named = .page_up },
+            0xff56 => .{ .named = .page_down },
+            0xff51 => .{ .named = .left },
+            0xff52 => .{ .named = .up },
+            0xff53 => .{ .named = .right },
+            0xff54 => .{ .named = .down },
+            else => null,
+        };
+    }
+
+    pub fn is(self: Key, c: u8) bool {
+        return self == .char and self.char == c;
+    }
+
+    pub fn isNamed(self: Key, n: Named) bool {
+        return self == .named and self.named == n;
+    }
+
+    /// 1 to 9 for a digit key, else null.
+    pub fn digit(self: Key) ?u8 {
+        return if (self == .char and self.char >= '1' and self.char <= '9') self.char - '0' else null;
+    }
 };
 
 /// The keysym of an evdev key code on a US QWERTY keyboard, for when the compositor sends
@@ -548,9 +553,11 @@ pub const Window = struct {
                         }
                     }
                 }
-                if (k.state == .pressed and sym != 0 and self.input.num_keys < self.input.keys.len) {
-                    self.input.keys[self.input.num_keys] = @fromBackingInt(@intCast(sym));
-                    self.input.num_keys += 1;
+                if (k.state == .pressed and self.input.num_keys < self.input.keys.len) {
+                    if (Key.fromKeysym(sym)) |key| {
+                        self.input.keys[self.input.num_keys] = key;
+                        self.input.num_keys += 1;
+                    }
                 }
             },
             .modifiers => |m| {
@@ -571,3 +578,21 @@ pub const Window = struct {
         }
     }
 };
+
+test "keys from keysyms: characters, named keys, and nothing for the rest" {
+    const expectEqual = std.testing.expectEqual;
+    try expectEqual(Key{ .char = 'r' }, Key.fromKeysym('r').?);
+    try expectEqual(Key{ .char = ' ' }, Key.fromKeysym(0x20).?);
+    try expectEqual(Key{ .named = .escape }, Key.fromKeysym(0xff1b).?);
+    try expectEqual(Key{ .named = .page_down }, Key.fromKeysym(0xff56).?);
+    // Shift, a function key, a letter outside ASCII: not ours.
+    try expectEqual(null, Key.fromKeysym(0xffe1));
+    try expectEqual(null, Key.fromKeysym(0xffbe));
+    try expectEqual(null, Key.fromKeysym(0xe9));
+    try expectEqual(null, Key.fromKeysym(0));
+    try expectEqual(3, (Key{ .char = '3' }).digit().?);
+    try expectEqual(null, (Key{ .char = '0' }).digit());
+    try expectEqual(null, (Key{ .named = .enter }).digit());
+    try std.testing.expect((Key{ .char = '/' }).is('/') and !(Key{ .named = .tab }).is('/'));
+    try std.testing.expect((Key{ .named = .tab }).isNamed(.tab) and !(Key{ .char = 'q' }).isNamed(.escape));
+}

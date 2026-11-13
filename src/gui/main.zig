@@ -287,14 +287,16 @@ pub fn main(init: std.process.Init) !u8 {
         // Review keys (what is left of them after a note took its own).
         for (input.keys[0..input.num_keys]) |k| {
             const cmd: control.ReviewAction = switch (k) {
-                .space => .toggle,
-                .left => .back,
-                .right => .forward,
-                .page_up => .page_back,
-                .page_down => .page_forward,
-                .home => .start,
-                .end => .live,
-                else => continue,
+                .char => |c| if (c == ' ') .toggle else continue,
+                .named => |n| switch (n) {
+                    .left => .back,
+                    .right => .forward,
+                    .page_up => .page_back,
+                    .page_down => .page_forward,
+                    .home => .start,
+                    .end => .live,
+                    else => continue,
+                },
             };
             review.queue(cmd);
         }

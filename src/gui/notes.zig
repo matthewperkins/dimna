@@ -108,17 +108,22 @@ pub const Notes = struct {
         if (self.editing) {
             var done: enum { no, save, cancel, keep } = .no;
             for (in.keys[0..in.num_keys]) |k| switch (k) {
-                .enter, .backslash => done = .save,
-                .escape => done = .cancel,
-                .tab => done = .keep,
-                .backspace => {
-                    // One whole character: back over UTF-8 continuation bytes.
-                    while (self.draft.len > 0) {
-                        self.draft.len -= 1;
-                        if (self.draft.buf[self.draft.len] & 0xC0 != 0x80) break;
-                    }
+                .char => |c| if (c == '\\') {
+                    done = .save;
                 },
-                else => {},
+                .named => |n| switch (n) {
+                    .enter => done = .save,
+                    .escape => done = .cancel,
+                    .tab => done = .keep,
+                    .backspace => {
+                        // One whole character: back over UTF-8 continuation bytes.
+                        while (self.draft.len > 0) {
+                            self.draft.len -= 1;
+                            if (self.draft.buf[self.draft.len] & 0xC0 != 0x80) break;
+                        }
+                    },
+                    else => {},
+                },
             };
             if (done == .no or done == .save or done == .keep) {
                 // Whole characters only: a note that is full takes no part of one.
@@ -160,19 +165,20 @@ pub const Notes = struct {
         // Not editing: /, ` and the digits that have a preset are ours.
         var kept: usize = 0;
         for (in.keys[0..in.num_keys]) |k| {
-            const code = @backingInt(k);
-            if (k == .slash) {
+            // A digit whose preset has a text.
+            const preset: ?usize = if (k.digit()) |d| (if (self.presets[d - 1].len > 0) d - 1 else null) else null;
+            if (k.is('/')) {
                 self.editing = true;
                 self.draft = .{ .sample = now_sample };
                 self.dirty = true;
-            } else if (k == .grave) {
+            } else if (k.is('`')) {
                 if (self.num_drafts > 0) {
                     self.save(now_sample, self.drafts[0].text(), session);
                     for (1..self.num_drafts) |i| self.drafts[i - 1] = self.drafts[i];
                     self.num_drafts -= 1;
                 }
-            } else if (code >= '1' and code <= '9' and self.presets[code - '1'].len > 0) {
-                self.save(now_sample, self.presets[code - '1'].text(), session);
+            } else if (preset) |which| {
+                self.save(now_sample, self.presets[which].text(), session);
             } else {
                 in.keys[kept] = k;
                 kept += 1;
@@ -244,7 +250,15 @@ fn frame(keys: []const Key, text: []const u8) Input {
 }
 
 fn digit(d: u8) Key {
-    return @fromBackingInt(@as(u32, d));
+    return .{ .char = d };
+}
+
+fn chr(c: u8) Key {
+    return .{ .char = c };
+}
+
+fn nm(n: Key.Named) Key {
+    return .{ .named = n };
 }
 
 /// Feeds one frame to `notes` and returns what is left of it for the other shortcuts.
@@ -256,7 +270,7 @@ fn feed(notes: *Notes, keys: []const Key, text: []const u8, now: i64) Input {
 
 /// Opens a note at `now` and types `text` into it, in frames of at most 64 bytes.
 fn openAndType(notes: *Notes, now: i64, text: []const u8) !void {
-    _ = feed(notes, &.{.slash}, "/", now);
+    _ = feed(notes, &.{chr('/')}, "/", now);
     try testing.expect(notes.editing);
     var rest = text;
     while (rest.len > 0) {
@@ -276,16 +290,16 @@ test "slash opens a note; the keys that follow are its text, not shortcuts" {
     var notes: Notes = .{};
     notes.presets[2].set("preset three");
     // The '/' itself is not the note's first character, and the other keys pass through.
-    var in = feed(&notes, &.{ .q, .slash }, "q/", 100);
+    var in = feed(&notes, &.{ chr('q'), chr('/') }, "q/", 100);
     try testing.expect(notes.editing);
     try testing.expectEqual(100, notes.draft.sample);
     try testing.expectEqual(0, notes.draft.len);
     try testing.expectEqual(0, in.text_len);
     try testing.expectEqual(1, in.num_keys);
-    try testing.expectEqual(Key.q, in.keys[0]);
+    try testing.expectEqual(chr('q'), in.keys[0]);
     // While it is open, nothing is left for the other shortcuts, a preset's digit and
     // backtick included: they are text.
-    in = feed(&notes, &.{ .q, .m, digit('3'), .grave, .slash, .space }, "qm3`/ ", 200);
+    in = feed(&notes, &.{ chr('q'), chr('m'), digit('3'), chr('`'), chr('/'), chr(' ') }, "qm3`/ ", 200);
     try testing.expectEqual(0, in.num_keys);
     try testing.expectEqual(0, in.text_len);
     try testing.expectEqualStrings("qm3`/ ", notes.draft.text());
@@ -297,14 +311,14 @@ test "Enter or backslash saves the note with the stamp it was opened at" {
     var notes: Notes = .{};
     try openAndType(&notes, 1000, "cell 3 ");
     // The text typed in the frame that ends it is kept; the ending key's own text is not.
-    _ = feed(&notes, &.{.enter}, "lost\r", 5000);
+    _ = feed(&notes, &.{nm(.enter)}, "lost\r", 5000);
     try testing.expect(!notes.editing);
     try testing.expectEqual(1, notes.total);
     try testing.expectEqual(1000, notes.recentNote(0).?.sample);
     try testing.expectEqualStrings("cell 3 lost", notes.recentNote(0).?.text());
 
     try openAndType(&notes, 7000, "second");
-    _ = feed(&notes, &.{.backslash}, "\\", 9000);
+    _ = feed(&notes, &.{chr('\\')}, "\\", 9000);
     try testing.expect(!notes.editing);
     try testing.expectEqual(2, notes.total);
     try testing.expectEqual(7000, notes.recentNote(0).?.sample);
@@ -313,8 +327,8 @@ test "Enter or backslash saves the note with the stamp it was opened at" {
     try testing.expectEqual(null, notes.recentNote(2));
 
     // An empty note is not saved.
-    _ = feed(&notes, &.{.slash}, "/", 10000);
-    _ = feed(&notes, &.{.enter}, "", 10001);
+    _ = feed(&notes, &.{chr('/')}, "/", 10000);
+    _ = feed(&notes, &.{nm(.enter)}, "", 10001);
     try testing.expect(!notes.editing);
     try testing.expectEqual(2, notes.total);
 }
@@ -322,7 +336,7 @@ test "Enter or backslash saves the note with the stamp it was opened at" {
 test "Esc drops the note" {
     var notes: Notes = .{};
     try openAndType(&notes, 1000, "never mind");
-    const in = feed(&notes, &.{.escape}, "x", 2000);
+    const in = feed(&notes, &.{nm(.escape)}, "x", 2000);
     try testing.expect(!notes.editing);
     try testing.expectEqual(0, in.num_keys);
     try testing.expectEqual(0, notes.total);
@@ -333,36 +347,36 @@ test "Esc drops the note" {
 test "Tab keeps the note as a draft; backtick stamps the oldest draft now" {
     var notes: Notes = .{};
     try openAndType(&notes, 1000, "laser on");
-    _ = feed(&notes, &.{.tab}, "\t", 1100);
+    _ = feed(&notes, &.{nm(.tab)}, "\t", 1100);
     try openAndType(&notes, 2000, "laser off");
-    _ = feed(&notes, &.{.tab}, "\t", 2100);
+    _ = feed(&notes, &.{nm(.tab)}, "\t", 2100);
     try testing.expect(!notes.editing);
     try testing.expectEqual(2, notes.num_drafts);
     try testing.expectEqual(0, notes.total);
     try testing.expectEqualStrings("laser on", notes.drafts[0].text());
 
     // Backtick is a note command when no note is open: taken out of the input.
-    var in = feed(&notes, &.{ .grave, .m }, "`m", 50_000);
+    var in = feed(&notes, &.{ chr('`'), chr('m') }, "`m", 50_000);
     try testing.expectEqual(1, in.num_keys);
-    try testing.expectEqual(Key.m, in.keys[0]);
+    try testing.expectEqual(chr('m'), in.keys[0]);
     try testing.expectEqual(1, notes.total);
     try testing.expectEqual(50_000, notes.recentNote(0).?.sample);
     try testing.expectEqualStrings("laser on", notes.recentNote(0).?.text());
     try testing.expectEqual(1, notes.num_drafts);
     try testing.expectEqualStrings("laser off", notes.drafts[0].text());
 
-    _ = feed(&notes, &.{.grave}, "`", 60_000);
+    _ = feed(&notes, &.{chr('`')}, "`", 60_000);
     try testing.expectEqual(60_000, notes.recentNote(0).?.sample);
     try testing.expectEqualStrings("laser off", notes.recentNote(0).?.text());
     try testing.expectEqual(0, notes.num_drafts);
     // With no drafts left, backtick does nothing (and is still taken).
-    in = feed(&notes, &.{.grave}, "`", 70_000);
+    in = feed(&notes, &.{chr('`')}, "`", 70_000);
     try testing.expectEqual(0, in.num_keys);
     try testing.expectEqual(2, notes.total);
 
     // An empty note is not kept as a draft.
-    _ = feed(&notes, &.{.slash}, "/", 80_000);
-    _ = feed(&notes, &.{.tab}, "\t", 80_001);
+    _ = feed(&notes, &.{chr('/')}, "/", 80_000);
+    _ = feed(&notes, &.{nm(.tab)}, "\t", 80_001);
     try testing.expectEqual(0, notes.num_drafts);
 }
 
@@ -371,19 +385,19 @@ test "Backspace removes one whole UTF-8 character" {
     // a, é (2 bytes), → (3 bytes)
     try openAndType(&notes, 0, "a\u{e9}\u{2192}");
     try testing.expectEqual(6, notes.draft.len);
-    _ = feed(&notes, &.{.backspace}, "", 1);
+    _ = feed(&notes, &.{nm(.backspace)}, "", 1);
     try testing.expectEqualStrings("a\u{e9}", notes.draft.text());
-    _ = feed(&notes, &.{.backspace}, "", 2);
+    _ = feed(&notes, &.{nm(.backspace)}, "", 2);
     try testing.expectEqualStrings("a", notes.draft.text());
-    _ = feed(&notes, &.{.backspace}, "", 3);
+    _ = feed(&notes, &.{nm(.backspace)}, "", 3);
     try testing.expectEqualStrings("", notes.draft.text());
     // At an empty note it does nothing, and the note stays open.
-    _ = feed(&notes, &.{ .backspace, .backspace }, "", 4);
+    _ = feed(&notes, &.{ nm(.backspace), nm(.backspace) }, "", 4);
     try testing.expectEqual(0, notes.draft.len);
     try testing.expect(notes.editing);
     // Two in one frame remove two characters.
     _ = feed(&notes, &.{}, "\u{2192}x\u{e9}", 5);
-    _ = feed(&notes, &.{ .backspace, .backspace }, "", 6);
+    _ = feed(&notes, &.{ nm(.backspace), nm(.backspace) }, "", 6);
     try testing.expectEqualStrings("\u{2192}", notes.draft.text());
 }
 
@@ -393,7 +407,7 @@ test "a note longer than the buffer is cut at max_text bytes" {
     for (&long, 0..) |*ch, i| ch.* = '0' + @as(u8, @intCast(i % 10));
     try openAndType(&notes, 42, &long);
     try testing.expectEqual(max_text, notes.draft.len);
-    _ = feed(&notes, &.{.enter}, "", 43);
+    _ = feed(&notes, &.{nm(.enter)}, "", 43);
     try testing.expectEqualStrings(long[0..max_text], notes.recentNote(0).?.text());
     try testing.expectEqual(42, notes.recentNote(0).?.sample);
 }
@@ -412,7 +426,7 @@ test "presets 1 to 9 stamp only when no note is open, and only if they are set" 
     try testing.expectEqual(500, notes.recentNote(0).?.sample);
 
     // With a note open the digit is text.
-    _ = feed(&notes, &.{.slash}, "/", 600);
+    _ = feed(&notes, &.{chr('/')}, "/", 600);
     in = feed(&notes, &.{digit('1')}, "1", 700);
     try testing.expectEqual(0, in.num_keys);
     try testing.expectEqual(2, notes.total);
@@ -431,7 +445,7 @@ test "fresh holds what was saved since the caller last took it" {
     notes.presets[3].set("four");
     try testing.expectEqual(0, notes.num_fresh);
     try openAndType(&notes, 10, "typed");
-    _ = feed(&notes, &.{.enter}, "", 11);
+    _ = feed(&notes, &.{nm(.enter)}, "", 11);
     _ = feed(&notes, &.{digit('4')}, "4", 12);
     try testing.expectEqual(2, notes.num_fresh);
     try testing.expectEqualStrings("typed", notes.fresh[0].text());
@@ -480,7 +494,7 @@ test "a saved note is one line in the log: time, sample, session, text" {
     defer notes.deinit();
     notes.presets[0].set("baseline");
     try openAndType(&notes, 12345, "cell 1");
-    var in = frame(&.{.enter}, "");
+    var in = frame(&.{nm(.enter)}, "");
     notes.handle(&in, 99999, "/data/2026-11-12_10-00-00");
     in = frame(&.{digit('1')}, "1");
     notes.handle(&in, 67890, "");
@@ -511,7 +525,7 @@ test "a saved note is one line in the log: time, sample, session, text" {
 test "a full note takes no part of a character, and text is cut between characters" {
     var n: Notes = .{};
     var in: Input = .{};
-    in.keys[0] = .slash;
+    in.keys[0] = chr('/');
     in.num_keys = 1;
     n.handle(&in, 0, "");
     try testing.expect(n.editing);

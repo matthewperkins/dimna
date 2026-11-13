@@ -351,7 +351,7 @@ pub const Display = struct {
         if (self.scripted_target) |t| self.target = t;
         var quit = false;
         for (in.keys[0..in.num_keys]) |k| {
-            if (k == .escape or k == .q) quit = true;
+            if (k.isNamed(.escape) or k.is('q')) quit = true;
         }
         if (self.set.len == 0) return quit;
         const p = &self.set.items[self.target];
@@ -374,37 +374,41 @@ pub const Display = struct {
         if (sx != 0) zoom *= @exp(sx * per_unit);
         // Fingers apart = zoom in = less time across the panel.
         if (in.pinch != 1 and in.pinch > 0) zoom /= in.pinch;
-        for (in.keys[0..in.num_keys]) |k| switch (k) {
-            .left_bracket => zoom *= 1.25,
-            .right_bracket => zoom /= 1.25,
-            else => {},
-        };
+        for (in.keys[0..in.num_keys]) |k| {
+            if (k.is('[')) zoom *= 1.25;
+            if (k.is(']')) zoom /= 1.25;
+        }
         if (p.mode == .triggered) {
             p.trigger.pre_ms *= zoom;
             p.trigger.post_ms *= zoom;
         } else p.span_s *= zoom;
         for (in.keys[0..in.num_keys]) |k| switch (k) {
-            .minus => p.scale *= 1.25,
-            .equal => p.scale /= 1.25,
-            .r => self.reset(self.target),
-            .f => p.filter.on = p.kind == .electrode and !p.filter.on,
-            .comma => if (p.filter.on) p.stepCorner(false, false),
-            .dot => if (p.filter.on) p.stepCorner(false, true),
-            .semicolon => if (p.filter.on) p.stepCorner(true, false),
-            .apostrophe => if (p.filter.on) p.stepCorner(true, true),
-            .m => p.mode = if (p.mode == .scroll) .sweep else .scroll,
-            .a => self.acknowledged = true,
-            // Triggered mode: s switches between a TTL line and spikes on the row under
-            // the pointer.
-            .s => if (p.mode == .triggered) {
-                if (p.trigger.source == .ttl) {
-                    p.setTrigSource(.channel);
-                    if (p.rowAt(self.pointer_fy)) |row| p.trigger.row = @intCast(row);
-                } else p.setTrigSource(.ttl);
-            },
-            .t => p.mode = if (p.mode == .triggered) .scroll else .triggered,
-            else => if (p.mode == .triggered and p.trigger.source == .ttl and @backingInt(k) >= '1' and @backingInt(k) <= '8') {
-                p.trigger.line = @intCast(@backingInt(k) - '0');
+            .named => {},
+            .char => |c| switch (c) {
+                '-' => p.scale *= 1.25,
+                '=' => p.scale /= 1.25,
+                'r' => self.reset(self.target),
+                'f' => p.filter.on = p.kind == .electrode and !p.filter.on,
+                ',' => if (p.filter.on) p.stepCorner(false, false),
+                '.' => if (p.filter.on) p.stepCorner(false, true),
+                ';' => if (p.filter.on) p.stepCorner(true, false),
+                '\'' => if (p.filter.on) p.stepCorner(true, true),
+                'm' => p.mode = if (p.mode == .scroll) .sweep else .scroll,
+                'a' => self.acknowledged = true,
+                // Triggered mode: s switches between a TTL line and spikes on the row under
+                // the pointer.
+                's' => if (p.mode == .triggered) {
+                    if (p.trigger.source == .ttl) {
+                        p.setTrigSource(.channel);
+                        if (p.rowAt(self.pointer_fy)) |row| p.trigger.row = @intCast(row);
+                    } else p.setTrigSource(.ttl);
+                },
+                't' => p.mode = if (p.mode == .triggered) .scroll else .triggered,
+                // Triggered on a TTL line: the digits pick the line.
+                '1'...'8' => if (p.mode == .triggered and p.trigger.source == .ttl) {
+                    p.trigger.line = c - '0';
+                },
+                else => {},
             },
         };
         // A click on an electrode row listens to it (Ctrl: adds or removes it).

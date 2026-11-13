@@ -11,4 +11,5 @@ test {
     _ = @import("notes.zig");
     _ = @import("tiles.zig");
     _ = @import("ui.zig");
+    _ = @import("window.zig");
 }

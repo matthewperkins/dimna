@@ -55,14 +55,14 @@ pub fn runScript(script: []const u8, pos: *usize, elapsed_s: f64, in: *Input, di
             std.mem.eql(u8, what, "tab") or std.mem.eql(u8, what, "backspace"))
         {
             if (in.num_keys < in.keys.len) {
-                in.keys[in.num_keys] = if (what[0] == 'e' and what[1] == 'n')
+                in.keys[in.num_keys] = .{ .named = if (what[0] == 'e' and what[1] == 'n')
                     .enter
                 else if (what[0] == 'e')
                     .escape
                 else if (what[0] == 't')
                     .tab
                 else
-                    .backspace;
+                    .backspace };
                 in.num_keys += 1;
             }
         } else if (std.mem.eql(u8, what, "space") or std.mem.eql(u8, what, "home") or std.mem.eql(u8, what, "end") or
@@ -71,12 +71,12 @@ pub fn runScript(script: []const u8, pos: *usize, elapsed_s: f64, in: *Input, di
         {
             if (in.num_keys < in.keys.len) {
                 in.keys[in.num_keys] = switch (what[0]) {
-                    's' => .space,
-                    'h' => .home,
-                    'e' => .end,
-                    'l' => .left,
-                    'r' => .right,
-                    else => if (what[2] == 'u') .page_up else .page_down,
+                    's' => .{ .char = ' ' },
+                    'h' => .{ .named = .home },
+                    'e' => .{ .named = .end },
+                    'l' => .{ .named = .left },
+                    'r' => .{ .named = .right },
+                    else => .{ .named = if (what[2] == 'u') .page_up else .page_down },
                 };
                 in.num_keys += 1;
             }
@@ -95,28 +95,9 @@ pub fn runScript(script: []const u8, pos: *usize, elapsed_s: f64, in: *Input, di
             display.scripted_pointer = true;
         } else for (what) |ch| {
             if (in.num_keys == in.keys.len) break;
-            in.keys[in.num_keys] = switch (ch) {
-                '[' => .left_bracket,
-                ']' => .right_bracket,
-                '-' => .minus,
-                '=' => .equal,
-                'r' => .r,
-                'm' => .m,
-                'f' => .f,
-                't' => .t,
-                's' => .s,
-                'a' => .a,
-                '/' => .slash,
-                '`' => .grave,
-                '\\' => .backslash,
-                '9' => @fromBackingInt(@intCast(ch)),
-                '1'...'8' => @fromBackingInt(@intCast(ch)),
-                ',' => .comma,
-                '.' => .dot,
-                '\'' => .apostrophe,
-                'q' => .q,
-                else => continue,
-            };
+            // The keys that are shortcuts somewhere; anything else is not a key step.
+            if (std.mem.indexOfScalar(u8, "[]-=rmftsa/`\\123456789,.'q", ch) == null) continue;
+            in.keys[in.num_keys] = .{ .char = ch };
             in.num_keys += 1;
         }
         pos.* += @min(end + 1, rest.len);
