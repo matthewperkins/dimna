@@ -194,10 +194,17 @@ pub const Panel = struct {
         }
     }
 
-    /// A number that changes whenever what the panel's slot holds changes (filter, rows,
-    /// reference): for noticing that something made from it is out of date.
+    /// A number that changes whenever what the panel's slot holds changes, or how wide it
+    /// is: the kind, the channels (first and how many), the filter, the rows shown raw or
+    /// hidden, the reference, and a TTL panel's lines. For noticing that something made
+    /// from it is out of date. Display-only settings (scale, time base, mode, trigger,
+    /// place, tint) leave it alone, and so does `slot`, which the feed sets.
     pub fn signalSignature(self: *const Panel) u64 {
         var h = std.hash.Wyhash.init(0);
+        h.update(&.{@backingInt(self.kind)});
+        h.update(std.mem.asBytes(&self.first_ch));
+        h.update(std.mem.asBytes(&self.rows));
+        if (self.kind == .ttl) h.update(self.ttl_lines[0..@min(self.rows, self.ttl_lines.len)]);
         h.update(std.mem.asBytes(&self.filter.on));
         h.update(std.mem.asBytes(&self.filter.low_hz));
         h.update(std.mem.asBytes(&self.filter.high_hz));
@@ -1317,4 +1324,72 @@ test "two parses with different errors each report their own message" {
         fromConfig(try toml.parse(a, "[[panel]]\nsource = \"" ++ &@as([200]u8, @splat('x')) ++ "\"\nrect = [0,0,1,1]", null), &l, &diag),
     );
     try testing.expectEqualStrings("bad panel", diag.message());
+}
+
+test "signalSignature follows what decides a slot, and nothing display-only" {
+    const l = testLayout();
+    var set = default(&l, .scroll);
+    // A TTL panel beside the two electrode panels.
+    set.items[2] = set.items[0];
+    set.items[2].kind = .ttl;
+    set.items[2].first_ch = 0;
+    set.items[2].rows = 2;
+    set.items[2].ttl_lines[0] = 1;
+    set.items[2].ttl_lines[1] = 4;
+    set.len = 3;
+    const base = set;
+    const sig = struct {
+        fn f(s: *const Set, i: usize) u64 {
+            return s.items[i].signalSignature();
+        }
+    }.f;
+    // What decides a slot's width or contents: each changes the signature.
+    var s = base;
+    s.items[0].rows = 12; // row count
+    try testing.expect(sig(&s, 0) != sig(&base, 0));
+    s = base;
+    s.items[0].kind = .adc; // kind (an electrode panel has a slot, an ADC panel none)
+    try testing.expect(sig(&s, 0) != sig(&base, 0));
+    s = base;
+    s.items[0].first_ch = 16; // which channels
+    try testing.expect(sig(&s, 0) != sig(&base, 0));
+    s = base;
+    s.items[2].ttl_lines[1] = 5; // a TTL panel's line
+    try testing.expect(sig(&s, 2) != sig(&base, 2));
+    s = base;
+    s.items[2].rows = 3; // a TTL panel's lane count
+    s.items[2].ttl_lines[2] = 3;
+    try testing.expect(sig(&s, 2) != sig(&base, 2));
+    s = base;
+    s.items[0].filter.on = true;
+    try testing.expect(sig(&s, 0) != sig(&base, 0));
+    s = base;
+    s.items[0].per_row.hidden.set(3, true);
+    try testing.expect(sig(&s, 0) != sig(&base, 0));
+    s = base;
+    s.items[0].setCar(true);
+    try testing.expect(sig(&s, 0) != sig(&base, 0));
+    // A TTL panel's lines past its lane count are not shown: no change.
+    s = base;
+    s.items[2].ttl_lines[5] = 1;
+    try testing.expectEqual(sig(&base, 2), sig(&s, 2));
+    // Display-only: scale, time base, mode, a row's gain, the trigger, place, tint, name,
+    // and the slot the feed sets.
+    for (0..3) |i| {
+        s = base;
+        const p = &s.items[i];
+        p.scale *= 3;
+        p.span_s = 17;
+        p.mode = .sweep;
+        p.per_row.gain[1] = 4;
+        p.trigger.line = 5;
+        p.trigger.pre_ms = 3;
+        p.place.x = 0.3;
+        p.tint_line = 2;
+        p.slot = 99;
+        p.setName("renamed");
+        try testing.expectEqual(sig(&base, i), sig(&s, i));
+        p.mode = .triggered;
+        try testing.expectEqual(sig(&base, i), sig(&s, i));
+    }
 }

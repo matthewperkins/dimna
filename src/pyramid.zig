@@ -19,11 +19,14 @@
 //! the missing buckets from the recording (on another thread) and `put` splices them in.
 //!
 //! Storage is in chunks of `chunk_samples` samples (2^24, 9.3 min at 30 kHz; 2^20 under
-//! test), aligned across levels and allocated when first written, so memory follows the
-//! recording's length. Over `budget_bytes`, the oldest chunks of level 0 are released, then
-//! those of level 1; never the chunk at the live edge, never levels 2 and up. Spans that
-//! would be drawn from a released level are refused by `columns` (the caller reads samples
-//! or uses a longer span).
+//! test), aligned across levels and mapped when first written, so memory follows the
+//! recording's length. A chunk is a fresh anonymous mapping that reads as empty without
+//! being written (see `Held`), so starting one costs nothing up front; its pages are paid
+//! for one by one as buckets fill. Over `budget_bytes`, the oldest chunks of level 0 are
+//! released, then those of level 1; never the chunk at the live edge, never levels 2 and
+//! up. Released chunks are unmapped a piece per `add` or `put` (`Retired`), not at once.
+//! Spans that would be drawn from a released level are refused by `columns` (the caller
+//! reads samples or uses a longer span).
 //!
 //! The store is single-threaded: the display thread owns it. Nothing here touches
 //! acquisition or the recorder; `Backfill` reads the recording's files read-only.
@@ -52,6 +55,30 @@ comptime {
 /// (min, max) of one history column over one bucket.
 pub const Pair = [2]i16;
 const empty: Pair = .{ std.math.maxInt(i16), std.math.minInt(i16) };
+
+/// A pair as the store holds it: the minimum XOR 0x7FFF and the maximum XOR 0x8000, as
+/// u16. Both halves then grow with what they stand for (a lower minimum, a higher
+/// maximum), so merging is the larger of each, and `empty` is all-zero bytes. Chunks are
+/// fresh anonymous mappings, which the kernel hands out zeroed on first touch: a new chunk
+/// is empty without being written, and its pages are only paid for as buckets are filled.
+const Held = [2]u16;
+
+fn encode(p: Pair) Held {
+    return .{ @as(u16, @bitCast(p[0])) ^ 0x7FFF, @as(u16, @bitCast(p[1])) ^ 0x8000 };
+}
+
+fn decode(h: Held) Pair {
+    return .{ @bitCast(h[0] ^ 0x7FFF), @bitCast(h[1] ^ 0x8000) };
+}
+
+fn merge(d: *Held, v: Held) void {
+    d[0] = @max(d[0], v[0]);
+    d[1] = @max(d[1], v[1]);
+}
+
+comptime {
+    std.debug.assert(@as(u32, @bitCast(encode(empty))) == 0);
+}
 
 pub fn bucketSize(k: usize) i64 {
     return bucket << @intCast(2 * k);
@@ -85,9 +112,67 @@ pub const Parts = enum {
 pub const Range = struct { lo: i64, hi: i64 };
 
 const Chunk = struct {
-    values: []Pair,
+    values: []Held,
     /// One word per bucket (raw part only; empty otherwise).
     ttl: []u16,
+    /// The mapping both live in.
+    mem: Mapping,
+};
+
+const Mapping = []align(std.heap.page_size_min) u8;
+
+/// A fresh anonymous mapping (zeroed by the kernel on first touch) of `len` bytes rounded
+/// up to whole pages.
+fn mapZeroed(len: usize) !Mapping {
+    const size = std.mem.alignForward(usize, @max(len, 1), std.heap.pageSize());
+    const rc = std.os.linux.mmap(null, size, .{ .READ = true, .WRITE = true }, .{ .TYPE = .PRIVATE, .ANONYMOUS = true }, -1, 0);
+    if (std.os.linux.errno(rc) != .SUCCESS) return error.OutOfMemory;
+    const ptr: [*]align(std.heap.page_size_min) u8 = @ptrFromInt(rc);
+    return ptr[0..size];
+}
+
+/// Mappings let go of, unmapped a piece per `add` or `put` (`some`): unmapping a chunk
+/// whose pages have all been touched frees them one by one, about 5 ms for a 75 MB
+/// chunk, too long for one call on the display thread.
+const Retired = struct {
+    list: std.ArrayList(Mapping) = .empty,
+    /// What one `add` or `put` unmaps at most (about 0.1 ms).
+    const piece = 2 << 20;
+
+    fn put(self: *Retired, gpa: std.mem.Allocator, mem: Mapping) void {
+        self.list.append(gpa, mem) catch {
+            _ = std.os.linux.munmap(mem.ptr, mem.len);
+        };
+    }
+
+    /// Unmaps up to `max` bytes (whole pages), newest retired first, from its end.
+    fn some(self: *Retired, max: usize) void {
+        var left = std.mem.alignBackward(usize, max, std.heap.pageSize());
+        while (left > 0 and self.list.items.len > 0) {
+            const last = &self.list.items[self.list.items.len - 1];
+            if (last.len <= left) {
+                _ = std.os.linux.munmap(last.ptr, last.len);
+                left -= last.len;
+                _ = self.list.pop();
+            } else {
+                _ = std.os.linux.munmap(@alignCast(last.ptr + last.len - left), left);
+                last.len -= left;
+                left = 0;
+            }
+        }
+    }
+
+    fn all(self: *Retired, gpa: std.mem.Allocator) void {
+        for (self.list.items) |m| _ = std.os.linux.munmap(m.ptr, m.len);
+        self.list.deinit(gpa);
+        self.list = .empty;
+    }
+
+    fn bytes(self: *const Retired) usize {
+        var n: usize = 0;
+        for (self.list.items) |m| n += m.len;
+        return n;
+    }
 };
 
 const Level = struct {
@@ -106,9 +191,9 @@ const Half = struct {
         return perChunk(k) * (self.ncol * @sizeOf(Pair) + (if (self.with_ttl) @as(usize, @sizeOf(u16)) else 0));
     }
 
-    fn deinit(self: *Half, gpa: std.mem.Allocator, held: *usize) void {
+    fn deinit(self: *Half, gpa: std.mem.Allocator, held: *usize, retired: *Retired) void {
         for (&self.levels, 0..) |*l, k| {
-            for (l.chunks.items, 0..) |_, c| self.release(gpa, k, c, held);
+            for (l.chunks.items, 0..) |_, c| self.release(gpa, k, c, held, retired);
             l.chunks.deinit(gpa);
         }
         self.covered.deinit(gpa);
@@ -119,28 +204,28 @@ const Half = struct {
         return if (c < list.len) list[c] else null;
     }
 
-    /// Level `k`'s chunk `c`, allocated (all buckets empty) if it was not.
+    /// Level `k`'s chunk `c`, mapped (all buckets empty: zero bytes, not written) if it
+    /// was not.
     fn ensure(self: *Half, gpa: std.mem.Allocator, k: usize, c: usize, held: *usize) !Chunk {
         const list = &self.levels[k].chunks;
         while (list.items.len <= c) try list.append(gpa, null);
         if (list.items[c]) |ch| return ch;
         const per = perChunk(k);
-        const values = try gpa.alloc(Pair, per * self.ncol);
-        errdefer gpa.free(values);
-        @memset(values, empty);
-        const ttl = try gpa.alloc(u16, if (self.with_ttl) per else 0);
-        @memset(ttl, 0);
-        list.items[c] = .{ .values = values, .ttl = ttl };
+        const nvalues = per * self.ncol;
+        const nttl: usize = if (self.with_ttl) per else 0;
+        const mem = try mapZeroed(nvalues * @sizeOf(Held) + nttl * @sizeOf(u16));
+        const values: [*]Held = @ptrCast(mem.ptr);
+        const ttl: [*]u16 = @ptrCast(@alignCast(mem.ptr + nvalues * @sizeOf(Held)));
+        list.items[c] = .{ .values = values[0..nvalues], .ttl = ttl[0..nttl], .mem = mem };
         held.* += self.chunkBytes(k);
         return list.items[c].?;
     }
 
-    fn release(self: *Half, gpa: std.mem.Allocator, k: usize, c: usize, held: *usize) void {
+    fn release(self: *Half, gpa: std.mem.Allocator, k: usize, c: usize, held: *usize, retired: *Retired) void {
         const list = self.levels[k].chunks.items;
         if (c >= list.len) return;
         const ch = list[c] orelse return;
-        gpa.free(ch.values);
-        gpa.free(ch.ttl);
+        retired.put(gpa, ch.mem);
         list[c] = null;
         held.* -= self.chunkBytes(k);
     }
@@ -211,6 +296,8 @@ pub const Store = struct {
     /// Per releasable level: its chunks below this have been released (in both parts).
     floor: [releasable]usize = @splat(0),
     held: usize = 0,
+    /// Released chunks not yet unmapped (not counted in `held`).
+    retired: Retired = .{},
     /// Scratch for one bucket's run of rows: `width` each.
     acc_lo: []i16,
     acc_hi: []i16,
@@ -232,10 +319,18 @@ pub const Store = struct {
     }
 
     pub fn deinit(self: *Store) void {
-        self.raw.deinit(self.gpa, &self.held);
-        self.slots.deinit(self.gpa, &self.held);
+        self.raw.deinit(self.gpa, &self.held, &self.retired);
+        self.slots.deinit(self.gpa, &self.held, &self.retired);
+        self.retired.all(self.gpa);
         self.gpa.free(self.acc_lo);
         self.gpa.free(self.acc_hi);
+        // Chunks are mapped, not taken from `gpa`: this stands in for its leak check.
+        std.debug.assert(self.held == 0);
+    }
+
+    /// Bytes of released chunks still mapped (unmapped a piece per `add` or `put`).
+    pub fn retiredBytes(self: *const Store) usize {
+        return self.retired.bytes();
     }
 
     /// Bytes of bucket storage held (both parts, every level).
@@ -287,6 +382,7 @@ pub const Store = struct {
         try self.slots.cover(self.gpa, first, last);
         self.newest = @max(self.newest, last);
         self.enforceBudget();
+        self.retired.some(Retired.piece);
     }
 
     /// Folds `run` rows (all in level-0 bucket `b`) into every level of `h`.
@@ -314,10 +410,7 @@ pub const Store = struct {
             if (self.released(k, c)) continue;
             const ch = try h.ensure(self.gpa, k, c, &self.held);
             const o = idx % per;
-            for (ch.values[o * ncol ..][0..ncol], lo, hi) |*d, l, x| {
-                d[0] = @min(d[0], l);
-                d[1] = @max(d[1], x);
-            }
+            for (ch.values[o * ncol ..][0..ncol], lo, hi) |*d, l, x| merge(d, encode(.{ l, x }));
             if (h.with_ttl) ch.ttl[o] |= word;
         }
     }
@@ -336,7 +429,7 @@ pub const Store = struct {
             self.acc_lo = lo;
             self.acc_hi = hi;
         }
-        self.slots.deinit(self.gpa, &self.held);
+        self.slots.deinit(self.gpa, &self.held, &self.retired);
         self.slots = .{ .ncol = width - self.nch, .with_ttl = false };
         self.width = width;
         self.generation +%= 1;
@@ -390,6 +483,7 @@ pub const Store = struct {
         }
         self.newest = @max(self.newest, hi);
         self.enforceBudget();
+        self.retired.some(Retired.piece);
     }
 
     fn splice(self: *Store, h: *Half, b: *const Buckets, col0: usize) !void {
@@ -402,7 +496,7 @@ pub const Store = struct {
             if (self.released(0, idx / per0)) continue;
             const ch = try h.ensure(self.gpa, 0, idx / per0, &self.held);
             const o = idx % per0;
-            @memcpy(ch.values[o * ncol ..][0..ncol], b.values[i * b.width + col0 ..][0..ncol]);
+            for (ch.values[o * ncol ..][0..ncol], b.values[i * b.width + col0 ..][0..ncol]) |*d, v| d.* = encode(v);
             if (h.with_ttl) ch.ttl[o] = b.ttl[i];
         }
         // Each coarser bucket above them: from its four children if their level is held,
@@ -419,25 +513,19 @@ pub const Store = struct {
                 const o = j % per;
                 const dst = ch.values[o * ncol ..][0..ncol];
                 if (!self.released(k - 1, c)) {
-                    @memset(dst, empty);
+                    @memset(dst, encode(empty));
                     if (h.with_ttl) ch.ttl[o] = 0;
                     const child = h.get(k - 1, c) orelse continue;
                     for (0..4) |q| {
                         const co = 4 * o + q;
-                        for (dst, child.values[co * ncol ..][0..ncol]) |*d, v| {
-                            d[0] = @min(d[0], v[0]);
-                            d[1] = @max(d[1], v[1]);
-                        }
+                        for (dst, child.values[co * ncol ..][0..ncol]) |*d, v| merge(d, v);
                         if (h.with_ttl) ch.ttl[o] |= child.ttl[co];
                     }
                 } else {
                     const a = @max(fb, j << shift) - fb;
                     const e = @min(fb + b.count, (j + 1) << shift) - fb;
                     for (a..e) |i| {
-                        for (dst, b.values[i * b.width + col0 ..][0..ncol]) |*d, v| {
-                            d[0] = @min(d[0], v[0]);
-                            d[1] = @max(d[1], v[1]);
-                        }
+                        for (dst, b.values[i * b.width + col0 ..][0..ncol]) |*d, v| merge(d, encode(v));
                         if (h.with_ttl) ch.ttl[o] |= b.ttl[i];
                     }
                 }
@@ -454,8 +542,8 @@ pub const Store = struct {
             const k = for (0..releasable) |k| {
                 if (self.floor[k] < live) break k;
             } else return;
-            self.raw.release(self.gpa, k, self.floor[k], &self.held);
-            self.slots.release(self.gpa, k, self.floor[k], &self.held);
+            self.raw.release(self.gpa, k, self.floor[k], &self.held, &self.retired);
+            self.slots.release(self.gpa, k, self.floor[k], &self.held, &self.retired);
             self.floor[k] += 1;
         }
     }
@@ -512,7 +600,7 @@ pub const Store = struct {
                     const h = if (hc < self.nch) &self.raw else &self.slots;
                     const col = if (hc < self.nch) hc else hc - self.nch;
                     const ch = h.get(k, bk / per) orelse return false;
-                    const v = ch.values[(bk % per) * h.ncol + col];
+                    const v = decode(ch.values[(bk % per) * h.ncol + col]);
                     d[0] = @min(d[0], v[0]);
                     d[1] = @max(d[1], v[1]);
                 }
@@ -549,12 +637,48 @@ pub const Store = struct {
         const h = if (hc < self.nch) &self.raw else &self.slots;
         const col = if (hc < self.nch) hc else hc - self.nch;
         const ch = h.get(k, j / perChunk(k)) orelse return null;
-        return ch.values[(j % perChunk(k)) * h.ncol + col];
+        return decode(ch.values[(j % perChunk(k)) * h.ncol + col]);
     }
 
     fn bucketTtl(self: *const Store, k: usize, j: usize) ?u16 {
         const ch = self.raw.get(k, j / perChunk(k)) orelse return null;
         return ch.ttl[j % perChunk(k)];
+    }
+
+    /// How one part of two stores compares, bucket by bucket on every level (for tests).
+    pub const Comparison = struct {
+        /// The same chunks are held (if not, the rest is not looked at).
+        same_chunks: bool = true,
+        /// The TTL words (raw part) are the same.
+        same_ttl: bool = true,
+        /// The largest difference of a minimum or maximum, LSB, and how many pairs differ.
+        worst: u32 = 0,
+        differ: usize = 0,
+    };
+
+    pub fn compare(a: *const Store, b: *const Store, part: Part) Comparison {
+        var r: Comparison = .{};
+        const ha = a.halfConst(part);
+        const hb = b.halfConst(part);
+        if (ha.ncol != hb.ncol) return .{ .same_chunks = false };
+        for (0..levels) |k| {
+            const n = @max(ha.levels[k].chunks.items.len, hb.levels[k].chunks.items.len);
+            for (0..n) |c| {
+                const ca = ha.get(k, c);
+                const cb = hb.get(k, c);
+                if ((ca == null) != (cb == null)) return .{ .same_chunks = false };
+                if (ca == null) continue;
+                for (ca.?.values, cb.?.values) |x, y| {
+                    const p = decode(x);
+                    const q = decode(y);
+                    const d = @max(@abs(@as(i32, p[0]) - q[0]), @abs(@as(i32, p[1]) - q[1]));
+                    r.worst = @max(r.worst, d);
+                    r.differ += @intFromBool(d != 0);
+                }
+                if (!std.mem.eql(u16, ca.?.ttl, cb.?.ttl)) r.same_ttl = false;
+            }
+        }
+        return r;
     }
 };
 
@@ -616,8 +740,9 @@ pub const Backfill = struct {
     }
 
     /// The panels changed (the store was `resetSlots` to `generation`). Made afresh rather
-    /// than with `Review.follow`, which goes by `Panel.signalSignature` and so does not
-    /// notice a change of rows (a TTL panel's lanes, for one).
+    /// than with `Review.follow`: the private ring is `cap` rows of the history's width,
+    /// and the width may have changed with the panels (`Review.follow` makes a new feed
+    /// but keeps the ring it was given).
     pub fn follow(self: *Backfill, set: *const panels.Set, generation: u32) !void {
         var fresh = try Backfill.init(self.gpa, &self.review.layout, set, generation);
         errdefer fresh.deinit();
@@ -812,6 +937,76 @@ test "every level equals brute force, added in odd blocks, with a filling bucket
     }
     // The chunk boundary was crossed at level 0 (two chunks held there).
     try testing.expect(store.raw.get(0, 0) != null and store.raw.get(0, 1) != null);
+}
+
+test "a fresh chunk reads as empty without having been written" {
+    const gpa = testing.allocator;
+    const width = 3;
+    var store = try Store.init(gpa, width, 2, std.math.maxInt(usize));
+    defer store.deinit();
+    // One row, in the middle of the second chunk: that chunk is made on every level of
+    // both parts, and only the buckets holding the row are written.
+    const s: i64 = chunk_samples + 3 * bucketSize(levels - 2) + 3;
+    const row = [_]i16{ -5, 7, 300 };
+    try store.add(s, &row, &.{0x21});
+    for (0..levels) |k| {
+        const per = perChunk(k);
+        const own: usize = @intCast(@divFloor(s, bucketSize(k)));
+        for ([_]*const Half{ &store.raw, &store.slots }) |h| {
+            const ch = h.get(k, 1).?;
+            try testing.expect(h.get(k, 0) == null);
+            // Every pair but the written bucket's is all-zero bytes...
+            for (ch.values, 0..) |v, i| {
+                if (i / h.ncol == own - per) continue;
+                try testing.expectEqual(Held{ 0, 0 }, v);
+            }
+            for (ch.ttl, 0..) |w, i| {
+                if (i != own - per) try testing.expectEqual(0, w);
+            }
+        }
+        // ...and reads as empty; the written bucket as the row.
+        for (0..width) |col| {
+            for ([_]usize{ per, per + 1, own - 1, own + 1, 2 * per - 1 }) |j| {
+                // Within the chunk (level 7 has one bucket per chunk).
+                if (j == own or j < per or j >= 2 * per) continue;
+                try testing.expectEqual(empty, store.bucketValue(col, k, j).?);
+            }
+            try testing.expectEqual(Pair{ row[col], row[col] }, store.bucketValue(col, k, own).?);
+        }
+        if (own + 1 < 2 * per) try testing.expectEqual(0, store.bucketTtl(k, own + 1).?);
+        try testing.expectEqual(0x21, store.bucketTtl(k, own).?);
+    }
+    // The extremes survive the encoding: -32768 and 32767 as a minimum and a maximum.
+    const ext = [_]i16{ -32768, 32767, 0 };
+    try store.add(s + 1, &ext, &.{0});
+    try testing.expectEqual(Pair{ -32768, -5 }, store.bucketValue(0, 0, @intCast(@divFloor(s, bucket))).?);
+    try testing.expectEqual(Pair{ 7, 32767 }, store.bucketValue(1, 0, @intCast(@divFloor(s, bucket))).?);
+}
+
+test "released chunks are unmapped a piece per add" {
+    const gpa = testing.allocator;
+    var store = try Store.init(gpa, 3, 2, std.math.maxInt(usize));
+    defer store.deinit();
+    // Two mappings of 2.5 and 1 pieces, touched, retired.
+    const big = try mapZeroed(Retired.piece * 5 / 2);
+    @memset(big, 7);
+    const small = try mapZeroed(Retired.piece);
+    @memset(small, 7);
+    store.retired.put(gpa, big);
+    store.retired.put(gpa, small);
+    try testing.expectEqual(Retired.piece * 7 / 2, store.retiredBytes());
+    const row = [_]i16{ 1, 2, 3 };
+    var s: i64 = 0;
+    for ([_]usize{ Retired.piece * 5 / 2, Retired.piece * 3 / 2, Retired.piece / 2, 0, 0 }) |left| {
+        try store.add(s, &row, &.{0});
+        s += 1;
+        try testing.expectEqual(left, store.retiredBytes());
+    }
+    // What is still mapped of the first one is its start, untouched by the unmapping.
+    store.retired.put(gpa, try mapZeroed(Retired.piece * 3));
+    try store.add(s, &row, &.{0});
+    try testing.expectEqual(Retired.piece * 2, store.retiredBytes());
+    try testing.expectEqual(0, store.retired.list.items[0][Retired.piece * 2 - 1]);
 }
 
 test "columns equals brute force, from 64 to 2^18 samples per pixel column, unaligned" {
@@ -1253,24 +1448,12 @@ test "backfill from a recording equals the live store, apart from the lead-ins" 
     try expectSameHalf(&live.raw, &filled.raw);
     // The slots part: filtered afresh after a lead-in at the start of every step, where
     // the live filters ran through.
-    var worst: i32 = 0;
-    var differ: usize = 0;
-    for (0..levels) |k| {
-        for (live.slots.levels[k].chunks.items, 0..) |ca, c| {
-            const cb = filled.slots.get(k, c);
-            try testing.expectEqual(ca == null, cb == null);
-            if (ca == null) continue;
-            for (ca.?.values, cb.?.values) |x, y| {
-                const dd = @max(@abs(@as(i32, x[0]) - y[0]), @abs(@as(i32, x[1]) - y[1]));
-                worst = @max(worst, @as(i32, @intCast(dd)));
-                if (dd != 0) differ += 1;
-            }
-        }
-    }
+    const cmp = live.compare(&filled, .slots);
+    try testing.expect(cmp.same_chunks);
     // Measured: exact. The lead-in is 0.05 s for a 300 Hz corner, over which the slowest
     // pole's transient decays by about e^-36, far below rounding to int16.
-    try testing.expectEqual(0, worst);
-    try testing.expectEqual(0, differ);
+    try testing.expectEqual(0, cmp.worst);
+    try testing.expectEqual(0, cmp.differ);
 
     // The panels change and the rows get wider (a third TTL lane): the slots part is
     // dropped, a result made before is refused, the backfill follows and fills it again.

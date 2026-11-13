@@ -21,6 +21,7 @@ pub const slope = @import("slope.zig");
 pub const audio = @import("audio.zig");
 pub const review = @import("review.zig");
 pub const pyramid = @import("pyramid.zig");
+pub const overview = @import("overview.zig");
 pub const spikes = @import("spikes.zig");
 pub const board_config = @import("board_config.zig");
 pub const usbfs = @import("usbfs.zig");
