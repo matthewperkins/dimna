@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 256 256">
+<defs>
+<path id="sil" d="M30 330 C 36 250, 46 160, 64 112 C 68 84, 74 50, 80 12 C 96 40, 112 62, 122 80 C 138 80, 150 86, 160 96 C 184 106, 208 114, 228 120 C 236 124, 236 132, 228 135 C 210 140, 192 146, 172 150 C 152 154, 140 160, 132 172 C 122 210, 124 270, 130 330 Z"/>
+<g id="head" stroke="#2a1a14" stroke-width="5" stroke-linejoin="round">
+<path d="M96 88 L 110 18 L 128 82 Z" fill="currentColor"/>
+<use xlink:href="#sil"/>
+<path d="M84 34 C 90 52, 98 66, 106 80 C 96 82, 88 86, 80 90 C 80 70, 82 52, 84 34 Z" fill="#efc9a0" stroke="none"/>
+<path d="M226 134 C 210 136, 194 138, 180 138" fill="none" stroke-width="4" stroke-linecap="round"/>
+<path d="M134 110 C 140 103, 152 103, 160 110 C 152 115, 141 115, 134 110 Z" fill="#2a1a14" stroke="none"/>
+<circle cx="230" cy="125" r="5" fill="#2a1a14" stroke="none"/>
+</g>
+<clipPath id="disc"><circle cx="128" cy="128" r="112"/></clipPath>
+</defs>
+<circle cx="128" cy="128" r="122" fill="#2c4a34"/>
+<circle cx="128" cy="128" r="112" fill="#efe0bd"/>
+<g clip-path="url(#disc)">
+<!-- manuscript blossom: gold stem, green leaves, vermilion-and-gold palmette -->
+<g stroke="#2a1a14" stroke-width="3" stroke-linejoin="round" transform="translate(-4 30) scale(1.15)">
+<path d="M58 250 C 50 200, 40 150, 52 104 C 58 84, 62 72, 64 62" fill="none" stroke="#b8862b" stroke-width="6"/>
+<path d="M50 160 C 30 150, 24 136, 26 122 C 40 128, 48 142, 50 160 Z" fill="#3d6b45"/>
+<path d="M48 122 C 30 108, 30 94, 34 82 C 46 92, 50 106, 48 122 Z" fill="#3d6b45"/>
+<path d="M64 62 C 44 56, 38 40, 46 26 C 54 36, 58 44, 64 50 C 70 44, 74 36, 82 26 C 90 40, 84 56, 64 62 Z" fill="#c99a3a"/>
+<path d="M64 56 C 56 48, 56 36, 64 22 C 72 36, 72 48, 64 56 Z" fill="#d33f25"/>
+</g>
+<g transform="translate(-20 12) rotate(16 170 190)">
+<use xlink:href="#head" transform="translate(240 22) scale(-0.68 0.68)" fill="#d33f25" color="#8e2414"/>
+<use xlink:href="#sil" transform="translate(208 98) scale(-0.68 0.68)" fill="none" stroke="#efe0bd" stroke-width="16"/>
+<use xlink:href="#head" transform="translate(208 98) scale(-0.68 0.68)" fill="#4a64a8" color="#2c3f72"/>
+</g>
+</g>
+<circle cx="128" cy="128" r="112" fill="none" stroke="#c99a3a" stroke-width="7"/>
+<circle cx="128" cy="128" r="123" fill="none" stroke="#c99a3a" stroke-width="4"/>
+</svg>

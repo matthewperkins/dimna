@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 256 256">
+<defs>
+<path id="sil" d="M30 330 C 36 250, 46 160, 64 112 C 68 84, 74 50, 80 12 C 96 40, 112 62, 122 80 C 138 80, 150 86, 160 96 C 184 106, 208 114, 228 120 C 236 124, 236 132, 228 135 C 210 140, 192 146, 172 150 C 152 154, 140 160, 132 172 C 122 210, 124 270, 130 330 Z"/>
+<g id="head" stroke="#1a1410" stroke-width="5" stroke-linejoin="round">
+<path d="M96 88 L 110 18 L 128 82 Z" fill="currentColor"/>
+<use xlink:href="#sil"/>
+<path d="M84 34 C 90 52, 98 66, 106 80 C 96 82, 88 86, 80 90 C 80 70, 82 52, 84 34 Z" fill="#efc9a0" stroke="none"/>
+<path d="M226 134 C 210 136, 194 138, 180 138" fill="none" stroke-width="4" stroke-linecap="round"/>
+<path d="M134 110 C 140 103, 152 103, 160 110 C 152 115, 141 115, 134 110 Z" fill="#1a1410" stroke="none"/>
+<circle cx="230" cy="125" r="5" fill="#1a1410" stroke="none"/>
+</g>
+<clipPath id="tile"><rect x="8" y="8" width="240" height="240" rx="44"/></clipPath>
+</defs>
+<rect x="8" y="8" width="240" height="240" rx="44" fill="#1f3a2c"/>
+<g clip-path="url(#tile)">
+<use xlink:href="#sil" transform="translate(-14 62) scale(0.66)" fill="none" stroke="#e8d6a8" stroke-width="12"/>
+<use xlink:href="#head" transform="translate(-14 62) scale(0.66)" fill="#5470b8" color="#33467e"/>
+<use xlink:href="#sil" transform="translate(258 40) scale(-0.66 0.66)" fill="none" stroke="#e8d6a8" stroke-width="12"/>
+<use xlink:href="#head" transform="translate(258 40) scale(-0.66 0.66)" fill="#d6432a" color="#8e2414"/>
+</g>
+<g transform="translate(130 56)" stroke="#1a1410" stroke-width="2.5" stroke-linejoin="round">
+<path d="M0 -24 C 7 -10, 10 -8, 24 0 C 10 8, 7 10, 0 24 C -7 10, -10 8, -24 0 C -10 -8, -7 -10, 0 -24 Z" fill="#d9a83e"/>
+<circle r="7" fill="#d6432a"/>
+</g>
+<rect x="8" y="8" width="240" height="240" rx="44" fill="none" stroke="#c99a3a" stroke-width="8"/>
+</svg>
