@@ -6,6 +6,7 @@
 test {
     _ = @import("args.zig");
     _ = @import("control.zig");
+    _ = @import("display.zig");
     _ = @import("font.zig");
     _ = @import("format.zig");
     _ = @import("notes.zig");
