@@ -83,9 +83,12 @@ pub const Feed = struct {
     num_slots: usize = 0,
     /// Which slot each panel has, if any.
     slot_of: [panels.max_panels]?usize = @splat(null),
-    /// Scratch for the rows of one block.
+    /// The longest block `rows` takes (samples).
+    max_block: usize,
+    /// Scratch for the rows of one block: `max_block` rows.
     row_buf: []i16 = &.{},
-    /// Scratch for a slot's reference, one value per sample.
+    /// Scratch for a slot's reference, one value per sample: at least `max_block`
+    /// (`refilter` may grow it).
     mean_buf: []f64 = &.{},
     /// The raw samples of the last `raw_cap` (a power of two) sample numbers, `nch` each.
     raw: []i16,
@@ -96,13 +99,15 @@ pub const Feed = struct {
     started: bool = false,
 
     /// Gives every electrode panel of `set` a slot (`Panel.slot`) and keeps `keep_samples`
-    /// of raw history (rounded up to a power of two) for refiltering.
-    pub fn init(gpa: std.mem.Allocator, layout: *const types.Layout, set: *panels.Set, keep_samples: usize) !Feed {
+    /// of raw history (rounded up to a power of two) for refiltering. `rows` takes blocks of
+    /// up to `max_block` samples.
+    pub fn init(gpa: std.mem.Allocator, layout: *const types.Layout, set: *panels.Set, keep_samples: usize, max_block: usize) !Feed {
         const nch = layout.numChannels();
         const cap = try std.math.ceilPowerOfTwo(usize, keep_samples);
-        var self: Feed = .{ .nch = nch, .width = nch, .fs = layout.sample_rate, .raw = try gpa.alloc(i16, cap * nch), .raw_cap = cap };
+        var self: Feed = .{ .nch = nch, .width = nch, .fs = layout.sample_rate, .max_block = max_block, .raw = try gpa.alloc(i16, cap * nch), .raw_cap = cap };
         errdefer self.deinit(gpa);
         @memset(self.raw, 0);
+        self.mean_buf = try gpa.alloc(f64, max_block);
         for (set.slice(), 0..) |*p, i| {
             if (p.kind == .ttl) {
                 var slot: TtlSlot = .{ .column = self.width, .masks = @splat(0), .rows = p.rows };
@@ -130,6 +135,7 @@ pub const Feed = struct {
             self.num_slots += 1;
             self.width += p.rows;
         }
+        self.row_buf = try gpa.alloc(i16, max_block * self.width);
         return self;
     }
 
@@ -149,22 +155,13 @@ pub const Feed = struct {
 
     /// The history rows for a block of raw samples (`nch` interleaved) that starts at sample
     /// number `first`, with its digital input words `ttl` (one per sample). The result is
-    /// valid until the next call.
-    pub fn rows(self: *Feed, gpa: std.mem.Allocator, first: i64, samples: []const i16, ttl: []const u16) ![]const i16 {
+    /// valid until the next call. A block longer than `max_block` is refused, untouched.
+    pub fn rows(self: *Feed, first: i64, samples: []const i16, ttl: []const u16) error{BlockTooLong}![]const i16 {
         const nch = self.nch;
         const width = self.width;
         const count = samples.len / nch;
-        if (self.row_buf.len < count * width) {
-            gpa.free(self.row_buf);
-            self.row_buf = &.{};
-            self.row_buf = try gpa.alloc(i16, count * width);
-        }
+        if (count > self.max_block) return error.BlockTooLong;
         const out = self.row_buf[0 .. count * width];
-        if (self.mean_buf.len < count) {
-            gpa.free(self.mean_buf);
-            self.mean_buf = &.{};
-            self.mean_buf = try gpa.alloc(f64, count);
-        }
         const starting = !self.started and count > 0;
         if (starting) {
             self.oldest = first;
@@ -257,9 +254,10 @@ pub const Feed = struct {
         const hist_mask = hist_cap - 1;
         const nch = self.nch;
         if (self.mean_buf.len < count) {
+            // New first, then free: if allocating fails, `rows` keeps its buffer.
+            const bigger = try gpa.alloc(f64, count);
             gpa.free(self.mean_buf);
-            self.mean_buf = &.{};
-            self.mean_buf = try gpa.alloc(f64, count);
+            self.mean_buf = bigger;
         }
         const mean = self.mean_buf[0..count];
         if (s.cfg.car) {
@@ -308,7 +306,7 @@ test "rows carry raw channels and each electrode panel's filtered copy; refilter
     set.items[0].filtered = true;
     set.items[0].band_low_hz = 300;
     set.items[0].band_high_hz = 6000;
-    var feed = try Feed.init(gpa, &layout, &set, 4096);
+    var feed = try Feed.init(gpa, &layout, &set, 4096, 256);
     defer feed.deinit(gpa);
     try testing.expectEqual(3, feed.nch);
     try testing.expectEqual(5, feed.width);
@@ -329,7 +327,7 @@ test "rows carry raw channels and each electrode panel's filtered copy; refilter
             block[i * 3 + 1] = @intFromFloat(3000.0 * @sin(2.0 * std.math.pi * 20.0 * t));
             block[i * 3 + 2] = @intCast(@mod(n + @as(i64, @intCast(i)), 1000));
         }
-        const out = try feed.rows(gpa, n, &block, &.{});
+        const out = try feed.rows(n, &block, &.{});
         for (0..256) |i| {
             const pos: usize = @intCast(@mod(n + @as(i64, @intCast(i)), cap));
             @memcpy(hist[pos * feed.width ..][0..feed.width], out[i * feed.width ..][0..feed.width]);
@@ -378,8 +376,63 @@ test "rows carry raw channels and each electrode panel's filtered copy; refilter
         block[i * 3 + 1] = 0;
         block[i * 3 + 2] = 0;
     }
-    const out = try feed.rows(gpa, newest, &block, &.{});
+    const out = try feed.rows(newest, &block, &.{});
     try testing.expect(out[3] > 7950 and out[3] < 8050);
+}
+
+test "rows takes blocks up to max_block, also after sync and restart; a longer one is refused" {
+    const gpa = testing.allocator;
+    var layout: types.Layout = .{ .sample_rate = 30000, .hw_clock_hz = 50e6 };
+    layout.headstages[0] = .{ .slot = 0, .chip = "RHD2132", .num_channels = 4, .first_channel = 0, .has_bno = false };
+    layout.num_headstages = 1;
+    layout.num_electrodes = 4;
+    var set = panels.default(&layout, .scroll);
+    const p = &set.items[0];
+    p.filtered = true;
+    p.car = true;
+    for (0..4) |r| {
+        p.car_ref.set(r, true);
+        p.car_sub.set(r, true);
+    }
+    const max_block = 300;
+    // Less raw history than one refilter of `recent` below would want, more than a block.
+    var feed = try Feed.init(gpa, &layout, &set, 2048, max_block);
+    defer feed.deinit(gpa);
+    const cap = 4096;
+    const hist = try gpa.alloc(i16, cap * feed.width);
+    defer gpa.free(hist);
+    @memset(hist, 0);
+    const block = try gpa.alloc(i16, (max_block + 1) * 4);
+    defer gpa.free(block);
+    for (block, 0..) |*v, i| v.* = @intCast(i % 4000);
+    const full = block[0 .. max_block * 4];
+
+    var n: i64 = 0;
+    for (0..8) |_| {
+        const out = try feed.rows(n, full, &.{});
+        try testing.expectEqual(max_block * feed.width, out.len);
+        try testing.expectEqualSlices(i16, full[(max_block - 1) * 4 ..][0..4], out[(max_block - 1) * feed.width ..][0..4]);
+        n += max_block;
+    }
+    // One sample too many: refused, and nothing taken from it.
+    try testing.expectError(error.BlockTooLong, feed.rows(n, block, &.{}));
+    try testing.expectEqual(n, feed.newest);
+
+    // A sync that refilters 2048 samples (more than `max_block`), then full blocks again.
+    p.band_low_hz = 600;
+    try testing.expect(try feed.sync(gpa, &set, 4000, hist, cap));
+    try testing.expect(feed.mean_buf.len >= 2048);
+    for (0..3) |_| {
+        const out = try feed.rows(n, full, &.{});
+        try testing.expectEqual(max_block * feed.width, out.len);
+        n += max_block;
+    }
+    // Restarted elsewhere (as review does), still full blocks.
+    feed.restart();
+    n = 1_000_000;
+    const out = try feed.rows(n, full, &.{});
+    try testing.expectEqual(max_block * feed.width, out.len);
+    try testing.expectError(error.BlockTooLong, feed.rows(n + max_block, block, &.{}));
 }
 
 test "common average reference: the shared part goes, each channel's own stays" {
@@ -394,7 +447,7 @@ test "common average reference: the shared part goes, each channel's own stays" 
     p.car = true;
     for ([_]usize{ 0, 1, 2 }) |r| p.car_ref.set(r, true);
     for ([_]usize{ 0, 1, 3 }) |r| p.car_sub.set(r, true);
-    var feed = try Feed.init(gpa, &layout, &set, 2048);
+    var feed = try Feed.init(gpa, &layout, &set, 2048, 256);
     defer feed.deinit(gpa);
     try testing.expectEqual(4, p.slot);
     try testing.expectEqual(4, p.drawColumn());
@@ -412,7 +465,7 @@ test "common average reference: the shared part goes, each channel's own stays" 
             const common: f64 = 3000.0 * @sin(2.0 * std.math.pi * 50.0 * t);
             for (0..4) |c| block[i * 4 + c] = @intFromFloat(common + 100.0 * @as(f64, @floatFromInt(c + 1)));
         }
-        const out = try feed.rows(gpa, n, &block, &.{});
+        const out = try feed.rows(n, &block, &.{});
         for (0..256) |i| {
             const pos: usize = @intCast(@mod(n + @as(i64, @intCast(i)), cap));
             @memcpy(hist[pos * feed.width ..][0..feed.width], out[i * feed.width ..][0..feed.width]);
@@ -458,7 +511,7 @@ test "one panel: some rows filtered, some as they are, some hidden" {
     p.filtered = true;
     p.raw_rows.set(3, true);
     p.hidden.set(2, true);
-    var feed = try Feed.init(gpa, &layout, &set, 4096);
+    var feed = try Feed.init(gpa, &layout, &set, 4096, 256);
     defer feed.deinit(gpa);
     try testing.expectEqual(3, p.shownRows());
 
@@ -474,7 +527,7 @@ test "one panel: some rows filtered, some as they are, some hidden" {
             const t = @as(f64, @floatFromInt(n + @as(i64, @intCast(i)))) / 30000.0;
             for (0..4) |c| block[i * 4 + c] = @intFromFloat(4000.0 * @sin(2.0 * std.math.pi * 5.0 * t) + 1000.0 * @as(f64, @floatFromInt(c + 1)));
         }
-        const out = try feed.rows(gpa, n, &block, &.{});
+        const out = try feed.rows(n, &block, &.{});
         for (0..256) |i| {
             const pos: usize = @intCast(@mod(n + @as(i64, @intCast(i)), cap));
             @memcpy(hist[pos * feed.width ..][0..feed.width], out[i * feed.width ..][0..feed.width]);

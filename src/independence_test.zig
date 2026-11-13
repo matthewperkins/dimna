@@ -166,7 +166,7 @@ const Display = struct {
         var set = try panels.fromConfig(try toml.parse(arena_state.allocator(), panel_config, null), self.layout, &panel_diag);
 
         const hist_cap = 1 << 15;
-        var feed = try feed_mod.Feed.init(gpa, self.layout, &set, hist_cap);
+        var feed = try feed_mod.Feed.init(gpa, self.layout, &set, hist_cap, block_samples);
         defer feed.deinit(gpa);
         const hist = try gpa.alloc(i16, hist_cap * feed.width);
         defer gpa.free(hist);
@@ -217,7 +217,7 @@ const Display = struct {
             self.seen += 1;
             const samples = blk.samples();
             const ttl = blk.ttl[0..blk.len];
-            const rows = try feed.rows(gpa, blk.first_sample, samples, ttl);
+            const rows = try feed.rows(blk.first_sample, samples, ttl);
             for (0..blk.len) |i| {
                 const pos: usize = @intCast(@as(u64, @bitCast(blk.first_sample + @as(i64, @intCast(i)))) & (hist_cap - 1));
                 @memcpy(hist[pos * feed.width ..][0..feed.width], rows[i * feed.width ..][0..feed.width]);

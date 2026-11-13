@@ -174,7 +174,7 @@ pub fn main(init: std.process.Init) !u8 {
     var display = makeDisplay(args, &layout) orelse return 2;
     // The longest time base plus a margin, so new samples never overwrite what is drawn.
     var history_samples: usize = @intFromFloat((Panel.span_max + 2.0) * fs);
-    var feed = try oez.feed.Feed.init(gpa, &layout, &display.set, history_samples);
+    var feed = try oez.feed.Feed.init(gpa, &layout, &display.set, history_samples, bs);
     defer feed.deinit(gpa);
     display.initial = display.set;
     try gpu.createHistory(feed.width, history_samples);
@@ -252,7 +252,7 @@ pub fn main(init: std.process.Init) !u8 {
         // New samples into the GPU's history.
         while (reader.next(&blk)) {
             if (blk.len == 0) continue;
-            gpu.writeSamples(blk.first_sample, try feed.rows(gpa, blk.first_sample, blk.samples(), blk.ttl[0..blk.len]));
+            gpu.writeSamples(blk.first_sample, try feed.rows(blk.first_sample, blk.samples(), blk.ttl[0..blk.len]));
             display.feedBlock(blk.first_sample, blk.samples(), nch, fs, blk.ttl[0..blk.len]);
             newest = blk.first_sample + @as(i64, @intCast(blk.len));
             newest_acquired_ns = blk.acquired_ns;
@@ -417,7 +417,7 @@ pub fn main(init: std.process.Init) !u8 {
                 var new_display = makeDisplay(args, &layout) orelse Display.init(panels_mod.default(&layout, .scroll));
                 session.carryOver(&new_display.set, &old_set);
                 history_samples = @intFromFloat((Panel.span_max + 2.0) * fs);
-                const new_feed = try oez.feed.Feed.init(gpa, &layout, &new_display.set, history_samples);
+                const new_feed = try oez.feed.Feed.init(gpa, &layout, &new_display.set, history_samples, bs);
                 feed.deinit(gpa);
                 feed = new_feed;
                 const config_set = new_display.initial;
