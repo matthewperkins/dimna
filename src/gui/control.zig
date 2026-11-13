@@ -156,7 +156,8 @@ pub const BoardStatus = struct {
     pub const Headstage = struct { slot: u8, rhd2132: bool };
 
     pub fn restartPending(self: *const BoardStatus) bool {
-        return self.pending.sample_rate != self.settings.sample_rate or !std.mem.eql(bool, &self.pending.rhd2132_16ch, &self.settings.rhd2132_16ch);
+        return self.pending.sample_rate != self.settings.sample_rate or
+            !std.mem.eql(bool, &self.pending.rhd2132_16ch, &self.settings.rhd2132_16ch);
     }
 
     pub fn setNote(self: *BoardStatus, comptime fmt: []const u8, args: anytype) void {
@@ -194,13 +195,21 @@ pub const QuitPrompt = struct {
 
 /// "0.58 Hz", "300 Hz", "7.60 kHz".
 pub fn fmtHz(buf: []u8, hz: f64) []const u8 {
-    return if (hz >= 1000) format.fmt(buf, "{d:.2} kHz", .{hz / 1000}) else if (hz >= 100) format.fmt(buf, "{d:.0} Hz", .{hz}) else format.fmt(buf, "{d:.2} Hz", .{hz});
+    return if (hz >= 1000)
+        format.fmt(buf, "{d:.2} kHz", .{hz / 1000})
+    else if (hz >= 100)
+        format.fmt(buf, "{d:.0} Hz", .{hz})
+    else
+        format.fmt(buf, "{d:.2} Hz", .{hz});
 }
 
 /// "1:05" or "1:02:03".
 pub fn fmtClock(buf: []u8, seconds: f64) []const u8 {
     const s: u64 = @intFromFloat(@max(0, seconds));
-    return if (s >= 3600) format.fmt(buf, "{d}:{d:0>2}:{d:0>2}", .{ s / 3600, s / 60 % 60, s % 60 }) else format.fmt(buf, "{d}:{d:0>2}", .{ s / 60, s % 60 });
+    return if (s >= 3600)
+        format.fmt(buf, "{d}:{d:0>2}:{d:0>2}", .{ s / 3600, s / 60 % 60, s % 60 })
+    else
+        format.fmt(buf, "{d}:{d:0>2}", .{ s / 60, s % 60 });
 }
 
 /// A change to one panel, asked for by the control window.
@@ -339,7 +348,12 @@ fn loop(cfg: *Config) !void {
     // OEZ_APP_ID gives test runs a window class of their own (one too long for the buffer
     // gives the usual class).
     var class_buf: [64]u8 = undefined;
-    const class = std.fmt.bufPrintSentinel(&class_buf, "{s}-control", .{if (std.c.getenv("OEZ_APP_ID")) |v| std.mem.span(v) else "oez"}, 0) catch "oez-control";
+    const class = std.fmt.bufPrintSentinel(
+        &class_buf,
+        "{s}-control",
+        .{if (std.c.getenv("OEZ_APP_ID")) |v| std.mem.span(v) else "oez"},
+        0,
+    ) catch "oez-control";
     try win.init("oEZ control", class);
     defer win.deinit();
     var gpu = try gpu_mod.Gpu.init(gpa, .{ .display = win.display, .surface = win.surface }, .fifo, cfg.display_gpu);
@@ -392,7 +406,14 @@ fn loop(cfg: *Config) !void {
             try gpu.resize(win.width, win.height);
             win.resized = false;
         }
-        var ui: ui_mod.Ui = .begin(&batch, @floatFromInt(gpu.extent.width), @floatCast(in.pointer_x), @floatCast(in.pointer_y), clicks > 0, @floatCast(wheel));
+        var ui: ui_mod.Ui = .begin(
+            &batch,
+            @floatFromInt(gpu.extent.width),
+            @floatCast(in.pointer_x),
+            @floatCast(in.pointer_y),
+            clicks > 0,
+            @floatCast(wheel),
+        );
         build(&ui, cfg, &snap, shared);
         clicks = 0;
         wheel = 0;
@@ -481,7 +502,10 @@ fn statusSection(ui: *ui_mod.Ui, snap: *const Snapshot, shared: *Shared) void {
     var buf: [160]u8 = undefined;
     const st = snap.status;
     if (st.valid) {
-        ui.text(format.fmt(&buf, "display {d:.1} ms   {d} fps   running {d:.0} s", .{ st.latency_ms, st.fps, snap.seconds }), theme.text_dim);
+        ui.text(
+            format.fmt(&buf, "display {d:.1} ms   {d} fps   running {d:.0} s", .{ st.latency_ms, st.fps, snap.seconds }),
+            theme.text_dim,
+        );
     } else ui.text("starting", theme.text_dim);
     if (st.lost > 0) ui.text(format.fmt(&buf, "display skipped {d} blocks", .{st.lost}), theme.text_warn);
     if (snap.ring_overflow > 0) ui.text(format.fmt(&buf, "ACQUISITION RING OVERFLOW {d}", .{snap.ring_overflow}), theme.text_warn);
@@ -503,7 +527,14 @@ fn recordSection(ui: *ui_mod.Ui, rec: *const RecStatus, shared: *Shared) void {
     }
     if (rec.state == .recording or rec.state == .stopping) {
         var clock_buf: [16]u8 = undefined;
-        ui.text(format.fmt(&buf, "REC {s}   {d:.2} GB   {d:.1} M samples", .{ fmtClock(&clock_buf, rec.seconds), @as(f64, @floatFromInt(rec.bytes)) / 1e9, @as(f64, @floatFromInt(rec.samples)) / 1e6 }), theme.text_rec);
+        ui.text(
+            format.fmt(&buf, "REC {s}   {d:.2} GB   {d:.1} M samples", .{
+                fmtClock(&clock_buf, rec.seconds),
+                @as(f64, @floatFromInt(rec.bytes)) / 1e9,
+                @as(f64, @floatFromInt(rec.samples)) / 1e6,
+            }),
+            theme.text_rec,
+        );
         if (rec.behind_s > 1.0) ui.text(format.fmt(&buf, "disk is {d:.1} s behind", .{rec.behind_s}), theme.text_warn);
         if (rec.gaps > 0) ui.text(format.fmt(&buf, "{d} gaps", .{rec.gaps}), theme.text_warn);
     } else if (rec.state == .failed) {
@@ -535,7 +566,15 @@ fn reviewSection(ui: *ui_mod.Ui, rv: *const ReviewStatus, shared: *Shared) void 
     if (ui.button("LIVE", !rv.active) and rv.active) shared.push(.{ .action = .{ .review = .live } });
     if (rv.active) {
         var c1: [16]u8 = undefined;
-        ui.text(format.fmt(&buf, "{d:.1} s behind, at {s}{s}{s}", .{ rv.behind_s, fmtClock(&c1, rv.at_s), if (rv.from_file) "" else " (last seconds only: not recording)", if (rv.loading) " ..." else "" }), theme.text_warn);
+        ui.text(
+            format.fmt(&buf, "{d:.1} s behind, at {s}{s}{s}", .{
+                rv.behind_s,
+                fmtClock(&c1, rv.at_s),
+                if (rv.from_file) "" else " (last seconds only: not recording)",
+                if (rv.loading) " ..." else "",
+            }),
+            theme.text_warn,
+        );
     }
     ui.newline();
     ui.separator();
@@ -550,7 +589,8 @@ fn notesSection(ui: *ui_mod.Ui, nt: *const NotesStatus, shared: *Shared) void {
     for (&nt.presets, 1..) |*pr, n| {
         if (pr.len == 0) continue;
         any_preset = true;
-        if (ui.button(format.fmt(&buf, "{d} {s}", .{ n, pr.buf[0..pr.len] }), false)) shared.push(.{ .action = .{ .note_preset = @intCast(n) } });
+        if (ui.button(format.fmt(&buf, "{d} {s}", .{ n, pr.buf[0..pr.len] }), false))
+            shared.push(.{ .action = .{ .note_preset = @intCast(n) } });
     }
     if (!any_preset) ui.text("on the display: / types a note, Enter saves it", theme.text_dim);
     if (nt.editing) ui.text("typing a note", theme.text_warn);
@@ -576,15 +616,24 @@ fn audioSection(ui: *ui_mod.Ui, au: *const AudioStatus, shared: *Shared) void {
     const dvol = ui.stepper("volume", format.fmt(&buf, "{d:.0} dB", .{au.settings.volume_db}), 60);
     if (dvol != 0) shared.push(.{ .action = .{ .audio = .{ .volume = dvol > 0 } } });
     // "plain" is the linear reference chain, for comparing by ear.
-    if (ui.button("shaped", !au.settings.reference) and au.settings.reference) shared.push(.{ .action = .{ .audio = .{ .reference = false } } });
-    if (ui.button("plain", au.settings.reference) and !au.settings.reference) shared.push(.{ .action = .{ .audio = .{ .reference = true } } });
+    if (ui.button("shaped", !au.settings.reference) and au.settings.reference)
+        shared.push(.{ .action = .{ .audio = .{ .reference = false } } });
+    if (ui.button("plain", au.settings.reference) and !au.settings.reference)
+        shared.push(.{ .action = .{ .audio = .{ .reference = true } } });
     if (ui.button("CAR", au.car)) shared.push(.{ .action = .{ .audio = .{ .car = !au.car } } });
     if (ui.button("recalibrate", false)) shared.push(.{ .action = .{ .audio = .recalibrate } });
     ui.newline();
     if (!au.running) {
         ui.text("no audio output", theme.text_dim);
     } else if (au.settings.enabled) {
-        ui.text(format.fmt(&buf, "listening to {s}", .{if (au.listen_len > 0) au.listen_buf[0..au.listen_len] else "nothing (click a row on the display)"}), theme.text_dim);
+        ui.text(
+            format.fmt(
+                &buf,
+                "listening to {s}",
+                .{if (au.listen_len > 0) au.listen_buf[0..au.listen_len] else "nothing (click a row on the display)"},
+            ),
+            theme.text_dim,
+        );
         if (au.listen_len > 0) {
             if (au.sigma_uv > 0)
                 ui.text(format.fmt(&buf, "noise {d:.1} µV, held", .{au.sigma_uv}), theme.text_dim)
@@ -730,7 +779,8 @@ fn panelFilter(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Shared
             for (0..@min(p.rows, panels.max_rows)) |r| {
                 var nb: [8]u8 = undefined;
                 const on = if (is_shown) !p.hidden.has(r) else !p.raw_rows.has(r);
-                if (ui.chip(format.fmt(&nb, "{d}", .{r + 1}), on)) shared.push(.{ .panel = i, .action = if (is_shown) .{ .row_hidden = r } else .{ .row_raw = r } });
+                if (ui.chip(format.fmt(&nb, "{d}", .{r + 1}), on))
+                    shared.push(.{ .panel = i, .action = if (is_shown) .{ .row_hidden = r } else .{ .row_raw = r } });
             }
             ui.indent = saved_indent;
             ui.newline();
@@ -753,12 +803,15 @@ fn panelCar(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Shared) v
             ui.column(104);
             const saved_indent = ui.indent;
             ui.indent = 104;
-            if (ui.button("all", false)) shared.push(.{ .panel = i, .action = if (is_ref) .{ .car_ref_all = true } else .{ .car_sub_all = true } });
-            if (ui.button("none", false)) shared.push(.{ .panel = i, .action = if (is_ref) .{ .car_ref_all = false } else .{ .car_sub_all = false } });
+            if (ui.button("all", false))
+                shared.push(.{ .panel = i, .action = if (is_ref) .{ .car_ref_all = true } else .{ .car_sub_all = true } });
+            if (ui.button("none", false))
+                shared.push(.{ .panel = i, .action = if (is_ref) .{ .car_ref_all = false } else .{ .car_sub_all = false } });
             ui.space(6);
             for (0..@min(p.rows, panels.max_rows)) |r| {
                 var nb: [8]u8 = undefined;
-                if (ui.chip(format.fmt(&nb, "{d}", .{r + 1}), rows.has(r))) shared.push(.{ .panel = i, .action = if (is_ref) .{ .car_ref_row = r } else .{ .car_sub_row = r } });
+                if (ui.chip(format.fmt(&nb, "{d}", .{r + 1}), rows.has(r)))
+                    shared.push(.{ .panel = i, .action = if (is_ref) .{ .car_ref_row = r } else .{ .car_sub_row = r } });
             }
             ui.indent = saved_indent;
             ui.newline();
@@ -772,8 +825,10 @@ fn panelTrigger(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Share
     ui.text("trigger", theme.text_dim);
     ui.column(64);
     if (p.kind == .electrode) {
-        if (ui.button("TTL", p.trig_source == .ttl) and p.trig_source != .ttl) shared.push(.{ .panel = i, .action = .{ .trig_source = .ttl } });
-        if (ui.button("spikes", p.trig_source == .channel) and p.trig_source != .channel) shared.push(.{ .panel = i, .action = .{ .trig_source = .channel } });
+        if (ui.button("TTL", p.trig_source == .ttl) and p.trig_source != .ttl)
+            shared.push(.{ .panel = i, .action = .{ .trig_source = .ttl } });
+        if (ui.button("spikes", p.trig_source == .channel) and p.trig_source != .channel)
+            shared.push(.{ .panel = i, .action = .{ .trig_source = .channel } });
         ui.space(8);
     }
     if (p.trig_source == .ttl) {
@@ -800,7 +855,10 @@ fn panelTrigger(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Share
         if (dh != 0) shared.push(.{ .panel = i, .action = .{ .trig_holdoff = dh > 0 } });
     }
     const dn = ui.stepper("overlaid", format.fmt(&value_buf, "{d} sweeps", .{p.overlay}), 90);
-    if (dn != 0) shared.push(.{ .panel = i, .action = .{ .overlay = @intCast(std.math.clamp(@as(i32, @intCast(p.overlay)) + dn, 1, oez.sweeps.max_sweeps)) } });
+    if (dn != 0)
+        shared.push(.{ .panel = i, .action = .{
+            .overlay = @intCast(std.math.clamp(@as(i32, @intCast(p.overlay)) + dn, 1, oez.sweeps.max_sweeps)),
+        } });
     ui.newline();
 }
 
@@ -920,14 +978,33 @@ fn setText(buf: []u8, len: *usize, s: []const u8) void {
 }
 
 fn layoutPanel(name: []const u8, kind: panels.Kind, rows: u32) panels.Panel {
-    var p: panels.Panel = .{ .x = 0, .y = 0, .w = 1, .h = 1, .kind = kind, .first_ch = 0, .rows = rows, .span_s = 2, .scale = panels.Panel.defaultScale(kind) };
+    var p: panels.Panel = .{
+        .x = 0,
+        .y = 0,
+        .w = 1,
+        .h = 1,
+        .kind = kind,
+        .first_ch = 0,
+        .rows = rows,
+        .span_s = 2,
+        .scale = panels.Panel.defaultScale(kind),
+    };
     setText(&p.name_buf, &p.name_len, name);
     return p;
 }
 
 /// The snapshots the layout is frozen for, written into `out`; returns their names.
 fn layoutSnapshots(out: []Snapshot) []const []const u8 {
-    const names = &[_][]const u8{ "not recording", "recording", "review active", "quit prompt", "restart pending", "two panels: slope trigger, reference", "alarm", "other panels" };
+    const names = &[_][]const u8{
+        "not recording",
+        "recording",
+        "review active",
+        "quit prompt",
+        "restart pending",
+        "two panels: slope trigger, reference",
+        "alarm",
+        "other panels",
+    };
     out[0] = layoutBase();
     stateSnapshots(out, &out[0]);
     panelSnapshots(out, &out[0]);

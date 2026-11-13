@@ -104,7 +104,14 @@ pub const Feed = struct {
     pub fn init(gpa: std.mem.Allocator, layout: *const types.Layout, set: *panels.Set, keep_samples: usize, max_block: usize) !Feed {
         const nch = layout.numChannels();
         const cap = try std.math.ceilPowerOfTwo(usize, keep_samples);
-        var self: Feed = .{ .nch = nch, .width = nch, .fs = layout.sample_rate, .max_block = max_block, .raw = try gpa.alloc(i16, cap * nch), .raw_cap = cap };
+        var self: Feed = .{
+            .nch = nch,
+            .width = nch,
+            .fs = layout.sample_rate,
+            .max_block = max_block,
+            .raw = try gpa.alloc(i16, cap * nch),
+            .raw_cap = cap,
+        };
         errdefer self.deinit(gpa);
         @memset(self.raw, 0);
         self.mean_buf = try gpa.alloc(f64, max_block);
@@ -209,7 +216,10 @@ pub const Feed = struct {
                 if (starting) s.band.settle(st_ptr, @as(f64, @floatFromInt(samples[ch])) - (if (sub) mean[0] else 0));
                 var st = st_ptr.*;
                 if (sub) {
-                    for (0..count) |i| out[i * width + col] = dsp.toI16(s.band.step(&st, @as(f64, @floatFromInt(samples[i * nch + ch])) - mean[i]));
+                    for (0..count) |i| out[i * width + col] = dsp.toI16(s.band.step(
+                        &st,
+                        @as(f64, @floatFromInt(samples[i * nch + ch])) - mean[i],
+                    ));
                 } else {
                     for (0..count) |i| out[i * width + col] = dsp.toI16(s.band.step(&st, @floatFromInt(samples[i * nch + ch])));
                 }
@@ -525,7 +535,8 @@ test "one panel: some rows filtered, some as they are, some hidden" {
     while (n < 3072) : (n += 256) {
         for (0..256) |i| {
             const t = @as(f64, @floatFromInt(n + @as(i64, @intCast(i)))) / 30000.0;
-            for (0..4) |c| block[i * 4 + c] = @intFromFloat(4000.0 * @sin(2.0 * std.math.pi * 5.0 * t) + 1000.0 * @as(f64, @floatFromInt(c + 1)));
+            for (0..4) |c| block[i * 4 + c] = @intFromFloat(4000.0 * @sin(2.0 * std.math.pi * 5.0 * t) +
+                1000.0 * @as(f64, @floatFromInt(c + 1)));
         }
         const out = try feed.rows(n, &block, &.{});
         for (0..256) |i| {

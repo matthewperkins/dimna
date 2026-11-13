@@ -376,7 +376,15 @@ pub const Recorder = struct {
         try self.sync();
         try self.writeMeta(self.last_sample_end);
         try self.syncDir();
-        log.info("recording closed: {d} samples in {d} chunks, {d} gaps, {d} TTL edges", .{ self.stats.samples.load(.monotonic), self.stats.chunks.load(.monotonic), self.stats.gaps.load(.monotonic), self.stats.ttl_edges.load(.monotonic) });
+        log.info(
+            "recording closed: {d} samples in {d} chunks, {d} gaps, {d} TTL edges",
+            .{
+                self.stats.samples.load(.monotonic),
+                self.stats.chunks.load(.monotonic),
+                self.stats.gaps.load(.monotonic),
+                self.stats.ttl_edges.load(.monotonic),
+            },
+        );
     }
 
     fn sinceSyncMs(self: *Recorder) i64 {
@@ -555,7 +563,11 @@ fn localNow(name_buf: []u8, created_buf: []u8) LocalTime {
     const aoff: u64 = @abs(off_min);
     return .{
         .name = std.fmt.bufPrint(name_buf, "{d}-{d:0>2}-{d:0>2}_{d:0>2}-{d:0>2}-{d:0>2}", .{ y, mo, d, h, mi, s }) catch unreachable,
-        .created = std.fmt.bufPrint(created_buf, "{d}-{d:0>2}-{d:0>2}T{d:0>2}:{d:0>2}:{d:0>2}{c}{d:0>2}:{d:0>2}", .{ y, mo, d, h, mi, s, sign, aoff / 60, aoff % 60 }) catch unreachable,
+        .created = std.fmt.bufPrint(
+            created_buf,
+            "{d}-{d:0>2}-{d:0>2}T{d:0>2}:{d:0>2}:{d:0>2}{c}{d:0>2}:{d:0>2}",
+            .{ y, mo, d, h, mi, s, sign, aoff / 60, aoff % 60 },
+        ) catch unreachable,
     };
 }
 
@@ -592,7 +604,10 @@ fn writeToml(w: *Io.Writer, r: *const Recorder, final_end: ?i64) !void {
     try w.writeAll("software = ");
     try tomlStr(w, r.info.software);
     try w.print("\ncreated = {s}\n", .{r.created_local[0..r.created_len]});
-    try w.print("sample_rate = {f}\nboard_clock_hz = {f}\nnum_channels = {d}\nsamples_per_chunk = {d}\n", .{ fmtFloat(l.sample_rate), fmtFloat(l.hw_clock_hz), l.numChannels(), r.chunk_target });
+    try w.print(
+        "sample_rate = {f}\nboard_clock_hz = {f}\nnum_channels = {d}\nsamples_per_chunk = {d}\n",
+        .{ fmtFloat(l.sample_rate), fmtFloat(l.hw_clock_hz), l.numChannels(), r.chunk_target },
+    );
 
     try w.writeAll("\n[channels]\nname = [");
     var n: usize = 0;
@@ -612,7 +627,12 @@ fn writeToml(w: *Io.Writer, r: *const Recorder, final_end: ?i64) !void {
     try w.writeAll("]\nbit_volts = [");
     for (0..l.numChannels()) |i| {
         if (i > 0) try w.writeAll(", ");
-        const bv: f64 = if (i < l.num_electrodes) types.electrode_uv_per_bit else if (i < l.num_electrodes + l.num_aux) types.aux_v_per_bit else types.adc_v_per_bit;
+        const bv: f64 = if (i < l.num_electrodes)
+            types.electrode_uv_per_bit
+        else if (i < l.num_electrodes + l.num_aux)
+            types.aux_v_per_bit
+        else
+            types.adc_v_per_bit;
         try w.print("{f}", .{fmtFloat(bv)});
     }
     try w.writeAll("]\nheadstage = [");
@@ -639,8 +659,34 @@ fn writeToml(w: *Io.Writer, r: *const Recorder, final_end: ?i64) !void {
     const fw = r.info.gateware;
     try w.writeAll("\n[board]\nkind = ");
     try tomlStr(w, r.info.board_kind);
-    try w.print("\ngateware = \"{d}.{d}.{d}\"\nboard_id = 0x{x}\ncable_delay = [{d}, {d}, {d}, {d}]\n", .{ fw[0], fw[1], fw[2], r.info.board_id, r.info.cable_delay[0], r.info.cable_delay[1], r.info.cable_delay[2], r.info.cable_delay[3] });
-    try w.print("\n[settings]\nlower_bandwidth_hz = {f}\nupper_bandwidth_hz = {f}\ndsp_enabled = {}\ndsp_cutoff_hz = {f}\nacquire_aux = {}\nacquire_adc = {}\nfast_settle = {}\nleds = {}\nusb_block_bytes = {d}\nblock_samples = {d}\n", .{ fmtFloat(st.lower_bandwidth), fmtFloat(st.upper_bandwidth), st.dsp_enabled, fmtFloat(st.dsp_cutoff), st.acquire_aux, st.acquire_adc, st.fast_settle, st.leds, st.usb_block_bytes, st.block_samples });
+    try w.print(
+        "\ngateware = \"{d}.{d}.{d}\"\nboard_id = 0x{x}\ncable_delay = [{d}, {d}, {d}, {d}]\n",
+        .{
+            fw[0],
+            fw[1],
+            fw[2],
+            r.info.board_id,
+            r.info.cable_delay[0],
+            r.info.cable_delay[1],
+            r.info.cable_delay[2],
+            r.info.cable_delay[3],
+        },
+    );
+    try w.print(
+        "\n[settings]\nlower_bandwidth_hz = {f}\nupper_bandwidth_hz = {f}\ndsp_enabled = {}\ndsp_cutoff_hz = {f}\nacquire_aux = {}\nacquire_adc = {}\nfast_settle = {}\nleds = {}\nusb_block_bytes = {d}\nblock_samples = {d}\n",
+        .{
+            fmtFloat(st.lower_bandwidth),
+            fmtFloat(st.upper_bandwidth),
+            st.dsp_enabled,
+            fmtFloat(st.dsp_cutoff),
+            st.acquire_aux,
+            st.acquire_adc,
+            st.fast_settle,
+            st.leds,
+            st.usb_block_bytes,
+            st.block_samples,
+        },
+    );
 
     try w.writeAll("\n# What the TTL input lines carry, line 1 first (\"\" = not named).\n[ttl]\nline_names = [");
     for (r.info.ttl_names, 0..) |name, i| {
@@ -654,7 +700,18 @@ fn writeToml(w: *Io.Writer, r: *const Recorder, final_end: ?i64) !void {
         var lt_created: [40]u8 = undefined;
         const lt = localNow(&lt_name, &lt_created);
         const s = &r.stats;
-        try w.print("\n# Written at a clean stop. Absent if the recording was interrupted.\n[final]\nstopped = {s}\nend_sample = {d}\nsamples = {d}\nchunks = {d}\ngaps = {d}\nttl_edges = {d}\nbytes = {d}\n", .{ lt.created, end, s.samples.load(.monotonic), s.chunks.load(.monotonic), s.gaps.load(.monotonic), s.ttl_edges.load(.monotonic), s.bytes.load(.monotonic) });
+        try w.print(
+            "\n# Written at a clean stop. Absent if the recording was interrupted.\n[final]\nstopped = {s}\nend_sample = {d}\nsamples = {d}\nchunks = {d}\ngaps = {d}\nttl_edges = {d}\nbytes = {d}\n",
+            .{
+                lt.created,
+                end,
+                s.samples.load(.monotonic),
+                s.chunks.load(.monotonic),
+                s.gaps.load(.monotonic),
+                s.ttl_edges.load(.monotonic),
+                s.bytes.load(.monotonic),
+            },
+        );
     }
 }
 
@@ -680,7 +737,15 @@ fn fmtFloat(v: f64) FmtFloat {
 
 test "index record encodes to 48 little-endian bytes" {
     var out: [IndexRecord.size]u8 = undefined;
-    (IndexRecord{ .first_sample = -2, .n_samples = 3000, .flags = 1, .byte_offset = 0x0102030405060708, .wall_ns = 7, .board_clock = 9, .crc32 = 0xdeadbeef }).encode(&out);
+    (IndexRecord{
+        .first_sample = -2,
+        .n_samples = 3000,
+        .flags = 1,
+        .byte_offset = 0x0102030405060708,
+        .wall_ns = 7,
+        .board_clock = 9,
+        .crc32 = 0xdeadbeef,
+    }).encode(&out);
     try std.testing.expectEqual(@as(i64, -2), std.mem.readInt(i64, out[0..8], .little));
     try std.testing.expectEqual(@as(u8, 0x08), out[16]);
     try std.testing.expectEqual(@as(u32, 0xdeadbeef), std.mem.readInt(u32, out[40..44], .little));

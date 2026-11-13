@@ -124,10 +124,19 @@ pub const Acquisition = struct {
             .restart => return if (recording) error.RecordingActive else error.NeedsRestart,
             .live, .amplifier => {},
         }
-        if (change == .amplifier) try self.submit(.{ .amp = .{ .lower_bandwidth = new.lower_bandwidth, .upper_bandwidth = new.upper_bandwidth, .dsp_enabled = new.dsp_enabled, .dsp_cutoff = new.dsp_cutoff, .fast_settle = new.fast_settle } });
+        if (change == .amplifier) try self.submit(.{ .amp = .{
+            .lower_bandwidth = new.lower_bandwidth,
+            .upper_bandwidth = new.upper_bandwidth,
+            .dsp_enabled = new.dsp_enabled,
+            .dsp_cutoff = new.dsp_cutoff,
+            .fast_settle = new.fast_settle,
+        } });
         if (old.leds != new.leds) try self.submit(.{ .live = .{ .set_leds = new.leds } });
         if (old.ttl_output_mode != new.ttl_output_mode) try self.submit(.{ .live = .{ .set_ttl_mode = new.ttl_output_mode } });
-        if (old.dac_hpf_enabled != new.dac_hpf_enabled or old.dac_hpf_hz != new.dac_hpf_hz) try self.submit(.{ .live = .{ .set_dac_hpf = .{ .enabled = new.dac_hpf_enabled, .hz = new.dac_hpf_hz } } });
+        if (old.dac_hpf_enabled != new.dac_hpf_enabled or old.dac_hpf_hz != new.dac_hpf_hz) try self.submit(.{ .live = .{ .set_dac_hpf = .{
+            .enabled = new.dac_hpf_enabled,
+            .hz = new.dac_hpf_hz,
+        } } });
         if (old.noise_slicer != new.noise_slicer) try self.submit(.{ .live = .{ .set_noise_slicer = new.noise_slicer } });
         if (old.fast_ttl_settle != new.fast_ttl_settle) try self.submit(.{ .live = .{ .set_fast_ttl_settle = new.fast_ttl_settle } });
         if (old.clock_divider != new.clock_divider) try self.submit(.{ .live = .{ .set_clock_divider = new.clock_divider } });
@@ -175,22 +184,50 @@ pub const Acquisition = struct {
         const ok = switch (cmd) {
             .amp => |a| blk: {
                 const actual = self.source.setAmpLive(a, t0.nanoseconds) catch |e| {
-                    ev = .init(at(next_sample, t0.nanoseconds, std.Io.Clock.awake.now(self.io).nanoseconds, rate), "amplifier_failed", "{t}", .{e});
+                    ev = .init(
+                        at(next_sample, t0.nanoseconds, std.Io.Clock.awake.now(self.io).nanoseconds, rate),
+                        "amplifier_failed",
+                        "{t}",
+                        .{e},
+                    );
                     break :blk false;
                 };
-                ev = .init(at(next_sample, t0.nanoseconds, actual.switched_ns, rate), "amplifier", "lower_hz={d:.3} upper_hz={d:.1} dsp={s} dsp_cutoff_hz={d:.3} fast_settle={s} (requested {d}..{d} Hz)", .{ actual.lower, actual.upper, if (a.dsp_enabled) "on" else "off", actual.dsp_cutoff, if (a.fast_settle) "on" else "off", a.lower_bandwidth, a.upper_bandwidth });
+                ev = .init(
+                    at(next_sample, t0.nanoseconds, actual.switched_ns, rate),
+                    "amplifier",
+                    "lower_hz={d:.3} upper_hz={d:.1} dsp={s} dsp_cutoff_hz={d:.3} fast_settle={s} (requested {d}..{d} Hz)",
+                    .{
+                        actual.lower,
+                        actual.upper,
+                        if (a.dsp_enabled) "on" else "off",
+                        actual.dsp_cutoff,
+                        if (a.fast_settle) "on" else "off",
+                        a.lower_bandwidth,
+                        a.upper_bandwidth,
+                    },
+                );
                 break :blk true;
             },
             .live => |l| blk: {
                 const ok = if (self.source.live(l)) true else |e| fail: {
-                    ev = .init(at(next_sample, t0.nanoseconds, std.Io.Clock.awake.now(self.io).nanoseconds, rate), "output_failed", "{t} {t}", .{ std.meta.activeTag(l), e });
+                    ev = .init(
+                        at(next_sample, t0.nanoseconds, std.Io.Clock.awake.now(self.io).nanoseconds, rate),
+                        "output_failed",
+                        "{t} {t}",
+                        .{ std.meta.activeTag(l), e },
+                    );
                     break :fail false;
                 };
                 if (!ok) break :blk false;
                 const sample = at(next_sample, t0.nanoseconds, std.Io.Clock.awake.now(self.io).nanoseconds, rate);
                 ev = switch (l) {
                     .set_ttl_out => |w| .init(sample, "ttl_out", "0x{x:0>4}", .{w}),
-                    .dac_route => |r| .init(sample, "dac_route", "dac={d} electrode={?d} threshold_uv={d}", .{ r.dac + 1, r.electrode, r.threshold_uv }),
+                    .dac_route => |r| .init(
+                        sample,
+                        "dac_route",
+                        "dac={d} electrode={?d} threshold_uv={d}",
+                        .{ r.dac + 1, r.electrode, r.threshold_uv },
+                    ),
                     .set_leds => |on| .init(sample, "leds", "{s}", .{if (on) "on" else "off"}),
                     .set_dac_hpf => |h| .init(sample, "dac_hpf", "{s} {d} Hz", .{ if (h.enabled) "on" else "off", h.hz }),
                     .set_noise_slicer => |n| .init(sample, "noise_slicer", "{d}", .{n}),

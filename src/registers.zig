@@ -94,7 +94,24 @@ pub const Rhd2000Registers = struct {
     pub fn defineSampleRate(self: *Rhd2000Registers, sr: f64) void {
         self.sample_rate = sr;
         self.mux_load = 0;
-        const mb: i32, const ab: i32 = if (sr < 3334.0) .{ 40, 32 } else if (sr < 4001.0) .{ 40, 16 } else if (sr < 5001.0) .{ 40, 8 } else if (sr < 6251.0) .{ 32, 8 } else if (sr < 8001.0) .{ 26, 8 } else if (sr < 10001.0) .{ 18, 4 } else if (sr < 12501.0) .{ 16, 3 } else if (sr < 15001.0) .{ 7, 3 } else .{ 4, 2 };
+        const mb: i32, const ab: i32 = if (sr < 3334.0)
+            .{ 40, 32 }
+        else if (sr < 4001.0)
+            .{ 40, 16 }
+        else if (sr < 5001.0)
+            .{ 40, 8 }
+        else if (sr < 6251.0)
+            .{ 32, 8 }
+        else if (sr < 8001.0)
+            .{ 26, 8 }
+        else if (sr < 10001.0)
+            .{ 18, 4 }
+        else if (sr < 12501.0)
+            .{ 16, 3 }
+        else if (sr < 15001.0)
+            .{ 7, 3 }
+        else
+            .{ 4, 2 };
         self.mux_bias = mb;
         self.adc_buffer_bias = ab;
     }
@@ -154,12 +171,15 @@ pub const Rhd2000Registers = struct {
             }
         }.f;
         return switch (reg) {
-            0 => (self.adc_reference_bw << 6) + (self.amp_fast_settle << 5) + (self.amp_vref_enable << 4) + (self.adc_comparator_bias << 2) + self.adc_comparator_select,
+            0 => (self.adc_reference_bw << 6) + (self.amp_fast_settle << 5) + (self.amp_vref_enable << 4) +
+                (self.adc_comparator_bias << 2) + self.adc_comparator_select,
             1 => (self.vdd_sense_enable << 6) + self.adc_buffer_bias,
             2 => self.mux_bias,
-            3 => (self.mux_load << 5) + (self.temp_s2 << 4) + (self.temp_s1 << 3) + (self.temp_en << 2) + (self.dig_out_hiz << 1) + self.dig_out,
+            3 => (self.mux_load << 5) + (self.temp_s2 << 4) + (self.temp_s1 << 3) + (self.temp_en << 2) +
+                (self.dig_out_hiz << 1) + self.dig_out,
             4 => (self.weak_miso << 7) + (self.twos_comp << 6) + (self.abs_mode << 5) + (self.dsp_en << 4) + self.dsp_cutoff_freq_reg,
-            5 => (self.zcheck_dac_power << 6) + (self.zcheck_load << 5) + (self.zcheck_scale << 3) + (self.zcheck_conn_all << 2) + (self.zcheck_sel_pol << 1) + self.zcheck_en,
+            5 => (self.zcheck_dac_power << 6) + (self.zcheck_load << 5) + (self.zcheck_scale << 3) +
+                (self.zcheck_conn_all << 2) + (self.zcheck_sel_pol << 1) + self.zcheck_en,
             6 => 128,
             7 => self.zcheck_select,
             8 => (self.off_chip_rh1 << 7) + self.rh1_dac1,

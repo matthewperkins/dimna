@@ -51,12 +51,24 @@ pub fn runScript(script: []const u8, pos: *usize, elapsed_s: f64, in: *Input, di
             const n = @min(t.len, in.text.len - in.text_len);
             @memcpy(in.text[in.text_len..][0..n], t[0..n]);
             in.text_len += n;
-        } else if (std.mem.eql(u8, what, "enter") or std.mem.eql(u8, what, "esc") or std.mem.eql(u8, what, "tab") or std.mem.eql(u8, what, "backspace")) {
+        } else if (std.mem.eql(u8, what, "enter") or std.mem.eql(u8, what, "esc") or
+            std.mem.eql(u8, what, "tab") or std.mem.eql(u8, what, "backspace"))
+        {
             if (in.num_keys < in.keys.len) {
-                in.keys[in.num_keys] = if (what[0] == 'e' and what[1] == 'n') .enter else if (what[0] == 'e') .escape else if (what[0] == 't') .tab else .backspace;
+                in.keys[in.num_keys] = if (what[0] == 'e' and what[1] == 'n')
+                    .enter
+                else if (what[0] == 'e')
+                    .escape
+                else if (what[0] == 't')
+                    .tab
+                else
+                    .backspace;
                 in.num_keys += 1;
             }
-        } else if (std.mem.eql(u8, what, "space") or std.mem.eql(u8, what, "home") or std.mem.eql(u8, what, "end") or std.mem.eql(u8, what, "pgup") or std.mem.eql(u8, what, "pgdn") or std.mem.eql(u8, what, "left") or std.mem.eql(u8, what, "right")) {
+        } else if (std.mem.eql(u8, what, "space") or std.mem.eql(u8, what, "home") or std.mem.eql(u8, what, "end") or
+            std.mem.eql(u8, what, "pgup") or std.mem.eql(u8, what, "pgdn") or
+            std.mem.eql(u8, what, "left") or std.mem.eql(u8, what, "right"))
+        {
             if (in.num_keys < in.keys.len) {
                 in.keys[in.num_keys] = switch (what[0]) {
                     's' => .space,

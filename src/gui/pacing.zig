@@ -83,7 +83,13 @@ pub const Pacer = struct {
     n_resize: u64 = 0,
 
     /// Per-frame timing, to explain frames that land late.
-    const Timing = struct { wake_late_ms: f64 = 0, draw_ms: f64 = 0, before_refresh_ms: f64 = 0, callback_to_draw_ms: f64 = 0, target_ns: i128 = 0 };
+    const Timing = struct {
+        wake_late_ms: f64 = 0,
+        draw_ms: f64 = 0,
+        before_refresh_ms: f64 = 0,
+        callback_to_draw_ms: f64 = 0,
+        target_ns: i128 = 0,
+    };
 
     /// The last second's figures.
     pub const Report = struct {
@@ -153,14 +159,20 @@ pub const Pacer = struct {
                 }
             }
             if (self.trace) {
-                std.debug.print("frame {d} lat {d:.2} before {d:.2} cb {d:.2} shown {d:.2}\n", .{ p.tag, ms, ft.before_refresh_ms, ft.callback_to_draw_ms, after_target_ms });
+                std.debug.print(
+                    "frame {d} lat {d:.2} before {d:.2} cb {d:.2} shown {d:.2}\n",
+                    .{ p.tag, ms, ft.before_refresh_ms, ft.callback_to_draw_ms, after_target_ms },
+                );
             }
             // Landed a refresh later than frames have been landing: it was drawn too
             // close to the deadline (or the desktop was busy).
             const refresh_ms = @as(f64, @floatFromInt(p.refresh_ns)) / 1e6;
             self.best_ms = @min(self.best_ms, ms);
             if (refresh_ms > 0 and ms > self.best_ms + 0.6 * refresh_ms) {
-                if (self.debug) log.info("late frame {d}: latency {d:.1} ms; woke {d:.2} ms after its time, draw took {d:.2} ms, committed {d:.2} ms before the refresh aimed at, {d:.2} ms after the frame callback; presented {d:.2} ms after that refresh", .{ p.tag, ms, ft.wake_late_ms, ft.draw_ms, ft.before_refresh_ms, ft.callback_to_draw_ms, after_target_ms });
+                if (self.debug) log.info(
+                    "late frame {d}: latency {d:.1} ms; woke {d:.2} ms after its time, draw took {d:.2} ms, committed {d:.2} ms before the refresh aimed at, {d:.2} ms after the frame callback; presented {d:.2} ms after that refresh",
+                    .{ p.tag, ms, ft.wake_late_ms, ft.draw_ms, ft.before_refresh_ms, ft.callback_to_draw_ms, after_target_ms },
+                );
                 self.misses += 1;
                 self.misses_this_second += 1;
             }
@@ -265,7 +277,16 @@ pub const Pacer = struct {
         self.on_time_frames = 0;
         self.late_frames = 0;
         if (self.debug) {
-            log.info("  GPU time per frame: avg {d:.2} ms, max {d:.2} ms; draw results so far: out of date {d}, busy {d}, swapchain rebuilds {d}", .{ if (self.render_n > 0) self.render_sum / self.render_n else 0, self.render_max, self.n_out_of_date, self.n_busy, self.n_resize });
+            log.info(
+                "  GPU time per frame: avg {d:.2} ms, max {d:.2} ms; draw results so far: out of date {d}, busy {d}, swapchain rebuilds {d}",
+                .{
+                    if (self.render_n > 0) self.render_sum / self.render_n else 0,
+                    self.render_max,
+                    self.n_out_of_date,
+                    self.n_busy,
+                    self.n_resize,
+                },
+            );
             self.render_sum = 0;
             self.render_max = 0;
             self.render_n = 0;

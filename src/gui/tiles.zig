@@ -60,9 +60,26 @@ pub const Tiles = struct {
     thread: ?std.Thread = null,
 
     /// Starts the tile window's thread. Null if it could not be started.
-    pub fn start(gpa: std.mem.Allocator, shared: *Shared, ring: *oez.ring.BlockRing, layout: *const oez.types.Layout, block_samples: usize, display_gpu: *const gpu_mod.Gpu, font_name: []const u8, font_px: u32) ?*Tiles {
+    pub fn start(
+        gpa: std.mem.Allocator,
+        shared: *Shared,
+        ring: *oez.ring.BlockRing,
+        layout: *const oez.types.Layout,
+        block_samples: usize,
+        display_gpu: *const gpu_mod.Gpu,
+        font_name: []const u8,
+        font_px: u32,
+    ) ?*Tiles {
         const self = gpa.create(Tiles) catch return null;
-        self.* = .{ .gpa = gpa, .shared = shared, .ring = ring, .layout = layout.*, .block_samples = block_samples, .display_gpu = display_gpu, .font_px = font_px };
+        self.* = .{
+            .gpa = gpa,
+            .shared = shared,
+            .ring = ring,
+            .layout = layout.*,
+            .block_samples = block_samples,
+            .display_gpu = display_gpu,
+            .font_px = font_px,
+        };
         const n = @min(font_name.len, self.font_buf.len);
         @memcpy(self.font_buf[0..n], font_name[0..n]);
         shared.stop.store(false, .release);
@@ -98,7 +115,12 @@ pub const Tiles = struct {
 
         var win: Window = undefined;
         var class_buf: [64]u8 = undefined;
-        const class = std.fmt.bufPrintSentinel(&class_buf, "{s}-tiles", .{if (std.c.getenv("OEZ_APP_ID")) |v| std.mem.span(v) else "oez"}, 0) catch "oez-tiles";
+        const class = std.fmt.bufPrintSentinel(
+            &class_buf,
+            "{s}-tiles",
+            .{if (std.c.getenv("OEZ_APP_ID")) |v| std.mem.span(v) else "oez"},
+            0,
+        ) catch "oez-tiles";
         try win.init("oEZ spikes", class);
         defer win.deinit();
         var gpu = try gpu_mod.Gpu.init(gpa, .{ .display = win.display, .surface = win.surface }, .fifo, self.display_gpu);
@@ -152,7 +174,10 @@ pub const Tiles = struct {
             pointer = .{ in.pointer_x, in.pointer_y };
             const grid: Grid = .of(det.units.len, @floatFromInt(win.width), @floatFromInt(win.height));
             if (in.clicks > 0) {
-                if (grid.at(@floatCast(in.pointer_x), @floatCast(in.pointer_y))) |ch| _ = shared.clicks.push(.{ .channel = @intCast(ch), .add = in.ctrl });
+                if (grid.at(@floatCast(in.pointer_x), @floatCast(in.pointer_y))) |ch| _ = shared.clicks.push(.{
+                    .channel = @intCast(ch),
+                    .add = in.ctrl,
+                });
             }
             // At most 20 pictures a second: the tiles are for looking at, not for timing.
             const now = nowNs();
@@ -162,7 +187,15 @@ pub const Tiles = struct {
                 win.resized = false;
             }
             batch.clear();
-            draw(&batch, &det, &self.layout, &cfg, .of(det.units.len, @floatFromInt(gpu.extent.width), @floatFromInt(gpu.extent.height)), @floatCast(in.pointer_x), @floatCast(in.pointer_y));
+            draw(
+                &batch,
+                &det,
+                &self.layout,
+                &cfg,
+                .of(det.units.len, @floatFromInt(gpu.extent.width), @floatFromInt(gpu.extent.height)),
+                @floatCast(in.pointer_x),
+                @floatCast(in.pointer_y),
+            );
             det.changed = false;
             tag += 1;
             const Ctx = struct { win: *Window, tag: u64 };
@@ -198,7 +231,13 @@ const Grid = struct {
         const ideal = @sqrt(@as(f32, @floatFromInt(n)) * width / @max(height, 1) / 1.25);
         const cols: usize = std.math.clamp(@as(usize, @intFromFloat(@round(ideal))), 1, n);
         const rows = (n + cols - 1) / cols;
-        return .{ .n = n, .cols = cols, .rows = rows, .tile_w = width / @as(f32, @floatFromInt(cols)), .tile_h = height / @as(f32, @floatFromInt(rows)) };
+        return .{
+            .n = n,
+            .cols = cols,
+            .rows = rows,
+            .tile_w = width / @as(f32, @floatFromInt(cols)),
+            .tile_h = height / @as(f32, @floatFromInt(rows)),
+        };
     }
 
     fn rect(self: Grid, i: usize) [4]f32 {
@@ -221,7 +260,15 @@ const Grid = struct {
     }
 };
 
-fn draw(batch: *font.Batch, det: *const spikes.Detector, layout: *const oez.types.Layout, cfg: *const Config, grid: Grid, mouse_x: f32, mouse_y: f32) void {
+fn draw(
+    batch: *font.Batch,
+    det: *const spikes.Detector,
+    layout: *const oez.types.Layout,
+    cfg: *const Config,
+    grid: Grid,
+    mouse_x: f32,
+    mouse_y: f32,
+) void {
     const line_h = @round(batch.font.line_height);
     const uv = oez.types.electrode_uv_per_bit;
     const hover = grid.at(mouse_x, mouse_y);

@@ -83,8 +83,18 @@ pub fn build(b: *std.Build) void {
         }
     }
     const gui_c_mod = gui_c.createModule();
-    const gui_mod = b.createModule(.{ .root_source_file = b.path("src/gui/main.zig"), .target = target, .optimize = optimize, .link_libc = true });
-    const gui_test_mod = b.createModule(.{ .root_source_file = b.path("src/gui/tests.zig"), .target = target, .optimize = optimize, .link_libc = true });
+    const gui_mod = b.createModule(.{
+        .root_source_file = b.path("src/gui/main.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    const gui_test_mod = b.createModule(.{
+        .root_source_file = b.path("src/gui/tests.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
     for ([_]*std.Build.Module{ gui_mod, gui_test_mod }) |m| {
         m.addImport("oez", oez);
         m.addImport("wayland", wayland);

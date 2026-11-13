@@ -12,7 +12,8 @@
 //! left after any period in the last 100 ms (what protects against late input), towards
 //! a margin. The margin itself adapts: each gap in the sound raises it by 1 ms (input came
 //! later than it allowed for), and 30 s without one lowers it by 0.5 ms, between 1.5 and
-//! 25 ms. So latency settles at what this machine's timing needs, instead of gaps going on. If the queue ever holds much more than that (a stall upstream, start-up),
+//! 25 ms. So latency settles at what this machine's timing needs, instead of gaps going on.
+//! If the queue ever holds much more than that (a stall upstream, start-up),
 //! a block's output is dropped instead of letting latency sit high for a minute.
 //!
 //! Latency, as reported: what waits in the queue (about 5 ms: the margin, a period, and
@@ -125,9 +126,24 @@ pub const AudioOut = struct {
 
     /// Opens the default output device and starts both threads. Null (with a warning) if
     /// there is no usable device: everything else works without sound.
-    pub fn start(gpa: std.mem.Allocator, shared: *Shared, ring: *oez.ring.BlockRing, fs_in: f64, nch: usize, block_samples: usize) ?*AudioOut {
+    pub fn start(
+        gpa: std.mem.Allocator,
+        shared: *Shared,
+        ring: *oez.ring.BlockRing,
+        fs_in: f64,
+        nch: usize,
+        block_samples: usize,
+    ) ?*AudioOut {
         const self = gpa.create(AudioOut) catch return null;
-        self.* = .{ .gpa = gpa, .shared = shared, .ring = ring, .fs_in = fs_in, .nch = nch, .block_samples = block_samples, .fifo = .{ .buf = &.{} } };
+        self.* = .{
+            .gpa = gpa,
+            .shared = shared,
+            .ring = ring,
+            .fs_in = fs_in,
+            .nch = nch,
+            .block_samples = block_samples,
+            .fifo = .{ .buf = &.{} },
+        };
         self.open() catch |e| {
             log.warn("no audio output ({t}); the monitor is silent", .{e});
             gpa.destroy(self);
@@ -201,7 +217,8 @@ pub const AudioOut = struct {
             @memset(buf[got..], 0);
             // A gap only counts once sound has started arriving (not the silence before
             // the first block, or while the monitor is off).
-            if (got < buf.len and self.active.load(.monotonic) and self.primed.load(.monotonic)) _ = self.shared.underruns.fetchAdd(1, .monotonic);
+            if (got < buf.len and self.active.load(.monotonic) and
+                self.primed.load(.monotonic)) _ = self.shared.underruns.fetchAdd(1, .monotonic);
             if (self.shared.alarm.load(.monotonic)) {
                 // 0.15 s of 880 Hz at the start of every second.
                 const rate: usize = @intFromFloat(self.fs_out);
@@ -266,8 +283,14 @@ pub const AudioOut = struct {
             if (blk.len == 0) continue;
             {
                 const t = nowNs();
-                _ = self.shared.max_block_gap_us.fetchMax(@intCast(@min(@divTrunc(t - last_block, 1000), std.math.maxInt(u32))), .monotonic);
-                _ = self.shared.max_block_age_us.fetchMax(@intCast(std.math.clamp(@divTrunc(t - blk.acquired_ns, 1000), 0, std.math.maxInt(u32))), .monotonic);
+                _ = self.shared.max_block_gap_us.fetchMax(
+                    @intCast(@min(@divTrunc(t - last_block, 1000), std.math.maxInt(u32))),
+                    .monotonic,
+                );
+                _ = self.shared.max_block_age_us.fetchMax(
+                    @intCast(std.math.clamp(@divTrunc(t - blk.acquired_ns, 1000), 0, std.math.maxInt(u32))),
+                    .monotonic,
+                );
                 last_block = t;
             }
             self.shared.read(&settings, &seen);
@@ -309,21 +332,30 @@ pub const AudioOut = struct {
                 const frames: f64 = @floatFromInt(self.fill.load(.monotonic) + self.device_delay.load(.monotonic));
                 const lat = frames / self.fs_out + @as(f64, audio.Resampler.delay_in) / self.fs_in + 0.6e-3;
                 self.shared.latency_us.store(@intFromFloat(lat * 1e6), .monotonic);
-                self.shared.queue_us.store(@intFromFloat(@as(f64, @floatFromInt(self.fill.load(.monotonic))) / self.fs_out * 1e6), .monotonic);
-                self.shared.device_us.store(@intFromFloat(@as(f64, @floatFromInt(self.device_delay.load(.monotonic))) / self.fs_out * 1e6), .monotonic);
+                self.shared.queue_us.store(
+                    @intFromFloat(@as(f64, @floatFromInt(self.fill.load(.monotonic))) / self.fs_out * 1e6),
+                    .monotonic,
+                );
+                self.shared.device_us.store(
+                    @intFromFloat(@as(f64, @floatFromInt(self.device_delay.load(.monotonic))) / self.fs_out * 1e6),
+                    .monotonic,
+                );
             }
             out.clearRetainingCapacity();
             try resampler.process(gpa, mixed.items, ratio, &out);
             // Far more queued than needed (start-up, a stall upstream): drop this block's
             // sound, one audible skip, rather than carry the latency for a minute. The
             // slack covers the board's bursty USB delivery.
-            const limit: usize = @as(usize, @intFromFloat(margin_ms * 1e-3 * self.fs_out)) + 2 * self.period + @as(usize, @intFromFloat(self.fs_out * 0.012));
+            const limit: usize = @as(usize, @intFromFloat(margin_ms * 1e-3 * self.fs_out)) + 2 * self.period +
+                @as(usize, @intFromFloat(self.fs_out * 0.012));
             if (self.fifo.used() / 2 > limit) {
                 _ = self.shared.dropped.fetchAdd(1, .monotonic);
                 continue;
             }
             const n = self.fifo.push(out.items);
-            if (!self.primed.load(.monotonic) and self.fifo.used() / 2 > @as(usize, @intFromFloat(margin_ms * 1e-3 * self.fs_out)) + self.period) self.primed.store(true, .monotonic);
+            if (!self.primed.load(.monotonic) and
+                self.fifo.used() / 2 >
+                    @as(usize, @intFromFloat(margin_ms * 1e-3 * self.fs_out)) + self.period) self.primed.store(true, .monotonic);
             if (n < out.items.len) _ = self.shared.dropped.fetchAdd(1, .monotonic);
         }
     }

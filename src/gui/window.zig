@@ -269,7 +269,8 @@ pub const Window = struct {
             if (d.readEvents() != .SUCCESS) return error.WaylandRead;
         } else {
             d.cancelRead();
-            if (linux.errno(n) == .SUCCESS and n > 0 and (pfd[0].revents & (linux.POLL.ERR | linux.POLL.HUP)) != 0) return error.WaylandClosed;
+            if (linux.errno(n) == .SUCCESS and n > 0 and
+                (pfd[0].revents & (linux.POLL.ERR | linux.POLL.HUP)) != 0) return error.WaylandClosed;
         }
         if (d.dispatchPending() != .SUCCESS) return error.WaylandDispatch;
     }
@@ -419,7 +420,11 @@ pub const Window = struct {
             .presented => |p| {
                 if (self.num_presented < self.presented.len) {
                     const sec: i128 = (@as(i128, p.tv_sec_hi) << 32) | p.tv_sec_lo;
-                    self.presented[self.num_presented] = .{ .tag = slot.tag, .time_ns = sec * 1_000_000_000 + p.tv_nsec, .refresh_ns = p.refresh };
+                    self.presented[self.num_presented] = .{
+                        .tag = slot.tag,
+                        .time_ns = sec * 1_000_000_000 + p.tv_nsec,
+                        .refresh_ns = p.refresh,
+                    };
                     self.num_presented += 1;
                 }
             },
@@ -495,7 +500,13 @@ pub const Window = struct {
                 const map = std.posix.mmap(null, k.size, .{ .READ = true }, .{ .TYPE = .PRIVATE }, k.fd, 0) catch return;
                 defer std.posix.munmap(map);
                 if (self.xkb_context == null) self.xkb_context = xkb.xkb_context_new(xkb.XKB_CONTEXT_NO_FLAGS);
-                const keymap = xkb.xkb_keymap_new_from_buffer(self.xkb_context, map.ptr, std.mem.indexOfScalar(u8, map, 0) orelse map.len, xkb.XKB_KEYMAP_FORMAT_TEXT_V1, xkb.XKB_KEYMAP_COMPILE_NO_FLAGS) orelse {
+                const keymap = xkb.xkb_keymap_new_from_buffer(
+                    self.xkb_context,
+                    map.ptr,
+                    std.mem.indexOfScalar(u8, map, 0) orelse map.len,
+                    xkb.XKB_KEYMAP_FORMAT_TEXT_V1,
+                    xkb.XKB_KEYMAP_COMPILE_NO_FLAGS,
+                ) orelse {
                     log.warn("the compositor's keymap did not compile; keys are read as on a US QWERTY keyboard", .{});
                     return;
                 };
@@ -519,13 +530,19 @@ pub const Window = struct {
                     var syms: [*c]const xkb.xkb_keysym_t = null;
                     if (xkb.xkb_keymap_key_get_syms_by_level(self.xkb_keymap, k.key + 8, layout, 0, &syms) >= 1) sym = syms[0];
                 }
-                if (self.key_debug) log.info("key code {d} {s}: symbol 0x{x}", .{ k.key, if (k.state == .pressed) "pressed" else "released", sym });
+                if (self.key_debug) log.info("key code {d} {s}: symbol 0x{x}", .{
+                    k.key,
+                    if (k.state == .pressed) "pressed" else "released",
+                    sym,
+                });
                 // What the key types, with the modifiers held (for notes).
                 if (k.state == .pressed) {
                     if (self.xkb_state) |state| {
                         var utf8: [16]u8 = undefined;
                         const n = xkb.xkb_state_key_get_utf8(state, k.key + 8, &utf8, utf8.len);
-                        if (n > 0 and @as(usize, @intCast(n)) < utf8.len and utf8[0] >= 0x20 and utf8[0] != 0x7f and self.input.text_len + @as(usize, @intCast(n)) <= self.input.text.len) {
+                        if (n > 0 and @as(usize, @intCast(n)) < utf8.len and utf8[0] >= 0x20 and utf8[0] != 0x7f and
+                            self.input.text_len + @as(usize, @intCast(n)) <= self.input.text.len)
+                        {
                             @memcpy(self.input.text[self.input.text_len..][0..@intCast(n)], utf8[0..@intCast(n)]);
                             self.input.text_len += @intCast(n);
                         }
@@ -537,7 +554,15 @@ pub const Window = struct {
                 }
             },
             .modifiers => |m| {
-                if (self.xkb_state) |state| _ = xkb.xkb_state_update_mask(state, m.mods_depressed, m.mods_latched, m.mods_locked, 0, 0, m.group);
+                if (self.xkb_state) |state| _ = xkb.xkb_state_update_mask(
+                    state,
+                    m.mods_depressed,
+                    m.mods_latched,
+                    m.mods_locked,
+                    0,
+                    0,
+                    m.group,
+                );
                 // Standard xkb modifier bits: Shift = 1, Control = 4.
                 self.input.shift = (m.mods_depressed & 1) != 0;
                 self.input.ctrl = (m.mods_depressed & 4) != 0;

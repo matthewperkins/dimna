@@ -79,7 +79,10 @@ pub const Notes = struct {
         var path_buf: [std.fs.max_path_bytes]u8 = undefined;
         const state: []const u8 = if (std.c.getenv("XDG_STATE_HOME")) |x| std.mem.span(x) else "";
         const home: []const u8 = if (std.c.getenv("HOME")) |h| std.mem.span(h) else ".";
-        const dir = (if (state.len > 0) std.fmt.bufPrintSentinel(&path_buf, "{s}/oez", .{state}, 0) else std.fmt.bufPrintSentinel(&path_buf, "{s}/.local/state/oez", .{home}, 0)) catch return self;
+        const dir = (if (state.len > 0)
+            std.fmt.bufPrintSentinel(&path_buf, "{s}/oez", .{state}, 0)
+        else
+            std.fmt.bufPrintSentinel(&path_buf, "{s}/.local/state/oez", .{home}, 0)) catch return self;
         mkdirs(dir);
         var file_buf: [std.fs.max_path_bytes]u8 = undefined;
         const file = std.fmt.bufPrintSentinel(&file_buf, "{s}/notes.log", .{dir}, 0) catch return self;
@@ -200,7 +203,11 @@ pub const Notes = struct {
             // time <TAB> sample <TAB> session folder (or -) <TAB> text
             var line: [max_text + 400]u8 = undefined;
             var when: [40]u8 = undefined;
-            const text_line = std.fmt.bufPrint(&line, "{s}\t{d}\t{s}\t{s}\n", .{ oez.record.localTime(&when), sample, if (session.len > 0) session else "-", note.text() }) catch return;
+            const text_line = std.fmt.bufPrint(
+                &line,
+                "{s}\t{d}\t{s}\t{s}\n",
+                .{ oez.record.localTime(&when), sample, if (session.len > 0) session else "-", note.text() },
+            ) catch return;
             _ = linux.write(self.log_fd, text_line.ptr, text_line.len);
         }
     }

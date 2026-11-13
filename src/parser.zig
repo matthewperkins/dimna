@@ -49,7 +49,13 @@ pub const RhythmParser = struct {
     last_counter: ?u32 = null,
     counter_hi: i64 = 0,
 
-    pub fn init(channels_per_stream: []const usize, chip_ids: []const i32, acquire_aux: bool, acquire_adc: bool, adc_v3: bool) RhythmParser {
+    pub fn init(
+        channels_per_stream: []const usize,
+        chip_ids: []const i32,
+        acquire_aux: bool,
+        acquire_adc: bool,
+        adc_v3: bool,
+    ) RhythmParser {
         std.debug.assert(channels_per_stream.len == chip_ids.len and chip_ids.len <= max_streams);
         var p: RhythmParser = .{ .num_streams = chip_ids.len, .acquire_aux = acquire_aux, .acquire_adc = acquire_adc, .adc_v3 = adc_v3 };
         @memcpy(p.channels_per_stream[0..p.num_streams], channels_per_stream);
@@ -180,7 +186,15 @@ pub const RhythmParser = struct {
 const testing = std.testing;
 
 /// Build a synthetic Rhythm payload into `buf`; returns its length.
-fn encodePayload(buf: []u8, ns: usize, counter: u32, aux: *const fn (usize, usize) u16, amp: *const fn (usize, usize) u16, adc: [8]u16, ttl: u16) usize {
+fn encodePayload(
+    buf: []u8,
+    ns: usize,
+    counter: u32,
+    aux: *const fn (usize, usize) u16,
+    amp: *const fn (usize, usize) u16,
+    adc: [8]u16,
+    ttl: u16,
+) usize {
     var o: usize = 0;
     const put16 = struct {
         fn f(b: []u8, off: *usize, v: u16) void {
