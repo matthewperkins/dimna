@@ -7,11 +7,12 @@
 //!   pinch=F                         a pinch by that scale factor
 //!   pointer=FX,FY, panel=N          put the pointer there (fractions of the display), or on
 //!                                   panel N (1-based)
-//!   click, cclick                   a click, a Ctrl+click
+//!   click, cclick                   a left click, a Ctrl+left click
+//!   rclick, crclick, mclick         a right click, a Ctrl+right click, a middle click
 //!   type=TEXT                       typed text
 //!   enter, esc, tab, backspace, space, left, right, pgup, pgdn, home, end
-//!   or keys such as "]]==" (any of [ ] - = r m f t s a / ` 1-9 , . ' q). ';' separates
-//!   steps, so the ';' key itself cannot be scripted.
+//!   or keys such as "]]==" (any of [ ] - = r m f t s a / ` 1-9 , . ' q, and A for
+//!   Shift+a). ';' separates steps, so the ';' key itself cannot be scripted.
 
 const std = @import("std");
 const Input = @import("window.zig").Input;
@@ -86,6 +87,14 @@ pub fn runScript(script: []const u8, pos: *usize, elapsed_s: f64, in: *Input, di
             // Ctrl+click.
             in.clicks += 1;
             in.ctrl = true;
+        } else if (std.mem.eql(u8, what, "rclick")) {
+            in.right_clicks += 1;
+        } else if (std.mem.eql(u8, what, "crclick")) {
+            // Ctrl+right click.
+            in.right_clicks += 1;
+            in.ctrl = true;
+        } else if (std.mem.eql(u8, what, "mclick")) {
+            in.middle_clicks += 1;
         } else if (std.mem.startsWith(u8, what, "pointer=")) {
             var it = std.mem.tokenizeScalar(u8, what[8..], ',');
             const fx = std.fmt.parseFloat(f64, it.next() orelse "0") catch 0;
@@ -96,8 +105,11 @@ pub fn runScript(script: []const u8, pos: *usize, elapsed_s: f64, in: *Input, di
         } else for (what) |ch| {
             if (in.num_keys == in.keys.len) break;
             // The keys that are shortcuts somewhere; anything else is not a key step.
-            if (std.mem.indexOfScalar(u8, "[]-=rmftsa/`\\123456789,.'q", ch) == null) continue;
-            in.keys[in.num_keys] = .{ .char = ch };
+            if (std.mem.indexOfScalar(u8, "[]-=rmftsaA/`\\123456789,.'q", ch) == null) continue;
+            // A is Shift+a: the key's character without modifiers, with Shift held (as
+            // `window.zig` reports keys).
+            if (ch == 'A') in.shift = true;
+            in.keys[in.num_keys] = .{ .char = if (ch == 'A') 'a' else ch };
             in.num_keys += 1;
         }
         pos.* += @min(end + 1, rest.len);
