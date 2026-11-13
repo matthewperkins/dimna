@@ -71,8 +71,7 @@ pub const review_badge_text: Colour = .{ 255, 240, 200, 255 };
 // Display: fills (`gpu.Fill`, `[4]f32`).
 
 /// The display's background, where the sweep cursor blanks the stretch ahead of it.
-/// Must match the render pass's clear colour in `gpu.zig` (`p_clear_values`,
-/// `{ 0.04, 0.045, 0.055, 1.0 }`); it does.
+/// Also the render pass's clear colour (`gpu.zig`).
 pub const background: [4]f32 = .{ 0.04, 0.045, 0.055, 1.0 };
 /// The sweep cursor: the line at the newest sample.
 pub const sweep_cursor: [4]f32 = .{ 0.45, 0.48, 0.55, 1.0 };

@@ -9,6 +9,7 @@
 const std = @import("std");
 const vk = @import("vulkan");
 const font = @import("font.zig");
+const theme = @import("theme.zig");
 const log = std.log.scoped(.gpu);
 
 extern fn vkGetInstanceProcAddr(instance: ?vk.Instance, name: [*:0]const u8) vk.PfnVoidFunction;
@@ -1008,7 +1009,7 @@ pub const Gpu = struct {
             .framebuffer = self.framebuffers[acquired.image_index],
             .render_area = area,
             .clear_value_count = 1,
-            .p_clear_values = &[_]vk.ClearValue{.{ .color = .{ .float_32 = .{ 0.04, 0.045, 0.055, 1.0 } } }},
+            .p_clear_values = &[_]vk.ClearValue{.{ .color = .{ .float_32 = theme.background } }},
         }, .@"inline");
         if (self.hist_cap > 0 and panels.len > 0) {
             dev.cmdBindPipeline(cmd, .graphics, self.pipeline);

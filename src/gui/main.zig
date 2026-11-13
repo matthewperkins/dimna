@@ -487,7 +487,11 @@ pub fn main(init: std.process.Init) !u8 {
                     _ = format.fmt(&b, "{s}   {d} channels ({d} electrode) at {d} Hz", .{ if (sim != null) "simulated board" else "Open Ephys acquisition board", nch, layout.num_electrodes, fs });
                     break :about b;
                 },
-                .about_len = std.fmt.count("{s}   {d} channels ({d} electrode) at {d} Hz", .{ if (sim != null) "simulated board" else "Open Ephys acquisition board", nch, layout.num_electrodes, fs }),
+                // Never more than the buffer holds (the text above is cut to fit).
+                .about_len = @min(160, std.fmt.count(
+                    "{s}   {d} channels ({d} electrode) at {d} Hz",
+                    .{ if (sim != null) "simulated board" else "Open Ephys acquisition board", nch, layout.num_electrodes, fs },
+                )),
                 .board = board_ctl.statusNow(&acq.requested, &layout),
                 .rec = recording.statusNow(nowNs(), bs, fs),
             });
