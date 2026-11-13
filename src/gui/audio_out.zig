@@ -33,8 +33,7 @@ const Atomic = std.atomic.Value;
 const log = std.log.scoped(.audio);
 
 pub const Shared = struct {
-    seq: Atomic(u32) = .init(0),
-    settings: audio.Settings = .{},
+    settings: oez.published.Published(audio.Settings) = .{},
     recalibrate: Atomic(bool) = .init(false),
     /// Sound an alarm (a short tone every second) over whatever else is playing, also
     /// when the monitor is off or muted: samples are being lost.
@@ -62,26 +61,11 @@ pub const Shared = struct {
 
     /// Display thread: new settings for the audio threads.
     pub fn publish(self: *Shared, s: *const audio.Settings) void {
-        _ = self.seq.fetchAdd(1, .acq_rel);
-        self.settings = s.*;
-        _ = self.seq.fetchAdd(1, .release);
+        self.settings.publish(s);
     }
 
     fn read(self: *Shared, out: *audio.Settings, seen: *u32) void {
-        var tries: usize = 0;
-        while (tries < 100) : (tries += 1) {
-            const before = self.seq.load(.acquire);
-            if (before == seen.*) return;
-            if (before & 1 != 0) {
-                std.atomic.spinLoopHint();
-                continue;
-            }
-            const copy = self.settings;
-            if (self.seq.load(.acquire) != before) continue;
-            out.* = copy;
-            seen.* = before;
-            return;
-        }
+        _ = self.settings.read(out, seen);
     }
 };
 
@@ -345,11 +329,7 @@ pub const AudioOut = struct {
     }
 };
 
-fn nowNs() i128 {
-    var ts: linux.timespec = undefined;
-    _ = linux.clock_gettime(.MONOTONIC, &ts);
-    return @as(i128, ts.sec) * std.time.ns_per_s + ts.nsec;
-}
+const nowNs = oez.clock.nowNs;
 
 fn sleepUs(us: u32) void {
     const ts: linux.timespec = .{ .sec = 0, .nsec = @as(isize, us) * 1000 };

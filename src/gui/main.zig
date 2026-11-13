@@ -77,9 +77,7 @@ fn applyToSource(source: oez.source.Source, settings: oez.types.Settings) !void 
     }
 }
 
-fn nowNs(io: Io) i128 {
-    return Io.Clock.awake.now(io).nanoseconds;
-}
+const nowNs = oez.clock.nowNs;
 
 pub fn main(init: std.process.Init) !u8 {
     const io = init.io;
@@ -241,13 +239,13 @@ pub fn main(init: std.process.Init) !u8 {
     // Diagnostics only: time the GPU per frame (it delays presenting, see gpu.zig).
     gpu.wait_render = pacer.debug;
     var script_pos: usize = 0;
-    const t_start = nowNs(io);
+    const t_start = nowNs();
     var next_report: i128 = t_start + std.time.ns_per_s;
     var title_buf: [160]u8 = undefined;
 
     while (!win.closed and !acq.done.load(.acquire)) {
         // Wake for events, for new samples (every 2 ms), or when the frame is due.
-        const wait_ms = pacer.waitMs(nowNs(io));
+        const wait_ms = pacer.waitMs(nowNs());
         try win.pump(wait_ms);
 
         // New samples into the GPU's history.
@@ -260,12 +258,12 @@ pub fn main(init: std.process.Init) !u8 {
         }
 
         var input = win.takeInput();
-        if (args.script.len > 0) runScript(args.script, &script_pos, @as(f64, @floatFromInt(nowNs(io) - t_start)) / 1e9, &input, &display);
+        if (args.script.len > 0) runScript(args.script, &script_pos, @as(f64, @floatFromInt(nowNs() - t_start)) / 1e9, &input, &display);
         // Input goes to the panel under the pointer.
         display.pointAt(input.pointer_x / @as(f64, @floatFromInt(@max(win.width, 1))), input.pointer_y / @as(f64, @floatFromInt(@max(win.height, 1))));
         // Notes first: while one is being typed, every key is its text. "Now" is the
         // newest sample acquired plus the time since.
-        const note_stamp: i64 = newest + if (newest_acquired_ns != 0) @as(i64, @intFromFloat(@as(f64, @floatFromInt(nowNs(io) - newest_acquired_ns)) * 1e-9 * fs)) else 0;
+        const note_stamp: i64 = newest + if (newest_acquired_ns != 0) @as(i64, @intFromFloat(@as(f64, @floatFromInt(nowNs() - newest_acquired_ns)) * 1e-9 * fs)) else 0;
         notes.handle(&input, note_stamp, recording.sessionPath());
         // Review keys (what is left of them after a note took its own).
         for (input.keys[0..input.num_keys]) |k| {
@@ -316,7 +314,7 @@ pub fn main(init: std.process.Init) !u8 {
                             for (&names, 1..) |*n, line| n.* = display.set.ttlName(line);
                             break :names names;
                         },
-                    }, &acq.events, nowNs(io))) alarms.recording_failed = true;
+                    }, &acq.events, nowNs())) alarms.recording_failed = true;
                 } else if (!e.action.record) recording.requestStop();
             }
         }
@@ -332,8 +330,8 @@ pub fn main(init: std.process.Init) !u8 {
         }
         // A click on a spike tile listens to its channel, as a click on a row does.
         while (tiles_shared.clicks.pop()) |c| display.listenClick(c.channel, c.add);
-        if (tiles_win != null and nowNs(io) - tiles_published_ns > 200 * std.time.ns_per_ms) {
-            tiles_published_ns = nowNs(io);
+        if (tiles_win != null and nowNs() - tiles_published_ns > 200 * std.time.ns_per_ms) {
+            tiles_published_ns = nowNs();
             tiles_shared.publish(&display.tileConfig());
         }
         display.refreshAudioCar();
@@ -452,8 +450,8 @@ pub fn main(init: std.process.Init) !u8 {
             if (ended == .failed) alarms.recording_failed = true;
         }
         // While recording, the control window's counts move four times a second.
-        if ((recording.active() or review.active) and nowNs(io) - rec_published_ns > 250 * std.time.ns_per_ms) {
-            rec_published_ns = nowNs(io);
+        if ((recording.active() or review.active) and nowNs() - rec_published_ns > 250 * std.time.ns_per_ms) {
+            rec_published_ns = nowNs();
             snap_dirty = true;
         }
         // Alarms: anything that means samples are not being kept.
@@ -464,7 +462,7 @@ pub fn main(init: std.process.Init) !u8 {
         }, recording.behind(bs, fs), &display.acknowledged)) snap_dirty = true;
         audio_shared.alarm.store(status.alarm_len > 0, .monotonic);
         status.recording = recording.active();
-        status.rec_seconds = recording.seconds(nowNs(io));
+        status.rec_seconds = recording.seconds(nowNs());
         if (input.num_keys > 0 or input.scroll_x != 0 or input.scroll_y != 0 or input.pinch != 1 or display.target != snap_target) snap_dirty = true;
         if (snap_dirty and control_thread != null) {
             snap_dirty = false;
@@ -474,7 +472,7 @@ pub fn main(init: std.process.Init) !u8 {
                 .target = display.target,
                 .status = status,
                 .ring_overflow = acq.ring_overflow.load(.monotonic),
-                .seconds = @as(f64, @floatFromInt(nowNs(io) - t_start)) / 1e9,
+                .seconds = @as(f64, @floatFromInt(nowNs() - t_start)) / 1e9,
                 .quit_prompt = board_ctl.quit_prompt,
                 .review = review.status(newest, fs),
                 .view_unsaved = view_file.unsaved(&display.set),
@@ -487,15 +485,15 @@ pub fn main(init: std.process.Init) !u8 {
                 },
                 .about_len = std.fmt.count("{s}   {d} channels ({d} electrode) at {d} Hz", .{ if (sim != null) "simulated board" else "Open Ephys acquisition board", nch, layout.num_electrodes, fs }),
                 .board = board_ctl.statusNow(&acq.requested, &layout),
-                .rec = recording.statusNow(nowNs(io), bs, fs),
+                .rec = recording.statusNow(nowNs(), bs, fs),
             });
         }
         // A panel's corners changed: filter its recent past again.
         if (gpu.hist_cap > 0) _ = try feed.sync(gpa, &display.set, refilterSamples(&display.set, fs), gpu.hist, gpu.hist_cap);
 
-        for (win.takePresented()) |p| pacer.presented(p, nowNs(io), win.presentation_clock);
+        for (win.takePresented()) |p| pacer.presented(p, nowNs(), win.presentation_clock);
 
-        const now = nowNs(io);
+        const now = nowNs();
         if (pacer.due(now, win.frame_ready, newest)) {
             if (win.resized or gpu.swapchain == .null) {
                 try gpu.resize(win.width, win.height);
@@ -509,7 +507,7 @@ pub fn main(init: std.process.Init) !u8 {
                     c.win.beforePresent(c.tag);
                 }
             }.f);
-            pacer.end(now, nowNs(io), result, newest, if (gpu.wait_render) @as(f64, @floatFromInt(gpu.last_render_ns)) / 1e6 else null);
+            pacer.end(now, nowNs(), result, newest, if (gpu.wait_render) @as(f64, @floatFromInt(gpu.last_render_ns)) / 1e6 else null);
             switch (result) {
                 .presented => {},
                 .out_of_date => {

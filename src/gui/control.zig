@@ -5,8 +5,8 @@
 //! instance, so nothing it does (a slow frame, a resize, the compositor holding its frames
 //! back) can delay the neural display. The two sides share no lock:
 //!
-//!   display -> control: a snapshot of the panels and the status (`Shared.publish`, read
-//!   with a sequence check: the reader retries if the writer was in the middle);
+//!   display -> control: a snapshot of the panels and the status (`Shared.publish`, a
+//!   `Published` value, see published.zig);
 //!   control -> display: a small queue of edits (`Shared.push` / `pop`), applied by the
 //!   display thread between frames, exactly as key presses are.
 
@@ -276,8 +276,7 @@ pub const Snapshot = struct {
 };
 
 pub const Shared = struct {
-    seq: Atomic(u32) = .init(0),
-    snap: Snapshot = .{},
+    snap: oez.published.Published(Snapshot) = .{},
     edits: [64]Edit = undefined,
     head: Atomic(usize) = .init(0),
     tail: Atomic(usize) = .init(0),
@@ -288,29 +287,13 @@ pub const Shared = struct {
 
     /// Display thread: makes `snap` the current snapshot.
     pub fn publish(self: *Shared, snap: *const Snapshot) void {
-        _ = self.seq.fetchAdd(1, .acq_rel); // odd: being written
-        self.snap = snap.*;
-        _ = self.seq.fetchAdd(1, .release);
+        self.snap.publish(snap);
     }
 
     /// Control thread: copies the current snapshot into `out` if it is newer than `seen`
     /// (which is updated). False if there is nothing new.
     pub fn read(self: *Shared, out: *Snapshot, seen: *u32) bool {
-        var tries: usize = 0;
-        while (tries < 100) : (tries += 1) {
-            const before = self.seq.load(.acquire);
-            if (before == seen.*) return false;
-            if (before & 1 != 0) {
-                std.atomic.spinLoopHint();
-                continue;
-            }
-            const copy = self.snap;
-            if (self.seq.load(.acquire) != before) continue;
-            out.* = copy;
-            seen.* = before;
-            return true;
-        }
-        return false;
+        return self.snap.read(out, seen);
     }
 
     /// Control thread: queues an edit (dropped if the display has not taken the last 63).
@@ -431,9 +414,7 @@ fn loop(cfg: *Config) !void {
 }
 
 fn nowSeconds() f64 {
-    var ts: std.os.linux.timespec = undefined;
-    _ = std.os.linux.clock_gettime(.MONOTONIC, &ts);
-    return @as(f64, @floatFromInt(ts.sec)) + @as(f64, @floatFromInt(ts.nsec)) / 1e9;
+    return @as(f64, @floatFromInt(oez.clock.nowNs())) / 1e9;
 }
 
 /// Describes the whole window for this frame and queues what was clicked.
