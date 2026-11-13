@@ -19,6 +19,9 @@ priority is that recordings are complete and correct.
     zig build --release=safe     # zig-out/bin/oez-headless and zig-out/bin/oez
     zig build test               # unit tests of the core (everything reachable from src/root.zig)
 
+`zig build test` caches its run: when nothing changed it prints no test count. To see the
+count, use `zig build test --summary all` after a change.
+
 Zig is 0.17.1 (pinned in `build.zig.zon`). It differs from older Zig you may know:
 
 - No `@cImport`; C headers are translated by the build (`b.addTranslateC`).
@@ -53,8 +56,14 @@ folder, raw syscalls), `src/feed.zig` and `src/ring.zig` (the ring, threads).
        git -c user.name="Matthew Perkins" -c user.email="matthew.perkins@mssm.edu" commit ...
 
    and end the commit message with the `Co-Authored-By:` line for the model you are.
-6. **Do not reformat** files (`zig fmt`) beyond the lines you write: a formatting pass over
-   the whole tree is planned separately and would collide with yours.
+6. **Formatting:** the tree is `zig fmt` clean and stays so. Run `zig fmt` on the files you
+   change; `zig fmt --check src build.zig` must print nothing when you finish.
+7. **Start from the local `main`.** Your working copy may have been made from an older
+   commit. Before anything else: `git merge --ff-only main` (it must succeed; if it does
+   not, stop and report).
+8. **Refactoring plans are moves, not rewrites.** Unless your plan says otherwise, the
+   program must behave exactly as before: same output, same log lines, same file formats.
+   If you find a bug while moving code, leave it, and describe it in your report.
 
 ## What counts as evidence
 
