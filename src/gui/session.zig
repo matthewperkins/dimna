@@ -1,14 +1,18 @@
 //! Parts of a running session that each keep their own state between turns of the display
-//! loop: scroll-back review, the alarms, and the view file. Each is a struct with what it
-//! needs to remember and a method the loop calls every turn; the loop itself only says in
-//! which order.
+//! loop: scroll-back review, the alarms, the view file, the recording, and the board's
+//! settings. Each is a struct with what it needs to remember and methods the loop calls;
+//! the loop itself only says in which order. At the end, what the control window is told
+//! about the notes and the sound, and what panels keep across a restart.
 
 const std = @import("std");
 const oez = @import("oez");
 const gpu_mod = @import("gpu.zig");
 const control = @import("control.zig");
 const files = @import("files.zig");
-const ReviewView = @import("display.zig").ReviewView;
+const display_mod = @import("display.zig");
+const ReviewView = display_mod.ReviewView;
+const notes_mod = @import("notes.zig");
+const audio_out = @import("audio_out.zig");
 const panels_mod = oez.panels;
 const Io = std.Io;
 const log = std.log.scoped(.oez);
@@ -398,3 +402,192 @@ pub const Recording = struct {
         return self.status;
     }
 };
+
+/// The board's settings as the control window changes them: what the config file holds (to
+/// tell whether they were changed), the rate and channel choices waiting for a restart, and
+/// the question asked before quitting with something unsaved.
+pub const BoardControl = struct {
+    /// What the config file's [board] table (and the command line) gave, or the last save.
+    saved: oez.types.Settings,
+    /// What a restart would apply: the settings in use, with the rate and half-channel
+    /// choices made since.
+    pending: oez.types.Settings,
+    restart_asked: bool = false,
+    status: control.BoardStatus = .{},
+    quit_prompt: control.QuitPrompt = .{},
+
+    pub fn init(in_use: oez.types.Settings, config_path: []const u8) BoardControl {
+        var self: BoardControl = .{ .saved = in_use, .pending = in_use };
+        const n = @min(config_path.len, self.quit_prompt.path_buf.len);
+        @memcpy(self.quit_prompt.path_buf[0..n], config_path[0..n]);
+        self.quit_prompt.path_len = n;
+        return self;
+    }
+
+    /// One change from the control window. Headstage filters are applied at once, without
+    /// a gap, also while recording (the change is then written to the recording's events);
+    /// the rate and half-channel mode are only collected, for `apply` to restart with.
+    pub fn edit(self: *BoardControl, action: control.BoardAction, acq: *oez.acquisition.Acquisition, fs: f64, recording: bool, io: Io, gpa: std.mem.Allocator, config_path: []const u8) void {
+        var want = acq.requested;
+        const bc = oez.board_config;
+        self.status.note_len = 0;
+        switch (action) {
+            .dsp => |on| want.dsp_enabled = on,
+            .dsp_cutoff => |up| want.dsp_cutoff = bc.stepDsp(fs, want.dsp_cutoff, up),
+            .lower => |up| want.lower_bandwidth = bc.step(f64, &bc.lower_steps, want.lower_bandwidth, up),
+            .upper => |up| want.upper_bandwidth = bc.step(f64, &bc.upper_steps, want.upper_bandwidth, up),
+            .rate => |up| self.pending.sample_rate = bc.step(u32, &bc.sample_rates, self.pending.sample_rate, up),
+            .half => |slot| if (slot < self.pending.rhd2132_16ch.len) {
+                self.pending.rhd2132_16ch[slot] = !self.pending.rhd2132_16ch[slot];
+            },
+            .apply => self.restart_asked = true,
+            .save => if (files.saveBoard(io, gpa, config_path, &acq.requested)) |_| {
+                self.saved = acq.requested;
+                self.status.setNote("saved to {s}", .{config_path});
+            } else |err| self.status.setNote("could not save to {s}: {t}", .{ config_path, err }),
+        }
+        if (want.lower_bandwidth >= want.upper_bandwidth) {
+            self.status.setNote("the band's lower edge must stay below its upper edge", .{});
+        } else if (acq.applySettings(want, recording)) |_| {
+            // The live values carry over into what a restart will apply.
+            const rate = self.pending.sample_rate;
+            const half = self.pending.rhd2132_16ch;
+            self.pending = want;
+            self.pending.sample_rate = rate;
+            self.pending.rhd2132_16ch = half;
+        } else |err| {
+            self.status.setNote("not applied: {t}", .{err});
+        }
+    }
+
+    /// The settings in use differ from the config file's.
+    pub fn unsaved(self: *const BoardControl, in_use: *const oez.types.Settings) bool {
+        var lines: [12][64]u8 = undefined;
+        var lens: [12]usize = undefined;
+        return oez.board_config.diff(&self.saved, in_use, &lines, &lens) > 0;
+    }
+
+    /// Answering "save" to the quit prompt: writes the settings in use to the config file if
+    /// they differ from it. False if that failed (the note says why).
+    pub fn saveIfChanged(self: *BoardControl, io: Io, gpa: std.mem.Allocator, config_path: []const u8, in_use: *const oez.types.Settings) bool {
+        if (!self.unsaved(in_use)) return true;
+        if (files.saveBoard(io, gpa, config_path, in_use)) |_| {
+            log.info("board settings saved to {s}", .{config_path});
+            return true;
+        } else |err| {
+            self.status.setNote("could not save to {s}: {t}", .{ config_path, err });
+            return false;
+        }
+    }
+
+    /// Quitting was asked for. True: there are unsaved changes and the control window now
+    /// asks about them (so do not quit yet). False: quit (nothing changed, the question
+    /// was already up, or there is no control window to ask in).
+    pub fn askBeforeQuit(self: *BoardControl, in_use: *const oez.types.Settings, view_unsaved: bool, can_ask: bool) bool {
+        const prompt = &self.quit_prompt;
+        var changed = oez.board_config.diff(&self.saved, in_use, &prompt.lines, &prompt.lens);
+        // And the panels' settings, as one line.
+        if (view_unsaved and changed < prompt.lines.len) {
+            const line: []const u8 = std.fmt.bufPrint(&prompt.lines[changed], "panel views (saved to views.toml)", .{}) catch "";
+            prompt.lens[changed] = line.len;
+            changed += 1;
+        }
+        if (changed == 0 or prompt.active or !can_ask) return false;
+        prompt.active = true;
+        prompt.count = changed;
+        return true;
+    }
+
+    /// For the control window: the settings in use, what the chips do for the values asked
+    /// for (they offer steps), and what waits for a restart.
+    pub fn statusNow(self: *BoardControl, in_use: *const oez.types.Settings, layout: *const oez.types.Layout) control.BoardStatus {
+        var reg = oez.registers.Rhd2000Registers.init(layout.sample_rate);
+        const st = &self.status;
+        st.settings = in_use.*;
+        st.lower_actual = reg.setLowerBandwidth(in_use.lower_bandwidth);
+        st.upper_actual = reg.setUpperBandwidth(in_use.upper_bandwidth);
+        st.dsp_actual = reg.setDspCutoffFreq(in_use.dsp_cutoff);
+        st.pending = self.pending;
+        st.unsaved = self.unsaved(in_use);
+        st.num_headstages = 0;
+        for (layout.headstageSlice()) |h| {
+            st.headstages[st.num_headstages] = .{ .slot = @intCast(h.slot), .rhd2132 = std.mem.eql(u8, h.chip, "RHD2132") };
+            st.num_headstages += 1;
+        }
+        return st.*;
+    }
+};
+
+/// The notes, for the control window: the newest few and the presets' texts.
+pub fn notesStatus(notes: *const notes_mod.Notes, fs: f64) control.NotesStatus {
+    var st: control.NotesStatus = .{ .editing = notes.editing, .num_drafts = notes.num_drafts, .total = notes.total };
+    for (&st.recent, 0..) |*line, k| {
+        const note = notes.recentNote(k) orelse break;
+        line.seconds = @as(f64, @floatFromInt(note.sample)) / fs;
+        line.len = @min(note.len, line.buf.len);
+        @memcpy(line.buf[0..line.len], note.buf[0..line.len]);
+        st.num_recent = k + 1;
+    }
+    for (&st.presets, &notes.presets) |*line, *pr| {
+        line.len = @min(pr.len, 20);
+        @memcpy(line.buf[0..line.len], pr.buf[0..line.len]);
+    }
+    return st;
+}
+
+/// The audio monitor, for the control window: its settings, what its threads report, and
+/// the channels listened to by name.
+pub fn audioStatus(display: *const display_mod.Display, shared: *const audio_out.Shared, layout: *const oez.types.Layout) control.AudioStatus {
+    var st: control.AudioStatus = .{
+        .settings = display.audio,
+        .running = shared.running.load(.acquire),
+        .sigma_uv = @as(f64, @floatFromInt(shared.held_sigma_c.load(.monotonic))) / 100.0 * oez.types.electrode_uv_per_bit,
+        .latency_ms = @as(f64, @floatFromInt(shared.latency_us.load(.monotonic))) / 1000.0,
+        .underruns = shared.underruns.load(.monotonic),
+        .dropped = shared.dropped.load(.monotonic),
+        .car = display.audio_car,
+    };
+    var w: Io.Writer = .fixed(&st.listen_buf);
+    for (display.audio.channelSlice(), 0..) |ch, k| {
+        var name_buf: [16]u8 = undefined;
+        w.print("{s}{s}", .{ if (k > 0) ", " else "", display_mod.channelName(&name_buf, layout, ch) }) catch break;
+    }
+    st.listen_len = w.buffered().len;
+    return st;
+}
+
+/// After a restart the panels are made again from the config (their sources may have
+/// moved). What was set by hand is kept where the panels still correspond: one for one by
+/// kind, and the per-row settings only where the row count is the same.
+pub fn carryOver(new: *panels_mod.Set, old: *const panels_mod.Set) void {
+    if (new.len != old.len) return;
+    for (new.slice(), old.items[0..old.len]) |*p, *o| {
+        if (p.kind != o.kind) continue;
+        p.span_s = o.span_s;
+        p.scale = o.scale;
+        p.mode = o.mode;
+        p.filtered = o.filtered;
+        p.band_low_hz = o.band_low_hz;
+        p.band_high_hz = o.band_high_hz;
+        if (p.rows == o.rows) {
+            p.raw_rows = o.raw_rows;
+            p.hidden = o.hidden;
+            p.row_gain = o.row_gain;
+            p.car = o.car;
+            p.car_ref = o.car_ref;
+            p.car_sub = o.car_sub;
+        }
+        p.trig_line = o.trig_line;
+        p.trig_source = o.trig_source;
+        p.trig_row = @min(o.trig_row, p.rows -| 1);
+        p.trig_rising = o.trig_rising;
+        p.trig_auto = o.trig_auto;
+        p.trig_level_uv = o.trig_level_uv;
+        p.trig_holdoff_ms = o.trig_holdoff_ms;
+        p.other_pre_ms = o.other_pre_ms;
+        p.other_post_ms = o.other_post_ms;
+        p.pre_ms = o.pre_ms;
+        p.post_ms = o.post_ms;
+        p.overlay = o.overlay;
+    }
+}

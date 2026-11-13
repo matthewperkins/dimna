@@ -138,7 +138,6 @@ const max_fills = display_mod.max_fills;
 const files = @import("files.zig");
 const renderViews = files.renderViews;
 const writeAtomic = files.writeAtomic;
-const saveBoard = files.saveBoard;
 const runDirect = @import("direct.zig").runDirect;
 const session = @import("session.zig");
 
@@ -306,9 +305,6 @@ pub fn main(init: std.process.Init) !u8 {
     defer view_file.deinit(gpa);
     var review: session.ReviewSession = .{};
     defer review.deinit();
-    var board_status: control.BoardStatus = .{};
-    // Board settings: what the config (and command line) gave at launch, to tell whether
-    // they were changed; and the rate and channel choices waiting for a restart.
     // The audio monitor (its own threads, see audio_out.zig).
     var audio_shared: audio_out.Shared = .{};
     display.audio.volume_db = args.volume_db;
@@ -324,15 +320,8 @@ pub fn main(init: std.process.Init) !u8 {
     defer if (tiles_win) |t| t.stop();
     var tiles_published_ns: i128 = 0;
 
-    var saved_settings = acq.requested;
-    var pending = acq.requested;
-    var restart_asked = false;
-    var quit_prompt: control.QuitPrompt = .{};
-    {
-        const n = @min(config_path.len, quit_prompt.path_buf.len);
-        @memcpy(quit_prompt.path_buf[0..n], config_path[0..n]);
-        quit_prompt.path_len = n;
-    }
+    // Board settings as the control window changes them, and the question on quitting.
+    var board_ctl: session.BoardControl = .init(acq.requested, config_path);
 
     var newest: i64 = 0;
     var newest_acquired_ns: i128 = 0;
@@ -438,46 +427,13 @@ pub fn main(init: std.process.Init) !u8 {
             if (e.action == .review) review.queue(e.action.review);
             if (e.action == .save_view) {
                 if (view_file.save(io, views_path, &display.set)) |_| {
-                    board_status.setNote("view saved to {s}", .{views_path});
-                } else |err| board_status.setNote("could not save {s}: {t}", .{ views_path, err });
+                    board_ctl.status.setNote("view saved to {s}", .{views_path});
+                } else |err| board_ctl.status.setNote("could not save {s}: {t}", .{ views_path, err });
             }
             if (e.action == .note_preset) notes.stampPreset(e.action.note_preset, note_stamp, recording.sessionPath());
             if (display.applyEdit(e)) quit = true;
             snap_dirty = true;
-            if (e.action == .board) {
-                // Headstage filters: applied without a gap, also while recording (the
-                // change is then written to the recording's events).
-                var want = acq.requested;
-                const bc = oez.board_config;
-                board_status.note_len = 0;
-                switch (e.action.board) {
-                    .dsp => |on| want.dsp_enabled = on,
-                    .dsp_cutoff => |up| want.dsp_cutoff = bc.stepDsp(fs, want.dsp_cutoff, up),
-                    .lower => |up| want.lower_bandwidth = bc.step(f64, &bc.lower_steps, want.lower_bandwidth, up),
-                    .upper => |up| want.upper_bandwidth = bc.step(f64, &bc.upper_steps, want.upper_bandwidth, up),
-                    .rate => |up| pending.sample_rate = bc.step(u32, &bc.sample_rates, pending.sample_rate, up),
-                    .half => |slot| if (slot < pending.rhd2132_16ch.len) {
-                        pending.rhd2132_16ch[slot] = !pending.rhd2132_16ch[slot];
-                    },
-                    .apply => restart_asked = true,
-                    .save => if (saveBoard(io, gpa, config_path, &acq.requested)) |_| {
-                        saved_settings = acq.requested;
-                        board_status.setNote("saved to {s}", .{config_path});
-                    } else |err| board_status.setNote("could not save to {s}: {t}", .{ config_path, err }),
-                }
-                if (want.lower_bandwidth >= want.upper_bandwidth) {
-                    board_status.setNote("the band's lower edge must stay below its upper edge", .{});
-                } else if (acq.applySettings(want, recording.active())) |_| {
-                    // The live values carry over into what a restart will apply.
-                    const rate = pending.sample_rate;
-                    const half = pending.rhd2132_16ch;
-                    pending = want;
-                    pending.sample_rate = rate;
-                    pending.rhd2132_16ch = half;
-                } else |err| {
-                    board_status.setNote("not applied: {t}", .{err});
-                }
-            }
+            if (e.action == .board) board_ctl.edit(e.action.board, &acq, fs, recording.active(), io, gpa, config_path);
             if (e.action == .record) {
                 if (e.action.record and !recording.active()) {
                     // Review of an earlier recording ends where a new one begins.
@@ -527,57 +483,38 @@ pub fn main(init: std.process.Init) !u8 {
             audio_shared.recalibrate.store(true, .release);
         }
         if (quit_answer) |answer| {
-            if (quit_prompt.active) switch (answer) {
+            if (board_ctl.quit_prompt.active) switch (answer) {
                 .save => {
                     // Whichever of the two changed.
-                    var failed = false;
-                    var lines: [12][64]u8 = undefined;
-                    var lens: [12]usize = undefined;
-                    if (oez.board_config.diff(&saved_settings, &acq.requested, &lines, &lens) > 0) {
-                        if (saveBoard(io, gpa, config_path, &acq.requested)) |_| {
-                            log.info("board settings saved to {s}", .{config_path});
-                        } else |err| {
-                            board_status.setNote("could not save to {s}: {t}", .{ config_path, err });
-                            failed = true;
-                        }
-                    }
+                    const board_ok = board_ctl.saveIfChanged(io, gpa, config_path, &acq.requested);
+                    var view_ok = true;
                     if (view_file.unsaved(&display.set)) {
                         if (view_file.save(io, views_path, &display.set)) |_| {
                             log.info("view saved to {s}", .{views_path});
                         } else |err| {
-                            board_status.setNote("could not save {s}: {t}", .{ views_path, err });
-                            failed = true;
+                            board_ctl.status.setNote("could not save {s}: {t}", .{ views_path, err });
+                            view_ok = false;
                         }
                     }
-                    if (!failed) break;
-                    quit_prompt.active = false;
+                    if (board_ok and view_ok) break;
+                    board_ctl.quit_prompt.active = false;
                 },
                 .discard => break,
-                .cancel => quit_prompt.active = false,
+                .cancel => board_ctl.quit_prompt.active = false,
             };
             snap_dirty = true;
         }
         if (quit) {
-            var changed = oez.board_config.diff(&saved_settings, &acq.requested, &quit_prompt.lines, &quit_prompt.lens);
-            // And the panels' settings, as one line.
-            if (view_file.unsaved(&display.set) and changed < quit_prompt.lines.len) {
-                const line: []const u8 = std.fmt.bufPrint(&quit_prompt.lines[changed], "panel views (saved to views.toml)", .{}) catch "";
-                quit_prompt.lens[changed] = line.len;
-                changed += 1;
-            }
-            if (changed > 0 and !quit_prompt.active and control_thread != null and !shared.closed.load(.acquire)) {
-                quit_prompt.active = true;
-                quit_prompt.count = changed;
-                snap_dirty = true;
-            } else break;
+            if (!board_ctl.askBeforeQuit(&acq.requested, view_file.unsaved(&display.set), control_thread != null and !shared.closed.load(.acquire))) break;
+            snap_dirty = true;
         }
         // Sample rate or channel set: stop, reconfigure the board, and start again with
         // everything that depends on the shape of the data rebuilt.
-        if (restart_asked) {
-            restart_asked = false;
+        if (board_ctl.restart_asked) {
+            board_ctl.restart_asked = false;
             snap_dirty = true;
             if (recording.active()) {
-                board_status.setNote("stop the recording first: this changes the shape of the data", .{});
+                board_ctl.status.setNote("stop the recording first: this changes the shape of the data", .{});
             } else {
                 // Review looks into a history that is about to be replaced.
                 review.drop();
@@ -588,10 +525,10 @@ pub fn main(init: std.process.Init) !u8 {
                 audio_dev = null;
                 acq.join();
                 const before = source.settings();
-                applyToSource(source, pending) catch |err| {
+                applyToSource(source, board_ctl.pending) catch |err| {
                     log.err("the board refused the new settings ({t}); going back", .{err});
-                    board_status.setNote("the board refused the new settings: {t}", .{err});
-                    pending = before;
+                    board_ctl.status.setNote("the board refused the new settings: {t}", .{err});
+                    board_ctl.pending = before;
                     try applyToSource(source, before);
                 };
                 layout = source.layout();
@@ -615,37 +552,7 @@ pub fn main(init: std.process.Init) !u8 {
                 const old_set = display.set;
                 const old_audio = display.audio;
                 var new_display = makeDisplay(args, &layout) orelse Display.init(panels_mod.default(&layout));
-                if (new_display.set.len == old_set.len) {
-                    for (new_display.set.slice(), old_set.items[0..old_set.len]) |*p, *o| {
-                        if (p.kind != o.kind) continue;
-                        p.span_s = o.span_s;
-                        p.scale = o.scale;
-                        p.mode = o.mode;
-                        p.filtered = o.filtered;
-                        p.band_low_hz = o.band_low_hz;
-                        p.band_high_hz = o.band_high_hz;
-                        if (p.rows == o.rows) {
-                            p.raw_rows = o.raw_rows;
-                            p.hidden = o.hidden;
-                            p.row_gain = o.row_gain;
-                            p.car = o.car;
-                            p.car_ref = o.car_ref;
-                            p.car_sub = o.car_sub;
-                        }
-                        p.trig_line = o.trig_line;
-                        p.trig_source = o.trig_source;
-                        p.trig_row = @min(o.trig_row, p.rows -| 1);
-                        p.trig_rising = o.trig_rising;
-                        p.trig_auto = o.trig_auto;
-                        p.trig_level_uv = o.trig_level_uv;
-                        p.trig_holdoff_ms = o.trig_holdoff_ms;
-                        p.other_pre_ms = o.other_pre_ms;
-                        p.other_post_ms = o.other_post_ms;
-                        p.pre_ms = o.pre_ms;
-                        p.post_ms = o.post_ms;
-                        p.overlay = o.overlay;
-                    }
-                }
+                session.carryOver(&new_display.set, &old_set);
                 history_samples = @intFromFloat((Panel.span_max + 2.0) * fs);
                 const new_feed = try oez.feed.Feed.init(gpa, &layout, &new_display.set, history_samples);
                 feed.deinit(gpa);
@@ -663,7 +570,7 @@ pub fn main(init: std.process.Init) !u8 {
                 newest_acquired_ns = 0;
                 drawn_newest = 0;
                 try acq.start();
-                pending = acq.requested;
+                board_ctl.pending = acq.requested;
                 // Channel numbers mean something else now.
                 new_display_audio: {
                     display.audio = old_audio;
@@ -704,66 +611,18 @@ pub fn main(init: std.process.Init) !u8 {
                 .status = status,
                 .ring_overflow = acq.ring_overflow.load(.monotonic),
                 .seconds = @as(f64, @floatFromInt(nowNs(io) - t_start)) / 1e9,
-                .quit_prompt = quit_prompt,
+                .quit_prompt = board_ctl.quit_prompt,
                 .review = review.status(newest, fs),
                 .view_unsaved = view_file.unsaved(&display.set),
-                .notes = blk: {
-                    var st: control.NotesStatus = .{ .editing = notes.editing, .num_drafts = notes.num_drafts, .total = notes.total };
-                    for (&st.recent, 0..) |*line, k| {
-                        const note = notes.recentNote(k) orelse break;
-                        line.seconds = @as(f64, @floatFromInt(note.sample)) / fs;
-                        line.len = @min(note.len, line.buf.len);
-                        @memcpy(line.buf[0..line.len], note.buf[0..line.len]);
-                        st.num_recent = k + 1;
-                    }
-                    for (&st.presets, &notes.presets) |*line, *pr| {
-                        line.len = @min(pr.len, 20);
-                        @memcpy(line.buf[0..line.len], pr.buf[0..line.len]);
-                    }
-                    break :blk st;
-                },
-                .audio = blk: {
-                    var st: control.AudioStatus = .{
-                        .settings = display.audio,
-                        .running = audio_shared.running.load(.acquire),
-                        .sigma_uv = @as(f64, @floatFromInt(audio_shared.held_sigma_c.load(.monotonic))) / 100.0 * oez.types.electrode_uv_per_bit,
-                        .latency_ms = @as(f64, @floatFromInt(audio_shared.latency_us.load(.monotonic))) / 1000.0,
-                        .underruns = audio_shared.underruns.load(.monotonic),
-                        .dropped = audio_shared.dropped.load(.monotonic),
-                        .car = display.audio_car,
-                    };
-                    var w: Io.Writer = .fixed(&st.listen_buf);
-                    for (display.audio.channelSlice(), 0..) |ch, k| {
-                        var name_buf: [16]u8 = undefined;
-                        w.print("{s}{s}", .{ if (k > 0) ", " else "", channelName(&name_buf, &layout, ch) }) catch break;
-                    }
-                    st.listen_len = w.buffered().len;
-                    break :blk st;
-                },
+                .notes = session.notesStatus(&notes, fs),
+                .audio = session.audioStatus(&display, &audio_shared, &layout),
                 .about_buf = about: {
                     var b: [160]u8 = undefined;
                     _ = std.fmt.bufPrint(&b, "{s}   {d} channels ({d} electrode) at {d} Hz", .{ if (sim != null) "simulated board" else "Open Ephys acquisition board", nch, layout.num_electrodes, fs }) catch "";
                     break :about b;
                 },
                 .about_len = std.fmt.count("{s}   {d} channels ({d} electrode) at {d} Hz", .{ if (sim != null) "simulated board" else "Open Ephys acquisition board", nch, layout.num_electrodes, fs }),
-                .board = blk: {
-                    // What the chips do for the values asked for.
-                    var reg = oez.registers.Rhd2000Registers.init(fs);
-                    board_status.settings = acq.requested;
-                    board_status.lower_actual = reg.setLowerBandwidth(acq.requested.lower_bandwidth);
-                    board_status.upper_actual = reg.setUpperBandwidth(acq.requested.upper_bandwidth);
-                    board_status.dsp_actual = reg.setDspCutoffFreq(acq.requested.dsp_cutoff);
-                    board_status.pending = pending;
-                    var lines: [12][64]u8 = undefined;
-                    var lens: [12]usize = undefined;
-                    board_status.unsaved = oez.board_config.diff(&saved_settings, &acq.requested, &lines, &lens) > 0;
-                    board_status.num_headstages = 0;
-                    for (layout.headstageSlice()) |h| {
-                        board_status.headstages[board_status.num_headstages] = .{ .slot = @intCast(h.slot), .rhd2132 = std.mem.eql(u8, h.chip, "RHD2132") };
-                        board_status.num_headstages += 1;
-                    }
-                    break :blk board_status;
-                },
+                .board = board_ctl.statusNow(&acq.requested, &layout),
                 .rec = recording.statusNow(nowNs(io), bs, fs),
             });
         }
