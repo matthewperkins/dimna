@@ -10,7 +10,7 @@
 //!                         2: also one line per frame (pacing.zig).
 //!   OEZ_NO_TITLE          do not put the latency in the window's title.
 //!   OEZ_CONTROL_CLICKS    scripted clicks in the control window, "SECONDS:X,Y;..." (control.zig).
-//!   OEZ_TILE_CLICKS       scripted input in the tile window, "SECONDS:X,Y[,ACTION];..." (tiles.zig).
+//!   OEZ_TILE_CLICKS       scripted input in the tile window, "SECONDS:X,Y[,ACTION];..." (tiles.zig): clicks, wheel, keys, drags.
 //!   OEZ_TEST_RING_SECONDS the acquisition ring's length in seconds instead of 30, for
 //!                         testing what happens when it fills.
 //!   OEZ_TEST_RECORD_FAIL_AFTER   make the recorder fail after this many samples.

@@ -95,6 +95,9 @@ pub const tile_wave: Colour = .{ 140, 217, 255, 255 };
 pub const tile_threshold: Colour = .{ 225, 80, 75, 210 };
 /// A tile's fixed range ("±150 µV"), bottom left: dimmer than the other read-outs.
 pub const tile_range_text: Colour = .{ 115, 124, 140, 255 };
+/// A fixed threshold's value ("-52 µV"), left of sigma: the red of the line, lightened to
+/// read as text. A threshold that follows the noise shows no value.
+pub const tile_threshold_text: Colour = .{ 240, 130, 120, 255 };
 
 // Control window (`ui.zig` widgets).
 
