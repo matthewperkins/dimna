@@ -93,6 +93,8 @@ pub const tile_bg_hover: Colour = .{ 26, 29, 38, 255 };
 pub const tile_wave: Colour = .{ 140, 217, 255, 255 };
 /// The detection threshold across a tile.
 pub const tile_threshold: Colour = .{ 225, 80, 75, 210 };
+/// A tile's fixed range ("±150 µV"), bottom left: dimmer than the other read-outs.
+pub const tile_range_text: Colour = .{ 115, 124, 140, 255 };
 
 // Control window (`ui.zig` widgets).
 
