@@ -55,27 +55,13 @@ const writeAtomic = files.writeAtomic;
 const session = @import("session.zig");
 const Pacer = @import("pacing.zig").Pacer;
 const Env = @import("env.zig").Env;
+const Pipeline = @import("pipeline.zig").Pipeline;
 
 pub const std_options: std.Options = .{ .log_level = .info };
 
 const Input = @import("window.zig").Input;
 const panels_mod = oez.panels;
 const Panel = panels_mod.Panel;
-
-/// Blocks in the acquisition ring: 30 s of signal, which is how far the recorder may fall
-/// behind (a stalled disk) before samples are lost. The display holds nothing back.
-/// `seconds` is `Env.ring_seconds`: 30 unless a test shortens it.
-fn ringSlots(fs: f64, block_samples: usize, seconds: f64) usize {
-    return @intFromFloat(@ceil(seconds * fs / @as(f64, @floatFromInt(block_samples))));
-}
-
-/// Gives a stopped source new settings.
-fn applyToSource(source: oez.source.Source, settings: oez.types.Settings) !void {
-    switch (source) {
-        .board => |b| try b.applySettings(settings),
-        .sim => |s| try s.applySettings(settings),
-    }
-}
 
 const nowNs = oez.clock.nowNs;
 
@@ -133,32 +119,9 @@ pub fn main(init: std.process.Init) !u8 {
         try board.?.applySettings(args.settings);
         break :blk .{ .board = &board.? };
     };
-    // These change when acquisition is restarted with another rate or channel set.
-    var layout = source.layout();
-    var nch = layout.numChannels();
-    var fs = layout.sample_rate;
-    var bs = source.settings().block_samples;
-    log.info("{d} channels ({d} electrode) at {d} Hz", .{ nch, layout.num_electrodes, fs });
-
-    // ---- acquisition into the ring ----
-    // 30 s of blocks: what the recorder may fall behind (a stalled disk) before samples are
-    // lost. The display reads it without holding anything back.
-    var ring = try oez.ring.BlockRing.init(gpa, ringSlots(fs, bs, env.ring_seconds), nch, bs);
-    defer ring.deinit(gpa);
     var health: oez.types.Health = .{};
     // What of the loss counters the user has acknowledged (the alarm shows the rest).
     var alarms: session.Alarms = .{};
-    var acq: oez.acquisition.Acquisition = .{
-        .io = io,
-        .source = source,
-        .ring = &ring,
-        .health = &health,
-        .scratch = try .init(gpa, nch, bs),
-    };
-    defer acq.scratch.deinit(gpa);
-    var reader = oez.ring.LossyReader.init(&ring);
-    var blk = try oez.types.Block.init(gpa, nch, bs);
-    defer blk.deinit(gpa);
 
     // ---- window and renderer ----
     var win: Window = undefined;
@@ -182,13 +145,38 @@ pub fn main(init: std.process.Init) !u8 {
     defer gpu.deinit();
     var notes = notes_mod.Notes.init(args.doc, env.home, env.state_home);
     defer notes.deinit();
-    var display = makeDisplay(args, &layout) orelse return 2;
-    // The longest time base plus a margin, so new samples never overwrite what is drawn.
-    var history_samples: usize = @intFromFloat((Panel.span_max + 2.0) * fs);
-    var feed = try oez.feed.Feed.init(gpa, &layout, &display.set, history_samples, bs);
-    defer feed.deinit(gpa);
-    display.initial = display.set;
-    try gpu.createHistory(feed.width, history_samples);
+
+    // ---- the pipeline: ring, acquisition, feed, panels, history, audio and tiles ----
+    // Everything that depends on the shape of the data, made here and again at each
+    // restart by the same code (see pipeline.zig).
+    var audio_shared: audio_out.Shared = .{};
+    var tiles_shared: tiles_mod.Shared = .{};
+    var pl: Pipeline = .{
+        .gpa = gpa,
+        .io = io,
+        .source = source,
+        .args = &args,
+        .env = &env,
+        .gpu = &gpu,
+        .health = &health,
+        .audio_shared = &audio_shared,
+        .tiles_shared = &tiles_shared,
+    };
+    pl.init() catch |e| return if (e == error.BadPanels) 2 else e;
+    // Stops acquisition, the audio monitor and the tiles, then frees the ring. It runs
+    // after the recording below is closed, which reads the ring to its end.
+    defer pl.deinit();
+    log.info("{d} channels ({d} electrode) at {d} Hz", .{ pl.nch, pl.layout.num_electrodes, pl.fs });
+    // The parts the loop uses all the time. They stay at these addresses across a restart;
+    // their contents, and pl.fs, pl.nch and pl.bs, change.
+    const display = &pl.display;
+    const layout = &pl.layout;
+    const acq = &pl.acq;
+    const ring = &pl.ring;
+    const reader = &pl.reader;
+    const blk = &pl.blk;
+    const feed = &pl.feed;
+
     var draws: [max_draws]gpu_mod.PanelDraw = undefined;
     var fills: [max_fills]gpu_mod.Fill = undefined;
     var text: Text = .{};
@@ -197,8 +185,7 @@ pub fn main(init: std.process.Init) !u8 {
     var batch = text.batch();
     var status: Status = .{};
 
-    try acq.start();
-    defer acq.join();
+    try pl.run();
 
     // The control window, on its own thread (see control.zig).
     var shared: control.Shared = .{};
@@ -227,22 +214,6 @@ pub fn main(init: std.process.Init) !u8 {
     defer view_file.deinit(gpa);
     var review: session.ReviewSession = .{};
     defer review.deinit();
-    // The audio monitor (its own threads, see audio_out.zig).
-    var audio_shared: audio_out.Shared = .{};
-    display.audio.volume_db = args.volume_db;
-    display.listenToFirst();
-    audio_shared.publish(&display.audio);
-    var audio_dev: ?*audio_out.AudioOut = if (args.audio) audio_out.AudioOut.start(gpa, &audio_shared, &ring, fs, nch, bs) else null;
-    defer if (audio_dev) |a| a.stop();
-
-    // The spike tiles (their own window and thread, see tiles.zig).
-    var tiles_shared: tiles_mod.Shared = .{};
-    tiles_shared.publish(&display.tileConfig());
-    var tiles_win: ?*tiles_mod.Tiles = if (args.tiles)
-        tiles_mod.Tiles.start(gpa, &tiles_shared, &ring, &layout, bs, &gpu, args.font, args.font_px, &env)
-    else
-        null;
-    defer if (tiles_win) |t| t.stop();
     var tiles_published_ns: i128 = 0;
 
     // Board settings as the control window changes them, and the question on quitting.
@@ -265,16 +236,16 @@ pub fn main(init: std.process.Init) !u8 {
         try win.pump(wait_ms);
 
         // New samples into the GPU's history.
-        while (reader.next(&blk)) {
+        while (reader.next(blk)) {
             if (blk.len == 0) continue;
             gpu.writeSamples(blk.first_sample, try feed.rows(blk.first_sample, blk.samples(), blk.ttl[0..blk.len]));
-            display.feedBlock(blk.first_sample, blk.samples(), nch, fs, blk.ttl[0..blk.len]);
+            display.feedBlock(blk.first_sample, blk.samples(), pl.nch, pl.fs, blk.ttl[0..blk.len]);
             newest = blk.first_sample + @as(i64, @intCast(blk.len));
             newest_acquired_ns = blk.acquired_ns;
         }
 
         var input = win.takeInput();
-        if (args.script.len > 0) runScript(args.script, &script_pos, @as(f64, @floatFromInt(nowNs() - t_start)) / 1e9, &input, &display);
+        if (args.script.len > 0) runScript(args.script, &script_pos, @as(f64, @floatFromInt(nowNs() - t_start)) / 1e9, &input, display);
         // Input goes to the panel under the pointer.
         display.pointAt(
             input.pointer_x / @as(f64, @floatFromInt(@max(win.width, 1))),
@@ -283,7 +254,7 @@ pub fn main(init: std.process.Init) !u8 {
         // Notes first: while one is being typed, every key is its text. "Now" is the
         // newest sample acquired plus the time since.
         const note_stamp: i64 = newest + if (newest_acquired_ns != 0)
-            @as(i64, @intFromFloat(@as(f64, @floatFromInt(nowNs() - newest_acquired_ns)) * 1e-9 * fs))
+            @as(i64, @intFromFloat(@as(f64, @floatFromInt(nowNs() - newest_acquired_ns)) * 1e-9 * pl.fs))
         else
             0;
         notes.handle(&input, note_stamp, recording.sessionPath());
@@ -313,14 +284,14 @@ pub fn main(init: std.process.Init) !u8 {
             switch (e) {
                 .panel => |p| display.applyPanelEdit(p.index, p.action),
                 .audio => |a| display.applyAudio(a),
-                .board => |b| board_ctl.edit(b, &acq, fs, recording.active(), io, gpa, config_path),
+                .board => |b| board_ctl.edit(b, acq, pl.fs, recording.active(), io, gpa, config_path),
                 .record => |on| {
                     if (on and !recording.active()) {
                         // Review of an earlier recording ends where a new one begins.
                         review.active = false;
                         alarms.seen.gaps = 0;
-                        if (!recording.start(gpa, io, &ring, .{
-                            .layout = layout,
+                        if (!recording.start(gpa, io, ring, .{
+                            .layout = layout.*,
                             .settings = source.settings(),
                             .gateware = if (board) |b| b.fw else @splat(0),
                             .board_id = if (board) |b| b.device_id else 0,
@@ -348,7 +319,7 @@ pub fn main(init: std.process.Init) !u8 {
         if (review.step(.{
             .gpa = gpa,
             .gpu = &gpu,
-            .layout = &layout,
+            .layout = layout,
             .set = &display.set,
             .target = display.target,
             .newest = newest,
@@ -365,7 +336,7 @@ pub fn main(init: std.process.Init) !u8 {
         }
         // A click on a spike tile listens to its channel, as a click on a row does.
         while (tiles_shared.clicks.pop()) |c| display.listenClick(c.channel, c.add);
-        if (tiles_win != null and nowNs() - tiles_published_ns > 200 * std.time.ns_per_ms) {
+        if (pl.tiles_win != null and nowNs() - tiles_published_ns > 200 * std.time.ns_per_ms) {
             tiles_published_ns = nowNs();
             tiles_shared.publish(&display.tileConfig());
         }
@@ -410,7 +381,7 @@ pub fn main(init: std.process.Init) !u8 {
             snap_dirty = true;
         }
         // Sample rate or channel set: stop, reconfigure the board, and start again with
-        // everything that depends on the shape of the data rebuilt.
+        // everything that depends on the shape of the data made anew (pipeline.zig).
         if (board_ctl.restart_asked) {
             board_ctl.restart_asked = false;
             snap_dirty = true;
@@ -419,74 +390,17 @@ pub fn main(init: std.process.Init) !u8 {
             } else {
                 // Review looks into a history that is about to be replaced.
                 review.drop();
-                // The tiles and the audio threads read the ring that is about to be replaced.
-                if (tiles_win) |t| t.stop();
-                tiles_win = null;
-                if (audio_dev) |a| a.stop();
-                audio_dev = null;
-                acq.join();
-                const before = source.settings();
-                applyToSource(source, board_ctl.pending) catch |err| {
-                    log.err("the board refused the new settings ({t}); going back", .{err});
-                    board_ctl.status.setNote("the board refused the new settings: {t}", .{err});
-                    board_ctl.pending = before;
-                    try applyToSource(source, before);
-                };
-                layout = source.layout();
-                nch = layout.numChannels();
-                fs = layout.sample_rate;
-                bs = source.settings().block_samples;
-                log.info("restarted: {d} channels ({d} electrode) at {d} Hz", .{ nch, layout.num_electrodes, fs });
-                // New first, then swap, so a failure leaves nothing half torn down.
-                const new_ring = try oez.ring.BlockRing.init(gpa, ringSlots(fs, bs, env.ring_seconds), nch, bs);
-                ring.deinit(gpa);
-                ring = new_ring;
-                const new_scratch = try oez.types.Block.init(gpa, nch, bs);
-                acq.scratch.deinit(gpa);
-                acq = .{ .io = io, .source = source, .ring = &ring, .health = &health, .scratch = new_scratch };
-                const new_blk = try oez.types.Block.init(gpa, nch, bs);
-                blk.deinit(gpa);
-                blk = new_blk;
-                reader = oez.ring.LossyReader.init(&ring);
-                // The panels again from the config (their sources may have moved), keeping
-                // what was set by hand where the panels still correspond.
-                const old_set = display.set;
-                const old_audio = display.audio;
-                var new_display = makeDisplay(args, &layout) orelse Display.init(panels_mod.default(&layout, .scroll));
-                session.carryOver(&new_display.set, &old_set);
-                history_samples = @intFromFloat((Panel.span_max + 2.0) * fs);
-                const new_feed = try oez.feed.Feed.init(gpa, &layout, &new_display.set, history_samples, bs);
-                feed.deinit(gpa);
-                feed = new_feed;
-                const config_set = new_display.initial;
-                new_display.initial = new_display.set;
-                // `r` goes back to the config's values, with the new slots.
-                for (
-                    new_display.initial.slice(),
-                    config_set.items[0..config_set.len],
-                    new_display.set.items[0..new_display.set.len],
-                ) |*i, *c, *p| {
-                    i.* = c.*;
-                    i.slot = p.slot;
+                if (try pl.restart(board_ctl.pending)) |refused| {
+                    board_ctl.status.setNote("the board refused the new settings: {t}", .{refused});
                 }
-                display = new_display;
-                try gpu.createHistory(feed.width, history_samples);
+                board_ctl.pending = acq.requested;
                 newest = 0;
                 newest_acquired_ns = 0;
                 pacer.drawn_newest = 0;
-                try acq.start();
-                board_ctl.pending = acq.requested;
-                // Channel numbers mean something else now.
-                display.audio = old_audio;
-                display.listenToFirst();
-                audio_shared.publish(&display.audio);
-                if (args.audio) audio_dev = audio_out.AudioOut.start(gpa, &audio_shared, &ring, fs, nch, bs);
-                if (args.tiles)
-                    tiles_win = tiles_mod.Tiles.start(gpa, &tiles_shared, &ring, &layout, bs, &gpu, args.font, args.font_px, &env);
             }
         }
         // The recorder has finished (asked to, or because writing failed).
-        if (recording.poll(fs)) |ended| {
+        if (recording.poll(pl.fs)) |ended| {
             snap_dirty = true;
             if (ended == .failed) alarms.recording_failed = true;
         }
@@ -500,7 +414,7 @@ pub fn main(init: std.process.Init) !u8 {
             .overflow = acq.ring_overflow.load(.monotonic),
             .dropped = health.dropped_samples.load(.monotonic),
             .gaps = recording.gaps(),
-        }, recording.behind(bs, fs), &display.acknowledged)) snap_dirty = true;
+        }, recording.behind(pl.bs, pl.fs), &display.acknowledged)) snap_dirty = true;
         audio_shared.alarm.store(status.alarm_len > 0, .monotonic);
         status.recording = recording.active();
         status.rec_seconds = recording.seconds(nowNs());
@@ -516,30 +430,30 @@ pub fn main(init: std.process.Init) !u8 {
                 .ring_overflow = acq.ring_overflow.load(.monotonic),
                 .seconds = @as(f64, @floatFromInt(nowNs() - t_start)) / 1e9,
                 .quit_prompt = board_ctl.quit_prompt,
-                .review = review.status(newest, fs),
+                .review = review.status(newest, pl.fs),
                 .view_unsaved = view_file.unsaved(&display.set),
-                .notes = session.notesStatus(&notes, fs),
-                .audio = session.audioStatus(&display, &audio_shared, &layout),
+                .notes = session.notesStatus(&notes, pl.fs),
+                .audio = session.audioStatus(display, &audio_shared, layout),
                 .about_buf = about: {
                     var b: [160]u8 = undefined;
                     _ = format.fmt(
                         &b,
                         "{s}   {d} channels ({d} electrode) at {d} Hz",
-                        .{ if (sim != null) "simulated board" else "Open Ephys acquisition board", nch, layout.num_electrodes, fs },
+                        .{ if (sim != null) "simulated board" else "Open Ephys acquisition board", pl.nch, layout.num_electrodes, pl.fs },
                     );
                     break :about b;
                 },
                 // Never more than the buffer holds (the text above is cut to fit).
                 .about_len = @min(160, std.fmt.count(
                     "{s}   {d} channels ({d} electrode) at {d} Hz",
-                    .{ if (sim != null) "simulated board" else "Open Ephys acquisition board", nch, layout.num_electrodes, fs },
+                    .{ if (sim != null) "simulated board" else "Open Ephys acquisition board", pl.nch, layout.num_electrodes, pl.fs },
                 )),
-                .board = board_ctl.statusNow(&acq.requested, &layout),
-                .rec = recording.statusNow(nowNs(), bs, fs),
+                .board = board_ctl.statusNow(&acq.requested, layout),
+                .rec = recording.statusNow(nowNs(), pl.bs, pl.fs),
             });
         }
         // A panel's corners changed: filter its recent past again.
-        if (gpu.hist_cap > 0) _ = try feed.sync(gpa, &display.set, refilterSamples(&display.set, fs), gpu.hist, gpu.hist_cap);
+        if (gpu.hist_cap > 0) _ = try feed.sync(gpa, &display.set, refilterSamples(&display.set, pl.fs), gpu.hist, gpu.hist_cap);
 
         for (win.takePresented()) |p| pacer.presented(p, nowNs(), win.presentation_clock);
 
@@ -550,7 +464,7 @@ pub fn main(init: std.process.Init) !u8 {
                 win.resized = false;
                 pacer.n_resize += 1;
             }
-            const fr = display.frame(&gpu, &layout, newest, review.view(newest, fs), status, &notes, &batch, &draws, &fills);
+            const fr = display.frame(&gpu, layout, newest, review.view(newest, pl.fs), status, &notes, &batch, &draws, &fills);
             const Ctx = struct { win: *Window, tag: u64 };
             const result = try gpu.draw(fr.draws, fr.fills, fr.text, Ctx{ .win = &win, .tag = pacer.begin(newest_acquired_ns) }, struct {
                 fn f(c: Ctx) void {
@@ -583,7 +497,7 @@ pub fn main(init: std.process.Init) !u8 {
             status.fps = r.frames;
             status.lost = reader.lost;
             snap_dirty = true;
-            if (audio_dev != null) log.info("  audio: {d:.1} ms (queue {d:.1}, device {d:.1}, margin {d:.1}; longest wait for a block {d:.1}, oldest block {d:.1}), gaps {d}, dropped {d}, noise {d:.1} uV{s}", .{
+            if (pl.audio_dev != null) log.info("  audio: {d:.1} ms (queue {d:.1}, device {d:.1}, margin {d:.1}; longest wait for a block {d:.1}, oldest block {d:.1}), gaps {d}, dropped {d}, noise {d:.1} uV{s}", .{
                 @as(f64, @floatFromInt(audio_shared.latency_us.load(.monotonic))) / 1000.0,
                 @as(f64, @floatFromInt(audio_shared.queue_us.load(.monotonic))) / 1000.0,
                 @as(f64, @floatFromInt(audio_shared.device_us.load(.monotonic))) / 1000.0,
