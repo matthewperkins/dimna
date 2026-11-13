@@ -1130,7 +1130,8 @@ fn writeDrawn(w: ?*std.Io.Writer, verts: []const font.Vertex) ![3]usize {
             v[2].pos[0] >= v[0].pos[0] and v[2].pos[1] >= v[0].pos[1];
         if (is_rect) {
             counts[0] += 1;
-            if (w) |out| try out.print("rect {d} {d} {d} {d} {any}\n", .{ v[0].pos[0], v[0].pos[1], v[2].pos[0] - v[0].pos[0], v[2].pos[1] - v[0].pos[1], col });
+            const size: [2]f32 = .{ v[2].pos[0] - v[0].pos[0], v[2].pos[1] - v[0].pos[1] };
+            if (w) |out| try out.print("rect {d} {d} {d} {d} {any}\n", .{ v[0].pos[0], v[0].pos[1], size[0], size[1], col });
             q += 1;
             continue;
         }
