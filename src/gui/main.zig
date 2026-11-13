@@ -269,22 +269,8 @@ pub fn main(init: std.process.Init) !u8 {
         else
             0;
         notes.handle(&input, note_stamp, recording.sessionPath());
-        // Review keys (what is left of them after a note took its own).
-        for (input.keys[0..input.num_keys]) |k| {
-            const cmd: control.ReviewAction = switch (k) {
-                .char => |c| if (c == ' ') .toggle else continue,
-                .named => |n| switch (n) {
-                    .left => .back,
-                    .right => .forward,
-                    .page_up => .page_back,
-                    .page_down => .page_forward,
-                    .home => .start,
-                    .end => .live,
-                    else => continue,
-                },
-            };
-            review.queue(cmd);
-        }
+        // Review keys (what is left of them after a note took its own), and Shift+wheel.
+        review.queueInput(display.reviewActions(&input, pl.fs));
         // Quitting (q or Esc here, Quit in the control window) asks first if the board
         // settings were changed; a second request quits.
         var quit = display.applyInput(input);

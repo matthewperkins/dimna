@@ -4,6 +4,7 @@
 //!
 //! `--script "SECONDS:STEP;SECONDS:STEP;..."`, where STEP is one of
 //!   wheel=N, hwheel=N, cwheel=N     wheel, sideways, Ctrl+wheel (axis units, 15 = one click)
+//!   swheel=N, awheel=N              Shift+wheel (back and forth in time), Alt+wheel (time base)
 //!   pinch=F                         a pinch by that scale factor
 //!   pointer=FX,FY, panel=N          put the pointer there (fractions of the display), or on
 //!                                   panel N (1-based)
@@ -14,7 +15,7 @@
 //!   rclick, crclick, mclick         a right click, a Ctrl+right click, a middle click
 //!   type=TEXT                       typed text
 //!   enter, esc, tab, backspace, space, left, right, pgup, pgdn, home, end
-//!   or keys such as "]]==" (any of [ ] - = r m f t s a n / ` 1-9 , . ' q, and A for
+//!   or keys such as "]]==" (any of [ ] - = r m f t s a n l / ` 1-9 , . ' q, and A for
 //!   Shift+a). ';' separates steps, so the ';' key itself cannot be scripted.
 
 const std = @import("std");
@@ -42,6 +43,10 @@ pub fn runScript(script: []const u8, pos: *usize, elapsed_s: f64, in: *Input, di
             // Ctrl+wheel.
             in.scroll_y += std.fmt.parseFloat(f64, what[7..]) catch 0;
             in.ctrl = true;
+        } else if (std.mem.startsWith(u8, what, "swheel=") or std.mem.startsWith(u8, what, "awheel=")) {
+            // Shift+wheel, Alt+wheel.
+            in.scroll_y += std.fmt.parseFloat(f64, what[7..]) catch 0;
+            if (what[0] == 's') in.shift = true else in.alt = true;
         } else if (std.mem.startsWith(u8, what, "wheel=")) {
             in.scroll_y += std.fmt.parseFloat(f64, what[6..]) catch 0;
         } else if (std.mem.startsWith(u8, what, "hwheel=")) {
@@ -118,7 +123,7 @@ pub fn runScript(script: []const u8, pos: *usize, elapsed_s: f64, in: *Input, di
         } else for (what) |ch| {
             if (in.num_keys == in.keys.len) break;
             // The keys that are shortcuts somewhere; anything else is not a key step.
-            if (std.mem.indexOfScalar(u8, "[]-=rmftsanA/`\\123456789,.'q", ch) == null) continue;
+            if (std.mem.indexOfScalar(u8, "[]-=rmftsanlA/`\\123456789,.'q", ch) == null) continue;
             // A is Shift+a: the key's character without modifiers, with Shift held (as
             // `window.zig` reports keys).
             if (ch == 'A') in.shift = true;

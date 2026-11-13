@@ -183,6 +183,18 @@ pub const ThresholdLines = struct {
     }
 };
 
+/// What one turn's input asks of review (`Display.reviewActions`): one action per key, and
+/// samples to move by for the wheel (0: none), after the keys.
+pub const ReviewActions = struct {
+    items: [@typeInfo(@FieldType(Input, "keys")).array.len]control.ReviewAction = undefined,
+    len: usize = 0,
+    scroll: i64 = 0,
+
+    pub fn slice(self: *const ReviewActions) []const control.ReviewAction {
+        return self.items[0..self.len];
+    }
+};
+
 /// How near (in pixel rows) the pointer must be to a threshold line to take hold of it.
 pub const grab_px = 4;
 
@@ -623,26 +635,22 @@ pub const Display = struct {
         return quit;
     }
 
-    /// The wheel, pinch and `[` `]` on panel `p` (the target): its scale, a row's scale, its
-    /// time base (in triggered mode, the window around the trigger).
+    /// The wheel, pinch and `[` `]` on panel `p` (the target): the wheel its scale (Ctrl: the
+    /// row under the pointer alone), Alt+wheel its time base (in triggered mode, the window
+    /// around the trigger), as pinch and the keys do. Shift+wheel and a scroll that is
+    /// mostly sideways move through time instead (`reviewScroll`).
     fn wheel(self: *Display, p: *Panel, in: Input) void {
         // One wheel click (about 15 units) changes a scale by 15 %.
         const per_unit = 0.0093;
-        var sx = in.scroll_x;
-        var sy = in.scroll_y;
-        if (in.shift) {
-            sx += sy;
-            sy = 0;
-        }
-        if (sy != 0) {
-            // Ctrl: the row under the pointer alone.
+        const sy = in.scroll_y;
+        const sideways = @abs(in.scroll_x) > @abs(sy);
+        if (sy != 0 and !in.alt and !in.shift and !sideways) {
             if (in.ctrl) {
                 if (p.rowAt(self.pointer_fy)) |row| p.scaleRow(row, @exp(sy * per_unit));
             } else p.scale *= @exp(sy * per_unit);
         }
-        // The time base; in triggered mode, the window around the trigger.
         var zoom: f64 = 1;
-        if (sx != 0) zoom *= @exp(sx * per_unit);
+        if (in.alt) zoom *= @exp((in.scroll_x + sy) * per_unit);
         // Fingers apart = zoom in = less time across the panel.
         if (in.pinch != 1 and in.pinch > 0) zoom /= in.pinch;
         for (in.keys[0..in.num_keys]) |k| {
@@ -694,6 +702,56 @@ pub const Display = struct {
                 else => {},
             },
         }
+    }
+
+    /// What this turn's input asks of scroll-back review: the keys (Space, Left / Right,
+    /// PgUp / PgDn, Home, End, and `l` back to live) and the wheel (`reviewScroll`), in that
+    /// order. `fs`: the sample rate.
+    pub fn reviewActions(self: *const Display, in: *const Input, fs: f64) ReviewActions {
+        var out: ReviewActions = .{};
+        for (in.keys[0..in.num_keys]) |k| {
+            out.items[out.len] = switch (k) {
+                .char => |c| switch (c) {
+                    ' ' => .toggle,
+                    'l' => .live,
+                    else => continue,
+                },
+                .named => |n| switch (n) {
+                    .left => .back,
+                    .right => .forward,
+                    .page_up => .page_back,
+                    .page_down => .page_forward,
+                    .home => .start,
+                    .end => .live,
+                    else => continue,
+                },
+            };
+            out.len += 1;
+        }
+        out.scroll = self.reviewScroll(in, fs);
+        return out;
+    }
+
+    /// Shift+wheel, or a scroll that is mostly sideways (without Alt): samples to move the
+    /// review position by (negative: back), a tenth of the target panel's time base per
+    /// wheel click of 15 axis units (proportionally for a touchpad). Wheel up and scrolling
+    /// left go back. A triggered panel's step is that of the longest panel that is not
+    /// triggered (as `ReviewSession.step` takes its keys' steps).
+    pub fn reviewScroll(self: *const Display, in: *const Input, fs: f64) i64 {
+        if (in.alt or self.set.len == 0) return 0;
+        const amount = if (in.shift)
+            in.scroll_x + in.scroll_y
+        else if (@abs(in.scroll_x) > @abs(in.scroll_y)) in.scroll_x else 0;
+        if (amount == 0) return 0;
+        const tp = &self.set.items[@min(self.scripted_target orelse self.target, self.set.len - 1)];
+        var window_s: f64 = if (tp.mode != .triggered) tp.span_s else 0;
+        if (window_s == 0) {
+            for (self.set.items[0..self.set.len]) |*p| {
+                if (p.mode != .triggered) window_s = @max(window_s, p.span_s);
+            }
+        }
+        if (window_s == 0) window_s = 2;
+        return @intFromFloat(@round(amount / 15 * 0.1 * window_s * fs));
     }
 
     /// The threshold lines under the pointer: a hand over one (within `grab_px` pixel rows,
@@ -1632,6 +1690,7 @@ const frame_states = [_][]const u8{
     "thinned labels: the focused row and the rows listened to are labelled all the same",
     "dragging the focused row's line: drawn at the value dragged to",
     "the trigger row in focus: one line, dashed, in the threshold's colour",
+    "review entered by Shift+wheel: three clicks back over Port A (5 s): 1.5 s behind",
 };
 
 /// Puts state `k` of `frame_states` into `st`.
@@ -1656,6 +1715,7 @@ fn frameState(st: *FrameState, k: usize) void {
         24 => thinnedMarksState(st),
         25 => dragState(st),
         26 => triggerFocusState(st),
+        27 => scrolledReviewState(st),
         else => unreachable,
     }
 }
@@ -1971,6 +2031,29 @@ fn triggerFocusState(st: *FrameState) void {
     st.feed(2, true);
 }
 
+/// The panels of the review states, live, and then three clicks of Shift+wheel up over Port
+/// A (time base 5 s: 0.5 s a click) through `reviewActions` and `ReviewSession` (frozen:
+/// no recording): 45000 samples behind the newest.
+fn scrolledReviewState(st: *FrameState) void {
+    const session = @import("session.zig");
+    reviewState(st, 5);
+    var gpu: gpu_mod.Gpu = undefined;
+    gpu.hist_cap = st.hist_cap;
+    const layout = frameLayout();
+    var review: session.ReviewSession = .{};
+    review.queueInput(st.display.reviewActions(&.{ .scroll_y = -45, .shift = true }, frame_fs));
+    _ = review.step(.{
+        .gpa = testing.allocator,
+        .gpu = &gpu,
+        .layout = &layout,
+        .set = &st.display.set,
+        .target = st.display.target,
+        .newest = frame_newest,
+        .rec = null,
+    });
+    st.review = review.view(frame_newest, frame_fs);
+}
+
 /// Writes the batch's quads as rectangles and runs of text (glyphs on one row, of one
 /// colour, 8 pixels apart). Returns how many of each; with `w` null, only counts.
 fn writeQuads(w: ?*std.Io.Writer, verts: []const font.Vertex) !struct { rects: usize, runs: usize } {
@@ -2140,6 +2223,22 @@ test "script steps: press, move and release drag a line; n toggles" {
             else => try testing.expectEqual(-50, d.thresholds.fixed_uv[0]),
         }
     }
+}
+
+test "script steps: swheel, awheel and l" {
+    const runScript = @import("script.zig").runScript;
+    var d = clickDisplay(5);
+    var pos: usize = 0;
+    var in: Input = .{};
+    runScript("0:swheel=-15", &pos, 0, &in, &d);
+    try testing.expect(in.shift and !in.alt and in.scroll_y == -15);
+    try testing.expectEqual(-6000, d.reviewActions(&in, frame_fs).scroll);
+    pos = 0;
+    in = .{};
+    runScript("0:awheel=30;0:l", &pos, 0, &in, &d);
+    try testing.expect(in.alt and !in.shift and in.scroll_y == 30);
+    const acts = d.reviewActions(&in, frame_fs);
+    try testing.expect(acts.len == 1 and acts.items[0] == .live and acts.scroll == 0);
 }
 
 test "a dragged line is drawn where the shader draws a sample of the value it set" {
@@ -2716,4 +2815,115 @@ test "Shift+a acknowledges an alarm, a alone does not" {
     in.shift = true;
     _ = d.applyInput(in);
     try testing.expect(d.acknowledged);
+}
+
+test "the wheel: plain the Y scale, Alt the time base, Shift and sideways move through time" {
+    var d = clickDisplay(5);
+    const p = &d.set.items[0];
+    const grow = @exp(15 * 0.0093);
+    // Plain: the scale; nothing for review.
+    _ = d.applyInput(.{ .scroll_y = 15 });
+    try testing.expectApproxEqRel(400 * grow, p.scale, 1e-9);
+    try testing.expectEqual(2, p.span_s);
+    try testing.expectEqual(0, d.reviewScroll(&.{ .scroll_y = 15 }, frame_fs));
+    // Alt: the time base, either axis; not the scale, not review.
+    _ = d.applyInput(.{ .scroll_y = 15, .alt = true });
+    try testing.expectApproxEqRel(2 * grow, p.span_s, 1e-9);
+    _ = d.applyInput(.{ .scroll_x = -15, .alt = true });
+    try testing.expectApproxEqRel(2, p.span_s, 1e-9);
+    try testing.expectApproxEqRel(400 * grow, p.scale, 1e-9);
+    try testing.expectEqual(0, d.reviewScroll(&.{ .scroll_y = 15, .alt = true }, frame_fs));
+    // In triggered mode: the window around the trigger.
+    p.mode = .triggered;
+    const pre = p.trigger.pre_ms;
+    _ = d.applyInput(.{ .scroll_y = -15, .alt = true });
+    try testing.expectApproxEqRel(pre / grow, p.trigger.pre_ms, 1e-9);
+    p.mode = .scroll;
+    // Shift: neither the scale nor the time base, but a tenth of the 2 s time base per
+    // click: 6000 samples, back for wheel up; proportionally for less.
+    _ = d.applyInput(.{ .scroll_y = -15, .shift = true });
+    try testing.expectApproxEqRel(400 * grow, p.scale, 1e-9);
+    try testing.expectApproxEqRel(2, p.span_s, 1e-9);
+    try testing.expectEqual(-6000, d.reviewScroll(&.{ .scroll_y = -15, .shift = true }, frame_fs));
+    try testing.expectEqual(12000, d.reviewScroll(&.{ .scroll_y = 30, .shift = true }, frame_fs));
+    try testing.expectEqual(-1000, d.reviewScroll(&.{ .scroll_x = -2.5, .shift = true }, frame_fs));
+    // Sideways, mostly: the same, and no scale; mostly vertical: the scale, no review.
+    try testing.expectEqual(-3000, d.reviewScroll(&.{ .scroll_x = -7.5, .scroll_y = 1 }, frame_fs));
+    _ = d.applyInput(.{ .scroll_x = -7.5, .scroll_y = 1 });
+    try testing.expectApproxEqRel(400 * grow, p.scale, 1e-9);
+    try testing.expectEqual(0, d.reviewScroll(&.{ .scroll_x = 1, .scroll_y = 7.5 }, frame_fs));
+    // Over a triggered panel: the step of the longest panel that is not (here AUX, 2 s,
+    // lengthened to 5 s).
+    p.mode = .triggered;
+    d.set.items[1].span_s = 5;
+    try testing.expectEqual(-15000, d.reviewScroll(&.{ .scroll_y = -15, .shift = true }, frame_fs));
+}
+
+test "review by the wheel: back from live enters, forward to the live edge leaves; l and the keys" {
+    const session = @import("session.zig");
+    var d = clickDisplay(5);
+    const layout = frameLayout();
+    var gpu: gpu_mod.Gpu = undefined;
+    gpu.hist_cap = 1 << 22;
+    var review: session.ReviewSession = .{};
+    defer review.deinit();
+    var newest: i64 = 10_000_000;
+    const Step = struct {
+        fn run(r: *session.ReviewSession, dsp: *const Display, in: Input, g: *gpu_mod.Gpu, l: *const oez.types.Layout, now: i64) void {
+            r.queueInput(dsp.reviewActions(&in, frame_fs));
+            const ctx: session.ReviewSession.Context = .{
+                .gpa = testing.allocator,
+                .gpu = g,
+                .layout = l,
+                .set = &dsp.set,
+                .target = dsp.target,
+                .newest = now,
+                .rec = null,
+            };
+            _ = r.step(ctx);
+        }
+    };
+    // Forward while live: nothing; not even entering and leaving again (which, while
+    // recording, would open the review reader on the file): the position is untouched.
+    Step.run(&review, &d, .{ .scroll_y = 15, .shift = true }, &gpu, &layout, newest);
+    try testing.expect(!review.active);
+    try testing.expectEqual(0, review.view_end);
+    // Back two clicks: in review, 12000 samples (0.4 s) behind.
+    Step.run(&review, &d, .{ .scroll_y = -30, .shift = true }, &gpu, &layout, newest);
+    try testing.expect(review.active);
+    try testing.expectEqual(newest - 12000, review.view(newest, frame_fs).?.end);
+    // Sideways forward one click: 6000 behind; still in review.
+    Step.run(&review, &d, .{ .scroll_x = 15 }, &gpu, &layout, newest);
+    try testing.expectEqual(newest - 6000, review.view(newest, frame_fs).?.end);
+    // Time passes (a frozen view stays where it is), forward a click: 3000 behind the
+    // newest sample now, not yet live.
+    newest += 3000;
+    Step.run(&review, &d, .{ .scroll_y = 15, .shift = true }, &gpu, &layout, newest);
+    try testing.expect(review.active);
+    try testing.expectEqual(newest - 3000, review.view(newest, frame_fs).?.end);
+    // Forward to the live edge (past it, here): out of review.
+    Step.run(&review, &d, .{ .scroll_y = 15, .shift = true }, &gpu, &layout, newest);
+    try testing.expect(!review.active);
+    try testing.expectEqual(null, review.view(newest, frame_fs));
+    // In again, then l: live.
+    Step.run(&review, &d, .{ .scroll_y = -15, .shift = true }, &gpu, &layout, newest);
+    try testing.expect(review.active);
+    Step.run(&review, &d, keyInput('l'), &gpu, &layout, newest);
+    try testing.expect(!review.active);
+    // The keys as before: Space freezes, Left steps back, End is live.
+    Step.run(&review, &d, keyInput(' '), &gpu, &layout, newest);
+    try testing.expect(review.active);
+    var in: Input = .{ .num_keys = 2 };
+    in.keys[0] = .{ .named = .left };
+    in.keys[1] = .{ .char = 'l' };
+    const acts = d.reviewActions(&in, frame_fs);
+    try testing.expectEqual(2, acts.len);
+    try testing.expect(acts.items[0] == .back and acts.items[1] == .live);
+    in.keys[0] = .{ .named = .end };
+    in.num_keys = 1;
+    Step.run(&review, &d, in, &gpu, &layout, newest);
+    try testing.expect(!review.active);
+    // Alt+wheel never moves through time.
+    Step.run(&review, &d, .{ .scroll_y = -15, .alt = true }, &gpu, &layout, newest);
+    try testing.expect(!review.active);
 }
