@@ -43,7 +43,13 @@ pub const Biquad = struct {
         const w0 = 2.0 * std.math.pi * fc / fs;
         const al = @sin(w0) / (2.0 * q);
         const a0 = 1.0 + al / a;
-        return .{ .b0 = (1.0 + al * a) / a0, .b1 = -2.0 * @cos(w0) / a0, .b2 = (1.0 - al * a) / a0, .a1 = -2.0 * @cos(w0) / a0, .a2 = (1.0 - al / a) / a0 };
+        return .{
+            .b0 = (1.0 + al * a) / a0,
+            .b1 = -2.0 * @cos(w0) / a0,
+            .b2 = (1.0 - al * a) / a0,
+            .a1 = -2.0 * @cos(w0) / a0,
+            .a2 = (1.0 - al / a) / a0,
+        };
     }
 
     pub const Kind = enum { low_pass, high_pass };

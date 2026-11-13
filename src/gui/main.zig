@@ -146,7 +146,13 @@ pub fn main(init: std.process.Init) !u8 {
     var health: oez.types.Health = .{};
     // What of the loss counters the user has acknowledged (the alarm shows the rest).
     var alarms: session.Alarms = .{};
-    var acq: oez.acquisition.Acquisition = .{ .io = io, .source = source, .ring = &ring, .health = &health, .scratch = try .init(gpa, nch, bs) };
+    var acq: oez.acquisition.Acquisition = .{
+        .io = io,
+        .source = source,
+        .ring = &ring,
+        .health = &health,
+        .scratch = try .init(gpa, nch, bs),
+    };
     defer acq.scratch.deinit(gpa);
     var reader = oez.ring.LossyReader.init(&ring);
     var blk = try oez.types.Block.init(gpa, nch, bs);
@@ -229,7 +235,10 @@ pub fn main(init: std.process.Init) !u8 {
     // The spike tiles (their own window and thread, see tiles.zig).
     var tiles_shared: tiles_mod.Shared = .{};
     tiles_shared.publish(&display.tileConfig());
-    var tiles_win: ?*tiles_mod.Tiles = if (args.tiles) tiles_mod.Tiles.start(gpa, &tiles_shared, &ring, &layout, bs, &gpu, args.font, args.font_px) else null;
+    var tiles_win: ?*tiles_mod.Tiles = if (args.tiles)
+        tiles_mod.Tiles.start(gpa, &tiles_shared, &ring, &layout, bs, &gpu, args.font, args.font_px)
+    else
+        null;
     defer if (tiles_win) |t| t.stop();
     var tiles_published_ns: i128 = 0;
 
@@ -264,10 +273,16 @@ pub fn main(init: std.process.Init) !u8 {
         var input = win.takeInput();
         if (args.script.len > 0) runScript(args.script, &script_pos, @as(f64, @floatFromInt(nowNs() - t_start)) / 1e9, &input, &display);
         // Input goes to the panel under the pointer.
-        display.pointAt(input.pointer_x / @as(f64, @floatFromInt(@max(win.width, 1))), input.pointer_y / @as(f64, @floatFromInt(@max(win.height, 1))));
+        display.pointAt(
+            input.pointer_x / @as(f64, @floatFromInt(@max(win.width, 1))),
+            input.pointer_y / @as(f64, @floatFromInt(@max(win.height, 1))),
+        );
         // Notes first: while one is being typed, every key is its text. "Now" is the
         // newest sample acquired plus the time since.
-        const note_stamp: i64 = newest + if (newest_acquired_ns != 0) @as(i64, @intFromFloat(@as(f64, @floatFromInt(nowNs() - newest_acquired_ns)) * 1e-9 * fs)) else 0;
+        const note_stamp: i64 = newest + if (newest_acquired_ns != 0)
+            @as(i64, @intFromFloat(@as(f64, @floatFromInt(nowNs() - newest_acquired_ns)) * 1e-9 * fs))
+        else
+            0;
         notes.handle(&input, note_stamp, recording.sessionPath());
         // Review keys (what is left of them after a note took its own).
         for (input.keys[0..input.num_keys]) |k| {
@@ -322,7 +337,15 @@ pub fn main(init: std.process.Init) !u8 {
                 } else if (!e.action.record) recording.requestStop();
             }
         }
-        if (review.step(.{ .gpa = gpa, .gpu = &gpu, .layout = &layout, .set = &display.set, .target = display.target, .newest = newest, .rec = recording.recorder })) snap_dirty = true;
+        if (review.step(.{
+            .gpa = gpa,
+            .gpu = &gpu,
+            .layout = &layout,
+            .set = &display.set,
+            .target = display.target,
+            .newest = newest,
+            .rec = recording.recorder,
+        })) snap_dirty = true;
         // Notes saved this turn go into the recording, if there is one.
         for (notes.fresh[0..notes.num_fresh]) |*note| {
             recording.note(note.sample, note.text());
@@ -371,7 +394,11 @@ pub fn main(init: std.process.Init) !u8 {
             snap_dirty = true;
         }
         if (quit) {
-            if (!board_ctl.askBeforeQuit(&acq.requested, view_file.unsaved(&display.set), control_thread != null and !shared.closed.load(.acquire))) break;
+            if (!board_ctl.askBeforeQuit(
+                &acq.requested,
+                view_file.unsaved(&display.set),
+                control_thread != null and !shared.closed.load(.acquire),
+            )) break;
             snap_dirty = true;
         }
         // Sample rate or channel set: stop, reconfigure the board, and start again with
@@ -426,7 +453,11 @@ pub fn main(init: std.process.Init) !u8 {
                 const config_set = new_display.initial;
                 new_display.initial = new_display.set;
                 // `r` goes back to the config's values, with the new slots.
-                for (new_display.initial.slice(), config_set.items[0..config_set.len], new_display.set.items[0..new_display.set.len]) |*i, *c, *p| {
+                for (
+                    new_display.initial.slice(),
+                    config_set.items[0..config_set.len],
+                    new_display.set.items[0..new_display.set.len],
+                ) |*i, *c, *p| {
                     i.* = c.*;
                     i.slot = p.slot;
                 }
@@ -464,7 +495,8 @@ pub fn main(init: std.process.Init) !u8 {
         audio_shared.alarm.store(status.alarm_len > 0, .monotonic);
         status.recording = recording.active();
         status.rec_seconds = recording.seconds(nowNs());
-        if (input.num_keys > 0 or input.scroll_x != 0 or input.scroll_y != 0 or input.pinch != 1 or display.target != snap_target) snap_dirty = true;
+        if (input.num_keys > 0 or input.scroll_x != 0 or input.scroll_y != 0 or input.pinch != 1 or
+            display.target != snap_target) snap_dirty = true;
         if (snap_dirty and control_thread != null) {
             snap_dirty = false;
             snap_target = display.target;
@@ -481,7 +513,11 @@ pub fn main(init: std.process.Init) !u8 {
                 .audio = session.audioStatus(&display, &audio_shared, &layout),
                 .about_buf = about: {
                     var b: [160]u8 = undefined;
-                    _ = format.fmt(&b, "{s}   {d} channels ({d} electrode) at {d} Hz", .{ if (sim != null) "simulated board" else "Open Ephys acquisition board", nch, layout.num_electrodes, fs });
+                    _ = format.fmt(
+                        &b,
+                        "{s}   {d} channels ({d} electrode) at {d} Hz",
+                        .{ if (sim != null) "simulated board" else "Open Ephys acquisition board", nch, layout.num_electrodes, fs },
+                    );
                     break :about b;
                 },
                 // Never more than the buffer holds (the text above is cut to fit).
@@ -551,7 +587,12 @@ pub fn main(init: std.process.Init) !u8 {
                 if (audio_shared.held_sigma_c.load(.monotonic) == 0) " (measuring)" else " held",
             });
             if (std.c.getenv("OEZ_NO_TITLE") == null) {
-                if (std.fmt.bufPrintSentinel(&title_buf, "oEZ   {s}: {d:.2} s  {d:.1} {s}/row   latency {d:.1} ms   {d} fps", .{ tp.name(), tp.span_s, tp.scale, tp.unit(), r.avg_ms, r.frames }, 0)) |t| win.setTitle(t) else |_| {}
+                if (std.fmt.bufPrintSentinel(
+                    &title_buf,
+                    "oEZ   {s}: {d:.2} s  {d:.1} {s}/row   latency {d:.1} ms   {d} fps",
+                    .{ tp.name(), tp.span_s, tp.scale, tp.unit(), r.avg_ms, r.frames },
+                    0,
+                )) |t| win.setTitle(t) else |_| {}
             }
             next_report += std.time.ns_per_s;
         }

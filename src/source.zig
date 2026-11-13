@@ -37,7 +37,13 @@ pub const Source = union(enum) {
     pub fn setAmpLive(self: Source, a: Board.AmpSettings, now_ns: i96) !Board.AmpActual {
         return switch (self) {
             .board => |b| try b.setAmpLive(a),
-            .sim => .{ .lower = a.lower_bandwidth, .upper = a.upper_bandwidth, .dsp_cutoff = a.dsp_cutoff, .switched_ns = now_ns, .writes_before_switch = 0 },
+            .sim => .{
+                .lower = a.lower_bandwidth,
+                .upper = a.upper_bandwidth,
+                .dsp_cutoff = a.dsp_cutoff,
+                .switched_ns = now_ns,
+                .writes_before_switch = 0,
+            },
         };
     }
     pub fn settings(self: Source) types.Settings {

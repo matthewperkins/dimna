@@ -136,7 +136,14 @@ fn testInfo() record.Info {
     l.num_headstages = 1;
     l.num_electrodes = 4;
     l.num_adc = 1;
-    return .{ .layout = l, .settings = .{}, .gateware = .{ 2, 0, 0, 0 }, .board_id = 0x100, .cable_delay = @splat(0), .board_kind = "test" };
+    return .{
+        .layout = l,
+        .settings = .{},
+        .gateware = .{ 2, 0, 0, 0 },
+        .board_id = 0x100,
+        .cable_delay = @splat(0),
+        .board_kind = "test",
+    };
 }
 
 // ---- the temporary folder ----
@@ -235,7 +242,10 @@ const Recording = struct {
     fn ttlCount(self: *const Recording) !usize {
         const n = self.ttl_sample_bytes.len / 8;
         if (self.ttl_sample_bytes.len % 8 != 0 or self.ttl_word_bytes.len != 2 * n)
-            return failure("TTL files disagree: {d} bytes of samples, {d} bytes of words", .{ self.ttl_sample_bytes.len, self.ttl_word_bytes.len });
+            return failure(
+                "TTL files disagree: {d} bytes of samples, {d} bytes of words",
+                .{ self.ttl_sample_bytes.len, self.ttl_word_bytes.len },
+            );
         return n;
     }
     fn ttlSample(self: *const Recording, k: usize) i64 {
@@ -278,7 +288,8 @@ const Recording = struct {
             }
             try list.append(gpa, line);
         }
-        if (self.events_text.len > 0 and self.events_text[self.events_text.len - 1] != '\n') return failure("events.tsv does not end in a newline", .{});
+        if (self.events_text.len > 0 and self.events_text[self.events_text.len - 1] != '\n')
+            return failure("events.tsv does not end in a newline", .{});
         return list.toOwnedSlice(gpa);
     }
 };
@@ -316,20 +327,32 @@ fn checkIndexed(rec: *const Recording) !Checked {
         if (ir.n_samples == 0) return failure("chunk {d} is empty", .{k});
         if (ir.byte_offset != c.bytes) return failure("chunk {d}: byte_offset {d}, expected {d}", .{ k, ir.byte_offset, c.bytes });
         const nbytes = @as(u64, ir.n_samples) * nch * 2;
-        if (ir.byte_offset + nbytes > rec.raw.len) return failure("chunk {d}: bytes {d}..{d} past the end of samples.i16 ({d})", .{ k, ir.byte_offset, ir.byte_offset + nbytes, rec.raw.len });
+        if (ir.byte_offset + nbytes > rec.raw.len) return failure(
+            "chunk {d}: bytes {d}..{d} past the end of samples.i16 ({d})",
+            .{ k, ir.byte_offset, ir.byte_offset + nbytes, rec.raw.len },
+        );
         const crc = std.hash.Crc32.hash(rec.raw[@intCast(ir.byte_offset)..][0..@intCast(nbytes)]);
         if (crc != ir.crc32) return failure("chunk {d}: CRC {x} in the index, {x} in samples.i16", .{ k, ir.crc32, crc });
         const gap = if (prev_end) |e| ir.first_sample != e else false;
-        if (gap != (ir.flags & IndexRecord.flag_gap != 0)) return failure("chunk {d} (sample {d}): gap flag {}, but the previous chunk ended at {?d}", .{ k, ir.first_sample, ir.flags & IndexRecord.flag_gap != 0, prev_end });
+        if (gap != (ir.flags & IndexRecord.flag_gap != 0)) return failure(
+            "chunk {d} (sample {d}): gap flag {}, but the previous chunk ended at {?d}",
+            .{ k, ir.first_sample, ir.flags & IndexRecord.flag_gap != 0, prev_end },
+        );
         if (ir.flags & ~IndexRecord.flag_gap != 0) return failure("chunk {d}: unknown flags {x}", .{ k, ir.flags });
         if (gap) c.gaps += 1;
-        if (ir.board_clock != hwTime(ir.first_sample)) return failure("chunk {d}: board clock {d}, expected {d}", .{ k, ir.board_clock, hwTime(ir.first_sample) });
+        if (ir.board_clock != hwTime(ir.first_sample)) return failure(
+            "chunk {d}: board clock {d}, expected {d}",
+            .{ k, ir.board_clock, hwTime(ir.first_sample) },
+        );
         if (ir.wall_ns == 0) return failure("chunk {d}: no wall time", .{k});
         for (0..ir.n_samples) |i| {
             const s = ir.first_sample + @as(i64, @intCast(i));
             for (0..nch) |ch| {
                 const got = rec.value(c.rows + i, ch);
-                if (got != sampleValue(s, ch)) return failure("chunk {d}, sample {d} (row {d}), channel {d}: {d}, expected {d}", .{ k, s, c.rows + i, ch, got, sampleValue(s, ch) });
+                if (got != sampleValue(s, ch)) return failure(
+                    "chunk {d}, sample {d} (row {d}), channel {d}: {d}, expected {d}",
+                    .{ k, s, c.rows + i, ch, got, sampleValue(s, ch) },
+                );
             }
         }
         c.rows += ir.n_samples;
@@ -535,21 +558,36 @@ test "recorder: stopped while the producer keeps going, it ends at a block bound
         // goes round the ring three times and never has to wait.
         prod.count_nulls.store(true, .release);
         try prod.waitBlocks(3 * ring_slots);
-        if (prod.nulls.load(.monotonic) != 0) return failure("recorder {d}: done, but the producer waited {d} times", .{ k + 1, prod.nulls.load(.monotonic) });
+        if (prod.nulls.load(.monotonic) != 0) return failure(
+            "recorder {d}: done, but the producer waited {d} times",
+            .{ k + 1, prod.nulls.load(.monotonic) },
+        );
         const sum = r.finish();
         try prod.waitBlocks(3 * ring_slots);
         prod.count_nulls.store(false, .release);
-        if (prod.nulls.load(.monotonic) != 0) return failure("recorder {d}: finished, but the producer waited {d} times", .{ k + 1, prod.nulls.load(.monotonic) });
+        if (prod.nulls.load(.monotonic) != 0) return failure(
+            "recorder {d}: finished, but the producer waited {d} times",
+            .{ k + 1, prod.nulls.load(.monotonic) },
+        );
 
         var rec = try Recording.load(gpa, paths[k]);
         defer rec.deinit();
         const c = try checkIndexed(&rec);
         try testing.expectEqual(@as(u64, 0), c.gaps);
         try checkComplete(gpa, &rec, c, sum);
-        if (@mod(c.first - prod.base, bs) != 0) return failure("recorder {d}: first sample {d} is not at a block boundary", .{ k + 1, c.first });
+        if (@mod(c.first - prod.base, bs) != 0) return failure(
+            "recorder {d}: first sample {d} is not at a block boundary",
+            .{ k + 1, c.first },
+        );
         if (@mod(c.end - prod.base, bs) != 0) return failure("recorder {d}: end sample {d} is not at a block boundary", .{ k + 1, c.end });
-        if (c.end < prod.sampleAt(head_at_stop)) return failure("recorder {d}: ends at {d}, but samples up to {d} were committed before the stop", .{ k + 1, c.end, prod.sampleAt(head_at_stop) });
-        if (k == 1 and c.first < ends[0]) return failure("second recording starts at {d}, before the first ended ({d})", .{ c.first, ends[0] });
+        if (c.end < prod.sampleAt(head_at_stop)) return failure(
+            "recorder {d}: ends at {d}, but samples up to {d} were committed before the stop",
+            .{ k + 1, c.end, prod.sampleAt(head_at_stop) },
+        );
+        if (k == 1 and c.first < ends[0]) return failure(
+            "second recording starts at {d}, before the first ended ({d})",
+            .{ c.first, ends[0] },
+        );
         ends[k] = c.end;
     }
     if (std.mem.eql(u8, paths[0], paths[1])) return failure("both recordings in {s}", .{paths[0]});

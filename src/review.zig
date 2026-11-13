@@ -308,7 +308,10 @@ test "review reads a recording back through the feed, in pieces, in any order" {
         }
         const es = [_]i64{ first, 20000, 20300 };
         const ew = [_]u16{ 0, 2, 0 };
-        inline for (.{ "samples.i16", "ttl_sample.i64", "ttl_word.u16" }, .{ std.mem.sliceAsBytes(data), std.mem.asBytes(&es), std.mem.asBytes(&ew) }) |name, bytes| {
+        inline for (
+            .{ "samples.i16", "ttl_sample.i64", "ttl_word.u16" },
+            .{ std.mem.sliceAsBytes(data), std.mem.asBytes(&es), std.mem.asBytes(&ew) },
+        ) |name, bytes| {
             var b: [96:0]u8 = undefined;
             const path = try std.fmt.bufPrintSentinel(&b, "{s}/{s}", .{ dir, name }, 0);
             const fd: i32 = @intCast(linux.open(path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, 0o600));
@@ -352,7 +355,8 @@ test "review reads a recording back through the feed, in pieces, in any order" {
     var s: i64 = 18000;
     while (s < 24000) : (s += 1) peak = @max(peak, @as(i32, @intCast(@abs(at(ring, width, s, 3)))));
     try testing.expect(peak > 900 and peak < 1100); // settled from the first sample shown
-    try testing.expect(at(ring, width, 19999, 4) < 0 and at(ring, width, 20000, 4) > 0 and at(ring, width, 20299, 4) > 0 and at(ring, width, 20300, 4) < 0);
+    try testing.expect(at(ring, width, 19999, 4) < 0 and at(ring, width, 20000, 4) > 0 and
+        at(ring, width, 20299, 4) > 0 and at(ring, width, 20300, 4) < 0);
 
     // Panning back a little fills only what is new, and keeps the rest.
     try testing.expect(try rv.fill(17000, 23000, end, 100000));

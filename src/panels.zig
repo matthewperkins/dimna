@@ -436,10 +436,18 @@ const Source = struct { kind: Kind, first: usize, rows: usize };
 fn resolve(source: []const u8, layout: *const types.Layout) ?Source {
     if (std.ascii.eqlIgnoreCase(source, "electrodes")) return .{ .kind = .electrode, .first = 0, .rows = layout.num_electrodes };
     if (std.ascii.eqlIgnoreCase(source, "aux")) return .{ .kind = .aux, .first = layout.num_electrodes, .rows = layout.num_aux };
-    if (std.ascii.eqlIgnoreCase(source, "adc")) return .{ .kind = .adc, .first = layout.num_electrodes + layout.num_aux, .rows = layout.num_adc };
+    if (std.ascii.eqlIgnoreCase(source, "adc")) return .{
+        .kind = .adc,
+        .first = layout.num_electrodes + layout.num_aux,
+        .rows = layout.num_adc,
+    };
     if (std.ascii.eqlIgnoreCase(source, "ttl")) return .{ .kind = .ttl, .first = 0, .rows = 8 };
     for (layout.headstageSlice()) |h| {
-        if (std.ascii.eqlIgnoreCase(source, types.headstage_names[h.slot])) return .{ .kind = .electrode, .first = h.first_channel, .rows = h.num_channels };
+        if (std.ascii.eqlIgnoreCase(source, types.headstage_names[h.slot])) return .{
+            .kind = .electrode,
+            .first = h.first_channel,
+            .rows = h.num_channels,
+        };
     }
     return null;
 }
@@ -474,7 +482,10 @@ fn parseMode(value: ?toml.Value, what: []const u8, n: usize, diag: *Diagnostics)
     if (v == .string) {
         if (std.meta.stringToEnum(Mode, v.string)) |m| return m;
     }
-    return if (n == 0) diag.fail("{s} must be \"scroll\", \"sweep\" or \"triggered\"", .{what}) else diag.fail("{s} {d}: mode must be \"scroll\", \"sweep\" or \"triggered\"", .{ what, n });
+    return if (n == 0)
+        diag.fail("{s} must be \"scroll\", \"sweep\" or \"triggered\"", .{what})
+    else
+        diag.fail("{s} {d}: mode must be \"scroll\", \"sweep\" or \"triggered\"", .{ what, n });
 }
 
 /// The rows a list key of table `table`'s `i`-th element names (numbered from 1 in the
@@ -486,7 +497,10 @@ fn rowSetFrom(doc: toml.Document, table: []const u8, i: usize, key: []const u8, 
     if (p.kind != .electrode) return diag.fail("panel {d}: {s} is for electrode panels", .{ i + 1, key });
     var rows: RowSet = .{};
     for (list) |n| {
-        if (n < 1 or n > @as(f64, @floatFromInt(p.rows)) or n != @floor(n)) return diag.fail("panel {d}: {s} lists rows of the panel, 1 to {d}", .{ i + 1, key, p.rows });
+        if (n < 1 or n > @as(f64, @floatFromInt(p.rows)) or n != @floor(n)) return diag.fail(
+            "panel {d}: {s} lists rows of the panel, 1 to {d}",
+            .{ i + 1, key, p.rows },
+        );
         rows.set(@intFromFloat(n - 1), true);
     }
     return rows;
@@ -500,7 +514,12 @@ fn applyKeys(p: *Panel, doc: toml.Document, table: []const u8, i: usize, diag: *
     if (doc.number(table, i, "scale")) |v| p.scale = v;
     if (try parseMode(doc.get(table, i, "mode"), "panel", i + 1, diag)) |m| p.mode = m;
     if (doc.string(table, i, "trigger_source")) |v| {
-        if (std.mem.eql(u8, v, "ttl")) p.setTrigSource(.ttl) else if (std.mem.eql(u8, v, "spikes")) p.setTrigSource(.channel) else return diag.fail("panel {d}: trigger_source must be \"ttl\" or \"spikes\"", .{i + 1});
+        if (std.mem.eql(u8, v, "ttl"))
+            p.setTrigSource(.ttl)
+        else if (std.mem.eql(u8, v, "spikes"))
+            p.setTrigSource(.channel)
+        else
+            return diag.fail("panel {d}: trigger_source must be \"ttl\" or \"spikes\"", .{i + 1});
     }
     if (doc.number(table, i, "tint")) |v| {
         if (v < 1 or v > 8 or v != @floor(v)) return diag.fail("panel {d}: tint is a TTL input line, 1 to 8", .{i + 1});
@@ -512,7 +531,10 @@ fn applyKeys(p: *Panel, doc: toml.Document, table: []const u8, i: usize, diag: *
     }
     if (doc.number(table, i, "trigger_channel")) |v| {
         if (p.kind != .electrode) return diag.fail("panel {d}: trigger_channel is for electrode panels", .{i + 1});
-        if (v < 1 or v > @as(f64, @floatFromInt(p.rows)) or v != @floor(v)) return diag.fail("panel {d}: trigger_channel is a row of the panel, 1 to {d}", .{ i + 1, p.rows });
+        if (v < 1 or v > @as(f64, @floatFromInt(p.rows)) or v != @floor(v)) return diag.fail(
+            "panel {d}: trigger_channel is a row of the panel, 1 to {d}",
+            .{ i + 1, p.rows },
+        );
         p.setTrigSource(.channel);
         p.trig_row = @intFromFloat(v - 1);
     }
@@ -522,7 +544,10 @@ fn applyKeys(p: *Panel, doc: toml.Document, table: []const u8, i: usize, diag: *
     }
     if (doc.boolean(table, i, "level_auto")) |on| p.trig_auto = on;
     if (doc.string(table, i, "slope")) |v| {
-        if (std.mem.eql(u8, v, "rising")) p.trig_rising = true else if (!std.mem.eql(u8, v, "falling")) return diag.fail("panel {d}: slope must be \"falling\" or \"rising\"", .{i + 1});
+        if (std.mem.eql(u8, v, "rising"))
+            p.trig_rising = true
+        else if (!std.mem.eql(u8, v, "falling"))
+            return diag.fail("panel {d}: slope must be \"falling\" or \"rising\"", .{i + 1});
     }
     if (doc.number(table, i, "holdoff_ms")) |v| p.trig_holdoff_ms = v;
     if (doc.number(table, i, "pre_ms")) |v| p.pre_ms = v;
@@ -589,13 +614,22 @@ pub fn fromConfig(doc: toml.Document, layout: *const types.Layout, diag: *Diagno
     set.readTtlNames(doc);
     const all_mode = try parseMode(doc.get("", 0, "mode"), "mode", 0, diag);
     for (0..count) |i| {
-        const source = doc.string("panel", i, "source") orelse return diag.fail("panel {d}: no source (a headstage such as \"A1\", \"electrodes\", \"aux\", \"adc\" or \"ttl\")", .{i + 1});
-        const src = resolve(source, layout) orelse return diag.fail("panel {d}: source \"{s}\" is not a connected headstage, \"electrodes\", \"aux\", \"adc\" or \"ttl\"", .{ i + 1, source });
+        const source = doc.string("panel", i, "source") orelse return diag.fail(
+            "panel {d}: no source (a headstage such as \"A1\", \"electrodes\", \"aux\", \"adc\" or \"ttl\")",
+            .{i + 1},
+        );
+        const src = resolve(source, layout) orelse return diag.fail(
+            "panel {d}: source \"{s}\" is not a connected headstage, \"electrodes\", \"aux\", \"adc\" or \"ttl\"",
+            .{ i + 1, source },
+        );
         if (src.rows == 0) return diag.fail("panel {d}: source \"{s}\" has no channels (aux and adc must be acquired)", .{ i + 1, source });
         const rect = doc.numbers("panel", i, "rect") orelse return diag.fail("panel {d}: no rect = [x, y, width, height]", .{i + 1});
         if (rect.len != 4) return diag.fail("panel {d}: rect needs 4 numbers, has {d}", .{ i + 1, rect.len });
         if (rect[0] < 0 or rect[1] < 0 or rect[2] <= 0 or rect[3] <= 0 or rect[0] + rect[2] > 1.0001 or rect[1] + rect[3] > 1.0001)
-            return diag.fail("panel {d}: rect [{d}, {d}, {d}, {d}] is not inside the display (fractions 0..1)", .{ i + 1, rect[0], rect[1], rect[2], rect[3] });
+            return diag.fail(
+                "panel {d}: rect [{d}, {d}, {d}, {d}] is not inside the display (fractions 0..1)",
+                .{ i + 1, rect[0], rect[1], rect[2], rect[3] },
+            );
         var p: Panel = .{
             .x = rect[0],
             .y = rect[1],
@@ -727,8 +761,14 @@ test "band: from the config, and stepped by keys" {
     p.band_low_hz = 1;
     p.stepCorner(false, false);
     try testing.expectEqual(0, p.band_low_hz);
-    try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"A1\"\nrect = [0,0,1,1]\nband = [6000, 300]", null), &l, &diag));
-    try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"adc\"\nrect = [0,0,1,1]\nband = [1, 100]", null), &l, &diag));
+    try testing.expectError(
+        error.BadPanel,
+        fromConfig(try toml.parse(a, "[[panel]]\nsource = \"A1\"\nrect = [0,0,1,1]\nband = [6000, 300]", null), &l, &diag),
+    );
+    try testing.expectError(
+        error.BadPanel,
+        fromConfig(try toml.parse(a, "[[panel]]\nsource = \"adc\"\nrect = [0,0,1,1]\nband = [1, 100]", null), &l, &diag),
+    );
     try testing.expect(std.mem.indexOf(u8, diag.message(), "electrodes") != null);
 }
 
@@ -761,7 +801,10 @@ test "triggered panels from the config" {
     try testing.expectEqual(2, set.items[1].trig_line);
     try testing.expectEqual(10, set.items[1].pre_ms);
     try testing.expectEqual(40, set.items[1].post_ms);
-    try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"A1\"\nrect = [0,0,1,1]\ntrigger = 9", null), &l, &diag));
+    try testing.expectError(
+        error.BadPanel,
+        fromConfig(try toml.parse(a, "[[panel]]\nsource = \"A1\"\nrect = [0,0,1,1]\ntrigger = 9", null), &l, &diag),
+    );
 }
 
 test "one row scaled on its own" {
@@ -814,8 +857,14 @@ test "TTL lanes, line names and a tint from the config" {
     try testing.expectEqualStrings("camera", set.ttlName(1));
     try testing.expectEqualStrings("laser", set.ttlName(2));
     try testing.expectEqualStrings("", set.ttlName(3));
-    try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"ttl\"\nrect = [0,0,1,1]\nlines = [0, 9]", null), &l, &diag));
-    try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"A1\"\nrect = [0,0,1,1]\nlines = [1]", null), &l, &diag));
+    try testing.expectError(
+        error.BadPanel,
+        fromConfig(try toml.parse(a, "[[panel]]\nsource = \"ttl\"\nrect = [0,0,1,1]\nlines = [0, 9]", null), &l, &diag),
+    );
+    try testing.expectError(
+        error.BadPanel,
+        fromConfig(try toml.parse(a, "[[panel]]\nsource = \"A1\"\nrect = [0,0,1,1]\nlines = [1]", null), &l, &diag),
+    );
 }
 
 test "slope trigger from the config, with its own window" {
@@ -847,8 +896,14 @@ test "slope trigger from the config, with its own window" {
     try testing.expectEqual(40, p.post_ms);
     p.setTrigSource(.channel);
     try testing.expectEqual(3, p.post_ms);
-    try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"A1\"\nrect = [0,0,1,1]\ntrigger_channel = 99", null), &l, &diag));
-    try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"adc\"\nrect = [0,0,1,1]\ntrigger_channel = 1", null), &l, &diag));
+    try testing.expectError(
+        error.BadPanel,
+        fromConfig(try toml.parse(a, "[[panel]]\nsource = \"A1\"\nrect = [0,0,1,1]\ntrigger_channel = 99", null), &l, &diag),
+    );
+    try testing.expectError(
+        error.BadPanel,
+        fromConfig(try toml.parse(a, "[[panel]]\nsource = \"adc\"\nrect = [0,0,1,1]\ntrigger_channel = 1", null), &l, &diag),
+    );
 }
 
 test "common average reference from the config" {
@@ -886,8 +941,14 @@ test "common average reference from the config" {
     var fresh = default(&l, .scroll);
     fresh.items[0].setCar(true);
     try testing.expectEqual(16, fresh.items[0].car_ref.count(16));
-    try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"A1\"\nrect = [0,0,1,1]\ncar_ref = [0, 40]", null), &l, &diag));
-    try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"adc\"\nrect = [0,0,1,1]\ncar = true", null), &l, &diag));
+    try testing.expectError(
+        error.BadPanel,
+        fromConfig(try toml.parse(a, "[[panel]]\nsource = \"A1\"\nrect = [0,0,1,1]\ncar_ref = [0, 40]", null), &l, &diag),
+    );
+    try testing.expectError(
+        error.BadPanel,
+        fromConfig(try toml.parse(a, "[[panel]]\nsource = \"adc\"\nrect = [0,0,1,1]\ncar = true", null), &l, &diag),
+    );
 }
 
 test "rows shown raw beside filtered ones, and hidden rows" {
@@ -922,7 +983,10 @@ test "rows shown raw beside filtered ones, and hidden rows" {
     try testing.expectEqual(11, p.shownRows());
     try testing.expectEqual(3, p.rowOfShown(2).?);
     try testing.expectEqual(2, p.shownIndex(3).?);
-    try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"adc\"\nrect = [0,0,1,1]\nhide = [1]", null), &l, &diag));
+    try testing.expectError(
+        error.BadPanel,
+        fromConfig(try toml.parse(a, "[[panel]]\nsource = \"adc\"\nrect = [0,0,1,1]\nhide = [1]", null), &l, &diag),
+    );
 }
 
 test "a row list naming a row the panel does not have is explained" {
@@ -962,7 +1026,10 @@ test "sweep mode: per panel or for all, with a shorter longest time base" {
     try testing.expectEqual(18, set.items[1].span_s);
     set = try fromConfig(try toml.parse(a, "mode = \"sweep\"", null), &l, &diag);
     try testing.expectEqual(Mode.sweep, set.items[0].mode);
-    try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"A1\"\nrect = [0,0,1,1]\nmode = \"wipe\"", null), &l, &diag));
+    try testing.expectError(
+        error.BadPanel,
+        fromConfig(try toml.parse(a, "[[panel]]\nsource = \"A1\"\nrect = [0,0,1,1]\nmode = \"wipe\"", null), &l, &diag),
+    );
     try testing.expect(std.mem.indexOf(u8, diag.message(), "sweep") != null);
 }
 
@@ -974,10 +1041,16 @@ test "config mistakes are explained" {
     var diag: Diagnostics = .{};
     try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"C1\"\nrect = [0,0,1,1]", null), &l, &diag));
     try testing.expect(std.mem.indexOf(u8, diag.message(), "C1") != null);
-    try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"A1\"\nrect = [0.6,0,0.5,1]", null), &l, &diag));
+    try testing.expectError(
+        error.BadPanel,
+        fromConfig(try toml.parse(a, "[[panel]]\nsource = \"A1\"\nrect = [0.6,0,0.5,1]", null), &l, &diag),
+    );
     try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"A1\"", null), &l, &diag));
     l.num_adc = 0;
-    try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"adc\"\nrect = [0,0,1,1]", null), &l, &diag));
+    try testing.expectError(
+        error.BadPanel,
+        fromConfig(try toml.parse(a, "[[panel]]\nsource = \"adc\"\nrect = [0,0,1,1]", null), &l, &diag),
+    );
     try testing.expect(std.mem.indexOf(u8, diag.message(), "acquired") != null);
 }
 
@@ -1019,7 +1092,10 @@ fn writeRows(w: *std.Io.Writer, key: []const u8, rows: *const RowSet, n: usize) 
 pub fn renderViews(w: *std.Io.Writer, set: *const Set) !void {
     try w.writeAll("# oEZ view settings, written by \"Save view\" in the control window and applied on top\n# of config.toml at launch (panels are matched by name). Delete the file to go back to\n# the config's own settings.\n");
     for (set.items[0..set.len]) |*p| {
-        try w.print("\n[[view]]\nname = \"{s}\"\nrows = {d}\nspan_s = {d}\nscale = {d}\nmode = \"{t}\"\n", .{ p.name(), p.rows, p.span_s, p.scale, p.mode });
+        try w.print(
+            "\n[[view]]\nname = \"{s}\"\nrows = {d}\nspan_s = {d}\nscale = {d}\nmode = \"{t}\"\n",
+            .{ p.name(), p.rows, p.span_s, p.scale, p.mode },
+        );
         if (p.tint_line != 0) try w.print("tint = {d}\n", .{p.tint_line});
         try w.print("trigger = {d}\nsweeps = {d}\n", .{ p.trig_line, p.overlay });
         if (p.kind == .electrode) {
@@ -1122,7 +1198,11 @@ test "a view file brings back what the control window had set" {
     try renderViews(&w2, &again);
     try testing.expectEqualStrings(w.buffered(), w2.buffered());
     // A view for a panel that is gone, or of another size, is skipped.
-    try testing.expectEqual(0, try applyViews(&again, try toml.parse(a, "[[view]]\nname = \"Port C\"\nscale = 1\n[[view]]\nname = \"Port A\"\nrows = 32\nscale = 1", null), &diag));
+    try testing.expectEqual(0, try applyViews(
+        &again,
+        try toml.parse(a, "[[view]]\nname = \"Port C\"\nscale = 1\n[[view]]\nname = \"Port A\"\nrows = 32\nscale = 1", null),
+        &diag,
+    ));
 }
 
 test "two parses with different errors each report their own message" {
@@ -1133,9 +1213,15 @@ test "two parses with different errors each report their own message" {
     // The texts `makeDisplay` logs after "config: " and "view file: ".
     var config_diag: Diagnostics = .{};
     var view_diag: Diagnostics = .{};
-    try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"A1\"\nrect = [0,0,1,1]\ntrigger = 9", null), &l, &config_diag));
+    try testing.expectError(
+        error.BadPanel,
+        fromConfig(try toml.parse(a, "[[panel]]\nsource = \"A1\"\nrect = [0,0,1,1]\ntrigger = 9", null), &l, &config_diag),
+    );
     var set = try fromConfig(try toml.parse(a, "[[panel]]\nname = \"P\"\nsource = \"A1\"\nrect = [0,0,1,1]", null), &l, &view_diag);
-    try testing.expectError(error.BadPanel, applyViews(&set, try toml.parse(a, "[[view]]\nname = \"P\"\nslope = \"up\"", null), &view_diag));
+    try testing.expectError(
+        error.BadPanel,
+        applyViews(&set, try toml.parse(a, "[[view]]\nname = \"P\"\nslope = \"up\"", null), &view_diag),
+    );
     try testing.expectEqualStrings("panel 1: trigger is a TTL input line, 1 to 8", config_diag.message());
     try testing.expectEqualStrings("panel 1: slope must be \"falling\" or \"rising\"", view_diag.message());
     // The top-level mode reaches the default panels through the call, not a global: one
@@ -1144,6 +1230,9 @@ test "two parses with different errors each report their own message" {
     try testing.expectEqual(Mode.sweep, (try fromConfig(try toml.parse(a, "mode = \"sweep\"", null), &l, &diag)).items[1].mode);
     try testing.expectEqual(Mode.scroll, (try fromConfig(try toml.parse(a, "", null), &l, &diag)).items[1].mode);
     // A message too long for the buffer says only "bad panel".
-    try testing.expectError(error.BadPanel, fromConfig(try toml.parse(a, "[[panel]]\nsource = \"" ++ &@as([200]u8, @splat('x')) ++ "\"\nrect = [0,0,1,1]", null), &l, &diag));
+    try testing.expectError(
+        error.BadPanel,
+        fromConfig(try toml.parse(a, "[[panel]]\nsource = \"" ++ &@as([200]u8, @splat('x')) ++ "\"\nrect = [0,0,1,1]", null), &l, &diag),
+    );
     try testing.expectEqualStrings("bad panel", diag.message());
 }

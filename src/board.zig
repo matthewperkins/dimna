@@ -212,7 +212,14 @@ pub const Board = struct {
         const lv = oni.libraryVersion();
         log.info("liboni {d}.{d}.{d}", .{ lv[0], lv[1], lv[2] });
         if (self.ctx.driverInfo()) |d| {
-            log.info("ONI driver {s} {d}.{d}.{d}{s}{s}", .{ d.name, d.version[0], d.version[1], d.version[2], if (d.pre_release != null) "-" else "", d.pre_release orelse "" });
+            log.info("ONI driver {s} {d}.{d}.{d}{s}{s}", .{
+                d.name,
+                d.version[0],
+                d.version[1],
+                d.version[2],
+                if (d.pre_release != null) "-" else "",
+                d.pre_release orelse "",
+            });
         }
         if (self.driver == .d3xx) {
             if (self.ctx.getDriverOptU32(0)) |v| {
@@ -240,7 +247,13 @@ pub const Board = struct {
         }
         var tbl: [64]oni.Device = undefined;
         if (self.ctx.deviceTable(&tbl)) |devs| {
-            for (devs) |d| log.debug("dev idx 0x{x} id 0x{x} ver 0x{x} rd {d} wr {d}", .{ d.idx, d.id, d.version, d.read_size, d.write_size });
+            for (devs) |d| log.debug("dev idx 0x{x} id 0x{x} ver 0x{x} rd {d} wr {d}", .{
+                d.idx,
+                d.id,
+                d.version,
+                d.read_size,
+                d.write_size,
+            });
         } else |_| {}
     }
 
@@ -560,7 +573,13 @@ pub const Board = struct {
 
     pub fn ampSettings(self: *const Board) AmpSettings {
         const s = self.settings;
-        return .{ .lower_bandwidth = s.lower_bandwidth, .upper_bandwidth = s.upper_bandwidth, .dsp_enabled = s.dsp_enabled, .dsp_cutoff = s.dsp_cutoff, .fast_settle = s.fast_settle };
+        return .{
+            .lower_bandwidth = s.lower_bandwidth,
+            .upper_bandwidth = s.upper_bandwidth,
+            .dsp_enabled = s.dsp_enabled,
+            .dsp_cutoff = s.dsp_cutoff,
+            .fast_settle = s.fast_settle,
+        };
     }
 
     /// The bandwidths and DSP cutoff the chips actually get (the nearest the hardware can do),
@@ -607,7 +626,20 @@ pub const Board = struct {
         try self.selectRegBank(a.fast_settle);
         const switched = Io.Clock.awake.now(self.io).nanoseconds;
         const later = try self.uploadCmd3(&lists[1 - now], next[1 - now]);
-        log.info("amplifier bandwidth now {d:.3}..{d:.1} Hz, DSP {s} {d:.3} Hz, fast settle {s} (banks {d}/{d}, {d}+{d} writes)", .{ lo, up, if (a.dsp_enabled) "on" else "off", s.dsp_cutoff, if (a.fast_settle) "on" else "off", next[0], next[1], writes, later });
+        log.info(
+            "amplifier bandwidth now {d:.3}..{d:.1} Hz, DSP {s} {d:.3} Hz, fast settle {s} (banks {d}/{d}, {d}+{d} writes)",
+            .{
+                lo,
+                up,
+                if (a.dsp_enabled) "on" else "off",
+                s.dsp_cutoff,
+                if (a.fast_settle) "on" else "off",
+                next[0],
+                next[1],
+                writes,
+                later,
+            },
+        );
         return .{ .lower = lo, .upper = up, .dsp_cutoff = s.dsp_cutoff, .switched_ns = switched, .writes_before_switch = writes };
     }
 
@@ -651,7 +683,8 @@ pub const Board = struct {
                 return @truncate(x[i]);
             }
         }.f;
-        const ok = ch(a, 32) == 'I' and ch(a, 33) == 'N' and ch(a, 34) == 'T' and ch(a, 35) == 'A' and ch(a, 36) == 'N' and ch(a, 24) == 'R' and ch(a, 25) == 'H' and ch(a, 26) == 'D';
+        const ok = ch(a, 32) == 'I' and ch(a, 33) == 'N' and ch(a, 34) == 'T' and ch(a, 35) == 'A' and ch(a, 36) == 'N' and
+            ch(a, 24) == 'R' and ch(a, 25) == 'H' and ch(a, 26) == 'D';
         return if (!ok) .{ .id = -1, .r59 = -1 } else .{ .id = a[19], .r59 = a[23] };
     }
 
@@ -874,7 +907,11 @@ pub const Board = struct {
                     const ch: usize = if (tmp_chip[hs] == chip_id_rhd2132) (if (self.settings.rhd2132_16ch[hs]) 16 else 32) else 16;
                     self.enableHeadstage(hs, true, 1, ch, bno, tmp_chip[hs]);
                 }
-                log.info("headstage {s} found: {s} ({d} ch)", .{ types.headstage_names[hs], chipName(tmp_chip[hs]), self.headstages[hs].numChannels() });
+                log.info("headstage {s} found: {s} ({d} ch)", .{
+                    types.headstage_names[hs],
+                    chipName(tmp_chip[hs]),
+                    self.headstages[hs].numChannels(),
+                });
             } else if (hs % 2 == 1 and bno) {
                 self.enableHeadstage(hs, true, 0, 0, true, 0);
             } else {
@@ -950,7 +987,13 @@ pub const Board = struct {
         var l: Layout = .{ .sample_rate = self.sample_rate, .hw_clock_hz = @floatFromInt(self.acq_clock_hz) };
         for (self.headstages, 0..) |h, hs| {
             if (h.num_streams == 0) continue;
-            l.headstages[l.num_headstages] = .{ .slot = hs, .chip = chipName(h.chip_id), .num_channels = h.numChannels(), .first_channel = h.first_channel, .has_bno = h.has_bno };
+            l.headstages[l.num_headstages] = .{
+                .slot = hs,
+                .chip = chipName(h.chip_id),
+                .num_channels = h.numChannels(),
+                .first_channel = h.first_channel,
+                .has_bno = h.has_bno,
+            };
             l.num_headstages += 1;
             l.num_electrodes += h.numChannels();
         }
@@ -971,7 +1014,10 @@ pub const Board = struct {
         } else if (!std.mem.eql(i32, &new.cable_delay_adjust, &old.cable_delay_adjust)) {
             try self.checkAllCableDelays();
             try self.updateRegisters();
-        } else if (new.lower_bandwidth != old.lower_bandwidth or new.upper_bandwidth != old.upper_bandwidth or new.dsp_enabled != old.dsp_enabled or new.dsp_cutoff != old.dsp_cutoff or new.acquire_aux != old.acquire_aux or new.fast_settle != old.fast_settle) {
+        } else if (new.lower_bandwidth != old.lower_bandwidth or new.upper_bandwidth != old.upper_bandwidth or
+            new.dsp_enabled != old.dsp_enabled or new.dsp_cutoff != old.dsp_cutoff or
+            new.acquire_aux != old.acquire_aux or new.fast_settle != old.fast_settle)
+        {
             try self.updateRegisters();
         }
         try self.applyLiveSettings();
@@ -984,7 +1030,13 @@ pub const Board = struct {
         try self.applyLiveSettings();
         self.ttl_out = 0;
         try self.writeTtlOut(0);
-        self.parser = .init(self.channels_per_stream[0..self.num_streams], self.chip_ids[0..self.num_streams], self.settings.acquire_aux, self.settings.acquire_adc, self.device_id == device_id_v3);
+        self.parser = .init(
+            self.channels_per_stream[0..self.num_streams],
+            self.chip_ids[0..self.num_streams],
+            self.settings.acquire_aux,
+            self.settings.acquire_adc,
+            self.device_id == device_id_v3,
+        );
         if (self.pending) |f| f.deinit();
         self.pending = null;
         health.reset();
@@ -1037,7 +1089,8 @@ pub const Board = struct {
             const d = f.data();
             if (d.len >= 12) {
                 const used = std.mem.readInt(u32, d[8..12], .little);
-                const milli: u64 = @intFromFloat(100_000.0 * @as(f64, @floatFromInt(used)) / @as(f64, @floatFromInt(@max(self.total_memory, 1))));
+                const milli: u64 = @intFromFloat(100_000.0 * @as(f64, @floatFromInt(used)) /
+                    @as(f64, @floatFromInt(@max(self.total_memory, 1))));
                 health.hw_buffer_milli_pct.store(milli, .monotonic);
                 _ = health.hw_buffer_peak_milli_pct.fetchMax(milli, .monotonic);
             }
@@ -1059,7 +1112,11 @@ pub const Board = struct {
                 try self.writeTtlOut(w);
             },
             .dac_route => |r| if (r.dac < 8) {
-                self.dac_route[r.dac] = if (r.electrode) |e| (if (self.electrodeToStream(e)) |sc| DacRoute{ .stream = sc.stream, .channel = sc.channel, .threshold_uv = r.threshold_uv } else null) else null;
+                self.dac_route[r.dac] = if (r.electrode) |e| (if (self.electrodeToStream(e)) |sc| DacRoute{
+                    .stream = sc.stream,
+                    .channel = sc.channel,
+                    .threshold_uv = r.threshold_uv,
+                } else null) else null;
                 try self.applyDac(r.dac);
             },
             .set_leds => |on| {

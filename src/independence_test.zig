@@ -381,7 +381,10 @@ test "display processing never changes what is recorded" {
 
     // The display side did its work: it saw blocks (and lost the rest, never held the
     // producer back), changed its panels part-way, found spikes, triggered, made sound.
-    errdefer std.debug.print("display side: saw {d} of {d} blocks, lost {d}; {d} panel changes, {d} spike waveforms, {d} slope triggers, {d} audio frames\n", .{ with.seen, n_blocks, with.lost, with.syncs, with.waves, with.triggers, with.audio_frames });
+    errdefer std.debug.print(
+        "display side: saw {d} of {d} blocks, lost {d}; {d} panel changes, {d} spike waveforms, {d} slope triggers, {d} audio frames\n",
+        .{ with.seen, n_blocks, with.lost, with.syncs, with.waves, with.triggers, with.audio_frames },
+    );
     try testing.expect(with.seen > 0);
     try testing.expect(with.seen <= n_blocks);
     try testing.expectEqual(@as(u64, n_blocks), with.seen + with.lost);

@@ -124,7 +124,10 @@ pub const Detector = struct {
         for (self.units, 0..) |*u, ch| {
             if (ch >= nch) break;
             const group: i8 = if (car) |c| (if (ch < c.group_of.len) c.group_of[ch] else -1) else -1;
-            const mean: ?[]const f64 = if (group >= 0 and car.?.ref_len[@intCast(group)] > 0) self.means[@as(usize, @intCast(group)) * count ..][0..count] else null;
+            const mean: ?[]const f64 = if (group >= 0 and car.?.ref_len[@intCast(group)] > 0)
+                self.means[@as(usize, @intCast(group)) * count ..][0..count]
+            else
+                null;
             if (!u.started) {
                 u.band.settle(&u.state, @as(f64, @floatFromInt(samples[ch])) - (if (mean) |m| m[0] else 0));
                 u.started = true;
@@ -187,7 +190,10 @@ pub const Detector = struct {
         if (self.seconds_end == 0) self.seconds_end = first + @as(i64, @intFromFloat(self.fs));
         while (end >= self.seconds_end) {
             for (self.units) |*u| {
-                u.rate = if (u.seen < @as(u64, @intFromFloat(2 * self.fs))) @floatFromInt(u.second_count) else 0.5 * u.rate + 0.5 * @as(f32, @floatFromInt(u.second_count));
+                u.rate = if (u.seen < @as(u64, @intFromFloat(2 * self.fs)))
+                    @floatFromInt(u.second_count)
+                else
+                    0.5 * u.rate + 0.5 * @as(f32, @floatFromInt(u.second_count));
                 u.second_count = 0;
             }
             self.seconds_end += @intFromFloat(self.fs);

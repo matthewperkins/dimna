@@ -97,7 +97,9 @@ pub fn applyConfig(a: *Args, doc: oez.toml.Document) void {
     a.doc = doc;
     for (doc.entries) |e| {
         if (e.table.len != 0) {
-            if (!std.mem.eql(u8, e.table, "panel") and !std.mem.eql(u8, e.table, "board") and !std.mem.eql(u8, e.table, "ttl") and !std.mem.eql(u8, e.table, "notes")) log.warn("config line {d}: unknown table [{s}]", .{ e.line, e.table });
+            if (!std.mem.eql(u8, e.table, "panel") and !std.mem.eql(u8, e.table, "board") and
+                !std.mem.eql(u8, e.table, "ttl") and
+                !std.mem.eql(u8, e.table, "notes")) log.warn("config line {d}: unknown table [{s}]", .{ e.line, e.table });
             continue;
         }
         if (std.mem.eql(u8, e.key, "monitor") and e.value == .string) {

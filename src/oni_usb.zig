@@ -164,7 +164,10 @@ const Ctx = struct {
         ft600.sleepMs(10);
         const ft = &self.ft.?;
         if (self.state == .running and ft.data_transfers > 1000) {
-            log.info("data channel: {d} transfers, {d} bytes ({d} bytes per transfer)", .{ ft.data_transfers, ft.data_bytes, ft.data_bytes / ft.data_transfers });
+            log.info(
+                "data channel: {d} transfers, {d} bytes ({d} bytes per transfer)",
+                .{ ft.data_transfers, ft.data_bytes, ft.data_bytes / ft.data_transfers },
+            );
         }
         ft.abort(ft600.Channel.data.in()) catch {};
         self.state = .init;

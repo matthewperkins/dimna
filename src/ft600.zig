@@ -108,7 +108,10 @@ fn trace(comptime fmt: []const u8, args: anytype) void {
     if (!tracing()) return;
     var ts: linux.timespec = undefined;
     _ = linux.clock_gettime(.MONOTONIC, &ts);
-    std.debug.print("[usb {d}.{d:0>6}] " ++ fmt ++ "\n", .{ @as(u64, @intCast(@mod(ts.sec, 1000))), @as(u64, @intCast(@divTrunc(ts.nsec, 1000))) } ++ args);
+    std.debug.print(
+        "[usb {d}.{d:0>6}] " ++ fmt ++ "\n",
+        .{ @as(u64, @intCast(@mod(ts.sec, 1000))), @as(u64, @intCast(@divTrunc(ts.nsec, 1000))) } ++ args,
+    );
 }
 
 pub const Ft600 = struct {
@@ -147,7 +150,10 @@ pub const Ft600 = struct {
         if (ft.controlTransfer(0xc0, 0xf1, 0, 0, &v, 1000)) |n| {
             if (n == 4) ft.firmware = std.mem.readInt(u32, &v, .little);
         } else |_| {}
-        log.info("FT60x at bus {d} device {d} ({d} Mbit/s), firmware {x}.{x:0>2}, opened without D3XX", .{ locs[want].bus, locs[want].dev, locs[want].speed, (ft.firmware >> 8) & 0xff, ft.firmware & 0xff });
+        log.info(
+            "FT60x at bus {d} device {d} ({d} Mbit/s), firmware {x}.{x:0>2}, opened without D3XX",
+            .{ locs[want].bus, locs[want].dev, locs[want].speed, (ft.firmware >> 8) & 0xff, ft.firmware & 0xff },
+        );
         // As D3XX does on open: both IN pipes start from a known state.
         try ft.command(Channel.data.in(), cmd_abort, 0);
         try ft.command(Channel.control.in(), cmd_abort, 0);
@@ -232,7 +238,10 @@ pub const Ft600 = struct {
             self.data_bytes += t.actual;
             self.caught_up = t.actual < want;
         }
-        if (ch == .control or t.timed_out) trace("read {x:0>2} want {d} (announced {d}) -> {d}{s} {x}", .{ ch.in(), want, self.outstanding[i], t.actual, if (t.timed_out) " TIMEOUT" else "", buf[0..@min(t.actual, 24)] });
+        if (ch == .control or t.timed_out) trace(
+            "read {x:0>2} want {d} (announced {d}) -> {d}{s} {x}",
+            .{ ch.in(), want, self.outstanding[i], t.actual, if (t.timed_out) " TIMEOUT" else "", buf[0..@min(t.actual, 24)] },
+        );
         if (t.timed_out) {
             // Cancelled. If the last packet received was a short one, the chip has ended the
             // transfer (the data arrived just as the read was given up) and owes nothing.
@@ -255,7 +264,13 @@ pub const Ft600 = struct {
         try self.command(ch.out(), cmd_transfer, @intCast(data.len));
         // The kernel only reads from an OUT buffer.
         const t = try self.dev.bulk(ch.out(), @constCast(data), timeout_ms);
-        trace("write {x:0>2} {d} -> {d}{s} {x}", .{ ch.out(), data.len, t.actual, if (t.timed_out) " TIMEOUT" else "", data[0..@min(data.len, 45)] });
+        trace("write {x:0>2} {d} -> {d}{s} {x}", .{
+            ch.out(),
+            data.len,
+            t.actual,
+            if (t.timed_out) " TIMEOUT" else "",
+            data[0..@min(data.len, 45)],
+        });
         return t.actual;
     }
 

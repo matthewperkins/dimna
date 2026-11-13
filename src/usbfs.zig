@@ -64,7 +64,8 @@ const CtrlTransfer = extern struct {
 };
 
 comptime {
-    std.debug.assert(@sizeOf(Urb) == 56 and @offsetOf(Urb, "buffer") == 16 and @offsetOf(Urb, "actual_length") == 28 and @offsetOf(Urb, "usercontext") == 48);
+    std.debug.assert(@sizeOf(Urb) == 56 and @offsetOf(Urb, "buffer") == 16 and
+        @offsetOf(Urb, "actual_length") == 28 and @offsetOf(Urb, "usercontext") == 48);
     std.debug.assert(@sizeOf(CtrlTransfer) == 24 and @offsetOf(CtrlTransfer, "data") == 16);
     std.debug.assert(linux.IOCTL.IOR('U', 10, Urb) == USBDEVFS_SUBMITURB);
     std.debug.assert(linux.IOCTL.IOWR('U', 0, CtrlTransfer) == USBDEVFS_CONTROL);
@@ -115,7 +116,8 @@ pub fn find(vendor: u16, products: []const u16, product_string: []const u8, out:
             off += d.reclen;
             const name = std.mem.span(@as([*:0]const u8, @ptrCast(&d.name)));
             // Devices are "1-2", "2-1.3"; skip root hubs ("usb1") and interfaces ("1-2:1.0").
-            if (name.len == 0 or name[0] == '.' or std.mem.startsWith(u8, name, "usb") or std.mem.indexOfScalar(u8, name, ':') != null) continue;
+            if (name.len == 0 or name[0] == '.' or std.mem.startsWith(u8, name, "usb") or
+                std.mem.indexOfScalar(u8, name, ':') != null) continue;
             var b: [128]u8 = undefined;
             const vid = std.fmt.parseInt(u16, readSysfs(dir, name, "idVendor", &b) orelse continue, 16) catch continue;
             if (vid != vendor) continue;
@@ -240,7 +242,8 @@ pub const Device = struct {
                     // Wait first: usbdevfs reports a reapable URB as writable.
                     var pfd = [1]linux.pollfd{.{ .fd = self.fd, .events = linux.POLL.OUT, .revents = 0 }};
                     const pr = linux.poll(&pfd, 1, @intCast(@min(left, std.math.maxInt(i32))));
-                    if (linux.errno(pr) == .SUCCESS and pr > 0 and (pfd[0].revents & (linux.POLL.ERR | linux.POLL.HUP)) != 0 and (pfd[0].revents & linux.POLL.OUT) == 0) return error.NoDevice;
+                    if (linux.errno(pr) == .SUCCESS and pr > 0 and (pfd[0].revents & (linux.POLL.ERR | linux.POLL.HUP)) != 0 and
+                        (pfd[0].revents & linux.POLL.OUT) == 0) return error.NoDevice;
                     if (linux.errno(pr) == .SUCCESS and pr == 0) continue; // timed out: cancel above
                 }
             }

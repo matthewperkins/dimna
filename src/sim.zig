@@ -118,7 +118,8 @@ pub const Sim = struct {
         const fs: f64 = @floatFromInt(self.settings.sample_rate);
         self.sample_rate = fs;
         const ne = self.electrodes();
-        self.nch = ne + @as(usize, if (self.settings.acquire_aux) 3 * self.num_headstages else 0) + @as(usize, if (self.settings.acquire_adc) 8 else 0);
+        self.nch = ne + @as(usize, if (self.settings.acquire_aux) 3 * self.num_headstages else 0) +
+            @as(usize, if (self.settings.acquire_adc) 8 else 0);
         var list: std.ArrayList(Unit) = .empty;
         errdefer list.deinit(self.gpa);
         var r: Rng = .{ .s = 42 };
@@ -169,7 +170,13 @@ pub const Sim = struct {
         var first: usize = 0;
         for (0..self.num_headstages) |i| {
             const n = self.hsChannels(i);
-            l.headstages[i] = .{ .slot = i, .chip = if (self.headstage_channels[i] == 64) "RHD2164" else if (self.headstage_channels[i] == 16) "RHD2216" else "RHD2132", .num_channels = n, .first_channel = first, .has_bno = false };
+            l.headstages[i] = .{
+                .slot = i,
+                .chip = if (self.headstage_channels[i] == 64) "RHD2164" else if (self.headstage_channels[i] == 16) "RHD2216" else "RHD2132",
+                .num_channels = n,
+                .first_channel = first,
+                .has_bno = false,
+            };
             first += n;
         }
         l.num_headstages = self.num_headstages;
@@ -204,7 +211,13 @@ pub const Sim = struct {
         for (self.units, 0..) |*u, ui| {
             if (u.next_spike_in == 0) {
                 const g: f32 = @floatCast(1.0 + 0.08 * self.rng.gauss());
-                const spread = [_]struct { d: isize, att: f32 }{ .{ .d = 0, .att = 1.0 }, .{ .d = -1, .att = 0.45 }, .{ .d = 1, .att = 0.45 }, .{ .d = 2, .att = 0.15 }, .{ .d = -2, .att = 0.15 } };
+                const spread = [_]struct { d: isize, att: f32 }{
+                    .{ .d = 0, .att = 1.0 },
+                    .{ .d = -1, .att = 0.45 },
+                    .{ .d = 1, .att = 0.45 },
+                    .{ .d = 2, .att = 0.15 },
+                    .{ .d = -2, .att = 0.15 },
+                };
                 for (spread) |sp| {
                     const c = @as(isize, @intCast(u.channel)) + sp.d;
                     if (c >= 0 and c < ne and self.num_active < self.active.len) {
@@ -214,7 +227,10 @@ pub const Sim = struct {
                 }
                 // Theta-modulated Poisson process with refractoriness and bursts.
                 const rate = u.rate_hz * (1.0 + 0.6 * @sin(2.0 * pi * 7.0 * t));
-                const isi = if (self.rng.uniform() < u.burstiness) fs * (0.003 + 0.004 * self.rng.uniform()) else -@log(@max(self.rng.uniform(), 1e-12)) * fs / @max(rate, 0.1);
+                const isi = if (self.rng.uniform() < u.burstiness)
+                    fs * (0.003 + 0.004 * self.rng.uniform())
+                else
+                    -@log(@max(self.rng.uniform(), 1e-12)) * fs / @max(rate, 0.1);
                 u.next_spike_in = @max(@as(usize, @intFromFloat(@min(isi, 1e9))), u.refractory);
             } else {
                 u.next_spike_in -= 1;

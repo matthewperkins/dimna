@@ -20,7 +20,8 @@
 //! 8 s and back to 1 Hz at 14 s, upper bandwidth 1 kHz at 18 s and back to 7.5 kHz at 22 s.
 //!
 //! Prints one status line per second. `delivery` is how much later than the quickest block of
-//! that second a block's newest sample reached the ring (USB block granularity shows here). Besides the driver's own counters it checks, as a
+//! that second a block's newest sample reached the ring (USB block granularity shows here).
+//! Besides the driver's own counters it checks, as a
 //! consumer, that blocks arrive contiguous (`gapblk`) and that the board clock advances by
 //! about one sample period every sample (`tstep`, in board-clock ticks: 1666.7 at 30 kHz and
 //! 50 MHz; it jitters by about ±10 ticks, and a lost sample would show as ~2×). Exit status 1
@@ -150,7 +151,13 @@ pub fn main(init: std.process.Init) !u8 {
         rec = createRecorder(gpa, io, &ring, root, layout, source, if (board) |*b| b else null) catch return 1;
     }
     var health: oez.types.Health = .{};
-    var acq: oez.acquisition.Acquisition = .{ .io = io, .source = source, .ring = &ring, .health = &health, .scratch = try .init(gpa, nch, bs) };
+    var acq: oez.acquisition.Acquisition = .{
+        .io = io,
+        .source = source,
+        .ring = &ring,
+        .health = &health,
+        .scratch = try .init(gpa, nch, bs),
+    };
     defer acq.scratch.deinit(gpa);
 
     std.posix.sigaction(.INT, &.{ .handler = .{ .handler = onSigint }, .mask = std.posix.sigemptyset(), .flags = 0 }, null);
@@ -160,7 +167,15 @@ pub fn main(init: std.process.Init) !u8 {
         try r.start();
     }
     var live: LiveTest = .{};
-    var soak: Soak = .{ .io = io, .ring = &ring, .me = me, .health = &health, .acq = &acq, .rec = rec, .timing = .{ .period_ns = 1e9 / layout.sample_rate } };
+    var soak: Soak = .{
+        .io = io,
+        .ring = &ring,
+        .me = me,
+        .health = &health,
+        .acq = &acq,
+        .rec = rec,
+        .timing = .{ .period_ns = 1e9 / layout.sample_rate },
+    };
     try acq.start();
     const run_ms = soak.run(args, &live);
     if (args.live_test) live.finish(&acq, io);
@@ -199,13 +214,29 @@ fn openSource(init: std.process.Init, args: Args, board: *?Board, sim: *?oez.sim
 
 fn logLayout(layout: oez.types.Layout) void {
     for (layout.headstageSlice()) |h| {
-        log.info("headstage {s}: {s}, {d} ch from channel {d}", .{ oez.types.headstage_names[h.slot], h.chip, h.num_channels, h.first_channel });
+        log.info("headstage {s}: {s}, {d} ch from channel {d}", .{
+            oez.types.headstage_names[h.slot],
+            h.chip,
+            h.num_channels,
+            h.first_channel,
+        });
     }
-    log.info("{d} channels ({d} electrode, {d} aux, {d} adc) at {d} Hz, board clock {d} Hz", .{ layout.numChannels(), layout.num_electrodes, layout.num_aux, layout.num_adc, layout.sample_rate, layout.hw_clock_hz });
+    log.info(
+        "{d} channels ({d} electrode, {d} aux, {d} adc) at {d} Hz, board clock {d} Hz",
+        .{ layout.numChannels(), layout.num_electrodes, layout.num_aux, layout.num_adc, layout.sample_rate, layout.hw_clock_hz },
+    );
 }
 
 /// Creates the recording under `root` (not started). Logs the reason if it cannot.
-fn createRecorder(gpa: std.mem.Allocator, io: Io, ring: *oez.ring.BlockRing, root: []const u8, layout: oez.types.Layout, source: oez.source.Source, board: ?*const Board) !*oez.record.Recorder {
+fn createRecorder(
+    gpa: std.mem.Allocator,
+    io: Io,
+    ring: *oez.ring.BlockRing,
+    root: []const u8,
+    layout: oez.types.Layout,
+    source: oez.source.Source,
+    board: ?*const Board,
+) !*oez.record.Recorder {
     return oez.record.Recorder.create(gpa, io, ring, root, .{
         .layout = layout,
         .settings = source.settings(),
@@ -288,7 +319,10 @@ const LiveTest = struct {
     /// Waits for the queued changes to be applied and prints the result.
     fn finish(self: *LiveTest, acq: *oez.acquisition.Acquisition, io: Io) void {
         while (!acq.idle() and !acq.done.load(.acquire)) io.sleep(.fromMilliseconds(5), .awake) catch {};
-        std.debug.print("live test: {d} steps run, {d} commands applied, {d} failed, longest apply {d} us\n", .{ self.next_step, acq.applied.load(.acquire), acq.failed.load(.acquire), acq.max_apply_us.load(.monotonic) });
+        std.debug.print(
+            "live test: {d} steps run, {d} commands applied, {d} failed, longest apply {d} us\n",
+            .{ self.next_step, acq.applied.load(.acquire), acq.failed.load(.acquire), acq.max_apply_us.load(.monotonic) },
+        );
         if (self.next_step < steps.len or acq.failed.load(.acquire) != 0) self.ok = false;
     }
 };
@@ -350,7 +384,8 @@ const Timing = struct {
         self.lat_n += 1;
         self.lat_max_ns = @max(self.lat_max_ns, lat);
         if (b.len > 0) {
-            const age = @as(f64, @floatFromInt(b.acquired_ns)) - @as(f64, @floatFromInt(b.first_sample + @as(i64, @intCast(b.len)) - 1)) * self.period_ns;
+            const age = @as(f64, @floatFromInt(b.acquired_ns)) -
+                @as(f64, @floatFromInt(b.first_sample + @as(i64, @intCast(b.len)) - 1)) * self.period_ns;
             self.age_min = @min(self.age_min, age);
             self.age_max = @max(self.age_max, age);
             self.age_sum += age;
@@ -410,7 +445,16 @@ const Soak = struct {
         const t = &self.timing;
         const s = health.samples.load(.monotonic);
         const lat_avg_ms: f64 = if (t.lat_n > 0) @as(f64, @floatFromInt(t.lat_sum_ns)) / @as(f64, @floatFromInt(t.lat_n)) / 1e6 else 0;
-        if (self.rec) |r| std.debug.print("  rec: {d} samples, backlog {d} blocks, max write {d} us, max sync {d} us{s}\n", .{ r.stats.samples.load(.monotonic), r.backlog(), r.stats.max_write_us.load(.monotonic), r.stats.max_sync_us.load(.monotonic), if (r.done.load(.acquire)) " FAILED" else "" });
+        if (self.rec) |r| std.debug.print(
+            "  rec: {d} samples, backlog {d} blocks, max write {d} us, max sync {d} us{s}\n",
+            .{
+                r.stats.samples.load(.monotonic),
+                r.backlog(),
+                r.stats.max_write_us.load(.monotonic),
+                r.stats.max_sync_us.load(.monotonic),
+                if (r.done.load(.acquire)) " FAILED" else "",
+            },
+        );
         const d_avg = if (t.age_n > 0) (t.age_sum / t.age_n - t.age_min) / 1e6 else 0;
         const d_max = if (t.age_n > 0) (t.age_max - t.age_min) / 1e6 else 0;
         if (t.age_n > 0 and self.next_tick > 1) {
@@ -423,12 +467,15 @@ const Soak = struct {
         t.age_sum = 0;
         t.age_n = 0;
         std.debug.print("t={d:>4}s samples={d} (+{d}) dropped={d} gaps={d} bad={d} rderr={d} hwbuf={d:.1}% (peak {d:.1}) ring={d}/{d} overflow={d} gapblk={d} tstep={d}..{d} lat avg {d:.2} max {d:.2} ms, delivery +{d:.2} avg +{d:.2} max ms\n", .{
-            @as(u64, @intCast(self.next_tick)),      s,                                                s - self.last_samples,
-            health.dropped_samples.load(.monotonic), health.discontinuities.load(.monotonic),          health.bad_frames.load(.monotonic),
-            health.read_errors.load(.monotonic),     pct(health.hw_buffer_milli_pct.load(.monotonic)), pct(health.hw_buffer_peak_milli_pct.load(.monotonic)),
-            self.ring_peak,                          self.ring.capacity(),                             self.acq.ring_overflow.load(.monotonic),
-            self.cont.gap_blocks,                    self.cont.tstepLow(),                             self.cont.tstep_max,
-            lat_avg_ms,                              @as(f64, @floatFromInt(t.lat_max_ns)) / 1e6,      d_avg,
+            @as(u64, @intCast(self.next_tick)),                    s,
+            s - self.last_samples,                                 health.dropped_samples.load(.monotonic),
+            health.discontinuities.load(.monotonic),               health.bad_frames.load(.monotonic),
+            health.read_errors.load(.monotonic),                   pct(health.hw_buffer_milli_pct.load(.monotonic)),
+            pct(health.hw_buffer_peak_milli_pct.load(.monotonic)), self.ring_peak,
+            self.ring.capacity(),                                  self.acq.ring_overflow.load(.monotonic),
+            self.cont.gap_blocks,                                  self.cont.tstepLow(),
+            self.cont.tstep_max,                                   lat_avg_ms,
+            @as(f64, @floatFromInt(t.lat_max_ns)) / 1e6,           d_avg,
             d_max,
         });
         self.last_samples = s;
@@ -462,7 +509,10 @@ fn finishRecording(gpa: std.mem.Allocator, r: *oez.record.Recorder, consumed_sam
         log.err("recorder wrote {d} samples but {d} were acquired", .{ sum.samples, consumed_samples });
         ok = false;
     }
-    std.debug.print("recording: {s}\n  {d} samples, {d} chunks, {d} gaps, {d} TTL edges, max write {d} us, max sync {d} us\n", .{ path, sum.samples, sum.chunks, sum.gaps, sum.ttl_edges, sum.max_write_us, sum.max_sync_us });
+    std.debug.print(
+        "recording: {s}\n  {d} samples, {d} chunks, {d} gaps, {d} TTL edges, max write {d} us, max sync {d} us\n",
+        .{ path, sum.samples, sum.chunks, sum.gaps, sum.ttl_edges, sum.max_write_us, sum.max_sync_us },
+    );
     return ok;
 }
 
@@ -478,17 +528,26 @@ fn summarize(soak: *const Soak, layout: oez.types.Layout, run_ms: i64, failed: b
     // Rate over the acquisition window (the drain after stopping adds at most a few blocks).
     const secs = @as(f64, @floatFromInt(run_ms)) / 1000.0;
     std.debug.print("\nsummary: {d:.1} s, {d} samples in {d} blocks ({d:.1} samples/s), dropped={d} gaps={d} bad={d} overflow={d} gapblk={d} tstep={d}..{d}, realtime={}, hwbuf peak {d:.1}%\n", .{
-        secs,            cont.consumed_samples, cont.blocks,    @as(f64, @floatFromInt(cont.consumed_samples)) / secs, dropped,                                               gaps, bad, overflow,
-        cont.gap_blocks, cont.tstepLow(),       cont.tstep_max, acq.realtime.load(.acquire),                           pct(health.hw_buffer_peak_milli_pct.load(.monotonic)),
+        secs,                                                  cont.consumed_samples,
+        cont.blocks,                                           @as(f64, @floatFromInt(cont.consumed_samples)) / secs,
+        dropped,                                               gaps,
+        bad,                                                   overflow,
+        cont.gap_blocks,                                       cont.tstepLow(),
+        cont.tstep_max,                                        acq.realtime.load(.acquire),
+        pct(health.hw_buffer_peak_milli_pct.load(.monotonic)),
     });
     const t = &soak.timing;
-    if (t.delay_ticks > 0) std.debug.print("delivery delay of a block's newest sample, beyond the quickest in each second: avg {d:.2} ms, worst {d:.2} ms\n", .{ t.delay_avg_sum / t.delay_ticks, t.delay_max });
+    if (t.delay_ticks > 0) std.debug.print(
+        "delivery delay of a block's newest sample, beyond the quickest in each second: avg {d:.2} ms, worst {d:.2} ms\n",
+        .{ t.delay_avg_sum / t.delay_ticks, t.delay_max },
+    );
     if (failed) {
         log.err("acquisition thread ended early: {t}", .{acq.failure orelse error.Unknown});
         return 1;
     }
     const nominal = layout.hw_clock_hz / layout.sample_rate;
-    const tstep_ok = cont.tstep_max == 0 or (@as(f64, @floatFromInt(cont.tstep_min)) > 0.5 * nominal and @as(f64, @floatFromInt(cont.tstep_max)) < 1.5 * nominal);
+    const tstep_ok = cont.tstep_max == 0 or (@as(f64, @floatFromInt(cont.tstep_min)) > 0.5 * nominal and
+        @as(f64, @floatFromInt(cont.tstep_max)) < 1.5 * nominal);
     const clean = live_ok and rec_ok and dropped == 0 and gaps == 0 and bad == 0 and overflow == 0 and cont.gap_blocks == 0 and tstep_ok;
     std.debug.print("{s}\n", .{if (clean) "CLEAN" else "PROBLEMS (see counters above)"});
     return if (clean) 0 else 1;

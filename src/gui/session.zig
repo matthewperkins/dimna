@@ -165,7 +165,12 @@ pub const ReviewSession = struct {
     /// What the display draws from, or null when live.
     pub fn view(self: *const ReviewSession, newest: i64, fs: f64) ?ReviewView {
         if (!self.active) return null;
-        return .{ .end = self.shown_end, .from_file = self.from_file, .ready = self.ready, .behind_s = @as(f64, @floatFromInt(newest - self.shown_end)) / fs };
+        return .{
+            .end = self.shown_end,
+            .from_file = self.from_file,
+            .ready = self.ready,
+            .behind_s = @as(f64, @floatFromInt(newest - self.shown_end)) / fs,
+        };
     }
 
     pub fn status(self: *const ReviewSession, newest: i64, fs: f64) control.ReviewStatus {
@@ -209,9 +214,18 @@ pub const Alarms = struct {
         var w: Io.Writer = .fixed(&status.alarm_buf);
         const sep = "   |   ";
         if (self.recording_failed) w.writeAll("RECORDING FAILED: nothing is being recorded") catch {};
-        if (now.overflow > self.seen.overflow) w.print("{s}{d} BLOCKS LOST: the disk fell 30 s behind", .{ if (w.buffered().len > 0) sep else "", now.overflow - self.seen.overflow }) catch {};
-        if (now.dropped > self.seen.dropped) w.print("{s}THE BOARD DROPPED {d} SAMPLES", .{ if (w.buffered().len > 0) sep else "", now.dropped - self.seen.dropped }) catch {};
-        if (now.gaps > self.seen.gaps) w.print("{s}THE RECORDING HAS {d} GAPS", .{ if (w.buffered().len > 0) sep else "", now.gaps - self.seen.gaps }) catch {};
+        if (now.overflow > self.seen.overflow) w.print(
+            "{s}{d} BLOCKS LOST: the disk fell 30 s behind",
+            .{ if (w.buffered().len > 0) sep else "", now.overflow - self.seen.overflow },
+        ) catch {};
+        if (now.dropped > self.seen.dropped) w.print(
+            "{s}THE BOARD DROPPED {d} SAMPLES",
+            .{ if (w.buffered().len > 0) sep else "", now.dropped - self.seen.dropped },
+        ) catch {};
+        if (now.gaps > self.seen.gaps) w.print(
+            "{s}THE RECORDING HAS {d} GAPS",
+            .{ if (w.buffered().len > 0) sep else "", now.gaps - self.seen.gaps },
+        ) catch {};
         const alarm_len = w.buffered().len;
         // Not yet lost, but on the way: the recorder is far behind acquisition.
         var ww: Io.Writer = .fixed(&status.warning_buf);
@@ -299,7 +313,15 @@ pub const Recording = struct {
     /// Starts a recording of what `ring` carries from now on. `events` are the
     /// acquisition thread's (settings applied while recording). False if it could not
     /// be started: `status` then says why.
-    pub fn start(self: *Recording, gpa: std.mem.Allocator, io: Io, ring: *oez.ring.BlockRing, info: oez.record.Info, events: *oez.events.EventQueue, now_ns: i128) bool {
+    pub fn start(
+        self: *Recording,
+        gpa: std.mem.Allocator,
+        io: Io,
+        ring: *oez.ring.BlockRing,
+        info: oez.record.Info,
+        events: *oez.events.EventQueue,
+        now_ns: i128,
+    ) bool {
         if (self.recorder != null) return true;
         // What happened before this recording is not its events or its notes.
         while (events.pop()) |_| {}
@@ -362,7 +384,10 @@ pub const Recording = struct {
         }
         self.status.state = .idle;
         var clock_buf: [16]u8 = undefined;
-        self.status.setNote("last recording: {s}, {d} samples, {d} gaps", .{ control.fmtClock(&clock_buf, @as(f64, @floatFromInt(sum.samples)) / fs), sum.samples, sum.gaps });
+        self.status.setNote(
+            "last recording: {s}, {d} samples, {d} gaps",
+            .{ control.fmtClock(&clock_buf, @as(f64, @floatFromInt(sum.samples)) / fs), sum.samples, sum.gaps },
+        );
         return .complete;
     }
 
@@ -431,7 +456,16 @@ pub const BoardControl = struct {
     /// One change from the control window. Headstage filters are applied at once, without
     /// a gap, also while recording (the change is then written to the recording's events);
     /// the rate and half-channel mode are only collected, for `apply` to restart with.
-    pub fn edit(self: *BoardControl, action: control.BoardAction, acq: *oez.acquisition.Acquisition, fs: f64, recording: bool, io: Io, gpa: std.mem.Allocator, config_path: []const u8) void {
+    pub fn edit(
+        self: *BoardControl,
+        action: control.BoardAction,
+        acq: *oez.acquisition.Acquisition,
+        fs: f64,
+        recording: bool,
+        io: Io,
+        gpa: std.mem.Allocator,
+        config_path: []const u8,
+    ) void {
         var want = acq.requested;
         const bc = oez.board_config;
         self.status.note_len = 0;
@@ -471,7 +505,13 @@ pub const BoardControl = struct {
 
     /// Answering "save" to the quit prompt: writes the settings in use to the config file if
     /// they differ from it. False if that failed (the note says why).
-    pub fn saveIfChanged(self: *BoardControl, io: Io, gpa: std.mem.Allocator, config_path: []const u8, in_use: *const oez.types.Settings) bool {
+    pub fn saveIfChanged(
+        self: *BoardControl,
+        io: Io,
+        gpa: std.mem.Allocator,
+        config_path: []const u8,
+        in_use: *const oez.types.Settings,
+    ) bool {
         if (!self.unsaved(in_use)) return true;
         if (files.saveBoard(io, gpa, config_path, in_use)) |_| {
             log.info("board settings saved to {s}", .{config_path});
@@ -535,7 +575,11 @@ pub fn notesStatus(notes: *const notes_mod.Notes, fs: f64) control.NotesStatus {
 
 /// The audio monitor, for the control window: its settings, what its threads report, and
 /// the channels listened to by name.
-pub fn audioStatus(display: *const display_mod.Display, shared: *const audio_out.Shared, layout: *const oez.types.Layout) control.AudioStatus {
+pub fn audioStatus(
+    display: *const display_mod.Display,
+    shared: *const audio_out.Shared,
+    layout: *const oez.types.Layout,
+) control.AudioStatus {
     var st: control.AudioStatus = .{
         .settings = display.audio,
         .running = shared.running.load(.acquire),

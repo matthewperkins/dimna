@@ -59,7 +59,10 @@ pub fn read(doc: toml.Document, s: *Settings, diag: *Diagnostics) error{BadBoard
         }.f;
         if (is(k, "sample_rate") and e.value == .number) {
             const want: u32 = @intFromFloat(std.math.clamp(e.value.number, 0, 1e6));
-            if (std.mem.indexOfScalar(u32, &sample_rates, want) == null) return diag.fail("line {d}: sample_rate {d} is not one the board offers (1000 ... 30000)", .{ e.line, want });
+            if (std.mem.indexOfScalar(u32, &sample_rates, want) == null) return diag.fail(
+                "line {d}: sample_rate {d} is not one the board offers (1000 ... 30000)",
+                .{ e.line, want },
+            );
             s.sample_rate = want;
         } else if (is(k, "lower_hz") and e.value == .number) {
             s.lower_bandwidth = e.value.number;
@@ -114,7 +117,17 @@ pub fn render(buf: []u8, s: *const Settings) []const u8 {
         \\adc = {}
         \\leds = {}
         \\
-    , .{ s.sample_rate, s.lower_bandwidth, s.upper_bandwidth, s.dsp_enabled, s.dsp_cutoff, halfList(&half_buf, s), s.acquire_aux, s.acquire_adc, s.leds }) catch "";
+    , .{
+        s.sample_rate,
+        s.lower_bandwidth,
+        s.upper_bandwidth,
+        s.dsp_enabled,
+        s.dsp_cutoff,
+        halfList(&half_buf, s),
+        s.acquire_aux,
+        s.acquire_adc,
+        s.leds,
+    }) catch "";
 }
 
 /// `text` (a config file) with its `[board]` table replaced by `table`, or with `table`
@@ -290,7 +303,10 @@ test "two reads with different errors each report their own message" {
     try testing.expectEqualStrings("line 2: unknown [board] key 'speed' or wrong type", first.message());
     try testing.expectEqualStrings("line 4: sample_rate 44100 is not one the board offers (1000 ... 30000)", second.message());
     // A message too long for the buffer says only which table.
-    try testing.expectError(error.BadBoardConfig, read(try toml.parse(a, "[board]\nhalf_channels = \"" ++ &@as([150]u8, @splat('x')) ++ "\"", null), &s, &first));
+    try testing.expectError(
+        error.BadBoardConfig,
+        read(try toml.parse(a, "[board]\nhalf_channels = \"" ++ &@as([150]u8, @splat('x')) ++ "\"", null), &s, &first),
+    );
     try testing.expectEqualStrings("bad [board] table", first.message());
 }
 
@@ -298,7 +314,11 @@ test "replacing the [board] table leaves the rest of the file alone" {
     const gpa = testing.allocator;
     const table = "[board]\nsample_rate = 20000\n";
     // In the middle.
-    const a = try replaceTable(gpa, "monitor = \"DP-2\"\n\n[board]\nsample_rate = 30000\nadc = true\n\n[[panel]]\nsource = \"A1\"\n", table);
+    const a = try replaceTable(
+        gpa,
+        "monitor = \"DP-2\"\n\n[board]\nsample_rate = 30000\nadc = true\n\n[[panel]]\nsource = \"A1\"\n",
+        table,
+    );
     defer gpa.free(a);
     try testing.expectEqualStrings("monitor = \"DP-2\"\n\n[board]\nsample_rate = 20000\n\n[[panel]]\nsource = \"A1\"\n", a);
     // At the end.

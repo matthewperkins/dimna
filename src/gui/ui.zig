@@ -26,7 +26,16 @@ pub const Ui = struct {
 
     pub fn begin(batch: *font.Batch, width: f32, mouse_x: f32, mouse_y: f32, clicked: bool, wheel: f32) Ui {
         batch.clear();
-        return .{ .batch = batch, .mouse_x = mouse_x, .mouse_y = mouse_y, .clicked = clicked, .wheel = wheel, .x = 12, .y = 10, .width = width };
+        return .{
+            .batch = batch,
+            .mouse_x = mouse_x,
+            .mouse_y = mouse_y,
+            .clicked = clicked,
+            .wheel = wheel,
+            .x = 12,
+            .y = 10,
+            .width = width,
+        };
     }
 
     fn lineHeight(self: *const Ui) f32 {
@@ -91,7 +100,13 @@ pub const Ui = struct {
         const h = self.lineHeight() + 8;
         self.fit(w);
         const hot = self.hovering(self.x, self.y, w, h);
-        self.batch.rect(self.x, self.y, w, h, if (on) (if (hot) theme.button_on_hover else theme.button_on) else if (hot) theme.button_hover else theme.button_idle);
+        self.batch.rect(
+            self.x,
+            self.y,
+            w,
+            h,
+            if (on) (if (hot) theme.button_on_hover else theme.button_on) else if (hot) theme.button_hover else theme.button_idle,
+        );
         _ = self.batch.text(self.x + 9, self.y + 4, label, theme.text_bright);
         self.x += w + 6;
         return hot and self.clicked;
@@ -103,8 +118,19 @@ pub const Ui = struct {
         const h = self.lineHeight() + 8;
         self.fit(w);
         const hot = self.hovering(self.x, self.y, w, h);
-        self.batch.rect(self.x, self.y, w, h, if (on) (if (hot) theme.button_on_hover else theme.button_on) else if (hot) theme.button_hover else theme.button_idle);
-        _ = self.batch.text(self.x + (w - self.batch.font.width(label)) / 2, self.y + 4, label, if (on) theme.text_bright else theme.text_dim);
+        self.batch.rect(
+            self.x,
+            self.y,
+            w,
+            h,
+            if (on) (if (hot) theme.button_on_hover else theme.button_on) else if (hot) theme.button_hover else theme.button_idle,
+        );
+        _ = self.batch.text(
+            self.x + (w - self.batch.font.width(label)) / 2,
+            self.y + 4,
+            label,
+            if (on) theme.text_bright else theme.text_dim,
+        );
         self.x += w + 3;
         return hot and self.clicked;
     }
@@ -113,14 +139,16 @@ pub const Ui = struct {
     /// over it, else 0.
     pub fn stepper(self: *Ui, label: []const u8, string: []const u8, value_width: f32) i32 {
         const value_w = @max(value_width, self.batch.font.width(string));
-        self.fit((if (label.len > 0) self.batch.font.width(label) + 8 else 0) + self.buttonWidth("-") + self.buttonWidth("+") + 12 + value_w + 6);
+        self.fit((if (label.len > 0) self.batch.font.width(label) + 8 else 0) + self.buttonWidth("-") +
+            self.buttonWidth("+") + 12 + value_w + 6);
         const x0 = self.x;
         if (label.len > 0) self.text(label, theme.text_dim);
         var step: i32 = 0;
         if (self.button("-", false)) step = -1;
         self.value(string, value_width);
         if (self.button("+", false)) step = 1;
-        if (step == 0 and self.wheel != 0 and self.hovering(x0, self.y, self.x - x0, self.lineHeight() + 8)) step = if (self.wheel < 0) 1 else -1;
+        if (step == 0 and self.wheel != 0 and
+            self.hovering(x0, self.y, self.x - x0, self.lineHeight() + 8)) step = if (self.wheel < 0) 1 else -1;
         self.x += 10;
         return step;
     }

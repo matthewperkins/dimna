@@ -157,7 +157,10 @@ pub const Display = struct {
     /// common average references (a channel takes the first panel's that subtracts from
     /// it).
     pub fn tileConfig(self: *const Display) tiles_mod.Config {
-        var cfg: tiles_mod.Config = .{ .listening = self.audio.channels, .num_listening = if (self.audio.enabled) self.audio.num_channels else 0 };
+        var cfg: tiles_mod.Config = .{
+            .listening = self.audio.channels,
+            .num_listening = if (self.audio.enabled) self.audio.num_channels else 0,
+        };
         for (self.set.items[0..self.set.len], 0..) |*p, g| {
             if (!p.carActive() or g >= oez.spikes.Car.max_groups) continue;
             var n: usize = 0;
@@ -296,7 +299,9 @@ pub const Display = struct {
             self.audio_dirty = true;
             return false;
         }
-        if (edit.action == .record or edit.action == .board or edit.action == .quit_answer or edit.action == .note_preset or edit.action == .save_view or edit.action == .review or edit.panel >= self.set.len) return false;
+        if (edit.action == .record or edit.action == .board or edit.action == .quit_answer or
+            edit.action == .note_preset or edit.action == .save_view or edit.action == .review or
+            edit.panel >= self.set.len) return false;
         const p = &self.set.items[edit.panel];
         switch (edit.action) {
             .scale => |f| p.scale *= f,
@@ -329,8 +334,16 @@ pub const Display = struct {
                 if (!on and p.trig_auto and p.trig_level_now_uv != 0) p.trig_level_uv = @round(p.trig_level_now_uv);
                 p.trig_auto = on;
             },
-            .trig_level => |f| p.trig_level_uv = if (@abs(p.trig_level_uv * f) < 5) (if (p.trig_level_uv < 0) -5.0 else 5.0) else p.trig_level_uv * f,
-            .trig_holdoff => |up| p.trig_holdoff_ms = oez.board_config.step(f64, &.{ 0, 1, 2, 5, 10, 20, 50, 100, 200, 500 }, p.trig_holdoff_ms, up),
+            .trig_level => |f| p.trig_level_uv = if (@abs(p.trig_level_uv * f) < 5)
+                (if (p.trig_level_uv < 0) -5.0 else 5.0)
+            else
+                p.trig_level_uv * f,
+            .trig_holdoff => |up| p.trig_holdoff_ms = oez.board_config.step(
+                f64,
+                &.{ 0, 1, 2, 5, 10, 20, 50, 100, 200, 500 },
+                p.trig_holdoff_ms,
+                up,
+            ),
             .overlay => |n| p.overlay = n,
             .reset => self.reset(edit.panel),
             .quit, .record, .board, .quit_answer, .audio, .note_preset, .save_view, .review, .acknowledge => {},
@@ -415,7 +428,18 @@ pub const Display = struct {
     /// What to draw: each panel's traces, then dividers and a bar marking the target panel,
     /// and into `batch` the text: each panel's title (name, time base, scale per row), its
     /// row labels, and the status read-out in the bottom right corner.
-    pub fn frame(self: *const Display, gpu: *const Gpu, layout: *const oez.types.Layout, newest: i64, review: ?ReviewView, status: Status, notes: *const notes_mod.Notes, batch: *font.Batch, draws: *[max_draws]gpu_mod.PanelDraw, fills: *[max_fills]gpu_mod.Fill) struct { draws: []const gpu_mod.PanelDraw, fills: []const gpu_mod.Fill, text: []const font.Vertex } {
+    pub fn frame(
+        self: *const Display,
+        gpu: *const Gpu,
+        layout: *const oez.types.Layout,
+        newest: i64,
+        review: ?ReviewView,
+        status: Status,
+        notes: *const notes_mod.Notes,
+        batch: *font.Batch,
+        draws: *[max_draws]gpu_mod.PanelDraw,
+        fills: *[max_fills]gpu_mod.Fill,
+    ) struct { draws: []const gpu_mod.PanelDraw, fills: []const gpu_mod.Fill, text: []const font.Vertex } {
         const width = gpu.extent.width;
         const height = gpu.extent.height;
         const nch = gpu.nch;
@@ -477,7 +501,8 @@ pub const Display = struct {
                     params.span = @floatCast(window);
                     params.phase = -1;
                     params.future = @floatCast(future);
-                    params.gain = if (k == 0) 1.0 else 0.6 - 0.4 * @as(f32, @floatFromInt(k - 1)) / @as(f32, @floatFromInt(@max(1, p.overlay -| 2)));
+                    params.gain = if (k == 0) 1.0 else 0.6 - 0.4 * @as(f32, @floatFromInt(k - 1)) /
+                        @as(f32, @floatFromInt(@max(1, p.overlay -| 2)));
                     if (nd < draws.len) {
                         draws[nd] = .{ .rect = rect, .params = params };
                         nd += 1;
@@ -495,7 +520,8 @@ pub const Display = struct {
                     const centre = py + (@as(f32, @floatFromInt(p.shownIndex(p.trig_row) orelse 0)) + 0.5) * row_h;
                     const dy: f32 = @floatCast(std.math.clamp(p.trig_level_now_uv / p.rowScale(p.trig_row), -1.5, 1.5));
                     var x = px;
-                    if (p.shownIndex(p.trig_row) != null) while (x < px + w) : (x += 12) batch.rect(x, @round(centre - dy * row_h), 6, 1, theme.trigger_level);
+                    if (p.shownIndex(p.trig_row) != null)
+                        while (x < px + w) : (x += 12) batch.rect(x, @round(centre - dy * row_h), 6, 1, theme.trigger_level);
                 } else if (trig.recent(0)) |s| {
                     const until = @min(s.fall orelse newest, s.t0 + post);
                     const x1 = px + w * @as(f32, @floatFromInt(until - s.t0 + pre)) / @as(f32, @floatCast(window));
@@ -517,11 +543,17 @@ pub const Display = struct {
                     if (at < pass_start - span_i) break;
                     // This pass (or, scrolling, the window); else the previous pass, where
                     // the cursor has not yet gone over it.
-                    const from: i64 = if (at >= pass_start) pass_start else if (sweeping and at >= pass_start - span_i + (t_end - pass_start)) pass_start - span_i else continue;
+                    const from: i64 = if (at >= pass_start)
+                        pass_start
+                    else if (sweeping and at >= pass_start - span_i + (t_end - pass_start))
+                        pass_start - span_i
+                    else
+                        continue;
                     if (at > t_end) continue;
                     const x = px + @as(f32, @floatCast(w * @as(f64, @floatFromInt(at - from)) / span));
                     batch.rect(@round(x), py, 1, @floatFromInt(r.h), theme.note_line);
-                    if (line_h > 0 and x + 60 < px + @as(f32, @floatCast(w))) _ = batch.label(x + 5, py + line_h + 12, notes_mod.prefix(note.text(), 40), theme.heard);
+                    if (line_h > 0 and x + 60 < px + @as(f32, @floatCast(w)))
+                        _ = batch.label(x + 5, py + line_h + 12, notes_mod.prefix(note.text(), 40), theme.heard);
                 }
             }
             if (p.tint_line != 0 and p.mode != .triggered and span >= 1) {
@@ -540,13 +572,25 @@ pub const Display = struct {
                     // The stretch of the pulse in this pass (or, scrolling, in the window).
                     const a0 = @max(t0, pass_start);
                     const a1 = @min(t1, t_end);
-                    if (a1 > a0) batch.rect(px + @as(f32, @floatCast(w * @as(f64, @floatFromInt(a0 - pass_start)) / span)), py, @floatCast(@max(1.0, w * @as(f64, @floatFromInt(a1 - a0)) / span)), @floatFromInt(r.h), theme.tint_pulse);
+                    if (a1 > a0) batch.rect(
+                        px + @as(f32, @floatCast(w * @as(f64, @floatFromInt(a0 - pass_start)) / span)),
+                        py,
+                        @floatCast(@max(1.0, w * @as(f64, @floatFromInt(a1 - a0)) / span)),
+                        @floatFromInt(r.h),
+                        theme.tint_pulse,
+                    );
                     if (p.mode != .sweep) continue;
                     // And in the previous pass, as far as the cursor has not overwritten it.
                     const prev = pass_start - span_i;
                     const b0 = @max(t0, prev + (t_end - pass_start));
                     const b1 = @min(t1, pass_start);
-                    if (b1 > b0) batch.rect(px + @as(f32, @floatCast(w * @as(f64, @floatFromInt(b0 - prev)) / span)), py, @floatCast(@max(1.0, w * @as(f64, @floatFromInt(b1 - b0)) / span)), @floatFromInt(r.h), theme.tint_pulse);
+                    if (b1 > b0) batch.rect(
+                        px + @as(f32, @floatCast(w * @as(f64, @floatFromInt(b0 - prev)) / span)),
+                        py,
+                        @floatCast(@max(1.0, w * @as(f64, @floatFromInt(b1 - b0)) / span)),
+                        @floatFromInt(r.h),
+                        theme.tint_pulse,
+                    );
                 }
             }
             if (sweeping) {
@@ -574,13 +618,37 @@ pub const Display = struct {
             var band_buf: [48]u8 = undefined;
             var trig_buf: [48]u8 = undefined;
             const title = if (p.mode == .triggered)
-                format.fmt(&title_buf, "{s}   {s}   -{d:.1}/+{d:.1} ms   {s}/row{s}   {d} sweeps{s}", .{ p.name(), trigText(&trig_buf, p), p.pre_ms, p.post_ms, fmtScale(&scale_buf, p), fmtBand(&band_buf, p), shown_sweeps, if (shown_sweeps == 0) " (waiting for a trigger)" else "" })
+                format.fmt(&title_buf, "{s}   {s}   -{d:.1}/+{d:.1} ms   {s}/row{s}   {d} sweeps{s}", .{
+                    p.name(),
+                    trigText(&trig_buf, p),
+                    p.pre_ms,
+                    p.post_ms,
+                    fmtScale(&scale_buf, p),
+                    fmtBand(&band_buf, p),
+                    shown_sweeps,
+                    if (shown_sweeps == 0) " (waiting for a trigger)" else "",
+                })
             else if (p.kind == .ttl)
-                format.fmt(&title_buf, "{s}   {s}{s}", .{ p.name(), fmtSpan(&span_buf, p.span_s), if (in_review) "   review" else if (p.mode == .sweep) "   sweep" else "" })
+                format.fmt(&title_buf, "{s}   {s}{s}", .{
+                    p.name(),
+                    fmtSpan(&span_buf, p.span_s),
+                    if (in_review) "   review" else if (p.mode == .sweep) "   sweep" else "",
+                })
             else
-                format.fmt(&title_buf, "{s}   {s}   {s}/row{s}{s}", .{ p.name(), fmtSpan(&span_buf, p.span_s), fmtScale(&scale_buf, p), fmtBand(&band_buf, p), if (in_review) "   review" else if (p.mode == .sweep) "   sweep" else "" });
+                format.fmt(&title_buf, "{s}   {s}   {s}/row{s}{s}", .{
+                    p.name(),
+                    fmtSpan(&span_buf, p.span_s),
+                    fmtScale(&scale_buf, p),
+                    fmtBand(&band_buf, p),
+                    if (in_review) "   review" else if (p.mode == .sweep) "   sweep" else "",
+                });
             // A lane strip is short: its title goes to the right, clear of the lane labels.
-            _ = batch.label(if (p.kind == .ttl) px + @as(f32, @floatFromInt(r.w)) - batch.font.width(title) - 8 else px + 8, title_y, title, theme.text_bright);
+            _ = batch.label(
+                if (p.kind == .ttl) px + @as(f32, @floatFromInt(r.w)) - batch.font.width(title) - 8 else px + 8,
+                title_y,
+                title,
+                theme.text_bright,
+            );
             if (p.mode == .triggered) {
                 // The time axis along the bottom: the ends of the window and the trigger.
                 const bottom = py + @as(f32, @floatFromInt(r.h)) - line_h - 4;
@@ -593,7 +661,8 @@ pub const Display = struct {
                     var l_buf: [24]u8 = undefined;
                     const left = format.fmt(&l_buf, "-{d:.1} ms", .{p.pre_ms});
                     // Only where it fits between the row labels and the trigger line.
-                    if (px + 48 + batch.font.width(left) + 8 < px + w * @as(f32, @floatCast(p.pre_ms / (p.pre_ms + p.post_ms)))) _ = batch.label(px + 48, bottom, left, theme.text_dim);
+                    if (px + 48 + batch.font.width(left) + 8 < px + w * @as(f32, @floatCast(p.pre_ms / (p.pre_ms + p.post_ms))))
+                        _ = batch.label(px + 48, bottom, left, theme.text_dim);
                 }
             }
             // Row labels down the left edge, thinned when rows are shorter than a line.
@@ -609,7 +678,12 @@ pub const Display = struct {
                 var label_buf: [16]u8 = undefined;
                 // The rows listened to stand out.
                 const heard = p.kind == .electrode and self.audio.enabled and self.listening(p.first_ch + row);
-                var after = batch.label(px + 5, y, rowLabel(&label_buf, p, row, layout, &self.set), if (heard) theme.heard else theme.text_dim);
+                var after = batch.label(
+                    px + 5,
+                    y,
+                    rowLabel(&label_buf, p, row, layout, &self.set),
+                    if (heard) theme.heard else theme.text_dim,
+                );
                 // In a filtered panel, the rows shown as they are say so.
                 if (p.filtered and p.kind == .electrode and !p.rowFiltered(row)) after = batch.label(after + 4, y, "raw", theme.text_dim);
                 // A row with a scale of its own says so.
@@ -634,7 +708,12 @@ pub const Display = struct {
             _ = batch.text((@as(f32, @floatFromInt(width)) - tw) / 2, bar_y + 5, text, theme.bar_text);
             if (is_alarm) {
                 const hint = "press a to acknowledge";
-                _ = batch.text((@as(f32, @floatFromInt(width)) - batch.font.width(hint)) / 2, bar_y + line_h + 7, hint, theme.alarm_hint_text);
+                _ = batch.text(
+                    (@as(f32, @floatFromInt(width)) - batch.font.width(hint)) / 2,
+                    bar_y + line_h + 7,
+                    hint,
+                    theme.alarm_hint_text,
+                );
             }
         }
         if (review) |v| {
@@ -642,7 +721,15 @@ pub const Display = struct {
                 // Unmistakable: this is not what the electrodes see now.
                 var buf: [120]u8 = undefined;
                 var clock_buf: [16]u8 = undefined;
-                const text = std.fmt.bufPrint(&buf, "REVIEW   {d:.1} s behind live   at {s}{s}   End = live", .{ v.behind_s, control.fmtClock(&clock_buf, @as(f64, @floatFromInt(v.end)) / layout.sample_rate), if (v.ready) "" else "   (reading)" }) catch "REVIEW";
+                const text = std.fmt.bufPrint(
+                    &buf,
+                    "REVIEW   {d:.1} s behind live   at {s}{s}   End = live",
+                    .{
+                        v.behind_s,
+                        control.fmtClock(&clock_buf, @as(f64, @floatFromInt(v.end)) / layout.sample_rate),
+                        if (v.ready) "" else "   (reading)",
+                    },
+                ) catch "REVIEW";
                 const tw = batch.font.width(text);
                 const x = (@as(f32, @floatFromInt(width)) - tw) / 2;
                 batch.rect(x - 10, 4, tw + 20, line_h + 10, theme.warning_bar);
@@ -653,7 +740,11 @@ pub const Display = struct {
             // The note being typed, bottom left, with when it is stamped.
             var buf: [notes_mod.max_text + 64]u8 = undefined;
             var clock_buf: [16]u8 = undefined;
-            const text = std.fmt.bufPrint(&buf, "note at {s}:  {s}_", .{ control.fmtClock(&clock_buf, @as(f64, @floatFromInt(notes.draft.sample)) / layout.sample_rate), notes.draft.text() }) catch "note";
+            const text = std.fmt.bufPrint(
+                &buf,
+                "note at {s}:  {s}_",
+                .{ control.fmtClock(&clock_buf, @as(f64, @floatFromInt(notes.draft.sample)) / layout.sample_rate), notes.draft.text() },
+            ) catch "note";
             _ = batch.label(10, @as(f32, @floatFromInt(height)) - 2 * line_h - 14, text, theme.note_draft_text);
         }
         if (status.valid and line_h > 0) {
@@ -698,7 +789,10 @@ pub fn makeDisplay(args: Args, layout: *const oez.types.Layout) ?Display {
         p.mode = .sweep;
         p.clamp();
     };
-    for (set.items[0..set.len], 0..) |*p, i| log.info("panel {d} \"{s}\": {d} {t} channels from channel {d}, {d:.2} s, {d} {s}/row", .{ i + 1, p.name(), p.rows, p.kind, p.first_ch + 1, p.span_s, p.scale, p.unit() });
+    for (set.items[0..set.len], 0..) |*p, i| log.info(
+        "panel {d} \"{s}\": {d} {t} channels from channel {d}, {d:.2} s, {d} {s}/row",
+        .{ i + 1, p.name(), p.rows, p.kind, p.first_ch + 1, p.span_s, p.scale, p.unit() },
+    );
     return .init(set);
 }
 
