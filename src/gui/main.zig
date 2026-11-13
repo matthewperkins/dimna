@@ -435,12 +435,9 @@ pub fn main(init: std.process.Init) !u8 {
                 try acq.start();
                 board_ctl.pending = acq.requested;
                 // Channel numbers mean something else now.
-                new_display_audio: {
-                    display.audio = old_audio;
-                    display.listenToFirst();
-                    audio_shared.publish(&display.audio);
-                    break :new_display_audio;
-                }
+                display.audio = old_audio;
+                display.listenToFirst();
+                audio_shared.publish(&display.audio);
                 if (args.audio) audio_dev = audio_out.AudioOut.start(gpa, &audio_shared, &ring, fs, nch, bs);
                 if (args.tiles) tiles_win = tiles_mod.Tiles.start(gpa, &tiles_shared, &ring, &layout, bs, &gpu, args.font, args.font_px);
             }
