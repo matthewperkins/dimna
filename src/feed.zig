@@ -304,7 +304,7 @@ test "rows carry raw channels and each electrode panel's filtered copy; refilter
     layout.num_headstages = 1;
     layout.num_electrodes = 2;
     layout.num_adc = 1;
-    var set = panels.default(&layout);
+    var set = panels.default(&layout, .scroll);
     set.items[0].filtered = true;
     set.items[0].band_low_hz = 300;
     set.items[0].band_high_hz = 6000;
@@ -388,7 +388,7 @@ test "common average reference: the shared part goes, each channel's own stays" 
     layout.headstages[0] = .{ .slot = 0, .chip = "RHD2132", .num_channels = 4, .first_channel = 0, .has_bno = false };
     layout.num_headstages = 1;
     layout.num_electrodes = 4;
-    var set = panels.default(&layout);
+    var set = panels.default(&layout, .scroll);
     const p = &set.items[0];
     // Unfiltered, reference = rows 1 to 3, subtracted from rows 1, 2 and 4.
     p.car = true;
@@ -452,7 +452,7 @@ test "one panel: some rows filtered, some as they are, some hidden" {
     layout.headstages[0] = .{ .slot = 0, .chip = "RHD2132", .num_channels = 4, .first_channel = 0, .has_bno = false };
     layout.num_headstages = 1;
     layout.num_electrodes = 4;
-    var set = panels.default(&layout);
+    var set = panels.default(&layout, .scroll);
     const p = &set.items[0];
     // Rows 1 and 2 through 300 Hz to 6 kHz, row 3 hidden, row 4 as it is.
     p.filtered = true;

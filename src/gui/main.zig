@@ -91,8 +91,9 @@ pub fn main(init: std.process.Init) !u8 {
         std.fmt.bufPrint(&path_buf, "{s}/.config/oez/config.toml", .{init.environ_map.get("HOME") orelse ""}) catch "";
     const config_text: []const u8 = Io.Dir.cwd().readFileAlloc(io, config_path, init.arena.allocator(), .limited(1 << 16)) catch "";
     if (config_text.len > 0) log.info("config: {s}", .{config_path});
-    const doc = oez.toml.parse(init.arena.allocator(), config_text) catch {
-        log.err("{s}: syntax error on line {d}", .{ config_path, oez.toml.error_line });
+    var toml_diag: oez.toml.Diagnostics = .{};
+    const doc = oez.toml.parse(init.arena.allocator(), config_text, &toml_diag) catch {
+        log.err("{s}: syntax error on line {d}", .{ config_path, toml_diag.line });
         return 2;
     };
     var args = parseArgs(argv, doc) catch |e| return if (e == error.Help) 0 else 2;
@@ -101,9 +102,9 @@ pub fn main(init: std.process.Init) !u8 {
     const views_path = std.fmt.bufPrint(&views_path_buf, "{s}/views.toml", .{std.fs.path.dirname(config_path) orelse "."}) catch "";
     const views_text: []const u8 = Io.Dir.cwd().readFileAlloc(io, views_path, init.arena.allocator(), .limited(1 << 18)) catch "";
     if (views_text.len > 0) {
-        if (oez.toml.parse(init.arena.allocator(), views_text)) |vd| {
+        if (oez.toml.parse(init.arena.allocator(), views_text, &toml_diag)) |vd| {
             args.views_doc = vd;
-        } else |_| log.warn("{s}: syntax error on line {d}; the view file is ignored", .{ views_path, oez.toml.error_line });
+        } else |_| log.warn("{s}: syntax error on line {d}; the view file is ignored", .{ views_path, toml_diag.line });
     }
 
     // ---- the source: simulator or board ----
@@ -413,7 +414,7 @@ pub fn main(init: std.process.Init) !u8 {
                 // what was set by hand where the panels still correspond.
                 const old_set = display.set;
                 const old_audio = display.audio;
-                var new_display = makeDisplay(args, &layout) orelse Display.init(panels_mod.default(&layout));
+                var new_display = makeDisplay(args, &layout) orelse Display.init(panels_mod.default(&layout, .scroll));
                 session.carryOver(&new_display.set, &old_set);
                 history_samples = @intFromFloat((Panel.span_max + 2.0) * fs);
                 const new_feed = try oez.feed.Feed.init(gpa, &layout, &new_display.set, history_samples);

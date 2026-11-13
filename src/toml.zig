@@ -73,8 +73,12 @@ pub const Document = struct {
 
 pub const Error = error{ Syntax, OutOfMemory };
 
-/// Where the last syntax error was (1-based line), for the caller's message.
-pub var error_line: usize = 0;
+/// What `parse` found wrong, for the caller's message. The caller owns it and passes a
+/// pointer (or null when the line does not matter).
+pub const Diagnostics = struct {
+    /// After `error.Syntax`, the line of the error (1-based).
+    line: usize = 0,
+};
 
 fn stripComment(line: []const u8) []const u8 {
     var in_string = false;
@@ -125,8 +129,9 @@ fn parseValue(arena: std.mem.Allocator, text: []const u8) Error!Value {
     return .{ .number = std.fmt.parseFloat(f64, text) catch return error.Syntax };
 }
 
-/// Parses `text`. Everything returned lives in `arena`.
-pub fn parse(arena: std.mem.Allocator, text: []const u8) Error!Document {
+/// Parses `text`. Everything returned lives in `arena`. After `error.Syntax`, `diag` (if
+/// given) holds the line of the error.
+pub fn parse(arena: std.mem.Allocator, text: []const u8, diag: ?*Diagnostics) Error!Document {
     var entries: std.ArrayList(Entry) = .empty;
     var table: []const u8 = "";
     var index: usize = 0;
@@ -136,7 +141,7 @@ pub fn parse(arena: std.mem.Allocator, text: []const u8) Error!Document {
     var line_no: usize = 0;
     while (lines.next()) |raw| {
         line_no += 1;
-        error_line = line_no;
+        if (diag) |d| d.line = line_no;
         const line = std.mem.trim(u8, stripComment(raw), " \t\r");
         if (line.len == 0) continue;
         if (line[0] == '[') {
@@ -190,7 +195,7 @@ test "parses keys, tables and arrays of tables" {
         \\
         \\[audio]
         \\enabled = false
-    );
+    , null);
     try testing.expectEqualStrings("DP-2", doc.string("", 0, "monitor").?);
     try testing.expectEqual(true, doc.boolean("", 0, "tearing").?);
     try testing.expectEqual(3.5, doc.number("", 0, "margin_ms").?);
@@ -208,9 +213,21 @@ test "parses keys, tables and arrays of tables" {
 test "reports the line of a syntax error" {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
-    try testing.expectError(error.Syntax, parse(arena_state.allocator(), "a = 1\nb = \"unterminated\nc = 2"));
-    try testing.expectEqual(2, error_line);
-    try testing.expectError(error.Syntax, parse(arena_state.allocator(), "a = 1\n\n[[panel]\n"));
-    try testing.expectEqual(3, error_line);
-    try testing.expectError(error.Syntax, parse(arena_state.allocator(), "rect = [0, x]"));
+    var diag: Diagnostics = .{};
+    try testing.expectError(error.Syntax, parse(arena_state.allocator(), "a = 1\nb = \"unterminated\nc = 2", &diag));
+    try testing.expectEqual(2, diag.line);
+    try testing.expectError(error.Syntax, parse(arena_state.allocator(), "a = 1\n\n[[panel]\n", &diag));
+    try testing.expectEqual(3, diag.line);
+    try testing.expectError(error.Syntax, parse(arena_state.allocator(), "rect = [0, x]", null));
+}
+
+test "two parses with different errors each report their own line" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    var first: Diagnostics = .{};
+    var second: Diagnostics = .{};
+    try testing.expectError(error.Syntax, parse(arena_state.allocator(), "a = 1\nb = 2\nc = \n", &first));
+    try testing.expectError(error.Syntax, parse(arena_state.allocator(), "= 1\n", &second));
+    try testing.expectEqual(3, first.line);
+    try testing.expectEqual(1, second.line);
 }
