@@ -3,25 +3,28 @@
 //! what the user asks for in the tile window goes to the display through a queue.
 //!
 //!   display -> tiles   `Config`: the channels listened to, the channel in focus, the
-//!                      panels' common average references (for the detection).
+//!                      panels' common average references and every channel's threshold
+//!                      (for the detection).
 //!   tiles -> display   `Request`: focus this channel, clear the focus, listen to this
-//!                      channel. The display decides and publishes the result in `Config`:
-//!                      the tile window never changes focus or listening by itself, so
-//!                      the two windows cannot disagree.
-//!   tiles -> display   `Report`: the detection threshold of the channel in focus (the
-//!                      detector runs in the tile window's thread), and the tile window's
-//!                      view (port shown, tile ranges), which the display thread saves
-//!                      with "Save view".
+//!                      channel, set its threshold. The display decides and publishes the
+//!                      result in `Config`: the tile window never changes focus, listening
+//!                      or a threshold by itself, so the two windows cannot disagree.
+//!   tiles -> display   `Report`: every electrode's detection threshold in use, in µV (the
+//!                      detector runs in the tile window's thread, and only it knows the
+//!                      noise that a threshold following the noise is set from), and the
+//!                      tile window's view (port shown, tile ranges), which the display
+//!                      thread saves with "Save view".
 //!
 //! Focus and listening are different things. Focus (one channel, or none) says which
 //! channel is being looked at: its tile has an amber frame, and its trace on the display
-//! shows the detection threshold. Listening (up to `audio.max_channels`) says which
+//! shows its detection threshold. Listening (up to `audio.max_channels`) says which
 //! channels are in the sound; it is marked with a note.
 
 const std = @import("std");
 const oez = @import("oez");
 const Atomic = std.atomic.Value;
 pub const TileView = oez.tile_view.TileView;
+pub const Thresholds = oez.thresholds.Thresholds;
 
 pub const Config = struct {
     listening: [oez.audio.max_channels]u32 = @splat(0),
@@ -31,6 +34,8 @@ pub const Config = struct {
     /// The panels' common average references, for the detection.
     car: oez.spikes.Car = .{},
     use_car: bool = false,
+    /// Every channel's threshold: what the detector uses.
+    thresholds: Thresholds = .{},
 };
 
 pub const Request = union(enum) {
@@ -39,14 +44,14 @@ pub const Request = union(enum) {
     /// `add`: add the channel to what is listened to, or take it out (Ctrl); else listen
     /// to it alone.
     listen: struct { channel: u32, add: bool },
+    /// Fix the channel's threshold at `uv` µV (its sign the slope); 0: back to the noise.
+    threshold: struct { channel: u32, uv: f32 },
 };
 
 pub const Report = struct {
-    /// The detection threshold of `threshold_channel`, in µV (negative), when
-    /// `threshold_valid`; the display draws it on the focused channel's trace.
-    threshold_channel: u32 = 0,
-    threshold_uv: f32 = 0,
-    threshold_valid: bool = false,
+    /// Every electrode's threshold in use, µV (the first `len` are valid): the display
+    /// draws the focused channel's on its trace, and latches a slope trigger's.
+    thresholds: oez.thresholds.Reported = .{},
     view: TileView = .{},
 };
 

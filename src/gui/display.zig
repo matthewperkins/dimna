@@ -13,6 +13,7 @@ const fmtScale = format.fmtScale;
 const control = @import("control.zig");
 const notes_mod = @import("notes.zig");
 const tiles_mod = @import("tiles.zig");
+const tile_link = @import("tile_link.zig");
 const Args = @import("args.zig").Args;
 const Input = @import("window.zig").Input;
 const panels_mod = oez.panels;
@@ -185,10 +186,14 @@ pub const Display = struct {
     set: panels_mod.Set,
     /// The panels as configured, for `r` (reset).
     initial: panels_mod.Set,
-    /// The channel in focus (chosen by a click on its tile or its row), if any, and its
-    /// detection threshold in µV as the tile window last reported it.
+    /// The channel in focus (chosen by a click on its tile or its row), if any.
     focus: ?u32 = null,
-    focus_threshold_uv: ?f32 = null,
+    /// Every channel's detection threshold (the display's to change; the tile window is
+    /// told them), and what the tile window last reported as in use (it knows the noise).
+    thresholds: oez.thresholds.Thresholds = .{},
+    reported: oez.thresholds.Reported = .{},
+    /// Set when `thresholds` changed (the control window is to be told).
+    thresholds_changed: bool = false,
     /// The panel that wheel, pinch and keys act on.
     target: usize = 0,
     /// Set by a test script (`panel=`, `pointer=`); then it overrides the pointer.
@@ -242,6 +247,7 @@ pub const Display = struct {
             .focus = self.focus,
             .listening = self.audio.channels,
             .num_listening = if (self.audio.enabled) self.audio.num_channels else 0,
+            .thresholds = self.thresholds,
         };
         for (self.set.items[0..self.set.len], 0..) |*p, g| {
             if (!p.carActive() or g >= oez.spikes.Car.max_groups) continue;
@@ -292,12 +298,34 @@ pub const Display = struct {
         return std.mem.indexOfScalar(u32, self.audio.channelSlice(), channel) != null;
     }
 
-    /// Puts `channel` in focus (null: nothing). A threshold reported for another channel
-    /// is not this one's: it is forgotten until the tile window reports again.
+    /// Puts `channel` in focus (null: nothing).
     pub fn setFocus(self: *Display, channel: ?u32) void {
-        if (self.focus == channel) return;
         self.focus = channel;
-        self.focus_threshold_uv = null;
+    }
+
+    /// Channel `ch`'s detection threshold in µV, if it is known: the fixed value, or else
+    /// what the tile window reported. What the threshold line, a slope trigger's level and
+    /// the control window show.
+    pub fn thresholdUv(self: *const Display, ch: u32) ?f32 {
+        return self.thresholds.known(&self.reported, ch);
+    }
+
+    /// Fixes channel `ch`'s threshold at `uv` (0: back to the noise).
+    pub fn setThreshold(self: *Display, ch: u32, uv: f64) void {
+        if (ch >= oez.thresholds.max) return;
+        const was = self.thresholds.fixed_uv[ch];
+        self.thresholds.set(ch, uv);
+        if (self.thresholds.fixed_uv[ch] != was) self.thresholds_changed = true;
+    }
+
+    /// What was asked for in the tile window.
+    pub fn tileRequest(self: *Display, request: tile_link.Request) void {
+        switch (request) {
+            .focus => |channel| self.setFocus(channel),
+            .unfocus => self.setFocus(null),
+            .listen => |l| self.listenClick(l.channel, l.add),
+            .threshold => |t| self.setThreshold(t.channel, t.uv),
+        }
     }
 
     /// A right click on an electrode row: listen to that channel alone, or with Ctrl add it
@@ -671,11 +699,11 @@ pub const Display = struct {
         return ch - p.first_ch;
     }
 
-    /// The focused channel's detection threshold, as a line across its row where the row
-    /// is drawn and shows about the detector's band.
+    /// The focused channel's detection threshold (if known), as a line across its row where
+    /// the row is drawn and shows about the detector's band.
     fn thresholdLine(self: *const Display, o: *Output, p: *const Panel, r: panels_mod.Rect) void {
-        const uv = self.focus_threshold_uv orelse return;
         const row = self.focusedRow(p) orelse return;
+        const uv = self.thresholdUv(self.focus.?) orelse return;
         if (!showsDetectorBand(p, row)) return;
         const y = levelPixelY(p, r, row, uv) orelse return;
         o.batch.rect(@floatFromInt(r.x), y, @floatFromInt(r.w), 1, theme.tile_threshold);
@@ -732,7 +760,7 @@ pub const Display = struct {
             if (p.filter.on and p.kind == .electrode and !p.rowFiltered(row)) after = batch.label(after + 4, y, "raw", theme.text_dim);
             // The focused row with a threshold that is not drawn, because the row does not
             // show the detector's band, says so.
-            if (focused and self.focus_threshold_uv != null and !showsDetectorBand(p, row))
+            if (focused and self.thresholdUv(p.first_ch + row) != null and !showsDetectorBand(p, row))
                 after = batch.label(after + 4, y, "thr", theme.text_dim);
             // A row with a scale of its own says so.
             if (row < panels_mod.max_rows and p.per_row.gain[row] != 1) {
@@ -1304,6 +1332,12 @@ const FrameState = struct {
         }
     }
 
+    /// What the tile window would report: every electrode of `frameLayout` at `uv`.
+    fn reportAll(self: *FrameState, uv: f32) void {
+        @memset(self.display.reported.uv[0..48], uv);
+        self.display.reported.len = 48;
+    }
+
     /// Opens a note at sample `at` and types `text` into it, as the keys would.
     fn typeNote(self: *FrameState, at: i64, text: []const u8) void {
         var in: Input = .{};
@@ -1593,11 +1627,11 @@ fn focusLineState(st: *FrameState, k: usize) void {
     }
     st.panels(&.{a});
     st.display.focus = 5;
-    st.display.focus_threshold_uv = switch (k) {
-        15 => -50,
-        23 => -120,
-        else => null,
-    };
+    switch (k) {
+        15 => st.reportAll(-50),
+        23 => st.reportAll(-120),
+        else => {},
+    }
 }
 
 fn focusTagState(st: *FrameState) void {
@@ -1610,14 +1644,14 @@ fn focusTagState(st: *FrameState) void {
     hp.filter.high_hz = 0;
     st.panels(&.{ a, hp });
     st.display.focus = 5;
-    st.display.focus_threshold_uv = -50;
+    st.reportAll(-50);
 }
 
 /// `k`: 18 listening to the focused channel, 19 to two others.
 fn focusHeardState(st: *FrameState, k: usize) void {
     st.panels(&.{focusPanel()});
     st.display.focus = 5;
-    st.display.focus_threshold_uv = -50;
+    st.reportAll(-50);
     st.display.audio.enabled = true;
     if (k == 18) {
         st.display.audio.channels[0] = 5;
@@ -1641,7 +1675,7 @@ fn focusTwoPanelsState(st: *FrameState) void {
     // B": row 2 of 8, R = 43.75, centre 350 + 2.5 R = 459.375, at 200 µV/row 0.4 R below:
     // 476.875, the pixel row 476.
     st.display.focus = 30;
-    st.display.focus_threshold_uv = -80;
+    st.reportAll(-80);
 }
 
 fn focusHiddenState(st: *FrameState) void {
@@ -1649,7 +1683,7 @@ fn focusHiddenState(st: *FrameState) void {
     a.per_row.hidden.set(5, true);
     st.panels(&.{a});
     st.display.focus = 5;
-    st.display.focus_threshold_uv = -50;
+    st.reportAll(-50);
 }
 
 fn focusModesState(st: *FrameState) void {
@@ -1665,7 +1699,7 @@ fn focusModesState(st: *FrameState) void {
     st.display.focus = 5;
     // Both: row 5 of 32, R = 21.875, centre 120.3125, -50 µV at 400 µV/row 0.125 R below:
     // 123.0469, the pixel row 123.
-    st.display.focus_threshold_uv = -50;
+    st.reportAll(-50);
     st.feed(8, false);
 }
 
@@ -1876,12 +1910,9 @@ test "clicks on a row: left focuses, right listens, Ctrl+right adds or removes, 
     _ = d.applyInput(.{ .clicks = 1 });
     try testing.expectEqual(5, d.focus.?);
     try testing.expectEqual(0, d.audio.num_channels);
-    // A threshold reported for channel 5 is forgotten when the focus moves.
-    d.focus_threshold_uv = -50;
     d.pointer_fy = 9.5 / 32.0;
     _ = d.applyInput(.{ .clicks = 1 });
     try testing.expectEqual(9, d.focus.?);
-    try testing.expectEqual(null, d.focus_threshold_uv);
     // Right: listen to that channel alone; the focus stays.
     d.pointer_fy = 3.5 / 32.0;
     _ = d.applyInput(.{ .right_clicks = 1 });
@@ -1904,6 +1935,31 @@ test "clicks on a row: left focuses, right listens, Ctrl+right adds or removes, 
     // A left click on AUX focuses nothing.
     _ = d.applyInput(.{ .clicks = 1 });
     try testing.expectEqual(null, d.focus);
+}
+
+test "a channel's threshold: fixed, else as reported; the tile window's request sets it" {
+    var d = clickDisplay(0);
+    try testing.expectEqual(null, d.thresholdUv(5));
+    // What the tile window reports for every electrode: in use, following the noise.
+    for (0..32) |ch| d.reported.uv[ch] = -40 - @as(f32, @floatFromInt(ch));
+    d.reported.len = 32;
+    try testing.expectEqual(-45, d.thresholdUv(5).?);
+    try testing.expectEqual(null, d.thresholdUv(40));
+    // Asked for in the tile window: fixed, rising; the display's value wins over the report.
+    d.tileRequest(.{ .threshold = .{ .channel = 5, .uv = 70 } });
+    try testing.expect(d.thresholds_changed);
+    try testing.expectEqual(70, d.thresholdUv(5).?);
+    try testing.expectEqual(70, d.tileConfig().thresholds.fixed_uv[5]);
+    // 0: back to the noise, and the reported value again.
+    d.thresholds_changed = false;
+    d.tileRequest(.{ .threshold = .{ .channel = 5, .uv = 0 } });
+    try testing.expect(d.thresholds_changed);
+    try testing.expect(!d.thresholds.isFixed(5));
+    try testing.expectEqual(-45, d.thresholdUv(5).?);
+    // The same again changes nothing.
+    d.thresholds_changed = false;
+    d.tileRequest(.{ .threshold = .{ .channel = 5, .uv = 0 } });
+    try testing.expect(!d.thresholds_changed);
 }
 
 test "Shift+a acknowledges an alarm, a alone does not" {

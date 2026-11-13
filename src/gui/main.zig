@@ -343,26 +343,23 @@ pub fn main(init: std.process.Init) !u8 {
             notes.dirty = false;
             snap_dirty = true;
         }
-        // What was asked for in the tile window: focus a channel, clear the focus, listen.
-        while (tiles_shared.requests.pop()) |request| switch (request) {
-            .focus => |channel| display.setFocus(channel),
-            .unfocus => display.setFocus(null),
-            .listen => |l| display.listenClick(l.channel, l.add),
-        };
-        // What the tile window reports: the focused channel's threshold, and its view.
+        // What was asked for in the tile window: focus a channel, clear the focus, listen,
+        // set a threshold.
+        while (tiles_shared.requests.pop()) |request| display.tileRequest(request);
+        // What the tile window reports: every electrode's threshold in use, and its view.
         {
             var report: tile_link.Report = undefined;
             if (tiles_shared.report.read(&report, &tile_report_seen)) {
-                display.focus_threshold_uv = if (report.threshold_valid and display.focus == report.threshold_channel)
-                    report.threshold_uv
-                else
-                    null;
+                display.reported = report.thresholds;
                 if (!report.view.eql(&tile_view)) {
                     tile_view = report.view;
                     snap_dirty = true;
                 }
             }
-            if (display.focus == null) display.focus_threshold_uv = null;
+        }
+        if (display.thresholds_changed) {
+            display.thresholds_changed = false;
+            snap_dirty = true;
         }
         if (pl.tiles_win != null and nowNs() - tiles_published_ns > 200 * std.time.ns_per_ms) {
             tiles_published_ns = nowNs();
