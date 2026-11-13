@@ -20,20 +20,35 @@ const types = @import("types.zig");
 const toml = @import("toml.zig");
 const Settings = types.Settings;
 
-pub var error_message_buf: [160]u8 = undefined;
-pub var error_message: []const u8 = "";
+/// What `read` found wrong, for the caller's message. The caller owns it and passes a
+/// pointer.
+pub const Diagnostics = struct {
+    buf: [160]u8 = undefined,
+    len: usize = 0,
 
-fn fail(comptime fmt: []const u8, args: anytype) error{BadBoardConfig} {
-    error_message = std.fmt.bufPrint(&error_message_buf, fmt, args) catch "bad [board] table";
-    return error.BadBoardConfig;
-}
+    /// After `error.BadBoardConfig`, what was wrong with the `[board]` table.
+    pub fn message(self: *const Diagnostics) []const u8 {
+        return self.buf[0..self.len];
+    }
+
+    fn fail(self: *Diagnostics, comptime fmt: []const u8, args: anytype) error{BadBoardConfig} {
+        const text = std.fmt.bufPrint(&self.buf, fmt, args) catch blk: {
+            const fallback = "bad [board] table";
+            @memcpy(self.buf[0..fallback.len], fallback);
+            break :blk self.buf[0..fallback.len];
+        };
+        self.len = text.len;
+        return error.BadBoardConfig;
+    }
+};
 
 pub const sample_rates = [_]u32{ 1000, 1250, 1500, 2000, 2500, 3000, 3333, 5000, 6250, 10000, 12500, 15000, 20000, 25000, 30000 };
 pub const lower_steps = [_]f64{ 0.1, 0.3, 1, 3, 10, 30, 100, 300, 500 };
 pub const upper_steps = [_]f64{ 100, 300, 1000, 3000, 5000, 7500, 10000, 15000, 20000 };
 
-/// Applies the `[board]` table of `doc` to `s`.
-pub fn read(doc: toml.Document, s: *Settings) error{BadBoardConfig}!void {
+/// Applies the `[board]` table of `doc` to `s`. After `error.BadBoardConfig`, `diag` says
+/// what was wrong.
+pub fn read(doc: toml.Document, s: *Settings, diag: *Diagnostics) error{BadBoardConfig}!void {
     for (doc.entries) |e| {
         if (!std.mem.eql(u8, e.table, "board")) continue;
         const k = e.key;
@@ -44,7 +59,7 @@ pub fn read(doc: toml.Document, s: *Settings) error{BadBoardConfig}!void {
         }.f;
         if (is(k, "sample_rate") and e.value == .number) {
             const want: u32 = @intFromFloat(std.math.clamp(e.value.number, 0, 1e6));
-            if (std.mem.indexOfScalar(u32, &sample_rates, want) == null) return fail("line {d}: sample_rate {d} is not one the board offers (1000 ... 30000)", .{ e.line, want });
+            if (std.mem.indexOfScalar(u32, &sample_rates, want) == null) return diag.fail("line {d}: sample_rate {d} is not one the board offers (1000 ... 30000)", .{ e.line, want });
             s.sample_rate = want;
         } else if (is(k, "lower_hz") and e.value == .number) {
             s.lower_bandwidth = e.value.number;
@@ -66,10 +81,10 @@ pub fn read(doc: toml.Document, s: *Settings) error{BadBoardConfig}!void {
             while (it.next()) |name| {
                 const slot = for (types.headstage_names, 0..) |n, i| {
                     if (std.ascii.eqlIgnoreCase(n, name)) break i;
-                } else return fail("line {d}: half_channels: '{s}' is not a headstage (A1 ... D2)", .{ e.line, name });
+                } else return diag.fail("line {d}: half_channels: '{s}' is not a headstage (A1 ... D2)", .{ e.line, name });
                 s.rhd2132_16ch[slot] = true;
             }
-        } else return fail("line {d}: unknown [board] key '{s}' or wrong type", .{ e.line, k });
+        } else return diag.fail("line {d}: unknown [board] key '{s}' or wrong type", .{ e.line, k });
     }
 }
 
@@ -210,6 +225,7 @@ test "the [board] table is read, rendered and read back the same" {
     defer arena_state.deinit();
     const a = arena_state.allocator();
     var s: Settings = .{};
+    var diag: Diagnostics = .{};
     try read(try toml.parse(a,
         \\monitor = "DP-2"
         \\[board]
@@ -221,7 +237,7 @@ test "the [board] table is read, rendered and read back the same" {
         \\adc = true
         \\[[panel]]
         \\source = "A1"
-    ), &s);
+    , null), &s, &diag);
     try testing.expectEqual(20000, s.sample_rate);
     try testing.expectEqual(0.3, s.lower_bandwidth);
     try testing.expectEqual(10000, s.upper_bandwidth);
@@ -231,17 +247,34 @@ test "the [board] table is read, rendered and read back the same" {
 
     var buf: [400]u8 = undefined;
     var back: Settings = .{};
-    try read(try toml.parse(a, render(&buf, &s)), &back);
+    try read(try toml.parse(a, render(&buf, &s), null), &back, &diag);
     try testing.expectEqual(s.sample_rate, back.sample_rate);
     try testing.expectEqual(s.lower_bandwidth, back.lower_bandwidth);
     try testing.expectEqual(s.dsp_cutoff, back.dsp_cutoff);
     try testing.expectEqualSlices(bool, &s.rhd2132_16ch, &back.rhd2132_16ch);
     try testing.expectEqual(s.acquire_adc, back.acquire_adc);
 
-    try testing.expectError(error.BadBoardConfig, read(try toml.parse(a, "[board]\nsample_rate = 44100"), &back));
-    try testing.expectError(error.BadBoardConfig, read(try toml.parse(a, "[board]\nhalf_channels = \"E1\""), &back));
-    try testing.expectError(error.BadBoardConfig, read(try toml.parse(a, "[board]\nspeed = 3"), &back));
-    try testing.expect(std.mem.indexOf(u8, error_message, "speed") != null);
+    try testing.expectError(error.BadBoardConfig, read(try toml.parse(a, "[board]\nsample_rate = 44100", null), &back, &diag));
+    try testing.expectError(error.BadBoardConfig, read(try toml.parse(a, "[board]\nhalf_channels = \"E1\"", null), &back, &diag));
+    try testing.expectError(error.BadBoardConfig, read(try toml.parse(a, "[board]\nspeed = 3", null), &back, &diag));
+    try testing.expect(std.mem.indexOf(u8, diag.message(), "speed") != null);
+}
+
+test "two reads with different errors each report their own message" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var s: Settings = .{};
+    var first: Diagnostics = .{};
+    var second: Diagnostics = .{};
+    // The text `parseArgs` logs after "config: ".
+    try testing.expectError(error.BadBoardConfig, read(try toml.parse(a, "[board]\nspeed = 3", null), &s, &first));
+    try testing.expectError(error.BadBoardConfig, read(try toml.parse(a, "\n\n[board]\nsample_rate = 44100", null), &s, &second));
+    try testing.expectEqualStrings("line 2: unknown [board] key 'speed' or wrong type", first.message());
+    try testing.expectEqualStrings("line 4: sample_rate 44100 is not one the board offers (1000 ... 30000)", second.message());
+    // A message too long for the buffer says only which table.
+    try testing.expectError(error.BadBoardConfig, read(try toml.parse(a, "[board]\nhalf_channels = \"" ++ &@as([150]u8, @splat('x')) ++ "\"", null), &s, &first));
+    try testing.expectEqualStrings("bad [board] table", first.message());
 }
 
 test "replacing the [board] table leaves the rest of the file alone" {

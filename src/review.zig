@@ -275,7 +275,7 @@ test "review reads a recording back through the feed, in pieces, in any order" {
     layout.headstages[0] = .{ .slot = 0, .chip = "RHD2132", .num_channels = 2, .first_channel = 0, .has_bno = false };
     layout.num_headstages = 1;
     layout.num_electrodes = 2;
-    var set = panels.default(&layout);
+    var set = panels.default(&layout, .scroll);
     // Row 1 as acquired, row 2 through 300 Hz to 6 kHz; and a lane for TTL line 2.
     set.items[0].filtered = true;
     set.items[0].raw_rows.set(0, true);

@@ -162,7 +162,8 @@ const Display = struct {
         const gpa = self.gpa;
         var arena_state: std.heap.ArenaAllocator = .init(gpa);
         defer arena_state.deinit();
-        var set = try panels.fromConfig(try toml.parse(arena_state.allocator(), panel_config), self.layout);
+        var panel_diag: panels.Diagnostics = .{};
+        var set = try panels.fromConfig(try toml.parse(arena_state.allocator(), panel_config, null), self.layout, &panel_diag);
 
         const hist_cap = 1 << 15;
         var feed = try feed_mod.Feed.init(gpa, self.layout, &set, hist_cap);

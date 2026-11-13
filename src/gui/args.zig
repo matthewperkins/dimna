@@ -133,8 +133,9 @@ pub fn parseArgs(args: []const [:0]const u8, doc: oez.toml.Document) !Args {
     var a: Args = .{};
     applyConfig(&a, doc);
     // The [board] table; command-line options below win over it.
-    oez.board_config.read(doc, &a.settings) catch {
-        log.err("config: {s}", .{oez.board_config.error_message});
+    var board_diag: oez.board_config.Diagnostics = .{};
+    oez.board_config.read(doc, &a.settings, &board_diag) catch {
+        log.err("config: {s}", .{board_diag.message()});
         return error.BadArgs;
     };
     var i: usize = 1;

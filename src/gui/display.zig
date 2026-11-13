@@ -687,12 +687,13 @@ pub const Display = struct {
 
 /// The panels for this run: from the config, or one per headstage.
 pub fn makeDisplay(args: Args, layout: *const oez.types.Layout) ?Display {
-    var set = panels_mod.fromConfig(args.doc, layout) catch {
-        log.err("config: {s}", .{panels_mod.error_message});
+    var diag: panels_mod.Diagnostics = .{};
+    var set = panels_mod.fromConfig(args.doc, layout, &diag) catch {
+        log.err("config: {s}", .{diag.message()});
         return null;
     };
-    const applied = panels_mod.applyViews(&set, args.views_doc) catch blk: {
-        log.warn("view file: {s}; the rest of it is ignored", .{panels_mod.error_message});
+    const applied = panels_mod.applyViews(&set, args.views_doc, &diag) catch blk: {
+        log.warn("view file: {s}; the rest of it is ignored", .{diag.message()});
         break :blk 0;
     };
     if (applied > 0) log.info("view file: settings for {d} panels", .{applied});
