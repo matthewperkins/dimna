@@ -51,6 +51,29 @@ pub fn channelName(buf: []u8, layout: *const oez.types.Layout, ch: u32) []const 
     return layout.channelName(buf, ch);
 }
 
+/// What `Display.frame` needs of the GPU: the display's size in pixels, the shape of the
+/// sample history, and where the rows' own scales go (`Gpu.row_gains`, mapped memory that
+/// the shader reads; `frame` writes into it).
+pub const Surface = struct {
+    width: u32,
+    height: u32,
+    /// Columns of the sample history.
+    nch: usize,
+    /// Samples the history holds (a power of two).
+    hist_cap: usize,
+    row_gains: []f32,
+
+    pub fn of(gpu: *const Gpu) Surface {
+        return .{
+            .width = gpu.extent.width,
+            .height = gpu.extent.height,
+            .nch = gpu.nch,
+            .hist_cap = gpu.hist_cap,
+            .row_gains = gpu.row_gains,
+        };
+    }
+};
+
 /// The display in scroll-back review: where it is looking.
 pub const ReviewView = struct {
     /// The sample at the right edge of every panel in review.
@@ -428,7 +451,7 @@ pub const Display = struct {
     /// row labels, and the status read-out in the bottom right corner.
     pub fn frame(
         self: *const Display,
-        gpu: *const Gpu,
+        surface: Surface,
         layout: *const oez.types.Layout,
         newest: i64,
         review: ?ReviewView,
@@ -438,9 +461,9 @@ pub const Display = struct {
         draws: *[max_draws]gpu_mod.PanelDraw,
         fills: *[max_fills]gpu_mod.Fill,
     ) struct { draws: []const gpu_mod.PanelDraw, fills: []const gpu_mod.Fill, text: []const font.Vertex } {
-        const width = gpu.extent.width;
-        const height = gpu.extent.height;
-        const nch = gpu.nch;
+        const width = surface.width;
+        const height = surface.height;
+        const nch = surface.nch;
         const fs = layout.sample_rate;
         var nf: usize = 0;
         var nd: usize = 0;
@@ -461,7 +484,7 @@ pub const Display = struct {
             const shown = p.shownRows();
             var params: gpu_mod.TraceParams = .{
                 .nch = @intCast(nch),
-                .cap_mask = @intCast(gpu.hist_cap - 1),
+                .cap_mask = @intCast(surface.hist_cap - 1),
                 .newest = @truncate(@as(u64, @bitCast(t_end))),
                 .first_ch = p.drawColumn(),
                 .cols = r.w,
@@ -473,8 +496,8 @@ pub const Display = struct {
                 .gain_base = @intCast(i * gpu_mod.max_rows),
             };
             // The rows' own scales, for the shader, in the order the rows are drawn.
-            if (gpu.row_gains.len >= (i + 1) * gpu_mod.max_rows) {
-                const gains = gpu.row_gains[i * gpu_mod.max_rows ..][0..gpu_mod.max_rows];
+            if (surface.row_gains.len >= (i + 1) * gpu_mod.max_rows) {
+                const gains = surface.row_gains[i * gpu_mod.max_rows ..][0..gpu_mod.max_rows];
                 for (0..@min(shown, gpu_mod.max_rows)) |k| gains[k] = p.per_row.gain[p.rowOfShown(k) orelse k];
             }
             const rect: gpu_mod.PixelRect = .{ .x = r.x, .y = r.y, .w = r.w, .h = r.h };
@@ -486,7 +509,7 @@ pub const Display = struct {
                 const post: i64 = @max(1, @as(i64, @intFromFloat(@round(p.trigger.post_ms * 1e-3 * fs))));
                 const window: f64 = @floatFromInt(pre + post);
                 // Sweeps whose samples the history may no longer hold are left out.
-                const keep: i64 = @as(i64, @intCast(gpu.hist_cap)) - @as(i64, @intFromFloat(fs));
+                const keep: i64 = @as(i64, @intCast(surface.hist_cap)) - @as(i64, @intFromFloat(fs));
                 var k: usize = @min(p.trigger.overlay, trig.len);
                 while (k > 0) {
                     k -= 1;
@@ -830,3 +853,440 @@ pub const Text = struct {
         return .{ .font = &self.font, .vertices = self.vertices };
     }
 };
+
+// ---- What the display draws, frozen ----
+//
+// `frame` decides what the experimenter sees. This test runs it on a set of states (panels
+// of every kind and mode, sweeps, tint pulses, notes, review, alarms, the status read-out),
+// each put into the `Display` through its own functions (`feedBlock` for the triggers and
+// pulses, `Notes.handle` for the notes), with the control window's hand-made font: every
+// character is 8 pixels wide and drawn as a 1x1 quad whose atlas position names it. It
+// writes everything `frame` returns, in order, as text: each trace draw with every field
+// of its parameters, the rows' own scales it puts into the gain buffer, each fill, and the
+// batch's rectangles and text runs. It is compared with `testdata/display_frame.txt`. Set
+// OEZ_DISPLAY_FRAME_OUT to a path to write what this run produced there.
+
+const testing = std.testing;
+
+var frame_atlas: [1]u8 = .{0};
+
+/// The hand-made font (as control.zig's test has it); a line height of 0 is a display
+/// without a font.
+fn frameFont(line_height: f32) font.Font {
+    var f: font.Font = .{ .atlas = &frame_atlas, .px = 14, .ascent = 12, .line_height = line_height };
+    for (&f.glyphs, 0..) |*g, k| g.* = .{ .x = @intCast(8 + k), .y = 8, .w = 1, .h = 1, .top = 12, .advance = 8 };
+    return f;
+}
+
+/// The code point of glyph `k` of `frameFont` (as `font.Font.glyph` numbers them).
+fn frameCodepoint(k: usize) u21 {
+    const extra = [_]u21{ 0x03C3, 0x2013, 0x2192, 0x266A };
+    return if (k < 224) @intCast(32 + k) else extra[k - 224];
+}
+
+const frame_fs = 30000.0;
+/// Columns of the history (as `feed` lays it out, more than the stream's channels).
+const frame_nch = 62;
+/// The newest sample of every state: 100.4115 s, 12345 samples into a pass of 1 s.
+const frame_newest: i64 = 3_012_345;
+
+/// Two headstages (A: 32 channels, B: 16), 6 AUX and 8 ADC channels.
+fn frameLayout() oez.types.Layout {
+    var l: oez.types.Layout = .{ .sample_rate = frame_fs, .hw_clock_hz = 50e6, .num_electrodes = 48, .num_aux = 6, .num_adc = 8 };
+    l.headstages[0] = .{ .slot = 0, .chip = "RHD2132", .num_channels = 32, .first_channel = 0, .has_bno = false };
+    l.headstages[1] = .{ .slot = 2, .chip = "RHD2216", .num_channels = 16, .first_channel = 32, .has_bno = false };
+    l.num_headstages = 2;
+    return l;
+}
+
+fn framePanel(name: []const u8, kind: panels_mod.Kind, first_ch: u32, rows: u32, place: panels_mod.Place) Panel {
+    var p: Panel = .{
+        .place = place,
+        .kind = kind,
+        .first_ch = first_ch,
+        .rows = rows,
+        .span_s = 2,
+        .scale = Panel.defaultScale(kind),
+        .slot = 7 + first_ch,
+    };
+    @memcpy(p.name_buf[0..name.len], name);
+    p.name_len = name.len;
+    return p;
+}
+
+fn setText(buf: []u8, len: *usize, s: []const u8) void {
+    @memcpy(buf[0..s.len], s);
+    len.* = s.len;
+}
+
+/// Sample `n` of channel `ch`: hashed noise of ±128 LSB, with negative spikes on channel 4
+/// and positive ones on channel 34.
+fn frameSample(n: i64, ch: usize) i16 {
+    var h: u64 = @as(u64, @bitCast(n)) *% 0x9E3779B97F4A7C15 ^ (@as(u64, ch) +% 1) *% 0xBF58476D1CE4E5B9;
+    h ^= h >> 31;
+    h *%= 0x94D049BB133111EB;
+    h ^= h >> 29;
+    var v: i32 = @as(i32, @intCast(h & 0xff)) - 128;
+    if (ch == 4 and @mod(n, 2003) < 6) v -= 1500;
+    if (ch == 34 and @mod(n, 1999) < 6) v += 1200;
+    return @intCast(v);
+}
+
+/// TTL line 2: 20 ms high every 200 ms, the last rise 500 samples before the newest (still
+/// high). Line 3: high from 2_990_000 to 3_004_000 (across the start of the sweep's pass),
+/// 3_006_000 to 3_008_000, and from 3_011_000 on (across the cursor); earlier, a pulse the
+/// cursor has gone over (2_975_000 to 2_978_000) and, for review, 0.1 s every second.
+/// Line 6: 100 samples every 9000, the last fall 900 samples before the newest. Line 4:
+/// never.
+fn frameWord(n: i64) u16 {
+    var w: u16 = 0;
+    if (@mod(n - (frame_newest - 500), 6000) < 600) w |= 1 << 1;
+    const tint = (n >= 2_990_000 and n < 3_004_000) or (n >= 3_006_000 and n < 3_008_000) or n >= 3_011_000 or
+        (n >= 2_975_000 and n < 2_978_000) or (n < 2_970_000 and @mod(n, 30000) < 3000);
+    if (tint) w |= 1 << 2;
+    if (@mod(n - (frame_newest - 1000), 9000) < 100) w |= 1 << 5;
+    return w;
+}
+
+/// One state: the display, and what `frame` is given besides it.
+const FrameState = struct {
+    display: Display = .init(.{}),
+    notes: notes_mod.Notes = .{},
+    status: Status = .{},
+    review: ?ReviewView = null,
+    width: u32 = 1000,
+    height: u32 = 700,
+    hist_cap: usize = 1 << 20,
+    no_text: bool = false,
+
+    fn panels(self: *FrameState, list: []const Panel) void {
+        var set: panels_mod.Set = .{};
+        for (list, 0..) |p, k| set.items[k] = p;
+        set.len = list.len;
+        setText(&set.ttl_name_buf[1], &set.ttl_name_len[1], "laser");
+        setText(&set.ttl_name_buf[4], &set.ttl_name_len[4], "camera trigger");
+        self.display = .init(set);
+    }
+
+    /// Feeds the `seconds` before the newest sample to the display, in blocks, as
+    /// acquisition would: TTL words always, samples when a panel triggers on a slope.
+    fn feed(self: *FrameState, seconds: f64, with_samples: bool) void {
+        const block = 256;
+        var samples: [block * frame_nch]i16 = undefined;
+        var words: [block]u16 = undefined;
+        var first: i64 = frame_newest - @as(i64, @intFromFloat(seconds * frame_fs));
+        while (first <= frame_newest) : (first += block) {
+            const n: usize = @intCast(@min(block, frame_newest - first + 1));
+            for (0..n) |k| {
+                const s = first + @as(i64, @intCast(k));
+                words[k] = frameWord(s);
+                if (with_samples) for (0..frame_nch) |ch| {
+                    samples[k * frame_nch + ch] = frameSample(s, ch);
+                };
+            }
+            self.display.feedBlock(first, samples[0..if (with_samples) n * frame_nch else 0], frame_nch, frame_fs, words[0..n]);
+        }
+    }
+
+    /// Opens a note at sample `at` and types `text` into it, as the keys would.
+    fn typeNote(self: *FrameState, at: i64, text: []const u8) void {
+        var in: Input = .{};
+        in.keys[0] = .{ .char = '/' };
+        in.num_keys = 1;
+        setText(&in.text, &in.text_len, "/");
+        self.notes.handle(&in, at, "");
+        var rest = text;
+        while (rest.len > 0) {
+            const chunk = notes_mod.prefix(rest, in.text.len);
+            in = .{};
+            setText(&in.text, &in.text_len, chunk);
+            self.notes.handle(&in, at, "");
+            rest = rest[chunk.len..];
+        }
+    }
+
+    /// A note saved at sample `at`.
+    fn note(self: *FrameState, at: i64, text: []const u8) void {
+        self.typeNote(at, text);
+        var in: Input = .{};
+        in.keys[0] = .{ .named = .enter };
+        in.num_keys = 1;
+        self.notes.handle(&in, at, "");
+    }
+};
+
+const frame_states = [_][]const u8{
+    "scrolling: filter, raw, hidden, row scale, reference; AUX, ADC, TTL lanes",
+    "sweep: cursor, tint line high across it",
+    "triggered on TTL: sweeps, the newest part-filled, pulse shading",
+    "triggered on a slope: fixed level, and following the noise",
+    "notes: this pass, the previous pass, one being typed",
+    "review from the file",
+    "review from the file, still reading",
+    "review frozen, without a file; warning bar",
+    "alarm, not acknowledged",
+    "alarm acknowledged",
+    "warning",
+    "heard rows, target bar, latency",
+    "lost blocks, recording",
+    "small window",
+    "no font",
+};
+
+/// Puts state `k` of `frame_states` into `st`.
+fn frameState(st: *FrameState, k: usize) void {
+    st.* = .{};
+    switch (k) {
+        0 => {
+            var a = framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0, .w = 0.5, .h = 0.55 });
+            a.filter.on = true;
+            // Rows are labelled every second one here: these are among the labelled.
+            a.per_row.raw.set(4, true);
+            a.per_row.hidden.set(7, true);
+            a.per_row.hidden.set(9, true);
+            a.per_row.gain[6] = 2;
+            a.per_row.gain[9] = 0.5;
+            a.per_row.gain[10] = 0.5;
+            a.setCar(true);
+            a.reference.ref.set(2, false);
+            a.reference.sub.set(0, false);
+            var b = framePanel("Port B", .electrode, 32, 16, .{ .x = 0.5, .y = 0, .w = 0.5, .h = 0.55 });
+            b.span_s = 0.5;
+            b.setCar(true);
+            var adc = framePanel("ADC", .adc, 54, 8, .{ .x = 0.3, .y = 0.55, .w = 0.7, .h = 0.2 });
+            adc.scale = 2.5;
+            var ttl = framePanel("TTL", .ttl, 0, 5, .{ .x = 0, .y = 0.75, .w = 1, .h = 0.25 });
+            ttl.ttl_lines = .{ 1, 2, 3, 5, 8, 6, 7, 4 };
+            st.panels(&.{ a, b, framePanel("AUX", .aux, 48, 6, .{ .x = 0, .y = 0.55, .w = 0.3, .h = 0.2 }), adc, ttl });
+        },
+        1 => {
+            var a = framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0, .w = 1, .h = 0.6 });
+            a.mode = .sweep;
+            a.span_s = 1;
+            a.tint_line = 3;
+            a.filter.on = true;
+            a.filter.low_hz = 10;
+            a.filter.high_hz = 0;
+            var adc = framePanel("ADC", .adc, 54, 8, .{ .x = 0, .y = 0.6, .w = 0.5, .h = 0.4 });
+            adc.tint_line = 3;
+            var ttl = framePanel("TTL", .ttl, 0, 8, .{ .x = 0.5, .y = 0.6, .w = 0.5, .h = 0.4 });
+            ttl.mode = .sweep;
+            ttl.span_s = 1;
+            st.panels(&.{ a, adc, ttl });
+            st.display.target = 1;
+            st.feed(3, false);
+        },
+        2, 14 => {
+            var a = framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0, .w = 0.6, .h = 0.7 });
+            a.mode = .triggered;
+            a.trigger.overlay = 12;
+            a.filter.on = true;
+            var adc = framePanel("ADC", .adc, 54, 8, .{ .x = 0.6, .y = 0, .w = 0.4, .h = 0.7 });
+            adc.mode = .triggered;
+            adc.trigger.line = 6;
+            adc.trigger.pre_ms = 2;
+            adc.trigger.post_ms = 8;
+            var ttl = framePanel("TTL", .ttl, 0, 3, .{ .x = 0, .y = 0.7, .w = 1, .h = 0.3 });
+            ttl.mode = .triggered;
+            ttl.trigger.line = 4;
+            st.panels(&.{ a, adc, ttl });
+            // The oldest sweeps are no longer in a history this short.
+            st.hist_cap = 1 << 16;
+            st.no_text = k == 14;
+            st.feed(8, false);
+        },
+        3 => {
+            var a = framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0, .w = 0.5, .h = 1 });
+            a.mode = .triggered;
+            a.setTrigSource(.channel);
+            a.trigger.row = 4;
+            a.trigger.auto = false;
+            a.trigger.level_uv = -62;
+            a.trigger.holdoff_ms = 2;
+            a.per_row.hidden.set(1, true);
+            a.per_row.gain[4] = 1.5;
+            a.filter.on = true;
+            var b = framePanel("Port B", .electrode, 32, 16, .{ .x = 0.5, .y = 0, .w = 0.5, .h = 1 });
+            b.mode = .triggered;
+            b.setTrigSource(.channel);
+            b.trigger.row = 2;
+            b.trigger.rising = true;
+            b.trigger.level_uv = 50;
+            b.trigger.overlay = 5;
+            st.panels(&.{ a, b });
+            st.feed(3, true);
+        },
+        4 => {
+            var a = framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0, .w = 1, .h = 0.5 });
+            a.mode = .sweep;
+            a.span_s = 1;
+            const b = framePanel("Port B", .electrode, 32, 16, .{ .x = 0, .y = 0.5, .w = 1, .h = 0.5 });
+            st.panels(&.{ a, b });
+            st.note(2_940_000, "older than the window");
+            st.note(2_975_000, "where the cursor has been");
+            st.note(2_990_000, "previous pass");
+            // Cut at 40 bytes, in the middle of the "µ".
+            st.note(3_005_000, "this pass: cell 3 at 2100 um, depth 2.1µm, more");
+            st.note(3_012_300, "at the right edge");
+            st.note(3_012_400, "after the newest sample");
+            st.typeNote(3_012_000, "spike at 2 µm");
+        },
+        5, 6, 7 => {
+            var a = framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0, .w = 0.5, .h = 0.6 });
+            a.tint_line = 3;
+            a.span_s = 5;
+            var b = framePanel("Port B", .electrode, 32, 16, .{ .x = 0.5, .y = 0, .w = 0.5, .h = 0.6 });
+            b.mode = .sweep;
+            b.span_s = 1;
+            var c = framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0.6, .w = 0.7, .h = 0.4 });
+            c.mode = .triggered;
+            const ttl = framePanel("TTL", .ttl, 0, 8, .{ .x = 0.7, .y = 0.6, .w = 0.3, .h = 0.4 });
+            st.panels(&.{ a, b, c, ttl });
+            st.feed(20, false);
+            const end = frame_newest - 375_000;
+            st.note(end - 10_000, "in the review stretch");
+            st.note(frame_newest - 1000, "after it");
+            st.review = .{ .end = end, .from_file = k != 7, .ready = k != 6, .behind_s = 12.5 };
+            if (k == 7) setText(&st.status.warning_buf, &st.status.warning_len, "the disk is falling behind");
+        },
+        8, 9, 10 => {
+            st.panels(&.{
+                framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0, .w = 0.5, .h = 1 }),
+                framePanel("Port B", .electrode, 32, 16, .{ .x = 0.5, .y = 0, .w = 0.5, .h = 1 }),
+            });
+            st.status = .{ .valid = true, .latency_ms = 4.25, .fps = 144 };
+            if (k != 9) setText(&st.status.warning_buf, &st.status.warning_len, "the disk is falling behind");
+            if (k == 8) setText(&st.status.alarm_buf, &st.status.alarm_len, "SAMPLES LOST: 3 blocks");
+            // Acknowledged: the alarms (session.zig) take the alarm out of the status.
+            st.display.acknowledged = k == 9;
+        },
+        11, 12 => {
+            var aux = framePanel("AUX", .aux, 48, 6, .{ .x = 0.5, .y = 0.5, .w = 0.5, .h = 0.5 });
+            aux.mode = .sweep;
+            st.panels(&.{
+                framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0, .w = 0.5, .h = 1 }),
+                // Across both headstages.
+                framePanel("A and B", .electrode, 28, 8, .{ .x = 0.5, .y = 0, .w = 0.5, .h = 0.5 }),
+                aux,
+            });
+            st.display.audio.enabled = k == 11;
+            st.display.audio.channels[0] = 5;
+            st.display.audio.channels[1] = 30;
+            st.display.audio.channels[2] = 33;
+            st.display.audio.num_channels = 3;
+            st.display.target = 1;
+            st.status = .{ .valid = true, .latency_ms = 4.25, .fps = 144 };
+            if (k == 12) {
+                st.status.lost = 7;
+                st.status.recording = true;
+                st.status.rec_seconds = 3725.5;
+            }
+        },
+        13 => {
+            var a = framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0, .w = 0.5, .h = 1 });
+            a.mode = .triggered;
+            st.panels(&.{
+                a,
+                framePanel("Port B", .electrode, 32, 16, .{ .x = 0.5, .y = 0, .w = 0.5, .h = 0.5 }),
+                framePanel("ADC", .adc, 54, 8, .{ .x = 0.5, .y = 0.5, .w = 0.5, .h = 0.5 }),
+            });
+            st.width = 320;
+            st.height = 180;
+            st.status = .{ .valid = true, .latency_ms = 12.5, .fps = 60, .recording = true, .rec_seconds = 61 };
+            st.feed(2, false);
+        },
+        else => unreachable,
+    }
+}
+
+/// Writes the batch's quads as rectangles and runs of text (glyphs on one row, of one
+/// colour, 8 pixels apart). Returns how many of each; with `w` null, only counts.
+fn writeQuads(w: ?*std.Io.Writer, verts: []const font.Vertex) !struct { rects: usize, runs: usize } {
+    const quads = verts.len / 6;
+    var rects: usize = 0;
+    var runs: usize = 0;
+    var q: usize = 0;
+    while (q < quads) {
+        const v = verts[q * 6 ..][0..6];
+        const x = v[0].pos[0];
+        const y = v[0].pos[1];
+        const col = v[0].colour;
+        if (v[0].uv[0] * font.atlas_size < 8) {
+            if (w) |out| try out.print("rect {d} {d} {d} {d} {any}\n", .{ x, y, v[2].pos[0] - x, v[2].pos[1] - y, col });
+            rects += 1;
+            q += 1;
+            continue;
+        }
+        runs += 1;
+        if (w) |out| try out.print("text {d} {d} {any} \"", .{ x, y, col });
+        var next_x = x;
+        while (q < quads) : (q += 1) {
+            const g = verts[q * 6 ..][0..6];
+            const gu = g[0].uv[0] * font.atlas_size;
+            if (gu < 8 or g[0].pos[0] != next_x or g[0].pos[1] != y or !std.mem.eql(u8, &g[0].colour, &col)) break;
+            var utf: [4]u8 = undefined;
+            const n = std.unicode.utf8Encode(frameCodepoint(@intFromFloat(gu - 8)), &utf) catch unreachable;
+            if (w) |out| try out.writeAll(utf[0..n]);
+            next_x += 8;
+        }
+        if (w) |out| try out.writeAll("\"\n");
+    }
+    return .{ .rects = rects, .runs = runs };
+}
+
+/// Runs `frame` on `st` and writes what it returned.
+fn writeFrame(w: *std.Io.Writer, name: []const u8, st: *const FrameState, gains: []f32, vertices: []font.Vertex) !void {
+    const layout = frameLayout();
+    const face = frameFont(if (st.no_text) 0 else 16);
+    var batch: font.Batch = .{ .font = &face, .vertices = vertices };
+    var draws: [max_draws]gpu_mod.PanelDraw = undefined;
+    var fills: [max_fills]gpu_mod.Fill = undefined;
+    @memset(gains, 1);
+    const surface: Surface = .{ .width = st.width, .height = st.height, .nch = frame_nch, .hist_cap = st.hist_cap, .row_gains = gains };
+    const fr = st.display.frame(surface, &layout, frame_newest, st.review, st.status, &st.notes, &batch, &draws, &fills);
+    // A full batch drops quads silently: the comparison would then miss them.
+    try testing.expect(batch.len + 6 <= vertices.len);
+    const counts = try writeQuads(null, fr.text);
+    try w.print(
+        "== {s}: {d} draws, {d} fills, {d} text runs, {d} rects\n",
+        .{ name, fr.draws.len, fr.fills.len, counts.runs, counts.rects },
+    );
+    for (fr.draws) |d| {
+        try w.print("draw {d} {d} {d} {d} review={}", .{ d.rect.x, d.rect.y, d.rect.w, d.rect.h, d.review });
+        inline for (@typeInfo(gpu_mod.TraceParams).@"struct".field_names) |f| try w.print(" {s}={d}", .{ f, @field(d.params, f) });
+        try w.writeByte('\n');
+    }
+    // The rows' own scales, where they are not 1.
+    for (gains, 0..) |g, k| {
+        if (g != 1) try w.print("gain {d} row {d}: {d}\n", .{ k / gpu_mod.max_rows, k % gpu_mod.max_rows, g });
+    }
+    for (fr.fills) |f| try w.print(
+        "fill {d} {d} {d} {d} {d} {d} {d} {d}\n",
+        .{ f.rect.x, f.rect.y, f.rect.w, f.rect.h, f.colour[0], f.colour[1], f.colour[2], f.colour[3] },
+    );
+    _ = try writeQuads(w, fr.text);
+}
+
+test "what the display draws is unchanged" {
+    const gpa = testing.allocator;
+    const vertices = try gpa.alloc(font.Vertex, max_text_vertices);
+    defer gpa.free(vertices);
+    const gains = try gpa.alloc(f32, gpu_mod.max_rows * gpu_mod.max_gain_panels);
+    defer gpa.free(gains);
+    const st = try gpa.create(FrameState);
+    defer gpa.destroy(st);
+
+    var out: std.Io.Writer.Allocating = .init(gpa);
+    defer out.deinit();
+    for (frame_states, 0..) |name, k| {
+        frameState(st, k);
+        try writeFrame(&out.writer, name, st, gains, vertices);
+    }
+    const got = out.written();
+    if (std.c.getenv("OEZ_DISPLAY_FRAME_OUT")) |path| {
+        const file = try std.Io.Dir.cwd().createFile(testing.io, std.mem.span(path), .{});
+        defer file.close(testing.io);
+        try file.writeStreamingAll(testing.io, got);
+    }
+    try testing.expectEqualStrings(@embedFile("testdata/display_frame.txt"), got);
+}

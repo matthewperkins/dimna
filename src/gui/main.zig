@@ -550,7 +550,7 @@ pub fn main(init: std.process.Init) !u8 {
                 win.resized = false;
                 pacer.n_resize += 1;
             }
-            const fr = display.frame(&gpu, &layout, newest, review.view(newest, fs), status, &notes, &batch, &draws, &fills);
+            const fr = display.frame(.of(&gpu), &layout, newest, review.view(newest, fs), status, &notes, &batch, &draws, &fills);
             const Ctx = struct { win: *Window, tag: u64 };
             const result = try gpu.draw(fr.draws, fr.fills, fr.text, Ctx{ .win = &win, .tag = pacer.begin(newest_acquired_ns) }, struct {
                 fn f(c: Ctx) void {
