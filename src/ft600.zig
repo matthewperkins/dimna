@@ -38,8 +38,12 @@
 //!   0xc0 0xcf wValue=1  152 bytes                     read chip configuration
 //!   0xc0 0xf1           u32                           firmware version
 //!
-//! Hardware safety: nothing here writes the chip configuration (that would be 0x40 0xcf,
-//! which is deliberately not implemented). Everything sent is what D3XX sends on every open.
+//! Hardware safety: nothing here writes the chip configuration (that would be 0x40 0xcf).
+//! Everything sent is what D3XX sends on every open. This is enforced, not only intended:
+//! every control transfer goes through `Ft600.controlTransfer`, which refuses any request
+//! not in `allowed_requests` with `error.ForbiddenRequest` before it reaches the kernel. The
+//! tests at the end of this file check the list, that 0x40 0xcf is refused, and that this
+//! file makes no control transfer outside that one function.
 
 const std = @import("std");
 const usbfs = @import("usbfs.zig");
@@ -76,7 +80,23 @@ pub const ChipConfig = struct {
     optional_features: u16,
 };
 
-pub const Error = usbfs.Error || error{ShortCommand};
+pub const Error = usbfs.Error || error{ ShortCommand, ForbiddenRequest };
+
+/// The only control requests (bmRequestType, bRequest) the driver may send. Nothing that
+/// writes the chip configuration (0x40 0xcf) may ever be added here.
+const allowed_requests = [_][2]u8{
+    .{ 0xc0, 0xf1 }, // read firmware version
+    .{ 0xc0, 0xcf }, // read (device to host) chip configuration
+    .{ 0x40, 0x02 }, // GPIO write / enable / pulls
+};
+
+/// Whether a control request may be sent to the chip.
+fn allowed(request_type: u8, request: u8) bool {
+    for (allowed_requests) |r| {
+        if (r[0] == request_type and r[1] == request) return true;
+    }
+    return false;
+}
 
 /// `OEZ_USB_TRACE=1` logs every command and transfer to stderr.
 var trace_on: ?bool = null;
@@ -124,7 +144,7 @@ pub const Ft600 = struct {
         const drain = try gpa.alloc(u8, 65536);
         var ft: Ft600 = .{ .dev = dev, .drain = drain, .packet_size = locs[want].bulkPacketSize() };
         var v: [4]u8 = undefined;
-        if (ft.dev.control(0xc0, 0xf1, 0, 0, &v, 1000)) |n| {
+        if (ft.controlTransfer(0xc0, 0xf1, 0, 0, &v, 1000)) |n| {
             if (n == 4) ft.firmware = std.mem.readInt(u32, &v, .little);
         } else |_| {}
         log.info("FT60x at bus {d} device {d} ({d} Mbit/s), firmware {x}.{x:0>2}, opened without D3XX", .{ locs[want].bus, locs[want].dev, locs[want].speed, (ft.firmware >> 8) & 0xff, ft.firmware & 0xff });
@@ -144,7 +164,7 @@ pub const Ft600 = struct {
     /// Reads (never writes) the chip configuration.
     pub fn chipConfig(self: *Ft600) Error!ChipConfig {
         var b: [152]u8 = undefined;
-        const n = try self.dev.control(0xc0, 0xcf, 1, 0, &b, 1000);
+        const n = try self.controlTransfer(0xc0, 0xcf, 1, 0, &b, 1000);
         if (n != b.len) return error.Io;
         return .{
             .vendor_id = std.mem.readInt(u16, b[0..2], .little),
@@ -156,10 +176,20 @@ pub const Ft600 = struct {
         };
     }
 
+    /// The one place this driver makes a control transfer. Requests not in
+    /// `allowed_requests` are refused before anything reaches the kernel.
+    fn controlTransfer(self: *Ft600, request_type: u8, request: u8, value: u16, index: u16, data: []u8, timeout_ms: u32) Error!usize {
+        if (!allowed(request_type, request)) {
+            log.info("refused control request {x:0>2} {x:0>2}", .{ request_type, request });
+            return error.ForbiddenRequest;
+        }
+        return self.dev.control(request_type, request, value, index, data, timeout_ms);
+    }
+
     fn gpioRequest(self: *Ft600, what: u16, value: u16) Error!void {
         var b: [2]u8 = undefined;
         std.mem.writeInt(u16, &b, value, .little);
-        _ = try self.dev.control(0x40, 0x02, what, 0, &b, 1000);
+        _ = try self.controlTransfer(0x40, 0x02, what, 0, &b, 1000);
     }
     /// Drives the GPIOs in `mask` (bits 0..1) to `level`. D3XX: FT_WriteGPIO.
     pub fn gpioWrite(self: *Ft600, mask: u2, level: u2) Error!void {
@@ -261,4 +291,52 @@ pub fn sleepNs(ns: u64) void {
 pub fn sleepMs(ms: u32) void {
     var ts: linux.timespec = .{ .sec = @intCast(ms / 1000), .nsec = @intCast(@as(u64, ms % 1000) * 1_000_000) };
     while (linux.errno(linux.nanosleep(&ts, &ts)) == .INTR) {}
+}
+
+test "the control requests the driver uses are allowed" {
+    try std.testing.expect(allowed(0xc0, 0xf1));
+    try std.testing.expect(allowed(0xc0, 0xcf));
+    try std.testing.expect(allowed(0x40, 0x02));
+}
+
+test "writing the chip configuration is refused" {
+    try std.testing.expect(!allowed(0x40, 0xcf));
+    // Other requests not on the list.
+    try std.testing.expect(!allowed(0x40, 0xf1));
+    try std.testing.expect(!allowed(0xc0, 0x02));
+    try std.testing.expect(!allowed(0x40, 0x00));
+    try std.testing.expect(!allowed(0x00, 0x09)); // standard SET_CONFIGURATION
+    try std.testing.expect(!allowed(0x41, 0xcf));
+    try std.testing.expect(!allowed(0x42, 0xcf));
+    try std.testing.expect(!allowed(0xc0, 0x00));
+    for (0..256) |rt| {
+        // No host-to-device request is allowed except GPIO.
+        for (0..256) |rq| {
+            if (rt & 0x80 == 0 and !(rt == 0x40 and rq == 0x02))
+                try std.testing.expect(!allowed(@intCast(rt), @intCast(rq)));
+        }
+    }
+}
+
+test "a forbidden request is refused before it reaches the kernel" {
+    // fd -1: had the request got as far as the ioctl, the error would be error.Io.
+    var ft: Ft600 = .{ .dev = .{ .fd = -1 }, .packet_size = 1024, .drain = &.{} };
+    var b: [152]u8 = @splat(0);
+    try std.testing.expectError(error.ForbiddenRequest, ft.controlTransfer(0x40, 0xcf, 1, 0, &b, 1000));
+}
+
+test "this file makes control transfers only in controlTransfer" {
+    const src = @embedFile("ft600.zig");
+    // Any call of a function named control, also as usbfs.Device.control with &self.dev.
+    const needle = "." ++ "control(";
+    var count: usize = 0;
+    var pos: usize = 0;
+    while (std.mem.indexOfPos(u8, src, pos, needle)) |i| : (pos = i + needle.len) count += 1;
+    try std.testing.expectEqual(@as(usize, 1), count);
+    // ... and that one is inside the wrapper, after its check.
+    const wrapper = std.mem.indexOf(u8, src, "fn controlTransfer(").?;
+    const check = std.mem.indexOfPos(u8, src, wrapper, "if (!allowed(request_type, request))").?;
+    const call = std.mem.indexOf(u8, src, needle).?;
+    const end = std.mem.indexOfPos(u8, src, wrapper, "\n    }\n").?;
+    try std.testing.expect(wrapper < check and check < call and call < end);
 }
