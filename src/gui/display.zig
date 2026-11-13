@@ -681,6 +681,12 @@ pub const Display = struct {
         o.batch.rect(@floatFromInt(r.x), y, @floatFromInt(r.w), 1, theme.tile_threshold);
     }
 
+    /// The row is in focus or listened to: its label carries a mark, so it is always shown.
+    fn rowMarked(self: *const Display, p: *const Panel, row: u32) bool {
+        if (p.kind != .electrode) return false;
+        return self.focusedRow(p) == row or (self.audio.enabled and self.listening(p.first_ch + row));
+    }
+
     /// Row labels down the left edge, thinned when rows are shorter than a line.
     fn rowLabels(self: *const Display, o: *Output, p: *const Panel, r: panels_mod.Rect, layout: *const oez.types.Layout) void {
         const batch = o.batch;
@@ -693,9 +699,21 @@ pub const Display = struct {
         const row_h = @as(f32, @floatFromInt(r.h)) / @as(f32, @floatFromInt(shown));
         const step: u32 = @max(1, @as(u32, @intFromFloat(@ceil((line_h + 3) / row_h))));
         var k: u32 = 0;
-        while (k < shown) : (k += step) {
+        while (k < shown) : (k += 1) {
             // The `k`-th row drawn is panel row `row` (hidden rows are left out).
             const row: u32 = @intCast(p.rowOfShown(k) orelse continue);
+            // Thinned: every `step`-th row is labelled. A row in focus or listened to is
+            // always labelled, and takes the place of the regular labels it would overlap.
+            if (!self.rowMarked(p, row)) {
+                if (k % step != 0) continue;
+                var near = k -| (step - 1);
+                const crowded = while (near < @min(shown, k + step)) : (near += 1) {
+                    if (p.rowOfShown(near)) |other| {
+                        if (self.rowMarked(p, @intCast(other))) break true;
+                    }
+                } else false;
+                if (crowded) continue;
+            }
             const y = py + (@as(f32, @floatFromInt(k)) + 0.5) * row_h - 0.5 * line_h;
             if (p.kind != .ttl and y < title_y + line_h + 3) continue;
             var name_buf: [16]u8 = undefined;
@@ -1338,6 +1356,7 @@ const frame_states = [_][]const u8{
     "the focused row hidden",
     "focus in a triggered panel and a sweep panel",
     "focus: a threshold beyond the row's extent, clamped",
+    "thinned labels: the focused row and the rows listened to are labelled all the same",
 };
 
 /// Puts state `k` of `frame_states` into `st`.
@@ -1359,6 +1378,7 @@ fn frameState(st: *FrameState, k: usize) void {
         20 => focusTwoPanelsState(st),
         21 => focusHiddenState(st),
         22 => focusModesState(st),
+        24 => thinnedMarksState(st),
         else => unreachable,
     }
 }
@@ -1530,6 +1550,21 @@ fn smallState(st: *FrameState) void {
     st.width = 320;
     st.height = 180;
     st.status = .{ .valid = true, .latency_ms = 12.5, .fps = 60, .recording = true, .rec_seconds = 61 };
+    st.feed(2, false);
+}
+
+/// 32 rows in 300 px: every second row is labelled. Row 6 (label "7", a regular label) is
+/// left alone; channel 9 (label "10", not a regular one) is in focus; channels 20 and 21
+/// (labels "21" and "22") are listened to. The regular labels next to a marked row give way.
+fn thinnedMarksState(st: *FrameState) void {
+    st.panels(&.{framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0, .w = 1, .h = 1 })});
+    st.width = 600;
+    st.height = 300;
+    st.display.setFocus(9);
+    st.display.audio.enabled = true;
+    st.display.audio.channels[0] = 20;
+    st.display.audio.channels[1] = 21;
+    st.display.audio.num_channels = 2;
     st.feed(2, false);
 }
 
