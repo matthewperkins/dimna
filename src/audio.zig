@@ -213,9 +213,8 @@ pub const Monitor = struct {
     fs: f64,
     chains: [max_channels]Chain = undefined,
     num_chains: usize = 0,
-    /// What the chains were built for.
-    built_channels: [max_channels]u32 = @splat(0),
-    built_presence: f64 = 0,
+    /// What the chains were built for (null: not built, or a rebuild failed part-way).
+    built: ?Build = null,
     // Smoothing coefficients (per sample).
     release: f64,
     gain_up: f64,
@@ -255,7 +254,27 @@ pub const Monitor = struct {
         return if (i < self.num_chains) self.chains[i].held_sigma else null;
     }
 
+    /// What `rebuild` reads from the settings: the chains are built again when it changes.
+    const Build = struct {
+        channels: [max_channels]u32 = @splat(0),
+        num_channels: usize,
+        presence_db: f64,
+
+        fn of(s: *const Settings) Build {
+            var b: Build = .{ .num_channels = s.num_channels, .presence_db = s.presence_db };
+            @memcpy(b.channels[0..s.num_channels], s.channelSlice());
+            return b;
+        }
+
+        /// The channels listened to (so their number too, and their order) and the presence.
+        fn eql(a: *const Build, b: *const Build) bool {
+            return std.mem.eql(u32, a.channels[0..a.num_channels], b.channels[0..b.num_channels]) and
+                a.presence_db == b.presence_db;
+        }
+    };
+
     fn rebuild(self: *Monitor, s: *const Settings) !void {
+        self.built = null;
         self.clear();
         const n = s.num_channels;
         for (0..n) |i| {
@@ -273,14 +292,14 @@ pub const Monitor = struct {
             };
             self.num_chains = i + 1;
         }
-        self.built_channels = s.channels;
-        self.built_presence = s.presence_db;
+        self.built = .of(s);
     }
 
     /// Turns `count` samples (`nch` interleaved int16) into `count` stereo frames at the
     /// acquisition rate, appended to `out` (left, right, ...).
     pub fn process(self: *Monitor, s: *const Settings, samples: []const i16, nch: usize, out: *std.ArrayList(f32)) !void {
-        if (s.num_channels != self.num_chains or !std.mem.eql(u32, s.channelSlice(), self.built_channels[0..self.num_chains]) or s.presence_db != self.built_presence) try self.rebuild(s);
+        const want: Build = .of(s);
+        if (self.built == null or !self.built.?.eql(&want)) try self.rebuild(s);
         const count = samples.len / nch;
         try out.ensureUnusedCapacity(self.gpa, 2 * count);
         const vol: f64 = if (s.mute) 0 else std.math.pow(f64, 10.0, s.volume_db / 20.0);
@@ -622,6 +641,65 @@ test "the reference chain is linear; sigma is not inflated by dense firing" {
         out.* = est.sigma;
     }
     try testing.expect(@abs(sig[1] / sig[0] - 1.0) < 0.12);
+}
+
+test "the chains are rebuilt (and calibrate again) exactly when what they are built for changes" {
+    const gpa = testing.allocator;
+    const fs = 30000.0;
+    const nch = 3;
+    // 3.5 s of noise on three channels: long enough for the noise to be held.
+    const one = try synth(gpa, fs, 3.5, 10, &.{}, 13);
+    defer gpa.free(one);
+    const samples = try gpa.alloc(i16, one.len * nch);
+    defer gpa.free(samples);
+    for (one, 0..) |x, i| {
+        for (0..nch) |c| samples[i * nch + c] = x +% @as(i16, @intCast(c));
+    }
+    var base: Settings = .{ .num_channels = 2 };
+    base.channels[0] = 1;
+    base.channels[1] = 2;
+    const Case = struct { name: []const u8, rebuilds: bool, s: Settings };
+    var cases: [10]Case = @splat(.{ .name = "", .rebuilds = false, .s = base });
+    cases[0].name = "nothing changed";
+    cases[1] = .{ .name = "first channel", .rebuilds = true, .s = base };
+    cases[1].s.channels[0] = 0;
+    cases[2] = .{ .name = "second channel", .rebuilds = true, .s = base };
+    cases[2].s.channels[1] = 0;
+    cases[3] = .{ .name = "order of the channels", .rebuilds = true, .s = base };
+    cases[3].s.channels[0] = 2;
+    cases[3].s.channels[1] = 1;
+    cases[4] = .{ .name = "one more channel (channel 0)", .rebuilds = true, .s = base };
+    cases[4].s.num_channels = 3;
+    cases[5] = .{ .name = "one channel fewer", .rebuilds = true, .s = base };
+    cases[5].s.num_channels = 1;
+    cases[6] = .{ .name = "presence", .rebuilds = true, .s = base };
+    cases[6].s.presence_db = 0;
+    // Read sample by sample, not by `rebuild`: changing them keeps the held noise.
+    cases[7] = .{ .name = "volume, mute, expander, reference mode", .rebuilds = false, .s = base };
+    cases[7].s.volume_db = -20;
+    cases[7].s.mute = true;
+    cases[7].s.expansion = 0.9;
+    cases[7].s.gate_sigma = 5;
+    cases[7].s.reference = true;
+    cases[8] = .{ .name = "common average reference", .rebuilds = false, .s = base };
+    cases[8].s.car_ref[0][0] = 0;
+    cases[8].s.car_len[0] = 1;
+    cases[9] = .{ .name = "a channel beyond those listened to", .rebuilds = false, .s = base };
+    cases[9].s.channels[5] = 7;
+    var out: std.ArrayList(f32) = .empty;
+    defer out.deinit(gpa);
+    for (cases) |c| {
+        var m: Monitor = .init(gpa, fs);
+        defer m.deinit();
+        try m.process(&base, samples, nch, &out);
+        try testing.expect(m.heldSigma(0) != null and m.heldSigma(1) != null);
+        try m.process(&c.s, samples[0 .. 30 * nch], nch, &out);
+        testing.expectEqual(c.rebuilds, m.heldSigma(0) == null) catch |e| {
+            std.debug.print("case '{s}'\n", .{c.name});
+            return e;
+        };
+        out.clearRetainingCapacity();
+    }
 }
 
 test "a common average reference takes the shared part out of the monitor" {
