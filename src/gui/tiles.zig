@@ -344,7 +344,7 @@ const View = struct {
         if (cfg.focus) |f| {
             r.threshold_channel = f;
             if (f < det.units.len) {
-                r.threshold_uv = @floatCast(det.threshold(&det.units[f]) * oez.types.electrode_uv_per_bit);
+                r.threshold_uv = @floatCast(det.threshold(f) * oez.types.electrode_uv_per_bit);
                 r.threshold_valid = true;
             }
         }
@@ -557,7 +557,7 @@ fn drawTile(batch: *font.Batch, scene: Scene, r: [4]f32, ch: u32, hovered: bool)
         }
     }.f;
     // The threshold, and the trough's place in time.
-    const thr_y = yOf(zero, per_unit, top, bottom, det.threshold(u));
+    const thr_y = yOf(zero, per_unit, top, bottom, det.threshold(ch));
     batch.rect(x + 3, @round(thr_y), w - 6, 1, theme.tile_threshold);
     // Oldest first, so the newest is on top and brightest.
     var k = shown;
@@ -1001,7 +1001,7 @@ test "the report: the focused electrode's threshold in µV, published when it ch
     try testing.expectEqual(2, sink.count);
     try testing.expect(sink.last.threshold_valid);
     try testing.expectEqual(4, sink.last.threshold_channel);
-    const want: f32 = @floatCast(t.det.threshold(&t.det.units[4]) * 0.195);
+    const want: f32 = @floatCast(t.det.threshold(4) * 0.195);
     try testing.expect(want < 0);
     try testing.expectEqual(want, sink.last.threshold_uv);
     // The threshold moving: at most every 100 ms.
