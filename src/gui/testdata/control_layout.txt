@@ -1134,7 +1134,7 @@ text 12 1058 { 150, 160, 178, 255 } "keys  - =  [ ]  m  t  f  , .  ; '  r  q"
 == alarm: 852 quads, ends at x 332 y 654
 text 12 14 { 225, 230, 240, 255 } "oEZ"
 text 44 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
-rect 0 36 800 30 { 170, 30, 30, 255 }
+rect 0 36 800 30 { 190, 25, 25, 245 }
 text 12 42 { 225, 230, 240, 255 } "RECORDING STOPPED: disk full"
 rect 670 38 106 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .acknowledge = void } }
 text 679 42 { 225, 230, 240, 255 } "Acknowledge"

@@ -448,7 +448,7 @@ fn titleSection(ui: *ui_mod.Ui, snap: *const Snapshot, shared: *Shared) void {
     ui.newline();
     if (snap.status.alarm_len > 0) {
         // The same alarm as across the display, until acknowledged.
-        ui.batch.rect(0, ui.y - 2, ui.width, ui.rowHeight() + 2, theme.control_alarm_row);
+        ui.batch.rect(0, ui.y - 2, ui.width, ui.rowHeight() + 2, theme.alarm_bar);
         ui.text(snap.status.alarm(), theme.text_bright);
         ui.x = @max(ui.x, ui.width - 130);
         if (ui.button("Acknowledge", false)) shared.push(.{ .action = .acknowledge });

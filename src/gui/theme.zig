@@ -35,10 +35,9 @@ pub const heard: Colour = .{ 255, 225, 120, 255 };
 
 /// A row with a scale of its own: the scale beside its label.
 pub const row_scale_text: Colour = .{ 255, 205, 120, 255 };
-/// A note: the line where it was stamped.
-pub const note_line: Colour = .{ 255, 205, 120, 190 };
-/// A note: its text beside the line.
-pub const note_text: Colour = .{ 255, 225, 150, 255 };
+/// A note: the line where it was stamped (the colour of `heard`, let through a little so
+/// the traces show behind it). The note's text beside the line is `heard` itself.
+pub const note_line: Colour = .{ heard[0], heard[1], heard[2], 190 };
 /// The note being typed, bottom left.
 pub const note_draft_text: Colour = .{ 255, 235, 170, 255 };
 /// A panel's tint line was high (scrolling and sweep panels).
@@ -55,16 +54,16 @@ pub const trigger_level: Colour = .{ 255, 205, 120, 200 };
 
 // Display: bars and badges.
 
-/// The alarm bar (samples lost, the recording failed).
+/// An alarm (samples lost, the recording failed): the bar across the display, and the row
+/// behind the alarm's text in the control window.
 pub const alarm_bar: Colour = .{ 190, 25, 25, 245 };
-/// The warning bar (the disk falling behind).
+/// The warning bar (the disk falling behind), and the REVIEW badge at the top of the
+/// display.
 pub const warning_bar: Colour = .{ 150, 100, 10, 235 };
 /// The text on the alarm and warning bars.
 pub const bar_text: Colour = .{ 255, 255, 255, 255 };
 /// "press a to acknowledge" on the alarm bar.
 pub const alarm_hint_text: Colour = .{ 255, 210, 210, 255 };
-/// The REVIEW badge at the top of the display.
-pub const review_badge: Colour = .{ 150, 90, 10, 235 };
 /// The REVIEW badge's text.
 pub const review_badge_text: Colour = .{ 255, 240, 200, 255 };
 
@@ -101,5 +100,3 @@ pub const button_on: Colour = .{ 52, 96, 170, 255 };
 pub const button_on_hover: Colour = .{ 66, 116, 200, 255 };
 /// The line between sections.
 pub const rule: Colour = .{ 48, 52, 62, 255 };
-/// The row behind an alarm in the control window.
-pub const control_alarm_row: Colour = .{ 170, 30, 30, 255 };

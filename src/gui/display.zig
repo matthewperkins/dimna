@@ -521,7 +521,7 @@ pub const Display = struct {
                     if (at > t_end) continue;
                     const x = px + @as(f32, @floatCast(w * @as(f64, @floatFromInt(at - from)) / span));
                     batch.rect(@round(x), py, 1, @floatFromInt(r.h), theme.note_line);
-                    if (line_h > 0 and x + 60 < px + @as(f32, @floatCast(w))) _ = batch.label(x + 5, py + line_h + 12, notes_mod.prefix(note.text(), 40), theme.note_text);
+                    if (line_h > 0 and x + 60 < px + @as(f32, @floatCast(w))) _ = batch.label(x + 5, py + line_h + 12, notes_mod.prefix(note.text(), 40), theme.heard);
                 }
             }
             if (p.tint_line != 0 and p.mode != .triggered and span >= 1) {
@@ -645,7 +645,7 @@ pub const Display = struct {
                 const text = std.fmt.bufPrint(&buf, "REVIEW   {d:.1} s behind live   at {s}{s}   End = live", .{ v.behind_s, control.fmtClock(&clock_buf, @as(f64, @floatFromInt(v.end)) / layout.sample_rate), if (v.ready) "" else "   (reading)" }) catch "REVIEW";
                 const tw = batch.font.width(text);
                 const x = (@as(f32, @floatFromInt(width)) - tw) / 2;
-                batch.rect(x - 10, 4, tw + 20, line_h + 10, theme.review_badge);
+                batch.rect(x - 10, 4, tw + 20, line_h + 10, theme.warning_bar);
                 _ = batch.text(x, 9, text, theme.review_badge_text);
             }
         }
