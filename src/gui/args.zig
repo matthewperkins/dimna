@@ -75,7 +75,7 @@ pub const usage =
     \\  t                              triggered sweeps on/off: the signal around each rising edge of
     \\                                 a TTL input line, the last few overlaid; 1-8 pick the line;
     \\                                 s switches to spikes on the row under the pointer (a slope
-    \\                                 trigger; click another row to move it) and back,
+    \\                                 trigger; left-click another row to move it) and back,
     \\                                 [ ] and Shift+wheel zoom the window around the trigger
     \\  Space                          freeze: look at what just went by. Then, or at once:
     \\  Left / Right, PgUp / PgDn      go back and forth (a tenth of the window, a whole window)
@@ -84,9 +84,14 @@ pub const usage =
     \\                                 recording, else the last half minute)
     \\  /                              type a note (Enter saves, Esc drops, Tab keeps it as a draft);
     \\                                 ` stamps a draft; 1-9 stamp the config's preset notes
-    \\  a                              acknowledge an alarm (the red bar: samples lost, or the
+    \\  Shift+a                        acknowledge an alarm (the red bar: samples lost, or the
     \\                                 recording failed)
-    \\  click a row                    listen to that channel (Ctrl+click adds or removes one)
+    \\  left-click a row               focus on that channel: an amber label, and its spike
+    \\                                 threshold as a red line on its trace (where the row shows
+    \\                                 about 300-6000 Hz; else "thr" beside the label)
+    \\  right-click a row              listen to that channel (♪ before its label; Ctrl+right-click
+    \\                                 adds or removes one)
+    \\  middle-click                   no channel in focus
     \\  f                              display filter on/off (electrode panels): raw <-> band-pass
     \\  , .   ; '                      the band's low corner, high corner: down, up
     \\

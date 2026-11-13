@@ -127,6 +127,34 @@ pub fn refilterSamples(set: *const panels_mod.Set, fs: f64) usize {
     return @intFromFloat((longest + 1.0) * fs);
 }
 
+/// The spike detector works on the band 300 Hz to 6 kHz; the focused channel's threshold
+/// is drawn on its row only where the row is filtered with corners within these limits
+/// (inclusive), so that the line is read against about the signal it was set on.
+pub const threshold_low_hz = [2]f64{ 250, 350 };
+pub const threshold_high_hz = [2]f64{ 5000, 7000 };
+
+/// Whether `row` of `p` shows about the detector's band (see `threshold_low_hz`).
+pub fn showsDetectorBand(p: *const Panel, row: usize) bool {
+    const lo = p.filter.low_hz;
+    const hi = p.filter.high_hz;
+    return p.rowFiltered(row) and lo >= threshold_low_hz[0] and lo <= threshold_low_hz[1] and
+        hi >= threshold_high_hz[0] and hi <= threshold_high_hz[1];
+}
+
+/// The pixel row (its top edge) of a 1 px line at `value` (in the panel's unit) on panel
+/// row `row` of `p`, drawn in `r`; null if the row is hidden. The shader puts a sample of
+/// that value at y = r.y + (k + 0.5) * R - d * R, where k is the row's place among the rows
+/// drawn, R = r.h / rows drawn and d = value / p.rowScale(row) clamped to ±1.5 rows (the
+/// shader's NDC centre and gain, through the viewport). The trace is ±0.75 px about that
+/// y; the pixel whose centre is nearest it is floor(y).
+pub fn levelPixelY(p: *const Panel, r: panels_mod.Rect, row: usize, value: f64) ?f32 {
+    const k = p.shownIndex(row) orelse return null;
+    const row_h = @as(f64, @floatFromInt(r.h)) / @as(f64, @floatFromInt(@max(p.shownRows(), 1)));
+    const d = std.math.clamp(value / p.rowScale(row), -1.5, 1.5);
+    const y = @as(f64, @floatFromInt(r.y)) + (@as(f64, @floatFromInt(k)) + 0.5) * row_h - d * row_h;
+    return @floatCast(@floor(y));
+}
+
 /// The label of one row: the electrode's number on its headstage (with the headstage's name
 /// when the panel spans more than one), or AUXn / ADCn.
 pub fn rowLabel(buf: []u8, p: *const Panel, row: u32, layout: *const oez.types.Layout, set: *const panels_mod.Set) []const u8 {
@@ -171,7 +199,7 @@ pub const Display = struct {
     /// The triggers of each panel's TTL line (used by panels in triggered mode).
     triggers: [panels_mod.max_panels]oez.sweeps.Triggers = @splat(.{}),
 
-    /// Set by `a` (and the control window's button): the alarm banner has been seen.
+    /// Set by Shift+a (and the control window's button): the alarm banner has been seen.
     acknowledged: bool = false,
     /// The audio monitor's settings (which channels, volume, ...); `audio_dirty` when they
     /// have changed and the audio threads are to be told.
@@ -264,8 +292,16 @@ pub const Display = struct {
         return std.mem.indexOfScalar(u32, self.audio.channelSlice(), channel) != null;
     }
 
-    /// A click on an electrode row: listen to that channel alone, or with Ctrl add it to
-    /// (or take it out of) what is listened to.
+    /// Puts `channel` in focus (null: nothing). A threshold reported for another channel
+    /// is not this one's: it is forgotten until the tile window reports again.
+    pub fn setFocus(self: *Display, channel: ?u32) void {
+        if (self.focus == channel) return;
+        self.focus = channel;
+        self.focus_threshold_uv = null;
+    }
+
+    /// A right click on an electrode row: listen to that channel alone, or with Ctrl add it
+    /// to (or take it out of) what is listened to.
     pub fn listenClick(self: *Display, channel: u32, add: bool) void {
         const a = &self.audio;
         if (!add) {
@@ -446,7 +482,10 @@ pub const Display = struct {
                 ';' => if (p.filter.on) p.stepCorner(true, false),
                 '\'' => if (p.filter.on) p.stepCorner(true, true),
                 'm' => p.mode = if (p.mode == .scroll) .sweep else .scroll,
-                'a' => self.acknowledged = true,
+                // Shift+a; plain a is the tile window's autoscale key.
+                'a' => if (in.shift) {
+                    self.acknowledged = true;
+                },
                 // Triggered mode: s switches between a TTL line and spikes on the row under
                 // the pointer.
                 's' => if (p.mode == .triggered) {
@@ -463,10 +502,16 @@ pub const Display = struct {
                 else => {},
             },
         };
-        // A click on an electrode row listens to it (Ctrl: adds or removes it).
-        if (in.clicks > 0 and p.kind == .electrode) {
-            if (p.rowAt(self.pointer_fy)) |row| self.listenClick(p.first_ch + @as(u32, @intCast(row)), in.ctrl);
+        // On an electrode row a left click focuses its channel, a right click listens to it
+        // (Ctrl: adds or removes it). A middle click anywhere clears the focus.
+        if (p.kind == .electrode) {
+            if (p.rowAt(self.pointer_fy)) |row| {
+                const channel = p.first_ch + @as(u32, @intCast(row));
+                if (in.clicks > 0) self.setFocus(channel);
+                if (in.right_clicks > 0) self.listenClick(channel, in.ctrl);
+            }
         }
+        if (in.middle_clicks > 0) self.setFocus(null);
         // A click on a row of a spike-triggered panel moves the trigger to that row.
         if (in.clicks > 0 and p.mode == .triggered and p.trigger.source == .channel) {
             if (p.rowAt(self.pointer_fy)) |row| p.trigger.row = @intCast(row);
@@ -524,6 +569,7 @@ pub const Display = struct {
             o.draws[o.nd] = .{ .rect = rect, .params = params, .review = t.from_file };
             o.nd += 1;
         }
+        self.thresholdLine(o, p, r);
         if (p.mode != .triggered and t.span >= 1) noteMarks(o, r, t, scene.notes);
         if (p.tint_line != 0 and p.mode != .triggered and t.span >= 1) tintPulses(o, p, r, t, &self.pulses[i]);
         if (t.sweeping) sweepCursor(o, r, t);
@@ -618,6 +664,23 @@ pub const Display = struct {
         batch.rect(@round(x0), py, 1, @floatFromInt(r.h), theme.trigger_line);
     }
 
+    /// The row of the focused channel in panel `p`, if the panel has it.
+    fn focusedRow(self: *const Display, p: *const Panel) ?usize {
+        const ch = self.focus orelse return null;
+        if (p.kind != .electrode or ch < p.first_ch or ch >= p.first_ch + p.rows) return null;
+        return ch - p.first_ch;
+    }
+
+    /// The focused channel's detection threshold, as a line across its row where the row
+    /// is drawn and shows about the detector's band.
+    fn thresholdLine(self: *const Display, o: *Output, p: *const Panel, r: panels_mod.Rect) void {
+        const uv = self.focus_threshold_uv orelse return;
+        const row = self.focusedRow(p) orelse return;
+        if (!showsDetectorBand(p, row)) return;
+        const y = levelPixelY(p, r, row, uv) orelse return;
+        o.batch.rect(@floatFromInt(r.x), y, @floatFromInt(r.w), 1, theme.tile_threshold);
+    }
+
     /// Row labels down the left edge, thinned when rows are shorter than a line.
     fn rowLabels(self: *const Display, o: *Output, p: *const Panel, r: panels_mod.Rect, layout: *const oez.types.Layout) void {
         const batch = o.batch;
@@ -635,17 +698,24 @@ pub const Display = struct {
             const row: u32 = @intCast(p.rowOfShown(k) orelse continue);
             const y = py + (@as(f32, @floatFromInt(k)) + 0.5) * row_h - 0.5 * line_h;
             if (p.kind != .ttl and y < title_y + line_h + 3) continue;
-            var label_buf: [16]u8 = undefined;
-            // The rows listened to stand out.
+            var name_buf: [16]u8 = undefined;
+            var label_buf: [24]u8 = undefined;
+            // The focused row is amber; a row listened to has a note before its label.
+            const name = rowLabel(&name_buf, p, row, layout, &self.set);
             const heard = p.kind == .electrode and self.audio.enabled and self.listening(p.first_ch + row);
+            const focused = self.focusedRow(p) == row;
             var after = batch.label(
                 px + 5,
                 y,
-                rowLabel(&label_buf, p, row, layout, &self.set),
-                if (heard) theme.focus else theme.text_dim,
+                if (heard) format.fmt(&label_buf, "♪ {s}", .{name}) else name,
+                if (focused) theme.focus else theme.text_dim,
             );
             // In a filtered panel, the rows shown as they are say so.
             if (p.filter.on and p.kind == .electrode and !p.rowFiltered(row)) after = batch.label(after + 4, y, "raw", theme.text_dim);
+            // The focused row with a threshold that is not drawn, because the row does not
+            // show the detector's band, says so.
+            if (focused and self.focus_threshold_uv != null and !showsDetectorBand(p, row))
+                after = batch.label(after + 4, y, "thr", theme.text_dim);
             // A row with a scale of its own says so.
             if (row < panels_mod.max_rows and p.per_row.gain[row] != 1) {
                 var own_buf: [24]u8 = undefined;
@@ -953,7 +1023,7 @@ fn alarmBar(o: *Output, status: Status, below_badge: bool, width: u32) void {
     const tw = batch.font.width(text);
     _ = batch.text((@as(f32, @floatFromInt(width)) - tw) / 2, bar_y + 5, text, theme.bar_text);
     if (is_alarm) {
-        const hint = "press a to acknowledge";
+        const hint = "press Shift+a to acknowledge";
         _ = batch.text(
             (@as(f32, @floatFromInt(width)) - batch.font.width(hint)) / 2,
             bar_y + line_h + 7,
@@ -1259,6 +1329,15 @@ const frame_states = [_][]const u8{
     "lost blocks, recording",
     "small window",
     "no font",
+    "focus on a filtered row with a threshold: the line",
+    "focus on a raw row, and on a 10 Hz high-pass: tags, no line",
+    "focus, no threshold reported",
+    "focus and listening on the same channel",
+    "focus and listening on different channels",
+    "the focused channel in two panels",
+    "the focused row hidden",
+    "focus in a triggered panel and a sweep panel",
+    "focus: a threshold beyond the row's extent, clamped",
 };
 
 /// Puts state `k` of `frame_states` into `st`.
@@ -1274,6 +1353,12 @@ fn frameState(st: *FrameState, k: usize) void {
         8, 9, 10 => alarmState(st, k),
         11, 12 => heardState(st, k),
         13 => smallState(st),
+        15, 17, 23 => focusLineState(st, k),
+        16 => focusTagState(st),
+        18, 19 => focusHeardState(st, k),
+        20 => focusTwoPanelsState(st),
+        21 => focusHiddenState(st),
+        22 => focusModesState(st),
         else => unreachable,
     }
 }
@@ -1448,6 +1533,107 @@ fn smallState(st: *FrameState) void {
     st.feed(2, false);
 }
 
+/// Port A over the whole display (1000 x 700), filtered 300-6000 Hz. (The states below
+/// put channel 5 in focus after `panels`, which starts the display afresh.)
+fn focusPanel() Panel {
+    var a = framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0, .w = 1, .h = 1 });
+    a.filter.on = true;
+    return a;
+}
+
+/// `k`: 15 the line, 17 no threshold reported, 23 a threshold beyond the row's extent.
+fn focusLineState(st: *FrameState, k: usize) void {
+    var a = focusPanel();
+    if (k == 23) {
+        // 50 µV/row, -120 µV: 2.4 rows below the centre, clamped to 1.5. Rows of
+        // R = 700 / 32 = 21.875 px; row 5's centre at 5.5 R = 120.3125; the line at
+        // 120.3125 + 1.5 R = 153.125, the pixel row 153.
+        a.scale = 50;
+    } else {
+        // Row 2 hidden: 31 rows of R = 700 / 31 = 22.5806 px, row 5 the 5th drawn (k = 4),
+        // its centre at 4.5 R = 101.6129. Its own scale 2 x 400 = 800 µV/row; -50 µV is
+        // 50 / 800 = 0.0625 rows below: 101.6129 + 0.0625 R = 103.0242, the pixel row 103.
+        a.per_row.hidden.set(2, true);
+        a.per_row.gain[5] = 2;
+    }
+    st.panels(&.{a});
+    st.display.focus = 5;
+    st.display.focus_threshold_uv = switch (k) {
+        15 => -50,
+        23 => -120,
+        else => null,
+    };
+}
+
+fn focusTagState(st: *FrameState) void {
+    var a = focusPanel();
+    a.place.w = 0.5;
+    a.per_row.raw.set(5, true);
+    var hp = framePanel("Port A > 10 Hz", .electrode, 0, 32, .{ .x = 0.5, .y = 0, .w = 0.5, .h = 1 });
+    hp.filter.on = true;
+    hp.filter.low_hz = 10;
+    hp.filter.high_hz = 0;
+    st.panels(&.{ a, hp });
+    st.display.focus = 5;
+    st.display.focus_threshold_uv = -50;
+}
+
+/// `k`: 18 listening to the focused channel, 19 to two others.
+fn focusHeardState(st: *FrameState, k: usize) void {
+    st.panels(&.{focusPanel()});
+    st.display.focus = 5;
+    st.display.focus_threshold_uv = -50;
+    st.display.audio.enabled = true;
+    if (k == 18) {
+        st.display.audio.channels[0] = 5;
+        st.display.audio.num_channels = 1;
+    } else {
+        st.display.audio.channels[0] = 3;
+        st.display.audio.channels[1] = 9;
+        st.display.audio.num_channels = 2;
+    }
+}
+
+fn focusTwoPanelsState(st: *FrameState) void {
+    var a = framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0, .w = 1, .h = 0.5 });
+    a.filter.on = true;
+    var ab = framePanel("A and B", .electrode, 28, 8, .{ .x = 0, .y = 0.5, .w = 1, .h = 0.5 });
+    ab.filter.on = true;
+    ab.per_row.gain[2] = 0.5;
+    st.panels(&.{ a, ab });
+    // Channel 30. In Port A: row 30 of 32, R = 350 / 32 = 10.9375, centre 30.5 R =
+    // 333.59375, -80 µV at 400 µV/row 0.2 R below: 335.78125, the pixel row 335. In "A and
+    // B": row 2 of 8, R = 43.75, centre 350 + 2.5 R = 459.375, at 200 µV/row 0.4 R below:
+    // 476.875, the pixel row 476.
+    st.display.focus = 30;
+    st.display.focus_threshold_uv = -80;
+}
+
+fn focusHiddenState(st: *FrameState) void {
+    var a = focusPanel();
+    a.per_row.hidden.set(5, true);
+    st.panels(&.{a});
+    st.display.focus = 5;
+    st.display.focus_threshold_uv = -50;
+}
+
+fn focusModesState(st: *FrameState) void {
+    var trig = focusPanel();
+    trig.place.w = 0.5;
+    trig.mode = .triggered;
+    var sweep = focusPanel();
+    sweep.place.x = 0.5;
+    sweep.place.w = 0.5;
+    sweep.mode = .sweep;
+    sweep.span_s = 1;
+    st.panels(&.{ trig, sweep });
+    st.display.focus = 5;
+    // Both: row 5 of 32, R = 21.875, centre 120.3125, -50 µV at 400 µV/row 0.125 R below:
+    // 123.0469, the pixel row 123.
+    st.display.focus_threshold_uv = -50;
+    st.feed(8, false);
+}
+
 /// Writes the batch's quads as rectangles and runs of text (glyphs on one row, of one
 /// colour, 8 pixels apart). Returns how many of each; with `w` null, only counts.
 fn writeQuads(w: ?*std.Io.Writer, verts: []const font.Vertex) !struct { rects: usize, runs: usize } {
@@ -1538,4 +1724,161 @@ test "what the display draws is unchanged" {
         try file.writeStreamingAll(testing.io, got);
     }
     try testing.expectEqualStrings(@embedFile("testdata/display_frame.txt"), got);
+}
+
+/// Where the shader puts a sample of `value` (in the panel's unit) on panel row `row`, in
+/// pixels: `traces.vert`'s arithmetic, in f32, from the parameters `traceParams` gives it
+/// and the gain `setRowGains` writes, through the viewport (the panel's rectangle).
+fn shaderPixelY(p: *const Panel, r: panels_mod.Rect, row: usize, value: f64) f32 {
+    var gains: [gpu_mod.max_rows]f32 = @splat(1);
+    setRowGains(&gains, p, 0);
+    const surface: Surface = .{ .width = 1000, .height = 700, .nch = frame_nch, .hist_cap = 1 << 20, .row_gains = &gains };
+    const params = traceParams(p, 0, r, panelTime(p, frame_newest, null, frame_fs), surface);
+    const k: f32 = @floatFromInt(p.shownIndex(row).?);
+    const lsb: f32 = @floatCast(value / p.unitsPerLsb());
+    const row_h = 2.0 / @as(f32, @floatFromInt(params.rows));
+    const centre = -1.0 + (k + 0.5) * row_h;
+    const per_row = params.lsb_per_row * gains[@intFromFloat(k)];
+    const y = centre - std.math.clamp(lsb / per_row, -1.5, 1.5) * row_h;
+    return @as(f32, @floatFromInt(r.y)) + (y + 1) / 2 * @as(f32, @floatFromInt(r.h));
+}
+
+test "the threshold line is on the pixel row where the shader draws a sample of its value" {
+    // The states of the stored test that draw a line: panel, row, value, the pixel row
+    // computed by hand there.
+    const Case = struct { state: usize, panel: usize, row: usize, uv: f64, want: f32 };
+    const cases = [_]Case{
+        .{ .state = 15, .panel = 0, .row = 5, .uv = -50, .want = 103 },
+        .{ .state = 20, .panel = 0, .row = 30, .uv = -80, .want = 335 },
+        .{ .state = 20, .panel = 1, .row = 2, .uv = -80, .want = 476 },
+        .{ .state = 22, .panel = 0, .row = 5, .uv = -50, .want = 123 },
+        .{ .state = 22, .panel = 1, .row = 5, .uv = -50, .want = 123 },
+        .{ .state = 23, .panel = 0, .row = 5, .uv = -120, .want = 153 },
+    };
+    const st = try testing.allocator.create(FrameState);
+    defer testing.allocator.destroy(st);
+    const vertices = try testing.allocator.alloc(font.Vertex, max_text_vertices);
+    defer testing.allocator.free(vertices);
+    for (cases) |c| {
+        frameState(st, c.state);
+        const p = &st.display.set.items[c.panel];
+        const r = p.pixelRect(st.width, st.height);
+        const line = levelPixelY(p, r, c.row, c.uv).?;
+        try testing.expectEqual(c.want, line);
+        // And `frame` draws it there, across the panel.
+        const quads = try thresholdRects(st, vertices);
+        var found = false;
+        for (quads.slice()) |q| found = found or std.meta.eql(q, .{ @floatFromInt(r.x), c.want, @floatFromInt(r.w), 1 });
+        try testing.expect(found);
+        // A flat trace at that value covers ±0.75 px about the shader's y (`half_px`): the
+        // line's pixel centre is among those it lights.
+        const y = shaderPixelY(p, r, c.row, c.uv);
+        try testing.expect(@abs(line + 0.5 - y) <= 0.5 + 1e-3);
+    }
+}
+
+const ThresholdRects = struct {
+    items: [8][4]f32 = undefined,
+    len: usize = 0,
+    fn slice(self: *const ThresholdRects) []const [4]f32 {
+        return self.items[0..self.len];
+    }
+};
+
+/// The rectangles in the colour of the threshold line that `frame` draws for `st`, as
+/// x, y, w, h.
+fn thresholdRects(st: *const FrameState, vertices: []font.Vertex) !ThresholdRects {
+    const layout = frameLayout();
+    const face = frameFont(16);
+    var batch: font.Batch = .{ .font = &face, .vertices = vertices };
+    var draws: [max_draws]gpu_mod.PanelDraw = undefined;
+    var fills: [max_fills]gpu_mod.Fill = undefined;
+    var gains: [gpu_mod.max_rows * gpu_mod.max_gain_panels]f32 = undefined;
+    const surface: Surface = .{ .width = st.width, .height = st.height, .nch = frame_nch, .hist_cap = st.hist_cap, .row_gains = &gains };
+    const fr = st.display.frame(surface, &layout, frame_newest, st.review, st.status, &st.notes, &batch, &draws, &fills);
+    var out: ThresholdRects = .{};
+    for (0..fr.text.len / 6) |q| {
+        const v = fr.text[q * 6 ..][0..6];
+        if (!std.mem.eql(u8, &v[0].colour, &theme.tile_threshold)) continue;
+        if (out.len == out.items.len) return error.TooManyLines;
+        out.items[out.len] = .{ v[0].pos[0], v[0].pos[1], v[2].pos[0] - v[0].pos[0], v[2].pos[1] - v[0].pos[1] };
+        out.len += 1;
+    }
+    return out;
+}
+
+test "no threshold line where the plan says there is none" {
+    const st = try testing.allocator.create(FrameState);
+    defer testing.allocator.destroy(st);
+    const vertices = try testing.allocator.alloc(font.Vertex, max_text_vertices);
+    defer testing.allocator.free(vertices);
+    // A raw row and a 10 Hz high-pass; no threshold reported; the row hidden.
+    for ([_]usize{ 16, 17, 21 }) |k| {
+        frameState(st, k);
+        try testing.expectEqual(0, (try thresholdRects(st, vertices)).len);
+    }
+    // One per panel that shows the focused row.
+    for ([_][2]usize{ .{ 15, 1 }, .{ 20, 2 }, .{ 22, 2 }, .{ 23, 1 } }) |c| {
+        frameState(st, c[0]);
+        try testing.expectEqual(c[1], (try thresholdRects(st, vertices)).len);
+    }
+}
+
+/// A display with Port A (32 rows, the whole height) and AUX, the pointer on row `row`.
+fn clickDisplay(row: usize) Display {
+    var set: panels_mod.Set = .{};
+    set.items[0] = framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0, .w = 0.5, .h = 1 });
+    set.items[1] = framePanel("AUX", .aux, 48, 6, .{ .x = 0.5, .y = 0, .w = 0.5, .h = 1 });
+    set.len = 2;
+    var d: Display = .init(set);
+    d.pointer_fy = (@as(f64, @floatFromInt(row)) + 0.5) / 32;
+    return d;
+}
+
+test "clicks on a row: left focuses, right listens, Ctrl+right adds or removes, middle clears the focus" {
+    var d = clickDisplay(5);
+    // Left: focus, and what is listened to is left alone.
+    _ = d.applyInput(.{ .clicks = 1 });
+    try testing.expectEqual(5, d.focus.?);
+    try testing.expectEqual(0, d.audio.num_channels);
+    // A threshold reported for channel 5 is forgotten when the focus moves.
+    d.focus_threshold_uv = -50;
+    d.pointer_fy = 9.5 / 32.0;
+    _ = d.applyInput(.{ .clicks = 1 });
+    try testing.expectEqual(9, d.focus.?);
+    try testing.expectEqual(null, d.focus_threshold_uv);
+    // Right: listen to that channel alone; the focus stays.
+    d.pointer_fy = 3.5 / 32.0;
+    _ = d.applyInput(.{ .right_clicks = 1 });
+    try testing.expectEqualSlices(u32, &.{3}, d.audio.channelSlice());
+    try testing.expectEqual(9, d.focus.?);
+    // Ctrl+right: added, then taken out again.
+    d.pointer_fy = 7.5 / 32.0;
+    _ = d.applyInput(.{ .right_clicks = 1, .ctrl = true });
+    try testing.expectEqualSlices(u32, &.{ 3, 7 }, d.audio.channelSlice());
+    _ = d.applyInput(.{ .right_clicks = 1, .ctrl = true });
+    try testing.expectEqualSlices(u32, &.{3}, d.audio.channelSlice());
+    // Right alone again: that one only.
+    _ = d.applyInput(.{ .right_clicks = 1 });
+    try testing.expectEqualSlices(u32, &.{7}, d.audio.channelSlice());
+    // Middle, over the AUX panel: the focus is cleared; listening is not changed.
+    d.target = 1;
+    _ = d.applyInput(.{ .middle_clicks = 1 });
+    try testing.expectEqual(null, d.focus);
+    try testing.expectEqualSlices(u32, &.{7}, d.audio.channelSlice());
+    // A left click on AUX focuses nothing.
+    _ = d.applyInput(.{ .clicks = 1 });
+    try testing.expectEqual(null, d.focus);
+}
+
+test "Shift+a acknowledges an alarm, a alone does not" {
+    var d = clickDisplay(0);
+    var in: Input = .{};
+    in.keys[0] = .{ .char = 'a' };
+    in.num_keys = 1;
+    _ = d.applyInput(in);
+    try testing.expect(!d.acknowledged);
+    in.shift = true;
+    _ = d.applyInput(in);
+    try testing.expect(d.acknowledged);
 }
