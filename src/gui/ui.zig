@@ -4,18 +4,9 @@
 
 const std = @import("std");
 const font = @import("font.zig");
+const theme = @import("theme.zig");
 
 pub const Colour = font.Colour;
-
-pub const text_bright: Colour = .{ 225, 230, 240, 255 };
-pub const text_dim: Colour = .{ 150, 160, 178, 255 };
-pub const text_warn: Colour = .{ 255, 190, 90, 255 };
-pub const text_rec: Colour = .{ 255, 96, 96, 255 };
-const button_idle: Colour = .{ 38, 43, 54, 255 };
-const button_hover: Colour = .{ 56, 64, 82, 255 };
-const button_on: Colour = .{ 52, 96, 170, 255 };
-const button_on_hover: Colour = .{ 66, 116, 200, 255 };
-const rule: Colour = .{ 48, 52, 62, 255 };
 
 pub const Ui = struct {
     batch: *font.Batch,
@@ -74,7 +65,7 @@ pub const Ui = struct {
     }
 
     pub fn separator(self: *Ui) void {
-        self.batch.rect(self.left, self.y + 2, self.width - 2 * self.left, 1, rule);
+        self.batch.rect(self.left, self.y + 2, self.width - 2 * self.left, 1, theme.rule);
         self.y += 8;
         self.x = self.left;
     }
@@ -86,7 +77,7 @@ pub const Ui = struct {
     /// Text in a box at least `min_width` wide (so what follows does not move as it changes).
     pub fn value(self: *Ui, string: []const u8, min_width: f32) void {
         const w = @max(min_width, self.batch.font.width(string));
-        _ = self.batch.text(self.x + (w - self.batch.font.width(string)) / 2, self.y + 4, string, text_bright);
+        _ = self.batch.text(self.x + (w - self.batch.font.width(string)) / 2, self.y + 4, string, theme.text_bright);
         self.x += w + 6;
     }
 
@@ -100,8 +91,8 @@ pub const Ui = struct {
         const h = self.lineHeight() + 8;
         self.fit(w);
         const hot = self.hovering(self.x, self.y, w, h);
-        self.batch.rect(self.x, self.y, w, h, if (on) (if (hot) button_on_hover else button_on) else if (hot) button_hover else button_idle);
-        _ = self.batch.text(self.x + 9, self.y + 4, label, text_bright);
+        self.batch.rect(self.x, self.y, w, h, if (on) (if (hot) theme.button_on_hover else theme.button_on) else if (hot) theme.button_hover else theme.button_idle);
+        _ = self.batch.text(self.x + 9, self.y + 4, label, theme.text_bright);
         self.x += w + 6;
         return hot and self.clicked;
     }
@@ -112,8 +103,8 @@ pub const Ui = struct {
         const h = self.lineHeight() + 8;
         self.fit(w);
         const hot = self.hovering(self.x, self.y, w, h);
-        self.batch.rect(self.x, self.y, w, h, if (on) (if (hot) button_on_hover else button_on) else if (hot) button_hover else button_idle);
-        _ = self.batch.text(self.x + (w - self.batch.font.width(label)) / 2, self.y + 4, label, if (on) text_bright else text_dim);
+        self.batch.rect(self.x, self.y, w, h, if (on) (if (hot) theme.button_on_hover else theme.button_on) else if (hot) theme.button_hover else theme.button_idle);
+        _ = self.batch.text(self.x + (w - self.batch.font.width(label)) / 2, self.y + 4, label, if (on) theme.text_bright else theme.text_dim);
         self.x += w + 3;
         return hot and self.clicked;
     }
@@ -124,7 +115,7 @@ pub const Ui = struct {
         const value_w = @max(value_width, self.batch.font.width(string));
         self.fit((if (label.len > 0) self.batch.font.width(label) + 8 else 0) + self.buttonWidth("-") + self.buttonWidth("+") + 12 + value_w + 6);
         const x0 = self.x;
-        if (label.len > 0) self.text(label, text_dim);
+        if (label.len > 0) self.text(label, theme.text_dim);
         var step: i32 = 0;
         if (self.button("-", false)) step = -1;
         self.value(string, value_width);
@@ -181,7 +172,7 @@ test "a button's rectangle: its label's width plus 18, a line plus 8 high, then 
     try testing.expectEqual([4]f32{ 124, 10, 30, 24 }, tb.rect(2));
     try testing.expectEqual(157, ui.x);
     // Text moves on by its width plus 8; a value box by at least its minimum width plus 6.
-    ui.text("abc", text_dim);
+    ui.text("abc", theme.text_dim);
     try testing.expectEqual(157 + 24 + 8, ui.x);
     ui.value("ab", 50);
     try testing.expectEqual(157 + 32 + 56, ui.x);

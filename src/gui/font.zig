@@ -7,6 +7,7 @@
 
 const std = @import("std");
 const c = @import("gui_c");
+const theme = @import("theme.zig");
 const log = std.log.scoped(.font);
 
 pub const atlas_size = 512;
@@ -261,7 +262,7 @@ pub const Batch = struct {
     /// Text on a dark backing, so it stays readable over traces. Returns the x after it.
     pub fn label(self: *Batch, x: f32, y: f32, string: []const u8, colour: Colour) f32 {
         const w = self.font.width(string);
-        self.rect(@round(x) - 3, @round(y) - 1, @round(w) + 6, @round(self.font.line_height) + 2, .{ 8, 10, 14, 200 });
+        self.rect(@round(x) - 3, @round(y) - 1, @round(w) + 6, @round(self.font.line_height) + 2, theme.label_backing);
         return self.text(x, y, string, colour) + 3;
     }
 };

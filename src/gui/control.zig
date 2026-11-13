@@ -17,6 +17,7 @@ const Window = @import("window.zig").Window;
 const gpu_mod = @import("gpu.zig");
 const font = @import("font.zig");
 const ui_mod = @import("ui.zig");
+const theme = @import("theme.zig");
 const format = @import("format.zig");
 const Atomic = std.atomic.Value;
 const log = std.log.scoped(.control);
@@ -434,9 +435,9 @@ fn build(ui: *ui_mod.Ui, cfg: *const Config, snap: *const Snapshot, shared: *Sha
     audioSection(ui, &snap.audio, shared);
     boardSection(ui, &snap.board, snap.rec.state, shared);
     for (snap.set.items[0..snap.set.len], 0..) |*p, i| panelSection(ui, p, i, shared);
-    ui.text("On the display: wheel = scale, Ctrl+wheel = one row, Shift+wheel = time,", ui_mod.text_dim);
+    ui.text("On the display: wheel = scale, Ctrl+wheel = one row, Shift+wheel = time,", theme.text_dim);
     ui.newline();
-    ui.text("keys  - =  [ ]  m  t  f  , .  ; '  r  q", ui_mod.text_dim);
+    ui.text("keys  - =  [ ]  m  t  f  , .  ; '  r  q", theme.text_dim);
 }
 
 /// Multiplies the scale or the time base, one stepper click.
@@ -444,18 +445,18 @@ const step_up = 1.25;
 
 /// The name, the source, and the alarm (or a warning).
 fn titleSection(ui: *ui_mod.Ui, snap: *const Snapshot, shared: *Shared) void {
-    ui.text("oEZ", ui_mod.text_bright);
-    ui.text(snap.about_buf[0..snap.about_len], ui_mod.text_dim);
+    ui.text("oEZ", theme.text_bright);
+    ui.text(snap.about_buf[0..snap.about_len], theme.text_dim);
     ui.newline();
     if (snap.status.alarm_len > 0) {
         // The same alarm as across the display, until acknowledged.
-        ui.batch.rect(0, ui.y - 2, ui.width, ui.rowHeight() + 2, .{ 170, 30, 30, 255 });
-        ui.text(snap.status.alarm(), ui_mod.text_bright);
+        ui.batch.rect(0, ui.y - 2, ui.width, ui.rowHeight() + 2, theme.control_alarm_row);
+        ui.text(snap.status.alarm(), theme.text_bright);
         ui.x = @max(ui.x, ui.width - 130);
         if (ui.button("Acknowledge", false)) shared.push(.{ .action = .acknowledge });
         ui.newline();
     } else if (snap.status.warning_len > 0) {
-        ui.text(snap.status.warning(), ui_mod.text_warn);
+        ui.text(snap.status.warning(), theme.text_warn);
         ui.newline();
     }
 }
@@ -463,14 +464,14 @@ fn titleSection(ui: *ui_mod.Ui, snap: *const Snapshot, shared: *Shared) void {
 /// Shown instead of everything below the title when quitting with changed board settings.
 fn quitPrompt(ui: *ui_mod.Ui, q: *const QuitPrompt, shared: *Shared) void {
     ui.separator();
-    ui.text("Settings changed since they were last saved:", ui_mod.text_bright);
+    ui.text("Settings changed since they were last saved:", theme.text_bright);
     ui.newline();
     for (q.lines[0..q.count], q.lens[0..q.count]) |*line, len| {
         ui.space(16);
-        ui.text(line[0..len], ui_mod.text_warn);
+        ui.text(line[0..len], theme.text_warn);
         ui.newline();
     }
-    ui.text(q.path_buf[0..q.path_len], ui_mod.text_dim);
+    ui.text(q.path_buf[0..q.path_len], theme.text_dim);
     ui.newline();
     if (ui.button("Save as default and quit", true)) shared.push(.{ .action = .{ .quit_answer = .save } });
     if (ui.button("Quit without saving", false)) shared.push(.{ .action = .{ .quit_answer = .discard } });
@@ -482,10 +483,10 @@ fn statusSection(ui: *ui_mod.Ui, snap: *const Snapshot, shared: *Shared) void {
     var buf: [160]u8 = undefined;
     const st = snap.status;
     if (st.valid) {
-        ui.text(format.fmt(&buf, "display {d:.1} ms   {d} fps   running {d:.0} s", .{ st.latency_ms, st.fps, snap.seconds }), ui_mod.text_dim);
-    } else ui.text("starting", ui_mod.text_dim);
-    if (st.lost > 0) ui.text(format.fmt(&buf, "display skipped {d} blocks", .{st.lost}), ui_mod.text_warn);
-    if (snap.ring_overflow > 0) ui.text(format.fmt(&buf, "ACQUISITION RING OVERFLOW {d}", .{snap.ring_overflow}), ui_mod.text_warn);
+        ui.text(format.fmt(&buf, "display {d:.1} ms   {d} fps   running {d:.0} s", .{ st.latency_ms, st.fps, snap.seconds }), theme.text_dim);
+    } else ui.text("starting", theme.text_dim);
+    if (st.lost > 0) ui.text(format.fmt(&buf, "display skipped {d} blocks", .{st.lost}), theme.text_warn);
+    if (snap.ring_overflow > 0) ui.text(format.fmt(&buf, "ACQUISITION RING OVERFLOW {d}", .{snap.ring_overflow}), theme.text_warn);
     ui.x = @max(ui.x, ui.width - 170);
     // Lit while the panels' settings differ from what is saved.
     if (ui.button("Save view", snap.view_unsaved)) shared.push(.{ .action = .save_view });
@@ -500,23 +501,23 @@ fn recordSection(ui: *ui_mod.Ui, rec: *const RecStatus, shared: *Shared) void {
     switch (rec.state) {
         .idle, .failed => if (ui.button("Record", false)) shared.push(.{ .action = .{ .record = true } }),
         .recording => if (ui.button("Stop recording", true)) shared.push(.{ .action = .{ .record = false } }),
-        .stopping => ui.text("finishing the recording", ui_mod.text_dim),
+        .stopping => ui.text("finishing the recording", theme.text_dim),
     }
     if (rec.state == .recording or rec.state == .stopping) {
         var clock_buf: [16]u8 = undefined;
-        ui.text(format.fmt(&buf, "REC {s}   {d:.2} GB   {d:.1} M samples", .{ fmtClock(&clock_buf, rec.seconds), @as(f64, @floatFromInt(rec.bytes)) / 1e9, @as(f64, @floatFromInt(rec.samples)) / 1e6 }), ui_mod.text_rec);
-        if (rec.behind_s > 1.0) ui.text(format.fmt(&buf, "disk is {d:.1} s behind", .{rec.behind_s}), ui_mod.text_warn);
-        if (rec.gaps > 0) ui.text(format.fmt(&buf, "{d} gaps", .{rec.gaps}), ui_mod.text_warn);
+        ui.text(format.fmt(&buf, "REC {s}   {d:.2} GB   {d:.1} M samples", .{ fmtClock(&clock_buf, rec.seconds), @as(f64, @floatFromInt(rec.bytes)) / 1e9, @as(f64, @floatFromInt(rec.samples)) / 1e6 }), theme.text_rec);
+        if (rec.behind_s > 1.0) ui.text(format.fmt(&buf, "disk is {d:.1} s behind", .{rec.behind_s}), theme.text_warn);
+        if (rec.gaps > 0) ui.text(format.fmt(&buf, "{d} gaps", .{rec.gaps}), theme.text_warn);
     } else if (rec.state == .failed) {
-        ui.text("RECORDING FAILED", ui_mod.text_warn);
-    } else ui.text("not recording", ui_mod.text_dim);
+        ui.text("RECORDING FAILED", theme.text_warn);
+    } else ui.text("not recording", theme.text_dim);
     ui.newline();
     if (rec.note_len > 0) {
-        ui.text(rec.note(), if (rec.state == .failed) ui_mod.text_warn else ui_mod.text_dim);
+        ui.text(rec.note(), if (rec.state == .failed) theme.text_warn else theme.text_dim);
         ui.newline();
     }
     if (rec.path_len > 0) {
-        ui.text(rec.path(), ui_mod.text_dim);
+        ui.text(rec.path(), theme.text_dim);
         ui.newline();
     }
     ui.separator();
@@ -525,7 +526,7 @@ fn recordSection(ui: *ui_mod.Ui, rec: *const RecStatus, shared: *Shared) void {
 /// Scroll-back review.
 fn reviewSection(ui: *ui_mod.Ui, rv: *const ReviewStatus, shared: *Shared) void {
     var buf: [160]u8 = undefined;
-    ui.text("Review", ui_mod.text_bright);
+    ui.text("Review", theme.text_bright);
     ui.column(64);
     if (ui.button("start", false)) shared.push(.{ .action = .{ .review = .start } });
     if (ui.button("<< window", false)) shared.push(.{ .action = .{ .review = .page_back } });
@@ -536,7 +537,7 @@ fn reviewSection(ui: *ui_mod.Ui, rv: *const ReviewStatus, shared: *Shared) void 
     if (ui.button("LIVE", !rv.active) and rv.active) shared.push(.{ .action = .{ .review = .live } });
     if (rv.active) {
         var c1: [16]u8 = undefined;
-        ui.text(format.fmt(&buf, "{d:.1} s behind, at {s}{s}{s}", .{ rv.behind_s, fmtClock(&c1, rv.at_s), if (rv.from_file) "" else " (last seconds only: not recording)", if (rv.loading) " ..." else "" }), ui_mod.text_warn);
+        ui.text(format.fmt(&buf, "{d:.1} s behind, at {s}{s}{s}", .{ rv.behind_s, fmtClock(&c1, rv.at_s), if (rv.from_file) "" else " (last seconds only: not recording)", if (rv.loading) " ..." else "" }), theme.text_warn);
     }
     ui.newline();
     ui.separator();
@@ -545,7 +546,7 @@ fn reviewSection(ui: *ui_mod.Ui, rv: *const ReviewStatus, shared: *Shared) void 
 /// Notes: the presets as buttons, and the newest notes.
 fn notesSection(ui: *ui_mod.Ui, nt: *const NotesStatus, shared: *Shared) void {
     var buf: [160]u8 = undefined;
-    ui.text("Notes", ui_mod.text_bright);
+    ui.text("Notes", theme.text_bright);
     ui.column(64);
     var any_preset = false;
     for (&nt.presets, 1..) |*pr, n| {
@@ -553,14 +554,14 @@ fn notesSection(ui: *ui_mod.Ui, nt: *const NotesStatus, shared: *Shared) void {
         any_preset = true;
         if (ui.button(format.fmt(&buf, "{d} {s}", .{ n, pr.buf[0..pr.len] }), false)) shared.push(.{ .action = .{ .note_preset = @intCast(n) } });
     }
-    if (!any_preset) ui.text("on the display: / types a note, Enter saves it", ui_mod.text_dim);
-    if (nt.editing) ui.text("typing a note", ui_mod.text_warn);
-    if (nt.num_drafts > 0) ui.text(format.fmt(&buf, "{d} drafts (` stamps one)", .{nt.num_drafts}), ui_mod.text_dim);
+    if (!any_preset) ui.text("on the display: / types a note, Enter saves it", theme.text_dim);
+    if (nt.editing) ui.text("typing a note", theme.text_warn);
+    if (nt.num_drafts > 0) ui.text(format.fmt(&buf, "{d} drafts (` stamps one)", .{nt.num_drafts}), theme.text_dim);
     ui.newline();
     for (nt.recent[0..nt.num_recent]) |*line| {
         var clock_buf: [16]u8 = undefined;
         ui.space(16);
-        ui.text(format.fmt(&buf, "{s}  {s}", .{ fmtClock(&clock_buf, line.seconds), line.buf[0..line.len] }), ui_mod.text_dim);
+        ui.text(format.fmt(&buf, "{s}  {s}", .{ fmtClock(&clock_buf, line.seconds), line.buf[0..line.len] }), theme.text_dim);
         ui.newline();
     }
     ui.separator();
@@ -569,7 +570,7 @@ fn notesSection(ui: *ui_mod.Ui, nt: *const NotesStatus, shared: *Shared) void {
 /// The audio monitor.
 fn audioSection(ui: *ui_mod.Ui, au: *const AudioStatus, shared: *Shared) void {
     var buf: [160]u8 = undefined;
-    ui.text("Audio", ui_mod.text_bright);
+    ui.text("Audio", theme.text_bright);
     ui.column(64);
     if (ui.button("on", au.settings.enabled) and !au.settings.enabled) shared.push(.{ .action = .{ .audio = .{ .enabled = true } } });
     if (ui.button("off", !au.settings.enabled) and au.settings.enabled) shared.push(.{ .action = .{ .audio = .{ .enabled = false } } });
@@ -583,18 +584,18 @@ fn audioSection(ui: *ui_mod.Ui, au: *const AudioStatus, shared: *Shared) void {
     if (ui.button("recalibrate", false)) shared.push(.{ .action = .{ .audio = .recalibrate } });
     ui.newline();
     if (!au.running) {
-        ui.text("no audio output", ui_mod.text_dim);
+        ui.text("no audio output", theme.text_dim);
     } else if (au.settings.enabled) {
-        ui.text(format.fmt(&buf, "listening to {s}", .{if (au.listen_len > 0) au.listen_buf[0..au.listen_len] else "nothing (click a row on the display)"}), ui_mod.text_dim);
+        ui.text(format.fmt(&buf, "listening to {s}", .{if (au.listen_len > 0) au.listen_buf[0..au.listen_len] else "nothing (click a row on the display)"}), theme.text_dim);
         if (au.listen_len > 0) {
             if (au.sigma_uv > 0)
-                ui.text(format.fmt(&buf, "noise {d:.1} µV, held", .{au.sigma_uv}), ui_mod.text_dim)
+                ui.text(format.fmt(&buf, "noise {d:.1} µV, held", .{au.sigma_uv}), theme.text_dim)
             else
-                ui.text("measuring the noise (3 s)", ui_mod.text_warn);
-            ui.text(format.fmt(&buf, "{d:.0} ms", .{au.latency_ms}), ui_mod.text_dim);
+                ui.text("measuring the noise (3 s)", theme.text_warn);
+            ui.text(format.fmt(&buf, "{d:.0} ms", .{au.latency_ms}), theme.text_dim);
         }
-        if (au.underruns > 0) ui.text(format.fmt(&buf, "{d} gaps in the sound", .{au.underruns}), ui_mod.text_dim);
-    } else ui.text("off", ui_mod.text_dim);
+        if (au.underruns > 0) ui.text(format.fmt(&buf, "{d} gaps in the sound", .{au.underruns}), theme.text_dim);
+    } else ui.text("off", theme.text_dim);
     ui.newline();
     ui.separator();
 }
@@ -605,17 +606,17 @@ fn audioSection(ui: *ui_mod.Ui, au: *const AudioStatus, shared: *Shared) void {
 fn boardSection(ui: *ui_mod.Ui, bd: *const BoardStatus, rec: RecStatus.State, shared: *Shared) void {
     var buf: [160]u8 = undefined;
     var hz_buf: [24]u8 = undefined;
-    ui.text("Headstages", ui_mod.text_bright);
-    ui.text("(these change what is recorded)", ui_mod.text_dim);
+    ui.text("Headstages", theme.text_bright);
+    ui.text("(these change what is recorded)", theme.text_dim);
     ui.newline();
-    ui.text("amplifier band", ui_mod.text_dim);
+    ui.text("amplifier band", theme.text_dim);
     ui.column(120);
     const dlo = ui.stepper("from", fmtHz(&hz_buf, bd.lower_actual), 80);
     if (dlo != 0) shared.push(.{ .action = .{ .board = .{ .lower = dlo > 0 } } });
     const dhi = ui.stepper("to", fmtHz(&hz_buf, bd.upper_actual), 80);
     if (dhi != 0) shared.push(.{ .action = .{ .board = .{ .upper = dhi > 0 } } });
     ui.newline();
-    ui.text("DSP high-pass", ui_mod.text_dim);
+    ui.text("DSP high-pass", theme.text_dim);
     ui.column(120);
     if (ui.button("off", !bd.settings.dsp_enabled) and bd.settings.dsp_enabled) shared.push(.{ .action = .{ .board = .{ .dsp = false } } });
     if (ui.button("on", bd.settings.dsp_enabled) and !bd.settings.dsp_enabled) shared.push(.{ .action = .{ .board = .{ .dsp = true } } });
@@ -627,14 +628,14 @@ fn boardSection(ui: *ui_mod.Ui, bd: *const BoardStatus, rec: RecStatus.State, sh
     ui.newline();
     // Sample rate and half-channel mode change the shape of the data: chosen here, then
     // applied together by restarting acquisition (not while recording).
-    ui.text("sample rate", ui_mod.text_dim);
+    ui.text("sample rate", theme.text_dim);
     ui.column(120);
     const dr = ui.stepper("", format.fmt(&buf, "{d} Hz", .{bd.pending.sample_rate}), 80);
     if (dr != 0) shared.push(.{ .action = .{ .board = .{ .rate = dr > 0 } } });
     for (bd.headstages[0..bd.num_headstages]) |h| {
         if (!h.rhd2132) continue;
         const half = bd.pending.rhd2132_16ch[h.slot];
-        ui.text(oez.types.headstage_names[h.slot], ui_mod.text_dim);
+        ui.text(oez.types.headstage_names[h.slot], theme.text_dim);
         if (ui.button("32 ch", !half) and half) shared.push(.{ .action = .{ .board = .{ .half = h.slot } } });
         if (ui.button("16 of 32", half) and !half) shared.push(.{ .action = .{ .board = .{ .half = h.slot } } });
         ui.space(8);
@@ -643,16 +644,16 @@ fn boardSection(ui: *ui_mod.Ui, bd: *const BoardStatus, rec: RecStatus.State, sh
     if (bd.restartPending()) {
         if (rec == .idle or rec == .failed) {
             if (ui.button("Apply (restarts acquisition)", true)) shared.push(.{ .action = .{ .board = .apply } });
-        } else ui.text("sample rate and channels can change once the recording is stopped", ui_mod.text_warn);
+        } else ui.text("sample rate and channels can change once the recording is stopped", theme.text_warn);
         ui.newline();
     }
     if (bd.unsaved) {
         if (ui.button("Save as default", false)) shared.push(.{ .action = .{ .board = .save } });
-        ui.text("these settings differ from the config file", ui_mod.text_dim);
+        ui.text("these settings differ from the config file", theme.text_dim);
         ui.newline();
     }
     if (bd.note_len > 0) {
-        ui.text(bd.note_buf[0..bd.note_len], ui_mod.text_warn);
+        ui.text(bd.note_buf[0..bd.note_len], theme.text_warn);
         ui.newline();
     }
     ui.separator();
@@ -673,18 +674,18 @@ fn panelSection(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Share
 fn panelView(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Shared) void {
     var buf: [160]u8 = undefined;
     // Name, and what the panel shows.
-    ui.text(p.name(), ui_mod.text_bright);
+    ui.text(p.name(), theme.text_bright);
     ui.text(format.fmt(&buf, "{d} {s} channels", .{ p.rows, switch (p.kind) {
         .electrode => "electrode",
         .aux => "AUX",
         .adc => "ADC",
         .ttl => "TTL",
-    } }), ui_mod.text_dim);
+    } }), theme.text_dim);
     ui.x = @max(ui.x, ui.width - 78);
     if (ui.button("reset", false)) shared.push(.{ .panel = i, .action = .reset });
     ui.newline();
 
-    ui.text("view", ui_mod.text_dim);
+    ui.text("view", theme.text_dim);
     ui.column(64);
     inline for (.{ panels.Mode.scroll, panels.Mode.sweep, panels.Mode.triggered }) |m| {
         if (ui.button(@tagName(m), p.mode == m) and p.mode != m) shared.push(.{ .panel = i, .action = .{ .mode = m } });
@@ -709,7 +710,7 @@ fn panelView(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Shared) 
 /// rows are shown and (filter on) which go through the filter.
 fn panelFilter(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Shared) void {
     var value_buf: [48]u8 = undefined;
-    ui.text("filter", ui_mod.text_dim);
+    ui.text("filter", theme.text_dim);
     ui.column(64);
     if (ui.button("raw", !p.filtered) and p.filtered) shared.push(.{ .panel = i, .action = .{ .filter = false } });
     if (ui.button("band", p.filtered) and !p.filtered) shared.push(.{ .panel = i, .action = .{ .filter = true } });
@@ -724,7 +725,7 @@ fn panelFilter(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Shared
     // Row by row: which are shown, and (filter on) which go through the filter.
     inline for (.{ "rows shown", "filtered" }, .{ true, false }) |label, is_shown| {
         if (is_shown or p.filtered) {
-            ui.text(label, ui_mod.text_dim);
+            ui.text(label, theme.text_dim);
             ui.column(104);
             const saved_indent = ui.indent;
             ui.indent = 104;
@@ -742,7 +743,7 @@ fn panelFilter(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Shared
 /// An electrode panel's common average reference: which rows are averaged, which lose
 /// the average.
 fn panelCar(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Shared) void {
-    ui.text("CAR", ui_mod.text_dim);
+    ui.text("CAR", theme.text_dim);
     ui.column(64);
     if (ui.button("off", !p.car) and p.car) shared.push(.{ .panel = i, .action = .{ .car = false } });
     if (ui.button("on", p.car) and !p.car) shared.push(.{ .panel = i, .action = .{ .car = true } });
@@ -750,7 +751,7 @@ fn panelCar(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Shared) v
         ui.newline();
         inline for (.{ "average of", "subtract from" }, .{ true, false }) |label, is_ref| {
             const rows = if (is_ref) &p.car_ref else &p.car_sub;
-            ui.text(label, ui_mod.text_dim);
+            ui.text(label, theme.text_dim);
             ui.column(104);
             const saved_indent = ui.indent;
             ui.indent = 104;
@@ -770,7 +771,7 @@ fn panelCar(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Shared) v
 /// A triggered panel's trigger: a TTL line, or (electrodes) a level crossing on a row.
 fn panelTrigger(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Shared) void {
     var value_buf: [48]u8 = undefined;
-    ui.text("trigger", ui_mod.text_dim);
+    ui.text("trigger", theme.text_dim);
     ui.column(64);
     if (p.kind == .electrode) {
         if (ui.button("TTL", p.trig_source == .ttl) and p.trig_source != .ttl) shared.push(.{ .panel = i, .action = .{ .trig_source = .ttl } });
@@ -786,12 +787,12 @@ fn panelTrigger(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Share
         if (ui.button("falling", !p.trig_rising) and p.trig_rising) shared.push(.{ .panel = i, .action = .{ .trig_rising = false } });
         if (ui.button("rising", p.trig_rising) and !p.trig_rising) shared.push(.{ .panel = i, .action = .{ .trig_rising = true } });
         ui.newline();
-        ui.text("level", ui_mod.text_dim);
+        ui.text("level", theme.text_dim);
         ui.column(64);
         if (ui.button("follows noise", p.trig_auto) and !p.trig_auto) shared.push(.{ .panel = i, .action = .{ .trig_auto = true } });
         if (ui.button("fixed", !p.trig_auto) and p.trig_auto) shared.push(.{ .panel = i, .action = .{ .trig_auto = false } });
         if (p.trig_auto) {
-            ui.text(format.fmt(&value_buf, "{d:.0} µV", .{p.trig_level_now_uv}), ui_mod.text_bright);
+            ui.text(format.fmt(&value_buf, "{d:.0} µV", .{p.trig_level_now_uv}), theme.text_bright);
         } else {
             // "+" makes the level larger in size, whichever its sign.
             const dv = ui.stepper("", format.fmt(&value_buf, "{d:.0} µV", .{p.trig_level_uv}), 70);

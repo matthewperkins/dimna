@@ -85,6 +85,8 @@ pub fn main(init: std.process.Init) !u8 {
     const argv = try init.minimal.args.toSlice(init.arena.allocator());
     // The config file, if there is one.
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    // Not a label: a path too long for the buffer is "", and the run starts without a
+    // config, as if there were none, without saying why.
     const config_path = if (init.environ_map.get("XDG_CONFIG_HOME")) |x|
         std.fmt.bufPrint(&path_buf, "{s}/oez/config.toml", .{x}) catch ""
     else
@@ -99,6 +101,7 @@ pub fn main(init: std.process.Init) !u8 {
     var args = parseArgs(argv, doc) catch |e| return if (e == error.Help) 0 else 2;
     // The view file sits beside the config.
     var views_path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    // Not a label: too long a path is "", and the view file is not read, without saying why.
     const views_path = std.fmt.bufPrint(&views_path_buf, "{s}/views.toml", .{std.fs.path.dirname(config_path) orelse "."}) catch "";
     const views_text: []const u8 = Io.Dir.cwd().readFileAlloc(io, views_path, init.arena.allocator(), .limited(1 << 18)) catch "";
     if (views_text.len > 0) {
@@ -481,7 +484,7 @@ pub fn main(init: std.process.Init) !u8 {
                 .audio = session.audioStatus(&display, &audio_shared, &layout),
                 .about_buf = about: {
                     var b: [160]u8 = undefined;
-                    _ = std.fmt.bufPrint(&b, "{s}   {d} channels ({d} electrode) at {d} Hz", .{ if (sim != null) "simulated board" else "Open Ephys acquisition board", nch, layout.num_electrodes, fs }) catch "";
+                    _ = format.fmt(&b, "{s}   {d} channels ({d} electrode) at {d} Hz", .{ if (sim != null) "simulated board" else "Open Ephys acquisition board", nch, layout.num_electrodes, fs });
                     break :about b;
                 },
                 .about_len = std.fmt.count("{s}   {d} channels ({d} electrode) at {d} Hz", .{ if (sim != null) "simulated board" else "Open Ephys acquisition board", nch, layout.num_electrodes, fs }),
