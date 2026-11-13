@@ -23,6 +23,18 @@ sample, while showing the signals with as little delay as the screen allows.
 Its sibling is kalila (formerly oers), the same instrument in Rust; dimna began
 as a port of its driver. The two are named after the jackals of the Tales of Bidpai.
 
+![The neural display, fullscreen, recording from an animal](docs/images/display.png)
+
+*The neural display on its own monitor, from an animal: EMG on port B (left, a sweep
+display with a 300-6000 Hz band on rows 1-8 and raw rows 9-12), single units on port A
+(right, 300-6000 Hz with a common average reference; row 4 is in focus, with its spike
+threshold as a red line, and listened to), the ADC inputs below.*
+
+| | |
+|---|---|
+| ![The spike tiles](docs/images/tiles.png) | ![The control window](docs/images/control.png) |
+| *Spike tiles for port A: the last waveforms of each electrode, its threshold, noise and rate; A1-4 in focus (amber) and listened to (♪).* | *The control window: one summary line per section, Notes and Port A open.* |
+
 ## Status
 
 Used on one rig (RHD2132 and RHD2216 headstages, 30 kHz). What has been checked and how
