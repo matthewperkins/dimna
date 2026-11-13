@@ -1022,3 +1022,192 @@ test "the report: the focused electrode's threshold in µV, published when it ch
     try testing.expectEqual(5, sink.count);
     try testing.expect(!sink.last.threshold_valid);
 }
+
+// ---- What the tile window draws ----
+//
+// A stored-output test, as the display's and the control window's: `draw` is run on a
+// few states with the hand-made font, and everything it puts into the batch is written
+// out in order as text (rectangles; runs of waveform segments joined end to end, with
+// their colour and width; runs of text) and compared with `testdata/tiles_draw.txt`. Set
+// OEZ_TILES_DRAW_OUT to a path to write what this run produced there. The detectors are
+// fed `testSample`: noise on every channel, spikes of four sizes on channels 4, 9, 40, 70.
+
+const draw_states = [_][]const u8{
+    "all auto, no focus",
+    "a common range of 150 µV, one tile 400 µV",
+    "focus on A1-5, A1-5 and A1-10 listened to, the pointer over A1-10",
+    "port A only, two ports",
+    "three headstages on two ports, port A",
+    "a small window, port B: no room for the range or the rate",
+    "64 + 16 electrodes",
+};
+
+const DrawState = struct {
+    layout: oez.types.Layout,
+    cfg: Config = .{},
+    view: View = .{},
+    width: f32 = 1000,
+    height: f32 = 700,
+    mouse: [2]f32 = .{ -1, -1 },
+};
+
+fn drawState(st: *DrawState, k: usize) void {
+    const three = [_][2]usize{ .{ 0, 32 }, .{ 1, 16 }, .{ 2, 16 } };
+    const big = [_][2]usize{ .{ 0, 64 }, .{ 2, 16 } };
+    st.* = .{ .layout = testLayout(switch (k) {
+        4 => &three,
+        6 => &big,
+        else => &two_ports,
+    }) };
+    var start: link.TileView = .{};
+    switch (k) {
+        1, 2 => {
+            @memset(start.range_uv[0..48], 150);
+            if (k == 1) start.range_uv[4] = 400;
+        },
+        3, 4 => start.port = 0,
+        5 => {
+            start.port = 1;
+            @memset(start.range_uv[32..48], 150);
+        },
+        6 => {
+            start.range_uv[4] = 250;
+            start.range_uv[70] = 1500;
+        },
+        else => {},
+    }
+    st.view.init(&st.layout, &start);
+    if (k == 2) {
+        st.cfg.focus = 4;
+        st.cfg.listening[0] = 4;
+        st.cfg.listening[1] = 9;
+        st.cfg.num_listening = 2;
+        // Tile 9: 48 tiles of 125 x 112 in 8 columns, so column 1 of row 1.
+        st.mouse = .{ 130, 120 };
+    }
+    if (k == 5) {
+        st.width = 400;
+        st.height = 300;
+    }
+    if (k == 6) {
+        st.width = 1600;
+        st.height = 900;
+        st.cfg.focus = 70;
+    }
+}
+
+fn writePoint(w: *std.Io.Writer, x: f32, y: f32) !void {
+    try w.print(" {d:.2},{d:.2}", .{ x, y });
+}
+
+/// Writes the batch's quads in order. Returns the counts of rectangles, waveform runs and
+/// text runs; with `w` null, only counts.
+fn writeDrawn(w: ?*std.Io.Writer, verts: []const font.Vertex) ![3]usize {
+    var counts: [3]usize = @splat(0);
+    const quads = verts.len / 6;
+    var q: usize = 0;
+    while (q < quads) {
+        const v = verts[q * 6 ..][0..6];
+        const col = v[0].colour;
+        if (v[0].uv[0] * font.atlas_size >= 8) {
+            // A run of glyphs on one row, of one colour, 8 pixels apart.
+            counts[2] += 1;
+            if (w) |out| try out.print("text {d} {d} {any} \"", .{ v[0].pos[0], v[0].pos[1], col });
+            var next_x = v[0].pos[0];
+            while (q < quads) : (q += 1) {
+                const g = verts[q * 6 ..][0..6];
+                const gu = g[0].uv[0] * font.atlas_size;
+                if (gu < 8 or g[0].pos[0] != next_x or g[0].pos[1] != v[0].pos[1] or !std.mem.eql(u8, &g[0].colour, &col)) break;
+                var utf: [4]u8 = undefined;
+                const n = std.unicode.utf8Encode(testCodepoint(@intFromFloat(gu - 8)), &utf) catch unreachable;
+                if (w) |out| try out.writeAll(utf[0..n]);
+                next_x += 8;
+            }
+            if (w) |out| try out.writeAll("\"\n");
+            continue;
+        }
+        const is_rect = v[1].pos[1] == v[0].pos[1] and v[5].pos[0] == v[0].pos[0] and
+            v[2].pos[0] >= v[0].pos[0] and v[2].pos[1] >= v[0].pos[1];
+        if (is_rect) {
+            counts[0] += 1;
+            if (w) |out| try out.print("rect {d} {d} {d} {d} {any}\n", .{ v[0].pos[0], v[0].pos[1], v[2].pos[0] - v[0].pos[0], v[2].pos[1] - v[0].pos[1], col });
+            q += 1;
+            continue;
+        }
+        // A line: from the middle of its start edge (v0, v5) to that of its end (v1, v2).
+        // Segments that continue one another, in one colour and width, are one run.
+        counts[1] += 1;
+        const width = std.math.hypot(v[0].pos[0] - v[5].pos[0], v[0].pos[1] - v[5].pos[1]);
+        if (w) |out| {
+            try out.print("wave {any} {d:.2}:", .{ col, width });
+            try writePoint(out, (v[0].pos[0] + v[5].pos[0]) / 2, (v[0].pos[1] + v[5].pos[1]) / 2);
+        }
+        var end: [2]f32 = .{ (v[1].pos[0] + v[2].pos[0]) / 2, (v[1].pos[1] + v[2].pos[1]) / 2 };
+        if (w) |out| try writePoint(out, end[0], end[1]);
+        q += 1;
+        while (q < quads) : (q += 1) {
+            const s = verts[q * 6 ..][0..6];
+            if (s[0].uv[0] * font.atlas_size >= 8 or !std.mem.eql(u8, &s[0].colour, &col)) break;
+            const start: [2]f32 = .{ (s[0].pos[0] + s[5].pos[0]) / 2, (s[0].pos[1] + s[5].pos[1]) / 2 };
+            if (@abs(start[0] - end[0]) > 1e-3 or @abs(start[1] - end[1]) > 1e-3) break;
+            if (@abs(std.math.hypot(s[0].pos[0] - s[5].pos[0], s[0].pos[1] - s[5].pos[1]) - width) > 1e-3) break;
+            end = .{ (s[1].pos[0] + s[2].pos[0]) / 2, (s[1].pos[1] + s[2].pos[1]) / 2 };
+            if (w) |out| try writePoint(out, end[0], end[1]);
+        }
+        if (w) |out| try out.writeByte('\n');
+    }
+    return counts;
+}
+
+fn writeState(w: *std.Io.Writer, name: []const u8, st: *const DrawState, det: *const spikes.Detector, vertices: []font.Vertex) !void {
+    const face = testFont();
+    var batch: font.Batch = .{ .font = &face, .vertices = vertices };
+    draw(&batch, .{
+        .det = det,
+        .layout = &st.layout,
+        .cfg = &st.cfg,
+        .view = &st.view,
+        .face = &face,
+        .width = st.width,
+        .height = st.height,
+        .mouse_x = st.mouse[0],
+        .mouse_y = st.mouse[1],
+        .max_waves = wavesShown(vertices.len, st.view.num_shown, det.len),
+    });
+    // A full batch drops quads silently: the comparison would then miss them.
+    try testing.expect(batch.len + 6 <= vertices.len);
+    const counts = try writeDrawn(null, batch.vertices[0..batch.len]);
+    try w.print("== {s}: {d} rects, {d} waveform runs, {d} text runs\n", .{ name, counts[0], counts[1], counts[2] });
+    _ = try writeDrawn(w, batch.vertices[0..batch.len]);
+}
+
+test "what the tile window draws is unchanged" {
+    const gpa = testing.allocator;
+    const vertices = try gpa.alloc(font.Vertex, max_vertices);
+    defer gpa.free(vertices);
+    const st = try gpa.create(DrawState);
+    defer gpa.destroy(st);
+    // One detector per layout, fed 2.5 s.
+    var dets: [3]?spikes.Detector = @splat(null);
+    defer for (&dets) |*d| if (d.*) |*x| x.deinit();
+
+    var out: std.Io.Writer.Allocating = .init(gpa);
+    defer out.deinit();
+    for (draw_states, 0..) |name, k| {
+        drawState(st, k);
+        const which: usize = switch (k) {
+            4 => 1,
+            6 => 2,
+            else => 0,
+        };
+        if (dets[which] == null) dets[which] = try testDetector(&st.layout, 2.5);
+        try writeState(&out.writer, name, st, &dets[which].?, vertices);
+    }
+    const got = out.written();
+    if (std.c.getenv("OEZ_TILES_DRAW_OUT")) |path| {
+        const file = try std.Io.Dir.cwd().createFile(testing.io, std.mem.span(path), .{});
+        defer file.close(testing.io);
+        try file.writeStreamingAll(testing.io, got);
+    }
+    try testing.expectEqualStrings(@embedFile("testdata/tiles_draw.txt"), got);
+}
