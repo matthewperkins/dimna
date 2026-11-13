@@ -297,21 +297,15 @@ pub fn main(init: std.process.Init) !u8 {
     var snap_target: usize = 0;
 
     // Recording: started and stopped from the control window.
-    var record_dir_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const record_dir: []const u8 = if (std.mem.startsWith(u8, args.record_dir, "~/"))
-        (std.fmt.bufPrint(&record_dir_buf, "{s}/{s}", .{ if (std.c.getenv("HOME")) |h| std.mem.span(h) else ".", args.record_dir[2..] }) catch args.record_dir)
-    else
-        args.record_dir;
-    var rec: ?*oez.record.Recorder = null;
-    var rec_start_ns: i128 = 0;
+    var recording: session.Recording = .{};
+    recording.setRoot(args.record_dir);
+    // However the loop ends, a recording in progress is closed properly.
+    defer recording.deinit();
     var rec_published_ns: i128 = 0;
-    var rec_status: control.RecStatus = .{};
     var view_file = try session.ViewFile.init(gpa, &display.set);
     defer view_file.deinit(gpa);
     var review: session.ReviewSession = .{};
     defer review.deinit();
-    // Notes on their way into the recording (display thread to recorder thread).
-    var note_queue: oez.events.EventQueue = .{};
     var board_status: control.BoardStatus = .{};
     // Board settings: what the config (and command line) gave at launch, to tell whether
     // they were changed; and the rate and channel choices waiting for a restart.
@@ -339,11 +333,6 @@ pub fn main(init: std.process.Init) !u8 {
         @memcpy(quit_prompt.path_buf[0..n], config_path[0..n]);
         quit_prompt.path_len = n;
     }
-    // However the loop ends, a recording in progress is closed properly.
-    defer if (rec) |r| {
-        const sum = r.finish();
-        if (sum.failure) |err| log.err("recording failed: {t}", .{err});
-    };
 
     var newest: i64 = 0;
     var newest_acquired_ns: i128 = 0;
@@ -424,7 +413,7 @@ pub fn main(init: std.process.Init) !u8 {
         // Notes first: while one is being typed, every key is its text. "Now" is the
         // newest sample acquired plus the time since.
         const note_stamp: i64 = newest + if (newest_acquired_ns != 0) @as(i64, @intFromFloat(@as(f64, @floatFromInt(nowNs(io) - newest_acquired_ns)) * 1e-9 * fs)) else 0;
-        notes.handle(&input, note_stamp, if (rec != null) rec_status.path() else "");
+        notes.handle(&input, note_stamp, recording.sessionPath());
         // Review keys (what is left of them after a note took its own).
         for (input.keys[0..input.num_keys]) |k| {
             const cmd: control.ReviewAction = switch (k) {
@@ -452,7 +441,7 @@ pub fn main(init: std.process.Init) !u8 {
                     board_status.setNote("view saved to {s}", .{views_path});
                 } else |err| board_status.setNote("could not save {s}: {t}", .{ views_path, err });
             }
-            if (e.action == .note_preset) notes.stampPreset(e.action.note_preset, note_stamp, if (rec != null) rec_status.path() else "");
+            if (e.action == .note_preset) notes.stampPreset(e.action.note_preset, note_stamp, recording.sessionPath());
             if (display.applyEdit(e)) quit = true;
             snap_dirty = true;
             if (e.action == .board) {
@@ -478,7 +467,7 @@ pub fn main(init: std.process.Init) !u8 {
                 }
                 if (want.lower_bandwidth >= want.upper_bandwidth) {
                     board_status.setNote("the band's lower edge must stay below its upper edge", .{});
-                } else if (acq.applySettings(want, rec != null)) |_| {
+                } else if (acq.applySettings(want, recording.active())) |_| {
                     // The live values carry over into what a restart will apply.
                     const rate = pending.sample_rate;
                     const half = pending.rhd2132_16ch;
@@ -490,13 +479,11 @@ pub fn main(init: std.process.Init) !u8 {
                 }
             }
             if (e.action == .record) {
-                if (e.action.record and rec == null) {
+                if (e.action.record and !recording.active()) {
                     // Review of an earlier recording ends where a new one begins.
                     review.active = false;
-                    // Changes applied before this recording are not its events.
-                    while (acq.events.pop()) |_| {}
-                    while (note_queue.pop()) |_| {}
-                    if (oez.record.Recorder.create(gpa, io, &ring, record_dir, .{
+                    alarms.seen.gaps = 0;
+                    if (!recording.start(gpa, io, &ring, .{
                         .layout = layout,
                         .settings = source.settings(),
                         .gateware = if (board) |b| b.fw else @splat(0),
@@ -509,51 +496,14 @@ pub fn main(init: std.process.Init) !u8 {
                             for (&names, 1..) |*n, line| n.* = display.set.ttlName(line);
                             break :names names;
                         },
-                    })) |r| {
-                        r.events_in = &acq.events;
-                        r.notes_in = &note_queue;
-                        // For testing the alarms: make the recorder fail or stall.
-                        if (std.c.getenv("OEZ_TEST_RECORD_FAIL_AFTER")) |v| r.test_fail_after = std.fmt.parseInt(u64, std.mem.span(v), 10) catch null;
-                        if (std.c.getenv("OEZ_TEST_RECORD_STALL")) |v| {
-                            var it = std.mem.tokenizeScalar(u8, std.mem.span(v), ',');
-                            r.test_stall_after = std.fmt.parseInt(u64, it.next() orelse "", 10) catch null;
-                            r.test_stall_ms = std.fmt.parseInt(u32, it.next() orelse "", 10) catch 0;
-                        }
-                        alarms.seen.gaps = 0;
-                        if (r.start()) |_| {
-                            rec = r;
-                            rec_start_ns = nowNs(io);
-                            rec_status = .{ .state = .recording };
-                            // The session folder is the parent of ephys/.
-                            const session_dir = std.fs.path.dirname(r.path) orelse r.path;
-                            rec_status.path_len = @min(session_dir.len, rec_status.path_buf.len);
-                            @memcpy(rec_status.path_buf[0..rec_status.path_len], session_dir[0..rec_status.path_len]);
-                        } else |err| {
-                            _ = r.finish();
-                            rec_status.state = .failed;
-                            rec_status.setNote("could not start the recorder: {t}", .{err});
-                            alarms.recording_failed = true;
-                        }
-                    } else |err| {
-                        rec_status.state = .failed;
-                        rec_status.setNote("could not create a recording under {s}: {t}", .{ record_dir, err });
-                        alarms.recording_failed = true;
-                        log.err("could not create a recording under {s}: {t}", .{ record_dir, err });
-                    }
-                } else if (!e.action.record) {
-                    if (rec) |r| {
-                        if (rec_status.state == .recording) {
-                            r.requestStop();
-                            rec_status.state = .stopping;
-                        }
-                    }
-                }
+                    }, &acq.events, nowNs(io))) alarms.recording_failed = true;
+                } else if (!e.action.record) recording.requestStop();
             }
         }
-        if (review.step(.{ .gpa = gpa, .gpu = &gpu, .layout = &layout, .set = &display.set, .target = display.target, .newest = newest, .rec = rec })) snap_dirty = true;
+        if (review.step(.{ .gpa = gpa, .gpu = &gpu, .layout = &layout, .set = &display.set, .target = display.target, .newest = newest, .rec = recording.recorder })) snap_dirty = true;
         // Notes saved this turn go into the recording, if there is one.
         for (notes.fresh[0..notes.num_fresh]) |*note| {
-            if (rec != null) _ = note_queue.push(.init(note.sample, "note", "{s}", .{note.text()}));
+            recording.note(note.sample, note.text());
         }
         notes.num_fresh = 0;
         if (notes.dirty) {
@@ -626,7 +576,7 @@ pub fn main(init: std.process.Init) !u8 {
         if (restart_asked) {
             restart_asked = false;
             snap_dirty = true;
-            if (rec != null) {
+            if (recording.active()) {
                 board_status.setNote("stop the recording first: this changes the shape of the data", .{});
             } else {
                 // Review looks into a history that is about to be replaced.
@@ -725,27 +675,13 @@ pub fn main(init: std.process.Init) !u8 {
                 if (args.tiles) tiles_win = tiles_mod.Tiles.start(gpa, &tiles_shared, &ring, &layout, bs, &gpu, args.font, args.font_px);
             }
         }
-        // The recorder has finished (asked to, or because writing failed): close it.
-        if (rec) |r| {
-            if (r.done.load(.acquire)) {
-                const sum = r.finish();
-                rec = null;
-                snap_dirty = true;
-                rec_status.samples = sum.samples;
-                rec_status.gaps = sum.gaps;
-                if (sum.failure) |err| {
-                    rec_status.state = .failed;
-                    rec_status.setNote("recording failed: {t}; what was written before is intact", .{err});
-                    alarms.recording_failed = true;
-                } else {
-                    rec_status.state = .idle;
-                    var clock_buf: [16]u8 = undefined;
-                    rec_status.setNote("last recording: {s}, {d} samples, {d} gaps", .{ control.fmtClock(&clock_buf, @as(f64, @floatFromInt(sum.samples)) / fs), sum.samples, sum.gaps });
-                }
-            }
+        // The recorder has finished (asked to, or because writing failed).
+        if (recording.poll(fs)) |ended| {
+            snap_dirty = true;
+            if (ended == .failed) alarms.recording_failed = true;
         }
         // While recording, the control window's counts move four times a second.
-        if ((rec != null or review.active) and nowNs(io) - rec_published_ns > 250 * std.time.ns_per_ms) {
+        if ((recording.active() or review.active) and nowNs(io) - rec_published_ns > 250 * std.time.ns_per_ms) {
             rec_published_ns = nowNs(io);
             snap_dirty = true;
         }
@@ -753,11 +689,11 @@ pub fn main(init: std.process.Init) !u8 {
         if (alarms.update(&status, .{
             .overflow = acq.ring_overflow.load(.monotonic),
             .dropped = health.dropped_samples.load(.monotonic),
-            .gaps = if (rec) |r| r.stats.gaps.load(.monotonic) else 0,
-        }, if (rec) |r| @as(f64, @floatFromInt(r.backlog() * bs)) / fs else null, &display.acknowledged)) snap_dirty = true;
+            .gaps = recording.gaps(),
+        }, recording.behind(bs, fs), &display.acknowledged)) snap_dirty = true;
         audio_shared.alarm.store(status.alarm_len > 0, .monotonic);
-        status.recording = rec != null;
-        if (rec != null) status.rec_seconds = @as(f64, @floatFromInt(nowNs(io) - rec_start_ns)) / 1e9;
+        status.recording = recording.active();
+        status.rec_seconds = recording.seconds(nowNs(io));
         if (input.num_keys > 0 or input.scroll_x != 0 or input.scroll_y != 0 or input.pinch != 1 or display.target != snap_target) snap_dirty = true;
         if (snap_dirty and control_thread != null) {
             snap_dirty = false;
@@ -828,16 +764,7 @@ pub fn main(init: std.process.Init) !u8 {
                     }
                     break :blk board_status;
                 },
-                .rec = blk: {
-                    if (rec) |r| {
-                        rec_status.seconds = status.rec_seconds;
-                        rec_status.samples = r.stats.samples.load(.monotonic);
-                        rec_status.bytes = r.stats.bytes.load(.monotonic);
-                        rec_status.gaps = r.stats.gaps.load(.monotonic);
-                        rec_status.behind_s = @as(f64, @floatFromInt(r.backlog() * bs)) / fs;
-                    }
-                    break :blk rec_status;
-                },
+                .rec = recording.statusNow(nowNs(io), bs, fs),
             });
         }
         // A panel's corners changed: filter its recent past again.

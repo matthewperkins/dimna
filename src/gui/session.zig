@@ -253,3 +253,148 @@ pub const ViewFile = struct {
         self.saved_len = rendered.len;
     }
 };
+
+/// The recording in progress, if any: started and stopped from the control window while
+/// acquisition carries on.
+pub const Recording = struct {
+    recorder: ?*oez.record.Recorder = null,
+    started_ns: i128 = 0,
+    status: control.RecStatus = .{},
+    /// Notes on their way into the recording (display thread to recorder thread).
+    notes: oez.events.EventQueue = .{},
+    /// Where sessions go.
+    root_buf: [std.fs.max_path_bytes]u8 = undefined,
+    root_len: usize = 0,
+
+    /// Sets the folder sessions are made under ("~/" is the home folder).
+    pub fn setRoot(self: *Recording, dir: []const u8) void {
+        const home: []const u8 = if (std.c.getenv("HOME")) |h| std.mem.span(h) else ".";
+        const text: []const u8 = (if (std.mem.startsWith(u8, dir, "~/"))
+            std.fmt.bufPrint(&self.root_buf, "{s}/{s}", .{ home, dir[2..] })
+        else
+            std.fmt.bufPrint(&self.root_buf, "{s}", .{dir})) catch "";
+        self.root_len = text.len;
+    }
+
+    pub fn root(self: *const Recording) []const u8 {
+        return self.root_buf[0..self.root_len];
+    }
+
+    pub fn active(self: *const Recording) bool {
+        return self.recorder != null;
+    }
+
+    /// The session folder while recording, else "".
+    pub fn sessionPath(self: *const Recording) []const u8 {
+        return if (self.recorder != null) self.status.path() else "";
+    }
+
+    /// Starts a recording of what `ring` carries from now on. `events` are the
+    /// acquisition thread's (settings applied while recording). False if it could not
+    /// be started: `status` then says why.
+    pub fn start(self: *Recording, gpa: std.mem.Allocator, io: Io, ring: *oez.ring.BlockRing, info: oez.record.Info, events: *oez.events.EventQueue, now_ns: i128) bool {
+        if (self.recorder != null) return true;
+        // What happened before this recording is not its events or its notes.
+        while (events.pop()) |_| {}
+        while (self.notes.pop()) |_| {}
+        const r = oez.record.Recorder.create(gpa, io, ring, self.root(), info) catch |err| {
+            self.status.state = .failed;
+            self.status.setNote("could not create a recording under {s}: {t}", .{ self.root(), err });
+            log.err("could not create a recording under {s}: {t}", .{ self.root(), err });
+            return false;
+        };
+        r.events_in = events;
+        r.notes_in = &self.notes;
+        // For testing the alarms: make the recorder fail or stall.
+        if (std.c.getenv("OEZ_TEST_RECORD_FAIL_AFTER")) |v| r.test_fail_after = std.fmt.parseInt(u64, std.mem.span(v), 10) catch null;
+        if (std.c.getenv("OEZ_TEST_RECORD_STALL")) |v| {
+            var it = std.mem.tokenizeScalar(u8, std.mem.span(v), ',');
+            r.test_stall_after = std.fmt.parseInt(u64, it.next() orelse "", 10) catch null;
+            r.test_stall_ms = std.fmt.parseInt(u32, it.next() orelse "", 10) catch 0;
+        }
+        r.start() catch |err| {
+            _ = r.finish();
+            self.status.state = .failed;
+            self.status.setNote("could not start the recorder: {t}", .{err});
+            return false;
+        };
+        self.recorder = r;
+        self.started_ns = now_ns;
+        self.status = .{ .state = .recording };
+        // The session folder is the parent of ephys/.
+        const session_dir = std.fs.path.dirname(r.path) orelse r.path;
+        self.status.path_len = @min(session_dir.len, self.status.path_buf.len);
+        @memcpy(self.status.path_buf[0..self.status.path_len], session_dir[0..self.status.path_len]);
+        return true;
+    }
+
+    /// Asks the recorder to finish; `poll` reports when it has.
+    pub fn requestStop(self: *Recording) void {
+        const r = self.recorder orelse return;
+        if (self.status.state != .recording) return;
+        r.requestStop();
+        self.status.state = .stopping;
+    }
+
+    pub const Ended = enum { complete, failed };
+
+    /// Closes the recorder once it has finished (asked to, or because writing failed).
+    /// Null while there is nothing to report.
+    pub fn poll(self: *Recording, fs: f64) ?Ended {
+        const r = self.recorder orelse return null;
+        if (!r.done.load(.acquire)) return null;
+        const sum = r.finish();
+        self.recorder = null;
+        self.status.samples = sum.samples;
+        self.status.gaps = sum.gaps;
+        if (sum.failure) |err| {
+            self.status.state = .failed;
+            self.status.setNote("recording failed: {t}; what was written before is intact", .{err});
+            return .failed;
+        }
+        self.status.state = .idle;
+        var clock_buf: [16]u8 = undefined;
+        self.status.setNote("last recording: {s}, {d} samples, {d} gaps", .{ control.fmtClock(&clock_buf, @as(f64, @floatFromInt(sum.samples)) / fs), sum.samples, sum.gaps });
+        return .complete;
+    }
+
+    /// Closes a recording in progress, waiting for it (at exit).
+    pub fn deinit(self: *Recording) void {
+        const r = self.recorder orelse return;
+        const sum = r.finish();
+        self.recorder = null;
+        if (sum.failure) |err| log.err("recording failed: {t}", .{err});
+    }
+
+    /// A note for the recording's events.tsv (dropped if not recording).
+    pub fn note(self: *Recording, sample: i64, text: []const u8) void {
+        if (self.recorder != null) _ = self.notes.push(.init(sample, "note", "{s}", .{text}));
+    }
+
+    pub fn seconds(self: *const Recording, now_ns: i128) f64 {
+        return if (self.recorder != null) @as(f64, @floatFromInt(now_ns - self.started_ns)) / 1e9 else 0;
+    }
+
+    /// Gaps in the recording in progress.
+    pub fn gaps(self: *const Recording) u64 {
+        return if (self.recorder) |r| r.stats.gaps.load(.monotonic) else 0;
+    }
+
+    /// How far the recorder is behind acquisition, in seconds of signal.
+    pub fn behind(self: *const Recording, block_samples: usize, fs: f64) ?f64 {
+        const r = self.recorder orelse return null;
+        return @as(f64, @floatFromInt(r.backlog() * block_samples)) / fs;
+    }
+
+    /// The status with the running counts filled in, for the control window.
+    pub fn statusNow(self: *Recording, now_ns: i128, block_samples: usize, fs: f64) control.RecStatus {
+        if (self.recorder) |r| {
+            self.status.seconds = self.seconds(now_ns);
+            self.status.samples = r.stats.samples.load(.monotonic);
+            self.status.bytes = r.stats.bytes.load(.monotonic);
+            self.status.gaps = r.stats.gaps.load(.monotonic);
+            self.status.behind_s = self.behind(block_samples, fs) orelse 0;
+        }
+        return self.status;
+    }
+};
