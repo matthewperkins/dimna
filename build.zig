@@ -21,14 +21,14 @@ pub fn build(b: *std.Build) void {
     const c_api = b.addTranslateC(.{ .root_source_file = b.path("src/c.h"), .target = target, .optimize = optimize });
     c_api.addIncludePath(b.path("vendor/liboni"));
 
-    const oez = b.addModule("oez", .{
+    const dimna = b.addModule("dimna", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,
         .imports = &.{.{ .name = "c", .module = c_api.createModule() }},
     });
-    oez.linkLibrary(liboni);
+    dimna.linkLibrary(liboni);
 
     const headless = b.addExecutable(.{
         .name = "oez-headless",
@@ -36,7 +36,7 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/headless.zig"),
             .target = target,
             .optimize = optimize,
-            .imports = &.{.{ .name = "oez", .module = oez }},
+            .imports = &.{.{ .name = "dimna", .module = dimna }},
         }),
     });
     b.installArtifact(headless);
@@ -101,7 +101,7 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
     });
     for ([_]*std.Build.Module{ gui_mod, gui_test_mod }) |m| {
-        m.addImport("oez", oez);
+        m.addImport("dimna", dimna);
         m.addImport("wayland", wayland);
         m.addImport("vulkan", vulkan);
         m.addImport("gui_c", gui_c_mod);
@@ -130,7 +130,7 @@ pub fn build(b: *std.Build) void {
     run_gui.addPassthruArgs();
     b.step("gui", "Run the GUI").dependOn(&run_gui.step);
 
-    const tests = b.addTest(.{ .root_module = oez });
+    const tests = b.addTest(.{ .root_module = dimna });
     const gui_tests = b.addTest(.{ .name = "gui-test", .root_module = gui_test_mod });
     const test_step = b.step("test", "Run unit tests (the core's and the GUI's)");
     test_step.dependOn(&b.addRunArtifact(tests).step);

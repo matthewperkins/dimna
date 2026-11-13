@@ -2,7 +2,7 @@
 //! labels are formatted.
 
 const std = @import("std");
-const Kind = @import("oez").panels.Kind;
+const Kind = @import("dimna").panels.Kind;
 
 /// Formats into `buf`. Text that does not fit is cut, at a character boundary (it never
 /// ends inside a UTF-8 character); there is no error to handle. For labels, where a cut

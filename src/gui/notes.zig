@@ -16,7 +16,7 @@
 //! ~/.local/state), and onto the traces as a marker.
 
 const std = @import("std");
-const oez = @import("oez");
+const dimna = @import("dimna");
 const Input = @import("window.zig").Input;
 const Key = @import("window.zig").Key;
 const linux = std.os.linux;
@@ -70,7 +70,7 @@ pub const Notes = struct {
 
     /// Reads the presets from the config's [notes] table and opens the notes log.
     /// `home`, `state_home`: `Env.home` and `Env.state_home`, for where the notes log goes.
-    pub fn init(doc: oez.toml.Document, home: []const u8, state_home: []const u8) Notes {
+    pub fn init(doc: dimna.toml.Document, home: []const u8, state_home: []const u8) Notes {
         var self: Notes = .{};
         for (&self.presets, 1..) |*p, n| {
             var key_buf: [12]u8 = undefined;
@@ -211,7 +211,7 @@ pub const Notes = struct {
             const text_line = std.fmt.bufPrint(
                 &line,
                 "{s}\t{d}\t{s}\t{s}\n",
-                .{ oez.record.localTime(&when), sample, if (session.len > 0) session else "-", note.text() },
+                .{ dimna.record.localTime(&when), sample, if (session.len > 0) session else "-", note.text() },
             ) catch return;
             _ = linux.write(self.log_fd, text_line.ptr, text_line.len);
         }

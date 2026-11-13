@@ -21,18 +21,18 @@
 //! channels are in the sound; it is marked with a note.
 
 const std = @import("std");
-const oez = @import("oez");
+const dimna = @import("dimna");
 const Atomic = std.atomic.Value;
-pub const TileView = oez.tile_view.TileView;
-pub const Thresholds = oez.thresholds.Thresholds;
+pub const TileView = dimna.tile_view.TileView;
+pub const Thresholds = dimna.thresholds.Thresholds;
 
 pub const Config = struct {
-    listening: [oez.audio.max_channels]u32 = @splat(0),
+    listening: [dimna.audio.max_channels]u32 = @splat(0),
     num_listening: usize = 0,
     /// The channel in focus, if any.
     focus: ?u32 = null,
     /// The panels' common average references, for the detection.
-    car: oez.spikes.Car = .{},
+    car: dimna.spikes.Car = .{},
     use_car: bool = false,
     /// Every channel's threshold: what the detector uses.
     thresholds: Thresholds = .{},
@@ -51,14 +51,14 @@ pub const Request = union(enum) {
 pub const Report = struct {
     /// Every electrode's threshold in use, µV (the first `len` are valid): the display
     /// draws the focused channel's on its trace, and latches a slope trigger's.
-    thresholds: oez.thresholds.Reported = .{},
+    thresholds: dimna.thresholds.Reported = .{},
     view: TileView = .{},
 };
 
 pub const Shared = struct {
-    cfg: oez.published.Published(Config) = .{},
-    report: oez.published.Published(Report) = .{},
-    requests: oez.events.Spsc(Request, 32) = .{},
+    cfg: dimna.published.Published(Config) = .{},
+    report: dimna.published.Published(Report) = .{},
+    requests: dimna.events.Spsc(Request, 32) = .{},
     /// The view the tile window starts with: set by the display thread before the tile
     /// window's thread is started (from the view file, or what was last reported), and
     /// read by that thread once.

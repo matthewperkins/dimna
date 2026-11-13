@@ -11,9 +11,9 @@
 //!   display thread between frames, exactly as key presses are.
 
 const std = @import("std");
-const oez = @import("oez");
-const panels = oez.panels;
-const ControlView = oez.control_view.ControlView;
+const dimna = @import("dimna");
+const panels = dimna.panels;
+const ControlView = dimna.control_view.ControlView;
 const Window = @import("window.zig").Window;
 const gpu_mod = @import("gpu.zig");
 const font = @import("font.zig");
@@ -88,7 +88,7 @@ pub const NotesStatus = struct {
 
 /// The audio monitor, as the control window shows it.
 pub const AudioStatus = struct {
-    settings: oez.audio.Settings = .{},
+    settings: dimna.audio.Settings = .{},
     /// A device is open and both audio threads run.
     running: bool = false,
     /// The held noise sigma of the first channel in µV; 0 while it is measured.
@@ -116,14 +116,14 @@ pub const AudioAction = union(enum) {
 
 /// The board's settings, as the control window shows them.
 pub const BoardStatus = struct {
-    settings: oez.types.Settings = .{},
+    settings: dimna.types.Settings = .{},
     /// What the chips actually do for the requested values (they offer steps).
     lower_actual: f64 = 0,
     upper_actual: f64 = 0,
     dsp_actual: f64 = 0,
     /// Sample rate and half-channel choices made but not applied yet (they restart
     /// acquisition); equal to `settings` when there are none.
-    pending: oez.types.Settings = .{},
+    pending: dimna.types.Settings = .{},
     /// The connected headstages, for the half-channel choice.
     headstages: [8]Headstage = undefined,
     num_headstages: usize = 0,
@@ -167,7 +167,7 @@ pub const QuitAnswer = enum { save, discard, cancel };
 /// Shown instead of the controls when quitting with changed board settings.
 pub const QuitPrompt = struct {
     active: bool = false,
-    changes: oez.board_config.Diff = .{},
+    changes: dimna.board_config.Diff = .{},
     /// The config file the settings would be saved to.
     path_buf: [200]u8 = undefined,
     path_len: usize = 0,
@@ -260,8 +260,8 @@ pub const Edit = union(enum) {
 pub const Snapshot = struct {
     set: panels.Set = .{},
     /// The detection thresholds, and what the tile window last reported as in use.
-    thresholds: oez.thresholds.Thresholds = .{},
-    reported: oez.thresholds.Reported = .{},
+    thresholds: dimna.thresholds.Thresholds = .{},
+    reported: dimna.thresholds.Reported = .{},
     /// The panel that keys and the wheel act on, on the display.
     target: usize = 0,
     status: Status = .{},
@@ -281,7 +281,7 @@ pub const Snapshot = struct {
 };
 
 pub const Shared = struct {
-    snap: oez.published.Published(Snapshot) = .{},
+    snap: dimna.published.Published(Snapshot) = .{},
     edits: [64]Edit = undefined,
     head: Atomic(usize) = .init(0),
     tail: Atomic(usize) = .init(0),
@@ -433,7 +433,7 @@ fn loop(cfg: *Config) !void {
 }
 
 fn nowSeconds() f64 {
-    return @as(f64, @floatFromInt(oez.clock.nowNs())) / 1e9;
+    return @as(f64, @floatFromInt(dimna.clock.nowNs())) / 1e9;
 }
 
 /// Describes the whole window for this frame and queues what was clicked. The order of the
@@ -659,7 +659,7 @@ fn audioSummary(buf: []u8, au: *const AudioStatus) []const u8 {
 
 /// The spike detection threshold of every channel that follows the noise: how many sigmas
 /// below zero. One line, always shown: there is nothing more to open.
-fn thresholdSection(ui: *ui_mod.Ui, th: *const oez.thresholds.Thresholds, shared: *Shared) void {
+fn thresholdSection(ui: *ui_mod.Ui, th: *const dimna.thresholds.Thresholds, shared: *Shared) void {
     var buf: [32]u8 = undefined;
     // Where a heading's text starts, though this one does not open.
     ui.space(9);
@@ -704,7 +704,7 @@ fn boardSummary(buf: []u8, bd: *const BoardStatus) []const u8 {
     }) catch {};
     if (bd.settings.dsp_enabled) w.print("on, {s}", .{fmtHz(&lo_buf, bd.dsp_actual)}) catch {} else w.writeAll("off") catch {};
     for (bd.headstages[0..bd.num_headstages]) |h| {
-        if (h.rhd2132 and bd.settings.rhd2132_16ch[h.slot]) w.print("   {s} 16 of 32", .{oez.types.headstage_names[h.slot]}) catch {};
+        if (h.rhd2132 and bd.settings.rhd2132_16ch[h.slot]) w.print("   {s} 16 of 32", .{dimna.types.headstage_names[h.slot]}) catch {};
     }
     return w.buffered();
 }
@@ -741,7 +741,7 @@ fn boardControls(ui: *ui_mod.Ui, bd: *const BoardStatus, rec: RecStatus.State, s
     for (bd.headstages[0..bd.num_headstages]) |h| {
         if (!h.rhd2132) continue;
         const half = bd.pending.rhd2132_16ch[h.slot];
-        ui.text(oez.types.headstage_names[h.slot], theme.text_dim);
+        ui.text(dimna.types.headstage_names[h.slot], theme.text_dim);
         if (ui.button("32 ch", !half) and half) shared.push(.{ .board = .{ .half = h.slot } });
         if (ui.button("16 of 32", half) and !half) shared.push(.{ .board = .{ .half = h.slot } });
         ui.space(8);
@@ -951,7 +951,7 @@ fn panelTrigger(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, snap: *const S
     const dn = ui.stepper("overlaid", format.fmt(&value_buf, "{d} sweeps", .{p.trigger.overlay}), 90);
     if (dn != 0)
         shared.push(.{ .panel = .{ .index = i, .action = .{
-            .overlay = @intCast(std.math.clamp(@as(i32, @intCast(p.trigger.overlay)) + dn, 1, oez.sweeps.max_sweeps)),
+            .overlay = @intCast(std.math.clamp(@as(i32, @intCast(p.trigger.overlay)) + dn, 1, dimna.sweeps.max_sweeps)),
         } } });
     ui.newline();
 }
@@ -1380,9 +1380,9 @@ test "which sections are open is saved with the view, but is not by itself somet
     var set: panels.Set = .{};
     set.items[0] = layoutPanel("Port A", .electrode, 6);
     set.len = 1;
-    const tiles: oez.tile_view.TileView = .{};
-    const thresholds: oez.thresholds.Thresholds = .{};
-    const layout: oez.types.Layout = .{ .sample_rate = 30000, .hw_clock_hz = 50e6, .num_electrodes = 6 };
+    const tiles: dimna.tile_view.TileView = .{};
+    const thresholds: dimna.thresholds.Thresholds = .{};
+    const layout: dimna.types.Layout = .{ .sample_rate = 30000, .hw_clock_hz = 50e6, .num_electrodes = 6 };
     var open: ControlView = .{};
     const view: session.ViewFile.View = .{ .set = &set, .tiles = &tiles, .thresholds = &thresholds, .layout = &layout, .control = &open };
     var view_file = try session.ViewFile.init(gpa, view);

@@ -5,7 +5,7 @@
 //! about the notes and the sound, and what panels keep across a restart.
 
 const std = @import("std");
-const oez = @import("oez");
+const dimna = @import("dimna");
 const gpu_mod = @import("gpu.zig");
 const control = @import("control.zig");
 const files = @import("files.zig");
@@ -14,7 +14,7 @@ const ReviewView = display_mod.ReviewView;
 const notes_mod = @import("notes.zig");
 const audio_out = @import("audio_out.zig");
 const Env = @import("env.zig").Env;
-const panels_mod = oez.panels;
+const panels_mod = dimna.panels;
 const Io = std.Io;
 const log = std.log.scoped(.oez);
 
@@ -22,7 +22,7 @@ const log = std.log.scoped(.oez);
 /// at now. From the recording's file while there is one; else a freeze of the last seconds
 /// the live history still holds.
 pub const ReviewSession = struct {
-    reader: ?oez.review.Review = null,
+    reader: ?dimna.review.Review = null,
     active: bool = false,
     from_file: bool = false,
     ready: bool = false,
@@ -43,12 +43,12 @@ pub const ReviewSession = struct {
     pub const Context = struct {
         gpa: std.mem.Allocator,
         gpu: *gpu_mod.Gpu,
-        layout: *const oez.types.Layout,
+        layout: *const dimna.types.Layout,
         set: *const panels_mod.Set,
         /// The panel that keys act on (its time base is the size of a step).
         target: usize,
         newest: i64,
-        rec: ?*oez.record.Recorder,
+        rec: ?*dimna.record.Recorder,
     };
 
     pub fn deinit(self: *ReviewSession) void {
@@ -188,7 +188,7 @@ pub const ReviewSession = struct {
                 return;
             };
             // No memory for the reader: review stays on the last seconds (not logged).
-            self.reader = oez.review.Review.init(ctx.gpa, ctx.layout, ctx.set, ctx.gpu.rev, ctx.gpu.hist_cap) catch return;
+            self.reader = dimna.review.Review.init(ctx.gpa, ctx.layout, ctx.set, ctx.gpu.rev, ctx.gpu.hist_cap) catch return;
         }
         if (!self.reader.?.isOpen() or !std.mem.eql(u8, self.dir_buf[0..self.dir_len], r.path)) {
             self.reader.?.open(r.path, first) catch |err| {
@@ -290,13 +290,13 @@ pub const ViewFile = struct {
     /// thresholds and which sections of the control window are open.
     pub const View = struct {
         set: *const panels_mod.Set,
-        tiles: *const oez.tile_view.TileView,
-        thresholds: *const oez.thresholds.Thresholds,
+        tiles: *const dimna.tile_view.TileView,
+        thresholds: *const dimna.thresholds.Thresholds,
         /// For how many electrodes there are (a tile and a threshold each); it changes at a
         /// restart.
-        layout: *const oez.types.Layout,
+        layout: *const dimna.types.Layout,
         /// Which sections of the control window are open (none: no `[control]` table).
-        control: ?*const oez.control_view.ControlView = null,
+        control: ?*const dimna.control_view.ControlView = null,
 
         fn render(self: View, buf: []u8) ?[]const u8 {
             const text = files.renderViews(buf, self.set, self.tiles, self.thresholds, self.layout.num_electrodes) orelse return null;
@@ -347,11 +347,11 @@ pub const ViewFile = struct {
 /// The recording in progress, if any: started and stopped from the control window while
 /// acquisition carries on.
 pub const Recording = struct {
-    recorder: ?*oez.record.Recorder = null,
+    recorder: ?*dimna.record.Recorder = null,
     started_ns: i128 = 0,
     status: control.RecStatus = .{},
     /// Notes on their way into the recording (display thread to recorder thread).
-    notes: oez.events.EventQueue = .{},
+    notes: dimna.events.EventQueue = .{},
     /// Where sessions go.
     root_buf: [std.fs.max_path_bytes]u8 = undefined,
     root_len: usize = 0,
@@ -388,16 +388,16 @@ pub const Recording = struct {
         self: *Recording,
         gpa: std.mem.Allocator,
         io: Io,
-        ring: *oez.ring.BlockRing,
-        info: oez.record.Info,
-        events: *oez.events.EventQueue,
+        ring: *dimna.ring.BlockRing,
+        info: dimna.record.Info,
+        events: *dimna.events.EventQueue,
         now_ns: i128,
     ) bool {
         if (self.recorder != null) return true;
         // What happened before this recording is not its events or its notes.
         while (events.pop()) |_| {}
         while (self.notes.pop()) |_| {}
-        const r = oez.record.Recorder.create(gpa, io, ring, self.root(), info) catch |err| {
+        const r = dimna.record.Recorder.create(gpa, io, ring, self.root(), info) catch |err| {
             self.status.state = .failed;
             self.status.setNote("could not create a recording under {s}: {t}", .{ self.root(), err });
             log.err("could not create a recording under {s}: {t}", .{ self.root(), err });
@@ -504,15 +504,15 @@ pub const Recording = struct {
 /// the question asked before quitting with something unsaved.
 pub const BoardControl = struct {
     /// What the config file's [board] table (and the command line) gave, or the last save.
-    saved: oez.types.Settings,
+    saved: dimna.types.Settings,
     /// What a restart would apply: the settings in use, with the rate and half-channel
     /// choices made since.
-    pending: oez.types.Settings,
+    pending: dimna.types.Settings,
     restart_asked: bool = false,
     status: control.BoardStatus = .{},
     quit_prompt: control.QuitPrompt = .{},
 
-    pub fn init(in_use: oez.types.Settings, config_path: []const u8) BoardControl {
+    pub fn init(in_use: dimna.types.Settings, config_path: []const u8) BoardControl {
         var self: BoardControl = .{ .saved = in_use, .pending = in_use };
         const n = @min(config_path.len, self.quit_prompt.path_buf.len);
         @memcpy(self.quit_prompt.path_buf[0..n], config_path[0..n]);
@@ -526,7 +526,7 @@ pub const BoardControl = struct {
     pub fn edit(
         self: *BoardControl,
         action: control.BoardAction,
-        acq: *oez.acquisition.Acquisition,
+        acq: *dimna.acquisition.Acquisition,
         fs: f64,
         recording: bool,
         io: Io,
@@ -534,7 +534,7 @@ pub const BoardControl = struct {
         config_path: []const u8,
     ) void {
         var want = acq.requested;
-        const bc = oez.board_config;
+        const bc = dimna.board_config;
         self.status.note_len = 0;
         switch (action) {
             .dsp => |on| want.dsp_enabled = on,
@@ -566,8 +566,8 @@ pub const BoardControl = struct {
     }
 
     /// The settings in use differ from the config file's.
-    pub fn unsaved(self: *const BoardControl, in_use: *const oez.types.Settings) bool {
-        return oez.board_config.diff(&self.saved, in_use).count > 0;
+    pub fn unsaved(self: *const BoardControl, in_use: *const dimna.types.Settings) bool {
+        return dimna.board_config.diff(&self.saved, in_use).count > 0;
     }
 
     /// Answering "save" to the quit prompt: writes the settings in use to the config file if
@@ -577,7 +577,7 @@ pub const BoardControl = struct {
         io: Io,
         gpa: std.mem.Allocator,
         config_path: []const u8,
-        in_use: *const oez.types.Settings,
+        in_use: *const dimna.types.Settings,
     ) bool {
         if (!self.unsaved(in_use)) return true;
         if (files.saveBoard(io, gpa, config_path, in_use)) |_| {
@@ -592,9 +592,9 @@ pub const BoardControl = struct {
     /// Quitting was asked for. True: there are unsaved changes and the control window now
     /// asks about them (so do not quit yet). False: quit (nothing changed, the question
     /// was already up, or there is no control window to ask in).
-    pub fn askBeforeQuit(self: *BoardControl, in_use: *const oez.types.Settings, view_unsaved: bool, can_ask: bool) bool {
+    pub fn askBeforeQuit(self: *BoardControl, in_use: *const dimna.types.Settings, view_unsaved: bool, can_ask: bool) bool {
         const prompt = &self.quit_prompt;
-        var changes = oez.board_config.diff(&self.saved, in_use);
+        var changes = dimna.board_config.diff(&self.saved, in_use);
         // And the panels' settings, as one line.
         if (view_unsaved) changes.add("panel views (saved to views.toml)", .{});
         if (changes.count == 0 or prompt.active or !can_ask) return false;
@@ -605,8 +605,8 @@ pub const BoardControl = struct {
 
     /// For the control window: the settings in use, what the chips do for the values asked
     /// for (they offer steps), and what waits for a restart.
-    pub fn statusNow(self: *BoardControl, in_use: *const oez.types.Settings, layout: *const oez.types.Layout) control.BoardStatus {
-        var reg = oez.registers.Rhd2000Registers.init(layout.sample_rate);
+    pub fn statusNow(self: *BoardControl, in_use: *const dimna.types.Settings, layout: *const dimna.types.Layout) control.BoardStatus {
+        var reg = dimna.registers.Rhd2000Registers.init(layout.sample_rate);
         const st = &self.status;
         st.settings = in_use.*;
         st.lower_actual = reg.setLowerBandwidth(in_use.lower_bandwidth);
@@ -645,12 +645,12 @@ pub fn notesStatus(notes: *const notes_mod.Notes, fs: f64) control.NotesStatus {
 pub fn audioStatus(
     display: *const display_mod.Display,
     shared: *const audio_out.Shared,
-    layout: *const oez.types.Layout,
+    layout: *const dimna.types.Layout,
 ) control.AudioStatus {
     var st: control.AudioStatus = .{
         .settings = display.audio,
         .running = shared.running.load(.acquire),
-        .sigma_uv = @as(f64, @floatFromInt(shared.held_sigma_c.load(.monotonic))) / 100.0 * oez.types.electrode_uv_per_bit,
+        .sigma_uv = @as(f64, @floatFromInt(shared.held_sigma_c.load(.monotonic))) / 100.0 * dimna.types.electrode_uv_per_bit,
         .latency_ms = @as(f64, @floatFromInt(shared.latency_us.load(.monotonic))) / 1000.0,
         .underruns = shared.underruns.load(.monotonic),
         .dropped = shared.dropped.load(.monotonic),
