@@ -551,4 +551,6 @@ There are no flash, EEPROM or FTDI chip-configuration writes. Worst case: power-
 The `usb` transport sends the FT600 only what D3XX sends on every open: GPIO requests (GPIO 0
 is the board's FIFO reset), transfer announcements, aborts, and two read-only requests
 (firmware version, chip configuration). The request that writes the chip configuration is not
-implemented.
+implemented. `src/ft600.zig` enforces this: every control transfer goes through one function
+that refuses any request outside a fixed list (in particular 0x40 0xcf) before it reaches the
+kernel, and its tests fail if the list or that rule is broken.
