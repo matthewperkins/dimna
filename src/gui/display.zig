@@ -1868,6 +1868,7 @@ const frame_states = [_][]const u8{
     "review entered by Shift+wheel: three clicks back over Port A (5 s): 1.5 s behind",
     "the key summary (?), in the fixed-width font",
     "the key summary (?), without a fixed-width font",
+    "review from the file: Port A from the overview's pixel columns, Port B's not there yet",
 };
 
 /// Puts state `k` of `frame_states` into `st`.
@@ -1894,6 +1895,11 @@ fn frameState(st: *FrameState, k: usize) void {
         26 => triggerFocusState(st),
         27 => scrolledReviewState(st),
         28, 29 => helpState(st, k == 28),
+        30 => {
+            reviewState(st, 5);
+            st.review.?.columns = 0b11;
+            st.review.?.columns_ready = 0b01;
+        },
         else => unreachable,
     }
 }

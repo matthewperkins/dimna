@@ -3105,3 +3105,141 @@ text 676 352 { 150, 200, 255, 255 } "drag the red line"
 text 828 352 { 175, 184, 200, 255 } "its threshold, fixed (uV)"
 text 676 368 { 150, 200, 255, 255 } "the chips"
 text 828 368 { 175, 184, 200, 255 } "one port's tiles, or all"
+== review from the file: Port A from the overview's pixel columns, Port B's not there yet: 12 draws, 5 fills, 55 text runs, 65 rects
+draw 0 0 500 420 review=true nch=62 cap_mask=1048575 newest=0 first_ch=7 cols=500 rows=32 span=150000 lsb_per_row=2051.282 half_px=0.0035714286 phase=-1 future=0 gain=1 gain_base=0 dec_mask=4294967295
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2959045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.20000002 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2965045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.25000003 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2971045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.3 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2977045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.35000002 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2983045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.40000004 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2989045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.45000002 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2995045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.5 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=3001045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.55 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=3007045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.6 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=3013045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=700 gain=1 gain_base=512 dec_mask=131071
+draw 700 420 300 280 review=true nch=62 cap_mask=1048575 newest=2637345 first_ch=7 cols=300 rows=8 span=60000 lsb_per_row=3333.3333 half_px=0.005357143 phase=-1 future=0 gain=1 gain_base=768 dec_mask=0
+fill 500 0 1 420 0.22 0.24 0.28 1
+fill 0 420 700 1 0.22 0.24 0.28 1
+fill 700 420 1 280 0.22 0.24 0.28 1
+fill 700 420 300 1 0.22 0.24 0.28 1
+fill 0 0 500 3 0.3 0.55 0.95 1
+rect 467 0 1 420 { 255, 225, 120, 190 }
+rect 408.85 0 10 420 { 90, 150, 255, 30 }
+rect 308.85 0 10 420 { 90, 150, 255, 30 }
+rect 208.85 0 10 420 { 90, 150, 255, 30 }
+rect 108.85 0 10 420 { 90, 150, 255, 30 }
+rect 8.85 0 10 420 { 90, 150, 255, 30 }
+rect 5 5 302 18 { 8, 10, 14, 200 }
+text 8 6 { 225, 230, 240, 255 } "Port A   5.00 s   400 µV/row   review"
+rect 2 50 14 18 { 8, 10, 14, 200 }
+text 5 51 { 150, 160, 178, 255 } "5"
+rect 2 76 14 18 { 8, 10, 14, 200 }
+text 5 77 { 150, 160, 178, 255 } "7"
+rect 2 103 14 18 { 8, 10, 14, 200 }
+text 5 104 { 150, 160, 178, 255 } "9"
+rect 2 129 22 18 { 8, 10, 14, 200 }
+text 5 130 { 150, 160, 178, 255 } "11"
+rect 2 155 22 18 { 8, 10, 14, 200 }
+text 5 156 { 150, 160, 178, 255 } "13"
+rect 2 181 22 18 { 8, 10, 14, 200 }
+text 5 182 { 150, 160, 178, 255 } "15"
+rect 2 208 22 18 { 8, 10, 14, 200 }
+text 5 209 { 150, 160, 178, 255 } "17"
+rect 2 234 22 18 { 8, 10, 14, 200 }
+text 5 235 { 150, 160, 178, 255 } "19"
+rect 2 260 22 18 { 8, 10, 14, 200 }
+text 5 261 { 150, 160, 178, 255 } "21"
+rect 2 286 22 18 { 8, 10, 14, 200 }
+text 5 287 { 150, 160, 178, 255 } "23"
+rect 2 313 22 18 { 8, 10, 14, 200 }
+text 5 314 { 150, 160, 178, 255 } "25"
+rect 2 339 22 18 { 8, 10, 14, 200 }
+text 5 340 { 150, 160, 178, 255 } "27"
+rect 2 365 22 18 { 8, 10, 14, 200 }
+text 5 366 { 150, 160, 178, 255 } "29"
+rect 2 391 22 18 { 8, 10, 14, 200 }
+text 5 392 { 150, 160, 178, 255 } "31"
+rect 833 0 1 420 { 255, 225, 120, 190 }
+rect 835 27 174 18 { 8, 10, 14, 200 }
+text 838 28 { 255, 225, 120, 255 } "in the review stretch"
+rect 505 5 302 18 { 8, 10, 14, 200 }
+text 508 6 { 225, 230, 240, 255 } "Port B   1.00 s   400 µV/row   review"
+rect 502 30 14 18 { 8, 10, 14, 200 }
+text 505 31 { 150, 160, 178, 255 } "2"
+rect 502 57 14 18 { 8, 10, 14, 200 }
+text 505 58 { 150, 160, 178, 255 } "3"
+rect 502 83 14 18 { 8, 10, 14, 200 }
+text 505 84 { 150, 160, 178, 255 } "4"
+rect 502 109 14 18 { 8, 10, 14, 200 }
+text 505 110 { 150, 160, 178, 255 } "5"
+rect 502 135 14 18 { 8, 10, 14, 200 }
+text 505 136 { 150, 160, 178, 255 } "6"
+rect 502 162 14 18 { 8, 10, 14, 200 }
+text 505 163 { 150, 160, 178, 255 } "7"
+rect 502 188 14 18 { 8, 10, 14, 200 }
+text 505 189 { 150, 160, 178, 255 } "8"
+rect 502 214 14 18 { 8, 10, 14, 200 }
+text 505 215 { 150, 160, 178, 255 } "9"
+rect 502 240 22 18 { 8, 10, 14, 200 }
+text 505 241 { 150, 160, 178, 255 } "10"
+rect 502 267 22 18 { 8, 10, 14, 200 }
+text 505 268 { 150, 160, 178, 255 } "11"
+rect 502 293 22 18 { 8, 10, 14, 200 }
+text 505 294 { 150, 160, 178, 255 } "12"
+rect 502 319 22 18 { 8, 10, 14, 200 }
+text 505 320 { 150, 160, 178, 255 } "13"
+rect 502 345 22 18 { 8, 10, 14, 200 }
+text 505 346 { 150, 160, 178, 255 } "14"
+rect 502 372 22 18 { 8, 10, 14, 200 }
+text 505 373 { 150, 160, 178, 255 } "15"
+rect 502 398 22 18 { 8, 10, 14, 200 }
+text 505 399 { 150, 160, 178, 255 } "16"
+rect 140 420 233.33334 280 { 90, 150, 255, 30 }
+rect 140 420 1 280 { 200, 210, 230, 150 }
+rect 5 425 446 18 { 8, 10, 14, 200 }
+text 8 426 { 225, 230, 240, 255 } "Port A   TTL2   -10.0/+40.0 ms   400 µV/row   10 sweeps"
+rect 625 679 70 18 { 8, 10, 14, 200 }
+text 628 680 { 150, 160, 178, 255 } "+40.0 ms"
+rect 141 679 14 18 { 8, 10, 14, 200 }
+text 144 680 { 150, 160, 178, 255 } "0"
+rect 45 679 70 18 { 8, 10, 14, 200 }
+text 48 680 { 150, 160, 178, 255 } "-10.0 ms"
+rect 2 468 14 18 { 8, 10, 14, 200 }
+text 5 469 { 150, 160, 178, 255 } "7"
+rect 2 494 22 18 { 8, 10, 14, 200 }
+text 5 495 { 150, 160, 178, 255 } "10"
+rect 2 520 22 18 { 8, 10, 14, 200 }
+text 5 521 { 150, 160, 178, 255 } "13"
+rect 2 547 22 18 { 8, 10, 14, 200 }
+text 5 548 { 150, 160, 178, 255 } "16"
+rect 2 573 22 18 { 8, 10, 14, 200 }
+text 5 574 { 150, 160, 178, 255 } "19"
+rect 2 599 22 18 { 8, 10, 14, 200 }
+text 5 600 { 150, 160, 178, 255 } "22"
+rect 2 625 22 18 { 8, 10, 14, 200 }
+text 5 626 { 150, 160, 178, 255 } "25"
+rect 2 652 22 18 { 8, 10, 14, 200 }
+text 5 653 { 150, 160, 178, 255 } "28"
+rect 2 678 22 18 { 8, 10, 14, 200 }
+text 5 679 { 150, 160, 178, 255 } "31"
+rect 950 420 1 280 { 255, 225, 120, 190 }
+rect 821 425 174 18 { 8, 10, 14, 200 }
+text 824 426 { 225, 230, 240, 255 } "TTL   2.00 s   review"
+rect 702 429 38 18 { 8, 10, 14, 200 }
+text 705 430 { 150, 160, 178, 255 } "TTL1"
+rect 702 464 46 18 { 8, 10, 14, 200 }
+text 705 465 { 150, 160, 178, 255 } "laser"
+rect 702 499 38 18 { 8, 10, 14, 200 }
+text 705 500 { 150, 160, 178, 255 } "TTL3"
+rect 702 534 38 18 { 8, 10, 14, 200 }
+text 705 535 { 150, 160, 178, 255 } "TTL4"
+rect 702 569 118 18 { 8, 10, 14, 200 }
+text 705 570 { 150, 160, 178, 255 } "camera trigger"
+rect 702 604 38 18 { 8, 10, 14, 200 }
+text 705 605 { 150, 160, 178, 255 } "TTL6"
+rect 702 639 38 18 { 8, 10, 14, 200 }
+text 705 640 { 150, 160, 178, 255 } "TTL7"
+rect 702 674 38 18 { 8, 10, 14, 200 }
+text 705 675 { 150, 160, 178, 255 } "TTL8"
+rect 298 4 404 26 { 150, 100, 10, 235 }
+text 308 9 { 255, 240, 200, 255 } "REVIEW   12.5 s behind live   at 1:27   l = live"
