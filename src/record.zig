@@ -155,6 +155,12 @@ pub const Recorder = struct {
     notes_in: ?*events.EventQueue = null,
 
     stats: Stats = .{},
+    /// For testing how failures are reported (set before `start`): fail the next write
+    /// once this many samples are written; stall for `test_stall_ms` once, at
+    /// `test_stall_after` samples.
+    test_fail_after: ?u64 = null,
+    test_stall_after: ?u64 = null,
+    test_stall_ms: u32 = 0,
     /// The first sample in samples.i16, for readers on other threads (review); the lowest
     /// i64 until the first block has arrived.
     first_sample_shared: Atomic(i64) = .init(std.math.minInt(i64)),
@@ -407,6 +413,16 @@ pub const Recorder = struct {
     fn flushChunk(self: *Recorder) !void {
         if (self.chunk_len == 0) return;
         const bytes = std.mem.sliceAsBytes(self.chunk[0 .. self.chunk_len * self.nch]);
+        const written = self.stats.samples.load(.monotonic);
+        if (self.test_fail_after) |n| {
+            if (written >= n) return error.InjectedFailure;
+        }
+        if (self.test_stall_after) |n| {
+            if (written >= n) {
+                self.test_stall_after = null;
+                try self.io.sleep(.fromMilliseconds(self.test_stall_ms), .awake);
+            }
+        }
         const t0 = Io.Clock.awake.now(self.io);
         try self.samples_file.writeStreamingAll(self.io, bytes);
         maxStore(&self.stats.max_write_us, @intCast(t0.untilNow(self.io, .awake).toMicroseconds()));

@@ -36,6 +36,9 @@ pub const Shared = struct {
     seq: Atomic(u32) = .init(0),
     settings: audio.Settings = .{},
     recalibrate: Atomic(bool) = .init(false),
+    /// Sound an alarm (a short tone every second) over whatever else is playing, also
+    /// when the monitor is off or muted: samples are being lost.
+    alarm: Atomic(bool) = .init(false),
 
     running: Atomic(bool) = .init(false),
     underruns: Atomic(u64) = .init(0),
@@ -203,6 +206,7 @@ pub const AudioOut = struct {
     fn outputLoop(self: *AudioOut) void {
         const buf = self.gpa.alloc(f32, self.period * 2) catch return;
         defer self.gpa.free(buf);
+        var alarm_phase: usize = 0;
         while (!self.stop_flag.load(.acquire)) {
             const avail = self.fifo.used() / 2;
             // What is left after this period is the headroom against late input.
@@ -214,6 +218,19 @@ pub const AudioOut = struct {
             // A gap only counts once sound has started arriving (not the silence before
             // the first block, or while the monitor is off).
             if (got < buf.len and self.active.load(.monotonic) and self.primed.load(.monotonic)) _ = self.shared.underruns.fetchAdd(1, .monotonic);
+            if (self.shared.alarm.load(.monotonic)) {
+                // 0.15 s of 880 Hz at the start of every second.
+                const rate: usize = @intFromFloat(self.fs_out);
+                for (0..self.period) |i| {
+                    const n = (alarm_phase + i) % rate;
+                    if (n < rate * 15 / 100) {
+                        const v: f32 = 0.25 * @sin(2.0 * std.math.pi * 880.0 * @as(f32, @floatFromInt(n)) / @as(f32, @floatFromInt(rate)));
+                        buf[2 * i] += v;
+                        buf[2 * i + 1] += v;
+                    }
+                }
+                alarm_phase = (alarm_phase + self.period) % rate;
+            } else alarm_phase = 0;
             const wrote = alsa.snd_pcm_writei(self.pcm, buf.ptr, self.period);
             if (wrote < 0) {
                 // An xrun or a suspended device: start again.

@@ -50,6 +50,8 @@
 //!                                  recording, else the last half minute)
 //!   /                              type a note (Enter saves, Esc drops, Tab keeps it as a draft);
 //!                                  ` stamps a draft; 1-9 stamp the config's preset notes
+//!   a                              acknowledge an alarm (the red bar: samples lost, or the
+//!                                  recording failed)
 //!   click a row                    listen to that channel (Ctrl+click adds or removes one)
 //!   f                              display filter on/off (electrode panels): raw <-> band-pass
 //!   , .   ; '                      the band's low corner, high corner: down, up
@@ -486,6 +488,8 @@ const Display = struct {
     /// The triggers of each panel's TTL line (used by panels in triggered mode).
     triggers: [panels_mod.max_panels]oez.sweeps.Triggers = @splat(.{}),
 
+    /// Set by `a` (and the control window's button): the alarm banner has been seen.
+    acknowledged: bool = false,
     /// The audio monitor's settings (which channels, volume, ...); `audio_dirty` when they
     /// have changed and the audio threads are to be told.
     audio: oez.audio.Settings = .{},
@@ -646,6 +650,10 @@ const Display = struct {
     /// Applies an edit from the control window. True means quit.
     fn applyEdit(self: *Display, edit: control.Edit) bool {
         if (edit.action == .quit) return true;
+        if (edit.action == .acknowledge) {
+            self.acknowledged = true;
+            return false;
+        }
         if (edit.action == .audio) {
             switch (edit.action.audio) {
                 .enabled => |on| self.audio.enabled = on,
@@ -695,7 +703,7 @@ const Display = struct {
             .trig_holdoff => |up| p.trig_holdoff_ms = oez.board_config.step(f64, &.{ 0, 1, 2, 5, 10, 20, 50, 100, 200, 500 }, p.trig_holdoff_ms, up),
             .overlay => |n| p.overlay = n,
             .reset => self.reset(edit.panel),
-            .quit, .record, .board, .quit_answer, .audio, .note_preset, .save_view, .review => {},
+            .quit, .record, .board, .quit_answer, .audio, .note_preset, .save_view, .review, .acknowledge => {},
         }
         p.clamp();
         return false;
@@ -748,6 +756,7 @@ const Display = struct {
             .semicolon => if (p.filtered) p.stepCorner(true, false),
             .apostrophe => if (p.filtered) p.stepCorner(true, true),
             .m => p.mode = if (p.mode == .scroll) .sweep else .scroll,
+            .a => self.acknowledged = true,
             // Triggered mode: s switches between a TTL line and spikes on the row under
             // the pointer.
             .s => if (p.mode == .triggered) {
@@ -987,6 +996,22 @@ if (p.kind == .ttl)
                 }
             }
         }
+        if (line_h > 0 and (status.alarm_len > 0 or status.warning_len > 0)) {
+            // Samples are being lost, or the recording has failed: a bar across the whole
+            // display that stays until it is acknowledged. A warning (the disk falling
+            // behind) is amber and goes when its cause does.
+            const is_alarm = status.alarm_len > 0;
+            const text = if (is_alarm) status.alarm() else status.warning();
+            const bar_h = 2 * line_h + 14;
+            const bar_y = if (review != null) line_h + 18 else 0;
+            batch.rect(0, bar_y, @floatFromInt(width), bar_h, if (is_alarm) .{ 190, 25, 25, 245 } else .{ 150, 100, 10, 235 });
+            const tw = batch.font.width(text);
+            _ = batch.text((@as(f32, @floatFromInt(width)) - tw) / 2, bar_y + 5, text, .{ 255, 255, 255, 255 });
+            if (is_alarm) {
+                const hint = "press a to acknowledge";
+                _ = batch.text((@as(f32, @floatFromInt(width)) - batch.font.width(hint)) / 2, bar_y + line_h + 7, hint, .{ 255, 210, 210, 255 });
+            }
+        }
         if (review) |v| {
             if (line_h > 0) {
                 // Unmistakable: this is not what the electrodes see now.
@@ -1054,7 +1079,9 @@ fn makeDisplay(args: Args, layout: *const oez.types.Layout) ?Display {
 /// Blocks in the acquisition ring: 30 s of signal, which is how far the recorder may fall
 /// behind (a stalled disk) before samples are lost. The display holds nothing back.
 fn ringSlots(fs: f64, block_samples: usize) usize {
-    return @intFromFloat(@ceil(30.0 * fs / @as(f64, @floatFromInt(block_samples))));
+    // OEZ_TEST_RING_SECONDS shortens it, for testing what happens when it fills.
+    const seconds: f64 = if (std.c.getenv("OEZ_TEST_RING_SECONDS")) |v| (std.fmt.parseFloat(f64, std.mem.span(v)) catch 30.0) else 30.0;
+    return @intFromFloat(@ceil(seconds * fs / @as(f64, @floatFromInt(block_samples))));
 }
 
 /// The panels' settings as the text of a view file, in `buf`; null if it does not fit.
@@ -1365,6 +1392,9 @@ pub fn main(init: std.process.Init) !u8 {
     var ring = try oez.ring.BlockRing.init(gpa, ringSlots(fs, bs), nch, bs);
     defer ring.deinit(gpa);
     var health: oez.types.Health = .{};
+    // What of the loss counters the user has acknowledged (the alarm shows the rest).
+    var alarm_seen: struct { overflow: u64 = 0, dropped: u64 = 0, gaps: u64 = 0 } = .{};
+    var rec_failed_alarm = false;
     var acq: oez.acquisition.Acquisition = .{ .io = io, .source = source, .ring = &ring, .health = &health, .scratch = try .init(gpa, nch, bs) };
     defer acq.scratch.deinit(gpa);
     var reader = oez.ring.LossyReader.init(&ring);
@@ -1676,6 +1706,14 @@ pub fn main(init: std.process.Init) !u8 {
                     })) |r| {
                         r.events_in = &acq.events;
                         r.notes_in = &note_queue;
+                        // For testing the alarms: make the recorder fail or stall.
+                        if (std.c.getenv("OEZ_TEST_RECORD_FAIL_AFTER")) |v| r.test_fail_after = std.fmt.parseInt(u64, std.mem.span(v), 10) catch null;
+                        if (std.c.getenv("OEZ_TEST_RECORD_STALL")) |v| {
+                            var it = std.mem.tokenizeScalar(u8, std.mem.span(v), ',');
+                            r.test_stall_after = std.fmt.parseInt(u64, it.next() orelse "", 10) catch null;
+                            r.test_stall_ms = std.fmt.parseInt(u32, it.next() orelse "", 10) catch 0;
+                        }
+                        alarm_seen.gaps = 0;
                         if (r.start()) |_| {
                             rec = r;
                             rec_start_ns = nowNs(io);
@@ -1688,10 +1726,12 @@ pub fn main(init: std.process.Init) !u8 {
                             _ = r.finish();
                             rec_status.state = .failed;
                             rec_status.setNote("could not start the recorder: {t}", .{err});
+                            rec_failed_alarm = true;
                         }
                     } else |err| {
                         rec_status.state = .failed;
                         rec_status.setNote("could not create a recording under {s}: {t}", .{ record_dir, err });
+                        rec_failed_alarm = true;
                         log.err("could not create a recording under {s}: {t}", .{ record_dir, err });
                     }
                 } else if (!e.action.record) {
@@ -1982,6 +2022,7 @@ pub fn main(init: std.process.Init) !u8 {
                 if (sum.failure) |err| {
                     rec_status.state = .failed;
                     rec_status.setNote("recording failed: {t}; what was written before is intact", .{err});
+                    rec_failed_alarm = true;
                 } else {
                     rec_status.state = .idle;
                     var clock_buf: [16]u8 = undefined;
@@ -1993,6 +2034,33 @@ pub fn main(init: std.process.Init) !u8 {
         if ((rec != null or reviewing) and nowNs(io) - rec_published_ns > 250 * std.time.ns_per_ms) {
             rec_published_ns = nowNs(io);
             snap_dirty = true;
+        }
+        // ---- alarms: anything that means samples are not being kept ----
+        {
+            const overflow = acq.ring_overflow.load(.monotonic);
+            const dropped = health.dropped_samples.load(.monotonic);
+            const gaps: u64 = if (rec) |r| r.stats.gaps.load(.monotonic) else 0;
+            if (display.acknowledged) {
+                display.acknowledged = false;
+                alarm_seen = .{ .overflow = overflow, .dropped = dropped, .gaps = gaps };
+                rec_failed_alarm = false;
+            }
+            var w: Io.Writer = .fixed(&status.alarm_buf);
+            if (rec_failed_alarm) w.writeAll("RECORDING FAILED: nothing is being recorded") catch {};
+            if (overflow > alarm_seen.overflow) w.print("{s}{d} BLOCKS LOST: the disk fell 30 s behind", .{ if (w.buffered().len > 0) "   |   " else "", overflow - alarm_seen.overflow }) catch {};
+            if (dropped > alarm_seen.dropped) w.print("{s}THE BOARD DROPPED {d} SAMPLES", .{ if (w.buffered().len > 0) "   |   " else "", dropped - alarm_seen.dropped }) catch {};
+            if (gaps > alarm_seen.gaps) w.print("{s}THE RECORDING HAS {d} GAPS", .{ if (w.buffered().len > 0) "   |   " else "", gaps - alarm_seen.gaps }) catch {};
+            const alarm_len = w.buffered().len;
+            // Not yet lost, but on the way: the recorder is far behind acquisition.
+            var ww: Io.Writer = .fixed(&status.warning_buf);
+            if (rec) |r| {
+                const behind = @as(f64, @floatFromInt(r.backlog() * bs)) / fs;
+                if (behind > 5) ww.print("the disk is {d:.0} s behind (samples are lost at 30 s)", .{behind}) catch {};
+            }
+            if (alarm_len != status.alarm_len or ww.buffered().len != status.warning_len) snap_dirty = true;
+            status.alarm_len = alarm_len;
+            status.warning_len = ww.buffered().len;
+            audio_shared.alarm.store(alarm_len > 0, .monotonic);
         }
         status.recording = rec != null;
         if (rec != null) status.rec_seconds = @as(f64, @floatFromInt(nowNs(io) - rec_start_ns)) / 1e9;
@@ -2235,7 +2303,10 @@ pub fn main(init: std.process.Init) !u8 {
                 reader.lost,     acq.ring_overflow.load(.monotonic), display.target + 1, tp.span_s, tp.scale, gpu.extent.width,
                 gpu.extent.height,
             });
-            status = .{ .valid = lat_n > 0, .latency_ms = avg, .fps = frames, .lost = reader.lost, .recording = status.recording, .rec_seconds = status.rec_seconds };
+            status.valid = lat_n > 0;
+            status.latency_ms = avg;
+            status.fps = frames;
+            status.lost = reader.lost;
             snap_dirty = true;
             if (audio_dev != null) log.info("  audio: {d:.1} ms (queue {d:.1}, device {d:.1}, margin {d:.1}; longest wait for a block {d:.1}, oldest block {d:.1}), gaps {d}, dropped {d}, noise {d:.1} uV{s}", .{
                 @as(f64, @floatFromInt(audio_shared.latency_us.load(.monotonic))) / 1000.0,

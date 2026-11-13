@@ -447,6 +447,20 @@ The control window's Headstages section changes them for the run:
   config gave at launch, the control window lists the differences and asks: save as
   default and quit, quit without saving, or cancel. A second q quits without saving.
 
+**Alarms.** Anything that means samples are not being kept puts a red bar across the top
+of the neural display (and the control window) that stays until it is acknowledged (`a`,
+or the button), and sounds a short tone every second through the audio output, also
+when the monitor is muted or off:
+
+- the recording failed (a write error such as a full disk), or could not be started;
+- blocks were lost because the recorder fell a whole ring (30 s) behind;
+- the board itself dropped samples;
+- the recording has gaps.
+
+An amber bar warns earlier, while the disk is more than 5 s behind, and goes when it has
+caught up. `OEZ_TEST_RECORD_FAIL_AFTER=<samples>`, `OEZ_TEST_RECORD_STALL=<samples>,<ms>`
+and `OEZ_TEST_RING_SECONDS=<s>` make these happen on purpose, for testing.
+
 Sessions go under `record_dir` (config; default `~/oez-recordings`):
 
     ~/oez-recordings/

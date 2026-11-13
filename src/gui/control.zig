@@ -30,6 +30,19 @@ pub const Status = struct {
     lost: u64 = 0,
     recording: bool = false,
     rec_seconds: f64 = 0,
+    /// Something is wrong with what is being acquired or recorded (text for a banner
+    /// across the display, until acknowledged), or a milder warning.
+    alarm_buf: [200]u8 = undefined,
+    alarm_len: usize = 0,
+    warning_buf: [120]u8 = undefined,
+    warning_len: usize = 0,
+
+    pub fn alarm(self: *const Status) []const u8 {
+        return self.alarm_buf[0..self.alarm_len];
+    }
+    pub fn warning(self: *const Status) []const u8 {
+        return self.warning_buf[0..self.warning_len];
+    }
 };
 
 /// The recording, as the control window shows it.
@@ -232,6 +245,8 @@ pub const Action = union(enum) {
     /// Stamp this preset note (1 to 9) now.
     note_preset: u8,
     review: ReviewAction,
+    /// The user has seen the alarm banner.
+    acknowledge,
     /// Write the panels' settings to the view file.
     save_view,
     quit_answer: QuitAnswer,
@@ -430,6 +445,17 @@ fn build(ui: *ui_mod.Ui, cfg: *const Config, snap: *const Snapshot, shared: *Sha
     ui.text("oEZ", ui_mod.text_bright);
     ui.text(snap.about_buf[0..snap.about_len], ui_mod.text_dim);
     ui.newline();
+    if (snap.status.alarm_len > 0) {
+        // The same alarm as across the display, until acknowledged.
+        ui.batch.rect(0, ui.y - 2, ui.width, ui.rowHeight() + 2, .{ 170, 30, 30, 255 });
+        ui.text(snap.status.alarm(), ui_mod.text_bright);
+        ui.x = @max(ui.x, ui.width - 130);
+        if (ui.button("Acknowledge", false)) shared.push(.{ .action = .acknowledge });
+        ui.newline();
+    } else if (snap.status.warning_len > 0) {
+        ui.text(snap.status.warning(), ui_mod.text_warn);
+        ui.newline();
+    }
 
     if (snap.quit_prompt.active) {
         // Quitting with board settings that differ from the config: nothing else is shown.

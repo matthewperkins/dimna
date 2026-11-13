@@ -25,6 +25,7 @@ pub const Key = enum(u32) {
     f = 'f',
     t = 't',
     s = 's',
+    a = 'a',
     slash = '/',
     backslash = '\\',
     grave = '`',
