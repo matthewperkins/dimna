@@ -4,35 +4,35 @@ text 44 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
 text 12 42 { 255, 190, 90, 255 } "disk nearly full"
 text 12 70 { 150, 160, 178, 255 } "display 4.3 ms   144 fps   running 125 s"
 text 340 70 { 255, 190, 90, 255 } "display skipped 3 blocks"
-rect 630 66 90 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .save_view = void } }
+rect 630 66 90 24 { 52, 96, 170, 255 } -> .{ .save_view = void }
 text 639 70 { 225, 230, 240, 255 } "Save view"
-rect 726 66 50 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .quit = void } }
+rect 726 66 50 24 { 38, 43, 54, 255 } -> .{ .quit = void }
 text 735 70 { 225, 230, 240, 255 } "Quit"
 rect 12 96 776 1 { 48, 52, 62, 255 }
-rect 12 102 66 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .record = true } }
+rect 12 102 66 24 { 38, 43, 54, 255 } -> .{ .record = true }
 text 21 106 { 225, 230, 240, 255 } "Record"
 text 84 106 { 150, 160, 178, 255 } "not recording"
 rect 12 132 776 1 { 48, 52, 62, 255 }
 text 12 142 { 225, 230, 240, 255 } "Review"
-rect 76 138 58 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .start } }
+rect 76 138 58 24 { 38, 43, 54, 255 } -> .{ .review = .start }
 text 85 142 { 225, 230, 240, 255 } "start"
-rect 140 138 90 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .page_back } }
+rect 140 138 90 24 { 38, 43, 54, 255 } -> .{ .review = .page_back }
 text 149 142 { 225, 230, 240, 255 } "<< window"
-rect 236 138 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .back } }
+rect 236 138 26 24 { 38, 43, 54, 255 } -> .{ .review = .back }
 text 245 142 { 225, 230, 240, 255 } "<"
-rect 268 138 66 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .toggle } }
+rect 268 138 66 24 { 38, 43, 54, 255 } -> .{ .review = .toggle }
 text 277 142 { 225, 230, 240, 255 } "freeze"
-rect 340 138 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .forward } }
+rect 340 138 26 24 { 38, 43, 54, 255 } -> .{ .review = .forward }
 text 349 142 { 225, 230, 240, 255 } ">"
-rect 372 138 90 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .page_forward } }
+rect 372 138 90 24 { 38, 43, 54, 255 } -> .{ .review = .page_forward }
 text 381 142 { 225, 230, 240, 255 } "window >>"
 rect 468 138 50 24 { 52, 96, 170, 255 }
 text 477 142 { 225, 230, 240, 255 } "LIVE"
 rect 12 168 776 1 { 48, 52, 62, 255 }
 text 12 178 { 225, 230, 240, 255 } "Notes"
-rect 76 174 98 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .note_preset = 1 } }
+rect 76 174 98 24 { 38, 43, 54, 255 } -> .{ .note_preset = 1 }
 text 85 178 { 225, 230, 240, 255 } "1 laser on"
-rect 180 174 82 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .note_preset = 4 } }
+rect 180 174 82 24 { 38, 43, 54, 255 } -> .{ .note_preset = 4 }
 text 189 178 { 225, 230, 240, 255 } "4 µ-stim"
 text 268 178 { 150, 160, 178, 255 } "2 drafts (` stamps one)"
 text 28 206 { 150, 160, 178, 255 } "1:02:05  cell 3, 2100 µm"
@@ -41,23 +41,23 @@ rect 12 260 776 1 { 48, 52, 62, 255 }
 text 12 270 { 225, 230, 240, 255 } "Audio"
 rect 76 266 34 24 { 52, 96, 170, 255 }
 text 85 270 { 225, 230, 240, 255 } "on"
-rect 116 266 42 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .enabled = false } } }
+rect 116 266 42 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .enabled = false } }
 text 125 270 { 225, 230, 240, 255 } "off"
-rect 164 266 50 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .mute = true } } }
+rect 164 266 50 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .mute = true } }
 text 173 270 { 225, 230, 240, 255 } "mute"
 text 220 270 { 150, 160, 178, 255 } "volume"
-rect 276 266 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .volume = false } } }
+rect 276 266 26 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .volume = false } }
 text 285 270 { 225, 230, 240, 255 } "-"
 text 318 270 { 225, 230, 240, 255 } "-6 dB"
-rect 374 266 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .volume = true } } }
+rect 374 266 26 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .volume = true } }
 text 383 270 { 225, 230, 240, 255 } "+"
 rect 416 266 66 24 { 52, 96, 170, 255 }
 text 425 270 { 225, 230, 240, 255 } "shaped"
-rect 488 266 58 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .reference = true } } }
+rect 488 266 58 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .reference = true } }
 text 497 270 { 225, 230, 240, 255 } "plain"
-rect 552 266 42 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .car = false } } }
+rect 552 266 42 24 { 52, 96, 170, 255 } -> .{ .audio = .{ .car = false } }
 text 561 270 { 225, 230, 240, 255 } "CAR"
-rect 600 266 106 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .recalibrate = void } } }
+rect 600 266 106 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .recalibrate = void } }
 text 609 270 { 225, 230, 240, 255 } "recalibrate"
 text 12 298 { 150, 160, 178, 255 } "listening to A1-5, B1-3"
 text 204 298 { 150, 160, 178, 255 } "noise 7.4 µV, held"
@@ -68,85 +68,85 @@ text 12 334 { 225, 230, 240, 255 } "Headstages"
 text 100 334 { 150, 160, 178, 255 } "(these change what is recorded)"
 text 12 362 { 150, 160, 178, 255 } "amplifier band"
 text 132 362 { 150, 160, 178, 255 } "from"
-rect 172 358 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .lower = false } } }
+rect 172 358 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
 text 181 362 { 225, 230, 240, 255 } "-"
 text 216 362 { 225, 230, 240, 255 } "0.58 Hz"
-rect 290 358 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .lower = true } } }
+rect 290 358 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
 text 299 362 { 225, 230, 240, 255 } "+"
 text 332 362 { 150, 160, 178, 255 } "to"
-rect 356 358 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .upper = false } } }
+rect 356 358 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
 text 365 362 { 225, 230, 240, 255 } "-"
 text 396 362 { 225, 230, 240, 255 } "7.60 kHz"
-rect 474 358 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .upper = true } } }
+rect 474 358 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
 text 483 362 { 225, 230, 240, 255 } "+"
 text 12 390 { 150, 160, 178, 255 } "DSP high-pass"
-rect 132 386 42 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .dsp = false } } }
+rect 132 386 42 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp = false } }
 text 141 390 { 225, 230, 240, 255 } "off"
 rect 180 386 34 24 { 52, 96, 170, 255 }
 text 189 390 { 225, 230, 240, 255 } "on"
 text 234 390 { 150, 160, 178, 255 } "cutoff"
-rect 290 386 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .dsp_cutoff = false } } }
+rect 290 386 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp_cutoff = false } }
 text 299 390 { 225, 230, 240, 255 } "-"
 text 334 390 { 225, 230, 240, 255 } "1.17 Hz"
-rect 408 386 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .dsp_cutoff = true } } }
+rect 408 386 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp_cutoff = true } }
 text 417 390 { 225, 230, 240, 255 } "+"
 text 12 418 { 150, 160, 178, 255 } "sample rate"
-rect 132 414 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .rate = false } } }
+rect 132 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .rate = false } }
 text 141 418 { 225, 230, 240, 255 } "-"
 text 172 418 { 225, 230, 240, 255 } "30000 Hz"
-rect 250 414 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .rate = true } } }
+rect 250 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .rate = true } }
 text 259 418 { 225, 230, 240, 255 } "+"
 text 292 418 { 150, 160, 178, 255 } "A1"
 rect 316 414 58 24 { 52, 96, 170, 255 }
 text 325 418 { 225, 230, 240, 255 } "32 ch"
-rect 380 414 82 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .half = 0 } } }
+rect 380 414 82 24 { 38, 43, 54, 255 } -> .{ .board = .{ .half = 0 } }
 text 389 418 { 225, 230, 240, 255 } "16 of 32"
 rect 12 444 776 1 { 48, 52, 62, 255 }
 text 12 454 { 225, 230, 240, 255 } "Port A"
 text 68 454 { 150, 160, 178, 255 } "6 electrode channels"
-rect 722 450 58 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .reset = void } }
+rect 722 450 58 24 { 38, 43, 54, 255 } -> panel 0 .{ .reset = void }
 text 731 454 { 225, 230, 240, 255 } "reset"
 text 12 482 { 150, 160, 178, 255 } "view"
 rect 76 478 66 24 { 52, 96, 170, 255 }
 text 85 482 { 225, 230, 240, 255 } "scroll"
-rect 148 478 58 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .mode = .sweep } }
+rect 148 478 58 24 { 38, 43, 54, 255 } -> panel 0 .{ .mode = .sweep }
 text 157 482 { 225, 230, 240, 255 } "sweep"
-rect 212 478 90 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .mode = .triggered } }
+rect 212 478 90 24 { 38, 43, 54, 255 } -> panel 0 .{ .mode = .triggered }
 text 221 482 { 225, 230, 240, 255 } "triggered"
 text 322 482 { 150, 160, 178, 255 } "time"
-rect 362 478 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .zoom = 0.8 } }
+rect 362 478 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .zoom = 0.8 }
 text 371 482 { 225, 230, 240, 255 } "-"
 text 435 482 { 225, 230, 240, 255 } "2.00 s"
-rect 530 478 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .zoom = 1.25 } }
+rect 530 478 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .zoom = 1.25 }
 text 539 482 { 225, 230, 240, 255 } "+"
 text 76 510 { 150, 160, 178, 255 } "scale"
-rect 124 506 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .scale = 0.8 } }
+rect 124 506 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .scale = 0.8 }
 text 133 510 { 225, 230, 240, 255 } "-"
 text 171 510 { 225, 230, 240, 255 } "400 µV/row"
-rect 272 506 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .scale = 1.25 } }
+rect 272 506 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .scale = 1.25 }
 text 281 510 { 225, 230, 240, 255 } "+"
 text 12 538 { 150, 160, 178, 255 } "filter"
 rect 76 534 42 24 { 52, 96, 170, 255 }
 text 85 538 { 225, 230, 240, 255 } "raw"
-rect 124 534 50 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .filter = true } }
+rect 124 534 50 24 { 38, 43, 54, 255 } -> panel 0 .{ .filter = true }
 text 133 538 { 225, 230, 240, 255 } "band"
 text 12 566 { 150, 160, 178, 255 } "rows shown"
-rect 116 562 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 0 } }
+rect 116 562 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 0 }
 text 127 566 { 225, 230, 240, 255 } "1"
-rect 149 562 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 1 } }
+rect 149 562 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 1 }
 text 160 566 { 225, 230, 240, 255 } "2"
-rect 182 562 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 2 } }
+rect 182 562 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 2 }
 text 193 566 { 225, 230, 240, 255 } "3"
-rect 215 562 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 3 } }
+rect 215 562 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 3 }
 text 226 566 { 225, 230, 240, 255 } "4"
-rect 248 562 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 4 } }
+rect 248 562 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 4 }
 text 259 566 { 225, 230, 240, 255 } "5"
-rect 281 562 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 5 } }
+rect 281 562 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 5 }
 text 292 566 { 225, 230, 240, 255 } "6"
 text 12 594 { 150, 160, 178, 255 } "CAR"
 rect 76 590 42 24 { 52, 96, 170, 255 }
 text 85 594 { 225, 230, 240, 255 } "off"
-rect 124 590 34 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .car = true } }
+rect 124 590 34 24 { 38, 43, 54, 255 } -> panel 0 .{ .car = true }
 text 133 594 { 225, 230, 240, 255 } "on"
 rect 12 620 776 1 { 48, 52, 62, 255 }
 text 12 630 { 150, 160, 178, 255 } "On the display: wheel = scale, Ctrl+wheel = one row, Shift+wheel = time,"
@@ -158,12 +158,12 @@ text 12 42 { 255, 190, 90, 255 } "disk nearly full"
 text 12 70 { 150, 160, 178, 255 } "display 4.3 ms   144 fps   running 125 s"
 text 340 70 { 255, 190, 90, 255 } "display skipped 3 blocks"
 text 540 70 { 255, 190, 90, 255 } "ACQUISITION RING OVERFLOW 7"
-rect 76 94 90 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .save_view = void } }
+rect 76 94 90 24 { 52, 96, 170, 255 } -> .{ .save_view = void }
 text 85 98 { 225, 230, 240, 255 } "Save view"
-rect 172 94 50 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .quit = void } }
+rect 172 94 50 24 { 38, 43, 54, 255 } -> .{ .quit = void }
 text 181 98 { 225, 230, 240, 255 } "Quit"
 rect 12 124 776 1 { 48, 52, 62, 255 }
-rect 12 130 130 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .record = false } }
+rect 12 130 130 24 { 52, 96, 170, 255 } -> .{ .record = false }
 text 21 134 { 225, 230, 240, 255 } "Stop recording"
 text 148 134 { 255, 96, 96, 255 } "REC 1:01:01   13.20 GB   109.8 M samples"
 text 476 134 { 255, 190, 90, 255 } "disk is 2.5 s behind"
@@ -172,25 +172,25 @@ text 12 162 { 150, 160, 178, 255 } "started at 12:00"
 text 12 190 { 150, 160, 178, 255 } "/data/2026-11-12_12-00-00"
 rect 12 216 776 1 { 48, 52, 62, 255 }
 text 12 226 { 225, 230, 240, 255 } "Review"
-rect 76 222 58 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .start } }
+rect 76 222 58 24 { 38, 43, 54, 255 } -> .{ .review = .start }
 text 85 226 { 225, 230, 240, 255 } "start"
-rect 140 222 90 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .page_back } }
+rect 140 222 90 24 { 38, 43, 54, 255 } -> .{ .review = .page_back }
 text 149 226 { 225, 230, 240, 255 } "<< window"
-rect 236 222 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .back } }
+rect 236 222 26 24 { 38, 43, 54, 255 } -> .{ .review = .back }
 text 245 226 { 225, 230, 240, 255 } "<"
-rect 268 222 66 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .toggle } }
+rect 268 222 66 24 { 38, 43, 54, 255 } -> .{ .review = .toggle }
 text 277 226 { 225, 230, 240, 255 } "freeze"
-rect 340 222 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .forward } }
+rect 340 222 26 24 { 38, 43, 54, 255 } -> .{ .review = .forward }
 text 349 226 { 225, 230, 240, 255 } ">"
-rect 372 222 90 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .page_forward } }
+rect 372 222 90 24 { 38, 43, 54, 255 } -> .{ .review = .page_forward }
 text 381 226 { 225, 230, 240, 255 } "window >>"
 rect 468 222 50 24 { 52, 96, 170, 255 }
 text 477 226 { 225, 230, 240, 255 } "LIVE"
 rect 12 252 776 1 { 48, 52, 62, 255 }
 text 12 262 { 225, 230, 240, 255 } "Notes"
-rect 76 258 98 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .note_preset = 1 } }
+rect 76 258 98 24 { 38, 43, 54, 255 } -> .{ .note_preset = 1 }
 text 85 262 { 225, 230, 240, 255 } "1 laser on"
-rect 180 258 82 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .note_preset = 4 } }
+rect 180 258 82 24 { 38, 43, 54, 255 } -> .{ .note_preset = 4 }
 text 189 262 { 225, 230, 240, 255 } "4 µ-stim"
 text 268 262 { 255, 190, 90, 255 } "typing a note"
 text 380 262 { 150, 160, 178, 255 } "2 drafts (` stamps one)"
@@ -200,23 +200,23 @@ rect 12 344 776 1 { 48, 52, 62, 255 }
 text 12 354 { 225, 230, 240, 255 } "Audio"
 rect 76 350 34 24 { 52, 96, 170, 255 }
 text 85 354 { 225, 230, 240, 255 } "on"
-rect 116 350 42 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .enabled = false } } }
+rect 116 350 42 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .enabled = false } }
 text 125 354 { 225, 230, 240, 255 } "off"
-rect 164 350 50 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .mute = true } } }
+rect 164 350 50 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .mute = true } }
 text 173 354 { 225, 230, 240, 255 } "mute"
 text 220 354 { 150, 160, 178, 255 } "volume"
-rect 276 350 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .volume = false } } }
+rect 276 350 26 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .volume = false } }
 text 285 354 { 225, 230, 240, 255 } "-"
 text 318 354 { 225, 230, 240, 255 } "-6 dB"
-rect 374 350 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .volume = true } } }
+rect 374 350 26 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .volume = true } }
 text 383 354 { 225, 230, 240, 255 } "+"
 rect 416 350 66 24 { 52, 96, 170, 255 }
 text 425 354 { 225, 230, 240, 255 } "shaped"
-rect 488 350 58 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .reference = true } } }
+rect 488 350 58 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .reference = true } }
 text 497 354 { 225, 230, 240, 255 } "plain"
-rect 552 350 42 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .car = false } } }
+rect 552 350 42 24 { 52, 96, 170, 255 } -> .{ .audio = .{ .car = false } }
 text 561 354 { 225, 230, 240, 255 } "CAR"
-rect 600 350 106 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .recalibrate = void } } }
+rect 600 350 106 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .recalibrate = void } }
 text 609 354 { 225, 230, 240, 255 } "recalibrate"
 text 12 382 { 150, 160, 178, 255 } "listening to A1-5, B1-3"
 text 204 382 { 255, 190, 90, 255 } "measuring the noise (3 s)"
@@ -227,89 +227,89 @@ text 12 418 { 225, 230, 240, 255 } "Headstages"
 text 100 418 { 150, 160, 178, 255 } "(these change what is recorded)"
 text 12 446 { 150, 160, 178, 255 } "amplifier band"
 text 132 446 { 150, 160, 178, 255 } "from"
-rect 172 442 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .lower = false } } }
+rect 172 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
 text 181 446 { 225, 230, 240, 255 } "-"
 text 216 446 { 225, 230, 240, 255 } "0.58 Hz"
-rect 290 442 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .lower = true } } }
+rect 290 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
 text 299 446 { 225, 230, 240, 255 } "+"
 text 332 446 { 150, 160, 178, 255 } "to"
-rect 356 442 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .upper = false } } }
+rect 356 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
 text 365 446 { 225, 230, 240, 255 } "-"
 text 396 446 { 225, 230, 240, 255 } "7.60 kHz"
-rect 474 442 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .upper = true } } }
+rect 474 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
 text 483 446 { 225, 230, 240, 255 } "+"
 text 12 474 { 150, 160, 178, 255 } "DSP high-pass"
-rect 132 470 42 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .dsp = false } } }
+rect 132 470 42 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp = false } }
 text 141 474 { 225, 230, 240, 255 } "off"
 rect 180 470 34 24 { 52, 96, 170, 255 }
 text 189 474 { 225, 230, 240, 255 } "on"
 text 234 474 { 150, 160, 178, 255 } "cutoff"
-rect 290 470 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .dsp_cutoff = false } } }
+rect 290 470 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp_cutoff = false } }
 text 299 474 { 225, 230, 240, 255 } "-"
 text 334 474 { 225, 230, 240, 255 } "1.17 Hz"
-rect 408 470 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .dsp_cutoff = true } } }
+rect 408 470 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp_cutoff = true } }
 text 417 474 { 225, 230, 240, 255 } "+"
 text 12 502 { 150, 160, 178, 255 } "sample rate"
-rect 132 498 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .rate = false } } }
+rect 132 498 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .rate = false } }
 text 141 502 { 225, 230, 240, 255 } "-"
 text 172 502 { 225, 230, 240, 255 } "20000 Hz"
-rect 250 498 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .rate = true } } }
+rect 250 498 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .rate = true } }
 text 259 502 { 225, 230, 240, 255 } "+"
 text 292 502 { 150, 160, 178, 255 } "A1"
 rect 316 498 58 24 { 52, 96, 170, 255 }
 text 325 502 { 225, 230, 240, 255 } "32 ch"
-rect 380 498 82 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .half = 0 } } }
+rect 380 498 82 24 { 38, 43, 54, 255 } -> .{ .board = .{ .half = 0 } }
 text 389 502 { 225, 230, 240, 255 } "16 of 32"
 text 12 530 { 255, 190, 90, 255 } "sample rate and channels can change once the recording is stopped"
-rect 12 554 138 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .save = void } } }
+rect 12 554 138 24 { 38, 43, 54, 255 } -> .{ .board = .{ .save = void } }
 text 21 558 { 225, 230, 240, 255 } "Save as default"
 text 156 558 { 150, 160, 178, 255 } "these settings differ from the config file"
 rect 12 584 776 1 { 48, 52, 62, 255 }
 text 12 594 { 225, 230, 240, 255 } "Port A"
 text 68 594 { 150, 160, 178, 255 } "6 electrode channels"
-rect 722 590 58 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .reset = void } }
+rect 722 590 58 24 { 38, 43, 54, 255 } -> panel 0 .{ .reset = void }
 text 731 594 { 225, 230, 240, 255 } "reset"
 text 12 622 { 150, 160, 178, 255 } "view"
 rect 76 618 66 24 { 52, 96, 170, 255 }
 text 85 622 { 225, 230, 240, 255 } "scroll"
-rect 148 618 58 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .mode = .sweep } }
+rect 148 618 58 24 { 38, 43, 54, 255 } -> panel 0 .{ .mode = .sweep }
 text 157 622 { 225, 230, 240, 255 } "sweep"
-rect 212 618 90 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .mode = .triggered } }
+rect 212 618 90 24 { 38, 43, 54, 255 } -> panel 0 .{ .mode = .triggered }
 text 221 622 { 225, 230, 240, 255 } "triggered"
 text 322 622 { 150, 160, 178, 255 } "time"
-rect 362 618 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .zoom = 0.8 } }
+rect 362 618 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .zoom = 0.8 }
 text 371 622 { 225, 230, 240, 255 } "-"
 text 435 622 { 225, 230, 240, 255 } "2.00 s"
-rect 530 618 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .zoom = 1.25 } }
+rect 530 618 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .zoom = 1.25 }
 text 539 622 { 225, 230, 240, 255 } "+"
 text 76 650 { 150, 160, 178, 255 } "scale"
-rect 124 646 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .scale = 0.8 } }
+rect 124 646 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .scale = 0.8 }
 text 133 650 { 225, 230, 240, 255 } "-"
 text 171 650 { 225, 230, 240, 255 } "400 µV/row"
-rect 272 646 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .scale = 1.25 } }
+rect 272 646 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .scale = 1.25 }
 text 281 650 { 225, 230, 240, 255 } "+"
 text 12 678 { 150, 160, 178, 255 } "filter"
 rect 76 674 42 24 { 52, 96, 170, 255 }
 text 85 678 { 225, 230, 240, 255 } "raw"
-rect 124 674 50 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .filter = true } }
+rect 124 674 50 24 { 38, 43, 54, 255 } -> panel 0 .{ .filter = true }
 text 133 678 { 225, 230, 240, 255 } "band"
 text 12 706 { 150, 160, 178, 255 } "rows shown"
-rect 116 702 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 0 } }
+rect 116 702 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 0 }
 text 127 706 { 225, 230, 240, 255 } "1"
-rect 149 702 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 1 } }
+rect 149 702 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 1 }
 text 160 706 { 225, 230, 240, 255 } "2"
-rect 182 702 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 2 } }
+rect 182 702 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 2 }
 text 193 706 { 225, 230, 240, 255 } "3"
-rect 215 702 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 3 } }
+rect 215 702 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 3 }
 text 226 706 { 225, 230, 240, 255 } "4"
-rect 248 702 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 4 } }
+rect 248 702 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 4 }
 text 259 706 { 225, 230, 240, 255 } "5"
-rect 281 702 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 5 } }
+rect 281 702 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 5 }
 text 292 706 { 225, 230, 240, 255 } "6"
 text 12 734 { 150, 160, 178, 255 } "CAR"
 rect 76 730 42 24 { 52, 96, 170, 255 }
 text 85 734 { 225, 230, 240, 255 } "off"
-rect 124 730 34 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .car = true } }
+rect 124 730 34 24 { 38, 43, 54, 255 } -> panel 0 .{ .car = true }
 text 133 734 { 225, 230, 240, 255 } "on"
 rect 12 760 776 1 { 48, 52, 62, 255 }
 text 12 770 { 150, 160, 178, 255 } "On the display: wheel = scale, Ctrl+wheel = one row, Shift+wheel = time,"
@@ -320,30 +320,30 @@ text 44 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
 text 12 42 { 255, 190, 90, 255 } "disk nearly full"
 text 12 70 { 150, 160, 178, 255 } "display 4.3 ms   144 fps   running 125 s"
 text 340 70 { 255, 190, 90, 255 } "display skipped 3 blocks"
-rect 630 66 90 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .save_view = void } }
+rect 630 66 90 24 { 52, 96, 170, 255 } -> .{ .save_view = void }
 text 639 70 { 225, 230, 240, 255 } "Save view"
-rect 726 66 50 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .quit = void } }
+rect 726 66 50 24 { 38, 43, 54, 255 } -> .{ .quit = void }
 text 735 70 { 225, 230, 240, 255 } "Quit"
 rect 12 96 776 1 { 48, 52, 62, 255 }
-rect 12 102 66 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .record = true } }
+rect 12 102 66 24 { 38, 43, 54, 255 } -> .{ .record = true }
 text 21 106 { 225, 230, 240, 255 } "Record"
 text 84 106 { 255, 190, 90, 255 } "RECORDING FAILED"
 text 12 134 { 255, 190, 90, 255 } "cannot create /data"
 rect 12 160 776 1 { 48, 52, 62, 255 }
 text 12 170 { 225, 230, 240, 255 } "Review"
-rect 76 166 58 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .start } }
+rect 76 166 58 24 { 38, 43, 54, 255 } -> .{ .review = .start }
 text 85 170 { 225, 230, 240, 255 } "start"
-rect 140 166 90 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .page_back } }
+rect 140 166 90 24 { 38, 43, 54, 255 } -> .{ .review = .page_back }
 text 149 170 { 225, 230, 240, 255 } "<< window"
-rect 236 166 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .back } }
+rect 236 166 26 24 { 38, 43, 54, 255 } -> .{ .review = .back }
 text 245 170 { 225, 230, 240, 255 } "<"
-rect 268 166 66 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .review = .toggle } }
+rect 268 166 66 24 { 52, 96, 170, 255 } -> .{ .review = .toggle }
 text 277 170 { 225, 230, 240, 255 } "frozen"
-rect 340 166 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .forward } }
+rect 340 166 26 24 { 38, 43, 54, 255 } -> .{ .review = .forward }
 text 349 170 { 225, 230, 240, 255 } ">"
-rect 372 166 90 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .page_forward } }
+rect 372 166 90 24 { 38, 43, 54, 255 } -> .{ .review = .page_forward }
 text 381 170 { 225, 230, 240, 255 } "window >>"
-rect 468 166 50 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .live } }
+rect 468 166 50 24 { 38, 43, 54, 255 } -> .{ .review = .live }
 text 477 170 { 225, 230, 240, 255 } "LIVE"
 text 524 170 { 255, 190, 90, 255 } "12.5 s behind, at 1:15 ..."
 rect 12 196 776 1 { 48, 52, 62, 255 }
@@ -351,25 +351,25 @@ text 12 206 { 225, 230, 240, 255 } "Notes"
 text 76 206 { 150, 160, 178, 255 } "on the display: / types a note, Enter saves it"
 rect 12 232 776 1 { 48, 52, 62, 255 }
 text 12 242 { 225, 230, 240, 255 } "Audio"
-rect 76 238 34 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .enabled = true } } }
+rect 76 238 34 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .enabled = true } }
 text 85 242 { 225, 230, 240, 255 } "on"
 rect 116 238 42 24 { 52, 96, 170, 255 }
 text 125 242 { 225, 230, 240, 255 } "off"
-rect 164 238 50 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .mute = false } } }
+rect 164 238 50 24 { 52, 96, 170, 255 } -> .{ .audio = .{ .mute = false } }
 text 173 242 { 225, 230, 240, 255 } "mute"
 text 220 242 { 150, 160, 178, 255 } "volume"
-rect 276 238 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .volume = false } } }
+rect 276 238 26 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .volume = false } }
 text 285 242 { 225, 230, 240, 255 } "-"
 text 318 242 { 225, 230, 240, 255 } "-6 dB"
-rect 374 238 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .volume = true } } }
+rect 374 238 26 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .volume = true } }
 text 383 242 { 225, 230, 240, 255 } "+"
-rect 416 238 66 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .reference = false } } }
+rect 416 238 66 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .reference = false } }
 text 425 242 { 225, 230, 240, 255 } "shaped"
 rect 488 238 58 24 { 52, 96, 170, 255 }
 text 497 242 { 225, 230, 240, 255 } "plain"
-rect 552 238 42 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .car = false } } }
+rect 552 238 42 24 { 52, 96, 170, 255 } -> .{ .audio = .{ .car = false } }
 text 561 242 { 225, 230, 240, 255 } "CAR"
-rect 600 238 106 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .recalibrate = void } } }
+rect 600 238 106 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .recalibrate = void } }
 text 609 242 { 225, 230, 240, 255 } "recalibrate"
 text 12 270 { 150, 160, 178, 255 } "off"
 rect 12 296 776 1 { 48, 52, 62, 255 }
@@ -377,85 +377,85 @@ text 12 306 { 225, 230, 240, 255 } "Headstages"
 text 100 306 { 150, 160, 178, 255 } "(these change what is recorded)"
 text 12 334 { 150, 160, 178, 255 } "amplifier band"
 text 132 334 { 150, 160, 178, 255 } "from"
-rect 172 330 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .lower = false } } }
+rect 172 330 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
 text 181 334 { 225, 230, 240, 255 } "-"
 text 216 334 { 225, 230, 240, 255 } "0.58 Hz"
-rect 290 330 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .lower = true } } }
+rect 290 330 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
 text 299 334 { 225, 230, 240, 255 } "+"
 text 332 334 { 150, 160, 178, 255 } "to"
-rect 356 330 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .upper = false } } }
+rect 356 330 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
 text 365 334 { 225, 230, 240, 255 } "-"
 text 396 334 { 225, 230, 240, 255 } "7.60 kHz"
-rect 474 330 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .upper = true } } }
+rect 474 330 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
 text 483 334 { 225, 230, 240, 255 } "+"
 text 12 362 { 150, 160, 178, 255 } "DSP high-pass"
-rect 132 358 42 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .dsp = false } } }
+rect 132 358 42 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp = false } }
 text 141 362 { 225, 230, 240, 255 } "off"
 rect 180 358 34 24 { 52, 96, 170, 255 }
 text 189 362 { 225, 230, 240, 255 } "on"
 text 234 362 { 150, 160, 178, 255 } "cutoff"
-rect 290 358 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .dsp_cutoff = false } } }
+rect 290 358 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp_cutoff = false } }
 text 299 362 { 225, 230, 240, 255 } "-"
 text 334 362 { 225, 230, 240, 255 } "1.17 Hz"
-rect 408 358 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .dsp_cutoff = true } } }
+rect 408 358 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp_cutoff = true } }
 text 417 362 { 225, 230, 240, 255 } "+"
 text 12 390 { 150, 160, 178, 255 } "sample rate"
-rect 132 386 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .rate = false } } }
+rect 132 386 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .rate = false } }
 text 141 390 { 225, 230, 240, 255 } "-"
 text 172 390 { 225, 230, 240, 255 } "30000 Hz"
-rect 250 386 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .rate = true } } }
+rect 250 386 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .rate = true } }
 text 259 390 { 225, 230, 240, 255 } "+"
 text 292 390 { 150, 160, 178, 255 } "A1"
 rect 316 386 58 24 { 52, 96, 170, 255 }
 text 325 390 { 225, 230, 240, 255 } "32 ch"
-rect 380 386 82 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .half = 0 } } }
+rect 380 386 82 24 { 38, 43, 54, 255 } -> .{ .board = .{ .half = 0 } }
 text 389 390 { 225, 230, 240, 255 } "16 of 32"
 rect 12 416 776 1 { 48, 52, 62, 255 }
 text 12 426 { 225, 230, 240, 255 } "Port A"
 text 68 426 { 150, 160, 178, 255 } "6 electrode channels"
-rect 722 422 58 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .reset = void } }
+rect 722 422 58 24 { 38, 43, 54, 255 } -> panel 0 .{ .reset = void }
 text 731 426 { 225, 230, 240, 255 } "reset"
 text 12 454 { 150, 160, 178, 255 } "view"
 rect 76 450 66 24 { 52, 96, 170, 255 }
 text 85 454 { 225, 230, 240, 255 } "scroll"
-rect 148 450 58 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .mode = .sweep } }
+rect 148 450 58 24 { 38, 43, 54, 255 } -> panel 0 .{ .mode = .sweep }
 text 157 454 { 225, 230, 240, 255 } "sweep"
-rect 212 450 90 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .mode = .triggered } }
+rect 212 450 90 24 { 38, 43, 54, 255 } -> panel 0 .{ .mode = .triggered }
 text 221 454 { 225, 230, 240, 255 } "triggered"
 text 322 454 { 150, 160, 178, 255 } "time"
-rect 362 450 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .zoom = 0.8 } }
+rect 362 450 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .zoom = 0.8 }
 text 371 454 { 225, 230, 240, 255 } "-"
 text 435 454 { 225, 230, 240, 255 } "2.00 s"
-rect 530 450 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .zoom = 1.25 } }
+rect 530 450 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .zoom = 1.25 }
 text 539 454 { 225, 230, 240, 255 } "+"
 text 76 482 { 150, 160, 178, 255 } "scale"
-rect 124 478 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .scale = 0.8 } }
+rect 124 478 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .scale = 0.8 }
 text 133 482 { 225, 230, 240, 255 } "-"
 text 171 482 { 225, 230, 240, 255 } "400 µV/row"
-rect 272 478 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .scale = 1.25 } }
+rect 272 478 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .scale = 1.25 }
 text 281 482 { 225, 230, 240, 255 } "+"
 text 12 510 { 150, 160, 178, 255 } "filter"
 rect 76 506 42 24 { 52, 96, 170, 255 }
 text 85 510 { 225, 230, 240, 255 } "raw"
-rect 124 506 50 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .filter = true } }
+rect 124 506 50 24 { 38, 43, 54, 255 } -> panel 0 .{ .filter = true }
 text 133 510 { 225, 230, 240, 255 } "band"
 text 12 538 { 150, 160, 178, 255 } "rows shown"
-rect 116 534 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 0 } }
+rect 116 534 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 0 }
 text 127 538 { 225, 230, 240, 255 } "1"
-rect 149 534 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 1 } }
+rect 149 534 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 1 }
 text 160 538 { 225, 230, 240, 255 } "2"
-rect 182 534 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 2 } }
+rect 182 534 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 2 }
 text 193 538 { 225, 230, 240, 255 } "3"
-rect 215 534 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 3 } }
+rect 215 534 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 3 }
 text 226 538 { 225, 230, 240, 255 } "4"
-rect 248 534 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 4 } }
+rect 248 534 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 4 }
 text 259 538 { 225, 230, 240, 255 } "5"
-rect 281 534 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 5 } }
+rect 281 534 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 5 }
 text 292 538 { 225, 230, 240, 255 } "6"
 text 12 566 { 150, 160, 178, 255 } "CAR"
 rect 76 562 42 24 { 52, 96, 170, 255 }
 text 85 566 { 225, 230, 240, 255 } "off"
-rect 124 562 34 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .car = true } }
+rect 124 562 34 24 { 38, 43, 54, 255 } -> panel 0 .{ .car = true }
 text 133 566 { 225, 230, 240, 255 } "on"
 rect 12 592 776 1 { 48, 52, 62, 255 }
 text 12 602 { 150, 160, 178, 255 } "On the display: wheel = scale, Ctrl+wheel = one row, Shift+wheel = time,"
@@ -470,11 +470,11 @@ text 28 106 { 255, 190, 90, 255 } "setting 0 changed"
 text 28 134 { 255, 190, 90, 255 } "setting 1 changed"
 text 28 162 { 255, 190, 90, 255 } "setting 2 changed"
 text 12 190 { 150, 160, 178, 255 } "/home/user/.config/oez/oez.toml"
-rect 12 214 210 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .quit_answer = .save } }
+rect 12 214 210 24 { 52, 96, 170, 255 } -> .{ .quit_answer = .save }
 text 21 218 { 225, 230, 240, 255 } "Save as default and quit"
-rect 228 214 170 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .quit_answer = .discard } }
+rect 228 214 170 24 { 38, 43, 54, 255 } -> .{ .quit_answer = .discard }
 text 237 218 { 225, 230, 240, 255 } "Quit without saving"
-rect 404 214 66 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .quit_answer = .cancel } }
+rect 404 214 66 24 { 38, 43, 54, 255 } -> .{ .quit_answer = .cancel }
 text 413 218 { 225, 230, 240, 255 } "Cancel"
 == restart pending: 880 quads, ends at x 332 y 710
 text 12 14 { 225, 230, 240, 255 } "oEZ"
@@ -482,36 +482,36 @@ text 44 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
 text 12 42 { 255, 190, 90, 255 } "disk nearly full"
 text 12 70 { 150, 160, 178, 255 } "display 4.3 ms   144 fps   running 125 s"
 text 340 70 { 255, 190, 90, 255 } "display skipped 3 blocks"
-rect 630 66 90 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .save_view = void } }
+rect 630 66 90 24 { 52, 96, 170, 255 } -> .{ .save_view = void }
 text 639 70 { 225, 230, 240, 255 } "Save view"
-rect 726 66 50 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .quit = void } }
+rect 726 66 50 24 { 38, 43, 54, 255 } -> .{ .quit = void }
 text 735 70 { 225, 230, 240, 255 } "Quit"
 rect 12 96 776 1 { 48, 52, 62, 255 }
-rect 12 102 66 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .record = true } }
+rect 12 102 66 24 { 38, 43, 54, 255 } -> .{ .record = true }
 text 21 106 { 225, 230, 240, 255 } "Record"
 text 84 106 { 150, 160, 178, 255 } "not recording"
 rect 12 132 776 1 { 48, 52, 62, 255 }
 text 12 142 { 225, 230, 240, 255 } "Review"
-rect 76 138 58 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .start } }
+rect 76 138 58 24 { 38, 43, 54, 255 } -> .{ .review = .start }
 text 85 142 { 225, 230, 240, 255 } "start"
-rect 140 138 90 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .page_back } }
+rect 140 138 90 24 { 38, 43, 54, 255 } -> .{ .review = .page_back }
 text 149 142 { 225, 230, 240, 255 } "<< window"
-rect 236 138 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .back } }
+rect 236 138 26 24 { 38, 43, 54, 255 } -> .{ .review = .back }
 text 245 142 { 225, 230, 240, 255 } "<"
-rect 268 138 66 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .review = .toggle } }
+rect 268 138 66 24 { 52, 96, 170, 255 } -> .{ .review = .toggle }
 text 277 142 { 225, 230, 240, 255 } "frozen"
-rect 340 138 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .forward } }
+rect 340 138 26 24 { 38, 43, 54, 255 } -> .{ .review = .forward }
 text 349 142 { 225, 230, 240, 255 } ">"
-rect 372 138 90 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .page_forward } }
+rect 372 138 90 24 { 38, 43, 54, 255 } -> .{ .review = .page_forward }
 text 381 142 { 225, 230, 240, 255 } "window >>"
-rect 468 138 50 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .live } }
+rect 468 138 50 24 { 38, 43, 54, 255 } -> .{ .review = .live }
 text 477 142 { 225, 230, 240, 255 } "LIVE"
 text 524 142 { 255, 190, 90, 255 } "1.5 s behind, at 0:30 (last seconds only: not recording)"
 rect 12 168 776 1 { 48, 52, 62, 255 }
 text 12 178 { 225, 230, 240, 255 } "Notes"
-rect 76 174 98 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .note_preset = 1 } }
+rect 76 174 98 24 { 38, 43, 54, 255 } -> .{ .note_preset = 1 }
 text 85 178 { 225, 230, 240, 255 } "1 laser on"
-rect 180 174 82 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .note_preset = 4 } }
+rect 180 174 82 24 { 38, 43, 54, 255 } -> .{ .note_preset = 4 }
 text 189 178 { 225, 230, 240, 255 } "4 µ-stim"
 text 268 178 { 150, 160, 178, 255 } "2 drafts (` stamps one)"
 text 28 206 { 150, 160, 178, 255 } "1:02:05  cell 3, 2100 µm"
@@ -520,23 +520,23 @@ rect 12 260 776 1 { 48, 52, 62, 255 }
 text 12 270 { 225, 230, 240, 255 } "Audio"
 rect 76 266 34 24 { 52, 96, 170, 255 }
 text 85 270 { 225, 230, 240, 255 } "on"
-rect 116 266 42 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .enabled = false } } }
+rect 116 266 42 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .enabled = false } }
 text 125 270 { 225, 230, 240, 255 } "off"
-rect 164 266 50 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .mute = true } } }
+rect 164 266 50 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .mute = true } }
 text 173 270 { 225, 230, 240, 255 } "mute"
 text 220 270 { 150, 160, 178, 255 } "volume"
-rect 276 266 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .volume = false } } }
+rect 276 266 26 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .volume = false } }
 text 285 270 { 225, 230, 240, 255 } "-"
 text 318 270 { 225, 230, 240, 255 } "-6 dB"
-rect 374 266 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .volume = true } } }
+rect 374 266 26 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .volume = true } }
 text 383 270 { 225, 230, 240, 255 } "+"
 rect 416 266 66 24 { 52, 96, 170, 255 }
 text 425 270 { 225, 230, 240, 255 } "shaped"
-rect 488 266 58 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .reference = true } } }
+rect 488 266 58 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .reference = true } }
 text 497 270 { 225, 230, 240, 255 } "plain"
-rect 552 266 42 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .car = false } } }
+rect 552 266 42 24 { 52, 96, 170, 255 } -> .{ .audio = .{ .car = false } }
 text 561 270 { 225, 230, 240, 255 } "CAR"
-rect 600 266 106 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .recalibrate = void } } }
+rect 600 266 106 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .recalibrate = void } }
 text 609 270 { 225, 230, 240, 255 } "recalibrate"
 text 12 298 { 150, 160, 178, 255 } "no audio output"
 rect 12 324 776 1 { 48, 52, 62, 255 }
@@ -544,88 +544,88 @@ text 12 334 { 225, 230, 240, 255 } "Headstages"
 text 100 334 { 150, 160, 178, 255 } "(these change what is recorded)"
 text 12 362 { 150, 160, 178, 255 } "amplifier band"
 text 132 362 { 150, 160, 178, 255 } "from"
-rect 172 358 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .lower = false } } }
+rect 172 358 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
 text 181 362 { 225, 230, 240, 255 } "-"
 text 216 362 { 225, 230, 240, 255 } "0.58 Hz"
-rect 290 358 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .lower = true } } }
+rect 290 358 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
 text 299 362 { 225, 230, 240, 255 } "+"
 text 332 362 { 150, 160, 178, 255 } "to"
-rect 356 358 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .upper = false } } }
+rect 356 358 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
 text 365 362 { 225, 230, 240, 255 } "-"
 text 396 362 { 225, 230, 240, 255 } "7.60 kHz"
-rect 474 358 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .upper = true } } }
+rect 474 358 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
 text 483 362 { 225, 230, 240, 255 } "+"
 text 12 390 { 150, 160, 178, 255 } "DSP high-pass"
-rect 132 386 42 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .dsp = false } } }
+rect 132 386 42 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp = false } }
 text 141 390 { 225, 230, 240, 255 } "off"
 rect 180 386 34 24 { 52, 96, 170, 255 }
 text 189 390 { 225, 230, 240, 255 } "on"
 text 234 390 { 150, 160, 178, 255 } "cutoff"
-rect 290 386 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .dsp_cutoff = false } } }
+rect 290 386 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp_cutoff = false } }
 text 299 390 { 225, 230, 240, 255 } "-"
 text 334 390 { 225, 230, 240, 255 } "1.17 Hz"
-rect 408 386 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .dsp_cutoff = true } } }
+rect 408 386 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp_cutoff = true } }
 text 417 390 { 225, 230, 240, 255 } "+"
 text 12 418 { 150, 160, 178, 255 } "sample rate"
-rect 132 414 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .rate = false } } }
+rect 132 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .rate = false } }
 text 141 418 { 225, 230, 240, 255 } "-"
 text 172 418 { 225, 230, 240, 255 } "30000 Hz"
-rect 250 414 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .rate = true } } }
+rect 250 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .rate = true } }
 text 259 418 { 225, 230, 240, 255 } "+"
 text 292 418 { 150, 160, 178, 255 } "A1"
-rect 316 414 58 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .half = 0 } } }
+rect 316 414 58 24 { 38, 43, 54, 255 } -> .{ .board = .{ .half = 0 } }
 text 325 418 { 225, 230, 240, 255 } "32 ch"
 rect 380 414 82 24 { 52, 96, 170, 255 }
 text 389 418 { 225, 230, 240, 255 } "16 of 32"
-rect 12 442 242 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .apply = void } } }
+rect 12 442 242 24 { 52, 96, 170, 255 } -> .{ .board = .{ .apply = void } }
 text 21 446 { 225, 230, 240, 255 } "Apply (restarts acquisition)"
 text 12 474 { 255, 190, 90, 255 } "cannot set 10 kHz"
 rect 12 500 776 1 { 48, 52, 62, 255 }
 text 12 510 { 225, 230, 240, 255 } "Port A"
 text 68 510 { 150, 160, 178, 255 } "6 electrode channels"
-rect 722 506 58 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .reset = void } }
+rect 722 506 58 24 { 38, 43, 54, 255 } -> panel 0 .{ .reset = void }
 text 731 510 { 225, 230, 240, 255 } "reset"
 text 12 538 { 150, 160, 178, 255 } "view"
 rect 76 534 66 24 { 52, 96, 170, 255 }
 text 85 538 { 225, 230, 240, 255 } "scroll"
-rect 148 534 58 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .mode = .sweep } }
+rect 148 534 58 24 { 38, 43, 54, 255 } -> panel 0 .{ .mode = .sweep }
 text 157 538 { 225, 230, 240, 255 } "sweep"
-rect 212 534 90 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .mode = .triggered } }
+rect 212 534 90 24 { 38, 43, 54, 255 } -> panel 0 .{ .mode = .triggered }
 text 221 538 { 225, 230, 240, 255 } "triggered"
 text 322 538 { 150, 160, 178, 255 } "time"
-rect 362 534 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .zoom = 0.8 } }
+rect 362 534 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .zoom = 0.8 }
 text 371 538 { 225, 230, 240, 255 } "-"
 text 435 538 { 225, 230, 240, 255 } "2.00 s"
-rect 530 534 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .zoom = 1.25 } }
+rect 530 534 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .zoom = 1.25 }
 text 539 538 { 225, 230, 240, 255 } "+"
 text 76 566 { 150, 160, 178, 255 } "scale"
-rect 124 562 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .scale = 0.8 } }
+rect 124 562 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .scale = 0.8 }
 text 133 566 { 225, 230, 240, 255 } "-"
 text 171 566 { 225, 230, 240, 255 } "400 µV/row"
-rect 272 562 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .scale = 1.25 } }
+rect 272 562 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .scale = 1.25 }
 text 281 566 { 225, 230, 240, 255 } "+"
 text 12 594 { 150, 160, 178, 255 } "filter"
 rect 76 590 42 24 { 52, 96, 170, 255 }
 text 85 594 { 225, 230, 240, 255 } "raw"
-rect 124 590 50 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .filter = true } }
+rect 124 590 50 24 { 38, 43, 54, 255 } -> panel 0 .{ .filter = true }
 text 133 594 { 225, 230, 240, 255 } "band"
 text 12 622 { 150, 160, 178, 255 } "rows shown"
-rect 116 618 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 0 } }
+rect 116 618 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 0 }
 text 127 622 { 225, 230, 240, 255 } "1"
-rect 149 618 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 1 } }
+rect 149 618 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 1 }
 text 160 622 { 225, 230, 240, 255 } "2"
-rect 182 618 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 2 } }
+rect 182 618 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 2 }
 text 193 622 { 225, 230, 240, 255 } "3"
-rect 215 618 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 3 } }
+rect 215 618 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 3 }
 text 226 622 { 225, 230, 240, 255 } "4"
-rect 248 618 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 4 } }
+rect 248 618 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 4 }
 text 259 622 { 225, 230, 240, 255 } "5"
-rect 281 618 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 5 } }
+rect 281 618 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 5 }
 text 292 622 { 225, 230, 240, 255 } "6"
 text 12 650 { 150, 160, 178, 255 } "CAR"
 rect 76 646 42 24 { 52, 96, 170, 255 }
 text 85 650 { 225, 230, 240, 255 } "off"
-rect 124 646 34 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .car = true } }
+rect 124 646 34 24 { 38, 43, 54, 255 } -> panel 0 .{ .car = true }
 text 133 650 { 225, 230, 240, 255 } "on"
 rect 12 676 776 1 { 48, 52, 62, 255 }
 text 12 686 { 150, 160, 178, 255 } "On the display: wheel = scale, Ctrl+wheel = one row, Shift+wheel = time,"
@@ -635,35 +635,35 @@ text 12 14 { 225, 230, 240, 255 } "oEZ"
 text 44 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
 text 12 42 { 150, 160, 178, 255 } "display 4.3 ms   144 fps   running 125 s"
 text 340 42 { 255, 190, 90, 255 } "display skipped 3 blocks"
-rect 630 38 90 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .save_view = void } }
+rect 630 38 90 24 { 52, 96, 170, 255 } -> .{ .save_view = void }
 text 639 42 { 225, 230, 240, 255 } "Save view"
-rect 726 38 50 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .quit = void } }
+rect 726 38 50 24 { 38, 43, 54, 255 } -> .{ .quit = void }
 text 735 42 { 225, 230, 240, 255 } "Quit"
 rect 12 68 776 1 { 48, 52, 62, 255 }
-rect 12 74 66 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .record = true } }
+rect 12 74 66 24 { 38, 43, 54, 255 } -> .{ .record = true }
 text 21 78 { 225, 230, 240, 255 } "Record"
 text 84 78 { 150, 160, 178, 255 } "not recording"
 rect 12 104 776 1 { 48, 52, 62, 255 }
 text 12 114 { 225, 230, 240, 255 } "Review"
-rect 76 110 58 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .start } }
+rect 76 110 58 24 { 38, 43, 54, 255 } -> .{ .review = .start }
 text 85 114 { 225, 230, 240, 255 } "start"
-rect 140 110 90 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .page_back } }
+rect 140 110 90 24 { 38, 43, 54, 255 } -> .{ .review = .page_back }
 text 149 114 { 225, 230, 240, 255 } "<< window"
-rect 236 110 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .back } }
+rect 236 110 26 24 { 38, 43, 54, 255 } -> .{ .review = .back }
 text 245 114 { 225, 230, 240, 255 } "<"
-rect 268 110 66 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .toggle } }
+rect 268 110 66 24 { 38, 43, 54, 255 } -> .{ .review = .toggle }
 text 277 114 { 225, 230, 240, 255 } "freeze"
-rect 340 110 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .forward } }
+rect 340 110 26 24 { 38, 43, 54, 255 } -> .{ .review = .forward }
 text 349 114 { 225, 230, 240, 255 } ">"
-rect 372 110 90 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .page_forward } }
+rect 372 110 90 24 { 38, 43, 54, 255 } -> .{ .review = .page_forward }
 text 381 114 { 225, 230, 240, 255 } "window >>"
 rect 468 110 50 24 { 52, 96, 170, 255 }
 text 477 114 { 225, 230, 240, 255 } "LIVE"
 rect 12 140 776 1 { 48, 52, 62, 255 }
 text 12 150 { 225, 230, 240, 255 } "Notes"
-rect 76 146 98 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .note_preset = 1 } }
+rect 76 146 98 24 { 38, 43, 54, 255 } -> .{ .note_preset = 1 }
 text 85 150 { 225, 230, 240, 255 } "1 laser on"
-rect 180 146 82 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .note_preset = 4 } }
+rect 180 146 82 24 { 38, 43, 54, 255 } -> .{ .note_preset = 4 }
 text 189 150 { 225, 230, 240, 255 } "4 µ-stim"
 text 268 150 { 150, 160, 178, 255 } "2 drafts (` stamps one)"
 text 28 178 { 150, 160, 178, 255 } "1:02:05  cell 3, 2100 µm"
@@ -672,23 +672,23 @@ rect 12 232 776 1 { 48, 52, 62, 255 }
 text 12 242 { 225, 230, 240, 255 } "Audio"
 rect 76 238 34 24 { 52, 96, 170, 255 }
 text 85 242 { 225, 230, 240, 255 } "on"
-rect 116 238 42 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .enabled = false } } }
+rect 116 238 42 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .enabled = false } }
 text 125 242 { 225, 230, 240, 255 } "off"
-rect 164 238 50 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .mute = true } } }
+rect 164 238 50 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .mute = true } }
 text 173 242 { 225, 230, 240, 255 } "mute"
 text 220 242 { 150, 160, 178, 255 } "volume"
-rect 276 238 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .volume = false } } }
+rect 276 238 26 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .volume = false } }
 text 285 242 { 225, 230, 240, 255 } "-"
 text 318 242 { 225, 230, 240, 255 } "-6 dB"
-rect 374 238 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .volume = true } } }
+rect 374 238 26 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .volume = true } }
 text 383 242 { 225, 230, 240, 255 } "+"
 rect 416 238 66 24 { 52, 96, 170, 255 }
 text 425 242 { 225, 230, 240, 255 } "shaped"
-rect 488 238 58 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .reference = true } } }
+rect 488 238 58 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .reference = true } }
 text 497 242 { 225, 230, 240, 255 } "plain"
-rect 552 238 42 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .car = false } } }
+rect 552 238 42 24 { 52, 96, 170, 255 } -> .{ .audio = .{ .car = false } }
 text 561 242 { 225, 230, 240, 255 } "CAR"
-rect 600 238 106 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .recalibrate = void } } }
+rect 600 238 106 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .recalibrate = void } }
 text 609 242 { 225, 230, 240, 255 } "recalibrate"
 text 12 270 { 150, 160, 178, 255 } "listening to nothing (click a row on the display)"
 text 412 270 { 150, 160, 178, 255 } "2 gaps in the sound"
@@ -697,436 +697,436 @@ text 12 306 { 225, 230, 240, 255 } "Headstages"
 text 100 306 { 150, 160, 178, 255 } "(these change what is recorded)"
 text 12 334 { 150, 160, 178, 255 } "amplifier band"
 text 132 334 { 150, 160, 178, 255 } "from"
-rect 172 330 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .lower = false } } }
+rect 172 330 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
 text 181 334 { 225, 230, 240, 255 } "-"
 text 216 334 { 225, 230, 240, 255 } "0.58 Hz"
-rect 290 330 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .lower = true } } }
+rect 290 330 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
 text 299 334 { 225, 230, 240, 255 } "+"
 text 332 334 { 150, 160, 178, 255 } "to"
-rect 356 330 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .upper = false } } }
+rect 356 330 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
 text 365 334 { 225, 230, 240, 255 } "-"
 text 396 334 { 225, 230, 240, 255 } "7.60 kHz"
-rect 474 330 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .upper = true } } }
+rect 474 330 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
 text 483 334 { 225, 230, 240, 255 } "+"
 text 12 362 { 150, 160, 178, 255 } "DSP high-pass"
-rect 132 358 42 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .dsp = false } } }
+rect 132 358 42 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp = false } }
 text 141 362 { 225, 230, 240, 255 } "off"
 rect 180 358 34 24 { 52, 96, 170, 255 }
 text 189 362 { 225, 230, 240, 255 } "on"
 text 234 362 { 150, 160, 178, 255 } "cutoff"
-rect 290 358 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .dsp_cutoff = false } } }
+rect 290 358 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp_cutoff = false } }
 text 299 362 { 225, 230, 240, 255 } "-"
 text 334 362 { 225, 230, 240, 255 } "1.17 Hz"
-rect 408 358 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .dsp_cutoff = true } } }
+rect 408 358 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp_cutoff = true } }
 text 417 362 { 225, 230, 240, 255 } "+"
 text 12 390 { 150, 160, 178, 255 } "sample rate"
-rect 132 386 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .rate = false } } }
+rect 132 386 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .rate = false } }
 text 141 390 { 225, 230, 240, 255 } "-"
 text 172 390 { 225, 230, 240, 255 } "30000 Hz"
-rect 250 386 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .rate = true } } }
+rect 250 386 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .rate = true } }
 text 259 390 { 225, 230, 240, 255 } "+"
 text 292 390 { 150, 160, 178, 255 } "A1"
 rect 316 386 58 24 { 52, 96, 170, 255 }
 text 325 390 { 225, 230, 240, 255 } "32 ch"
-rect 380 386 82 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .half = 0 } } }
+rect 380 386 82 24 { 38, 43, 54, 255 } -> .{ .board = .{ .half = 0 } }
 text 389 390 { 225, 230, 240, 255 } "16 of 32"
 rect 12 416 776 1 { 48, 52, 62, 255 }
 text 12 426 { 225, 230, 240, 255 } "Port A"
 text 68 426 { 150, 160, 178, 255 } "32 electrode channels"
-rect 722 422 58 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .reset = void } }
+rect 722 422 58 24 { 38, 43, 54, 255 } -> panel 0 .{ .reset = void }
 text 731 426 { 225, 230, 240, 255 } "reset"
 text 12 454 { 150, 160, 178, 255 } "view"
-rect 76 450 66 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .mode = .scroll } }
+rect 76 450 66 24 { 38, 43, 54, 255 } -> panel 0 .{ .mode = .scroll }
 text 85 454 { 225, 230, 240, 255 } "scroll"
-rect 148 450 58 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .mode = .sweep } }
+rect 148 450 58 24 { 38, 43, 54, 255 } -> panel 0 .{ .mode = .sweep }
 text 157 454 { 225, 230, 240, 255 } "sweep"
 rect 212 450 90 24 { 52, 96, 170, 255 }
 text 221 454 { 225, 230, 240, 255 } "triggered"
 text 322 454 { 150, 160, 178, 255 } "window"
-rect 378 450 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .zoom = 0.8 } }
+rect 378 450 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .zoom = 0.8 }
 text 387 454 { 225, 230, 240, 255 } "-"
 text 419 454 { 225, 230, 240, 255 } "-1.0 / +2.0 ms"
-rect 546 450 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .zoom = 1.25 } }
+rect 546 450 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .zoom = 1.25 }
 text 555 454 { 225, 230, 240, 255 } "+"
 text 76 482 { 150, 160, 178, 255 } "scale"
-rect 124 478 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .scale = 0.8 } }
+rect 124 478 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .scale = 0.8 }
 text 133 482 { 225, 230, 240, 255 } "-"
 text 171 482 { 225, 230, 240, 255 } "400 µV/row"
-rect 272 478 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .scale = 1.25 } }
+rect 272 478 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .scale = 1.25 }
 text 281 482 { 225, 230, 240, 255 } "+"
 text 12 510 { 150, 160, 178, 255 } "filter"
-rect 76 506 42 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .filter = false } }
+rect 76 506 42 24 { 38, 43, 54, 255 } -> panel 0 .{ .filter = false }
 text 85 510 { 225, 230, 240, 255 } "raw"
 rect 124 506 50 24 { 52, 96, 170, 255 }
 text 133 510 { 225, 230, 240, 255 } "band"
 text 194 510 { 150, 160, 178, 255 } "from"
-rect 234 506 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .corner = .{ .high = false, .up = false } } }
+rect 234 506 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .corner = .{ .high = false, .up = false } }
 text 243 510 { 225, 230, 240, 255 } "-"
 text 282 510 { 225, 230, 240, 255 } "300 Hz"
-rect 352 506 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .corner = .{ .high = false, .up = true } } }
+rect 352 506 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .corner = .{ .high = false, .up = true } }
 text 361 510 { 225, 230, 240, 255 } "+"
 text 394 510 { 150, 160, 178, 255 } "to"
-rect 418 506 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .corner = .{ .high = true, .up = false } } }
+rect 418 506 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .corner = .{ .high = true, .up = false } }
 text 427 510 { 225, 230, 240, 255 } "-"
 text 462 510 { 225, 230, 240, 255 } "6000 Hz"
-rect 536 506 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .corner = .{ .high = true, .up = true } } }
+rect 536 506 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .corner = .{ .high = true, .up = true } }
 text 545 510 { 225, 230, 240, 255 } "+"
 text 12 538 { 150, 160, 178, 255 } "rows shown"
-rect 116 534 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 0 } }
+rect 116 534 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 0 }
 text 127 538 { 225, 230, 240, 255 } "1"
-rect 149 534 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 1 } }
+rect 149 534 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 1 }
 text 160 538 { 225, 230, 240, 255 } "2"
-rect 182 534 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 2 } }
+rect 182 534 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 2 }
 text 193 538 { 225, 230, 240, 255 } "3"
-rect 215 534 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 3 } }
+rect 215 534 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 3 }
 text 226 538 { 225, 230, 240, 255 } "4"
-rect 248 534 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 4 } }
+rect 248 534 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 4 }
 text 259 538 { 225, 230, 240, 255 } "5"
-rect 281 534 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 5 } }
+rect 281 534 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 5 }
 text 292 538 { 225, 230, 240, 255 } "6"
-rect 314 534 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 6 } }
+rect 314 534 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 6 }
 text 325 538 { 225, 230, 240, 255 } "7"
-rect 347 534 30 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 7 } }
+rect 347 534 30 24 { 38, 43, 54, 255 } -> panel 0 .{ .row_hidden = 7 }
 text 358 538 { 150, 160, 178, 255 } "8"
-rect 380 534 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 8 } }
+rect 380 534 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 8 }
 text 391 538 { 225, 230, 240, 255 } "9"
-rect 413 534 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 9 } }
+rect 413 534 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 9 }
 text 420 538 { 225, 230, 240, 255 } "10"
-rect 446 534 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 10 } }
+rect 446 534 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 10 }
 text 453 538 { 225, 230, 240, 255 } "11"
-rect 479 534 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 11 } }
+rect 479 534 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 11 }
 text 486 538 { 225, 230, 240, 255 } "12"
-rect 512 534 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 12 } }
+rect 512 534 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 12 }
 text 519 538 { 225, 230, 240, 255 } "13"
-rect 545 534 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 13 } }
+rect 545 534 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 13 }
 text 552 538 { 225, 230, 240, 255 } "14"
-rect 578 534 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 14 } }
+rect 578 534 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 14 }
 text 585 538 { 225, 230, 240, 255 } "15"
-rect 611 534 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 15 } }
+rect 611 534 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 15 }
 text 618 538 { 225, 230, 240, 255 } "16"
-rect 644 534 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 16 } }
+rect 644 534 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 16 }
 text 651 538 { 225, 230, 240, 255 } "17"
-rect 677 534 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 17 } }
+rect 677 534 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 17 }
 text 684 538 { 225, 230, 240, 255 } "18"
-rect 710 534 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 18 } }
+rect 710 534 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 18 }
 text 717 538 { 225, 230, 240, 255 } "19"
-rect 743 534 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 19 } }
+rect 743 534 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 19 }
 text 750 538 { 225, 230, 240, 255 } "20"
-rect 116 562 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 20 } }
+rect 116 562 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 20 }
 text 123 566 { 225, 230, 240, 255 } "21"
-rect 149 562 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 21 } }
+rect 149 562 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 21 }
 text 156 566 { 225, 230, 240, 255 } "22"
-rect 182 562 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 22 } }
+rect 182 562 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 22 }
 text 189 566 { 225, 230, 240, 255 } "23"
-rect 215 562 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 23 } }
+rect 215 562 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 23 }
 text 222 566 { 225, 230, 240, 255 } "24"
-rect 248 562 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 24 } }
+rect 248 562 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 24 }
 text 255 566 { 225, 230, 240, 255 } "25"
-rect 281 562 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 25 } }
+rect 281 562 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 25 }
 text 288 566 { 225, 230, 240, 255 } "26"
-rect 314 562 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 26 } }
+rect 314 562 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 26 }
 text 321 566 { 225, 230, 240, 255 } "27"
-rect 347 562 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 27 } }
+rect 347 562 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 27 }
 text 354 566 { 225, 230, 240, 255 } "28"
-rect 380 562 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 28 } }
+rect 380 562 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 28 }
 text 387 566 { 225, 230, 240, 255 } "29"
-rect 413 562 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 29 } }
+rect 413 562 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 29 }
 text 420 566 { 225, 230, 240, 255 } "30"
-rect 446 562 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 30 } }
+rect 446 562 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 30 }
 text 453 566 { 225, 230, 240, 255 } "31"
-rect 479 562 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 31 } }
+rect 479 562 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 31 }
 text 486 566 { 225, 230, 240, 255 } "32"
 text 12 594 { 150, 160, 178, 255 } "filtered"
-rect 116 590 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_raw = 0 } }
+rect 116 590 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 0 }
 text 127 594 { 225, 230, 240, 255 } "1"
-rect 149 590 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_raw = 1 } }
+rect 149 590 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 1 }
 text 160 594 { 225, 230, 240, 255 } "2"
-rect 182 590 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_raw = 2 } }
+rect 182 590 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 2 }
 text 193 594 { 225, 230, 240, 255 } "3"
-rect 215 590 30 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .row_raw = 3 } }
+rect 215 590 30 24 { 38, 43, 54, 255 } -> panel 0 .{ .row_raw = 3 }
 text 226 594 { 150, 160, 178, 255 } "4"
-rect 248 590 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_raw = 4 } }
+rect 248 590 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 4 }
 text 259 594 { 225, 230, 240, 255 } "5"
-rect 281 590 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_raw = 5 } }
+rect 281 590 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 5 }
 text 292 594 { 225, 230, 240, 255 } "6"
-rect 314 590 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_raw = 6 } }
+rect 314 590 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 6 }
 text 325 594 { 225, 230, 240, 255 } "7"
-rect 347 590 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_raw = 7 } }
+rect 347 590 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 7 }
 text 358 594 { 225, 230, 240, 255 } "8"
-rect 380 590 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_raw = 8 } }
+rect 380 590 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 8 }
 text 391 594 { 225, 230, 240, 255 } "9"
-rect 413 590 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_raw = 9 } }
+rect 413 590 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 9 }
 text 420 594 { 225, 230, 240, 255 } "10"
-rect 446 590 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_raw = 10 } }
+rect 446 590 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 10 }
 text 453 594 { 225, 230, 240, 255 } "11"
-rect 479 590 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_raw = 11 } }
+rect 479 590 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 11 }
 text 486 594 { 225, 230, 240, 255 } "12"
-rect 512 590 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_raw = 12 } }
+rect 512 590 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 12 }
 text 519 594 { 225, 230, 240, 255 } "13"
-rect 545 590 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_raw = 13 } }
+rect 545 590 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 13 }
 text 552 594 { 225, 230, 240, 255 } "14"
-rect 578 590 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_raw = 14 } }
+rect 578 590 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 14 }
 text 585 594 { 225, 230, 240, 255 } "15"
-rect 611 590 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_raw = 15 } }
+rect 611 590 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 15 }
 text 618 594 { 225, 230, 240, 255 } "16"
-rect 644 590 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_raw = 16 } }
+rect 644 590 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 16 }
 text 651 594 { 225, 230, 240, 255 } "17"
-rect 677 590 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_raw = 17 } }
+rect 677 590 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 17 }
 text 684 594 { 225, 230, 240, 255 } "18"
-rect 710 590 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_raw = 18 } }
+rect 710 590 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 18 }
 text 717 594 { 225, 230, 240, 255 } "19"
-rect 743 590 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_raw = 19 } }
+rect 743 590 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 19 }
 text 750 594 { 225, 230, 240, 255 } "20"
-rect 116 618 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_raw = 20 } }
+rect 116 618 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 20 }
 text 123 622 { 225, 230, 240, 255 } "21"
-rect 149 618 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_raw = 21 } }
+rect 149 618 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 21 }
 text 156 622 { 225, 230, 240, 255 } "22"
-rect 182 618 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_raw = 22 } }
+rect 182 618 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 22 }
 text 189 622 { 225, 230, 240, 255 } "23"
-rect 215 618 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_raw = 23 } }
+rect 215 618 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 23 }
 text 222 622 { 225, 230, 240, 255 } "24"
-rect 248 618 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_raw = 24 } }
+rect 248 618 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 24 }
 text 255 622 { 225, 230, 240, 255 } "25"
-rect 281 618 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_raw = 25 } }
+rect 281 618 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 25 }
 text 288 622 { 225, 230, 240, 255 } "26"
-rect 314 618 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_raw = 26 } }
+rect 314 618 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 26 }
 text 321 622 { 225, 230, 240, 255 } "27"
-rect 347 618 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_raw = 27 } }
+rect 347 618 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 27 }
 text 354 622 { 225, 230, 240, 255 } "28"
-rect 380 618 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_raw = 28 } }
+rect 380 618 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 28 }
 text 387 622 { 225, 230, 240, 255 } "29"
-rect 413 618 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_raw = 29 } }
+rect 413 618 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 29 }
 text 420 622 { 225, 230, 240, 255 } "30"
-rect 446 618 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_raw = 30 } }
+rect 446 618 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 30 }
 text 453 622 { 225, 230, 240, 255 } "31"
-rect 479 618 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_raw = 31 } }
+rect 479 618 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 31 }
 text 486 622 { 225, 230, 240, 255 } "32"
 text 12 650 { 150, 160, 178, 255 } "CAR"
 rect 76 646 42 24 { 52, 96, 170, 255 }
 text 85 650 { 225, 230, 240, 255 } "off"
-rect 124 646 34 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .car = true } }
+rect 124 646 34 24 { 38, 43, 54, 255 } -> panel 0 .{ .car = true }
 text 133 650 { 225, 230, 240, 255 } "on"
 text 12 678 { 150, 160, 178, 255 } "trigger"
-rect 76 674 42 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .trig_source = .ttl } }
+rect 76 674 42 24 { 38, 43, 54, 255 } -> panel 0 .{ .trig_source = .ttl }
 text 85 678 { 225, 230, 240, 255 } "TTL"
 rect 124 674 66 24 { 52, 96, 170, 255 }
 text 133 678 { 225, 230, 240, 255 } "spikes"
-rect 204 674 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .trig_row = -1 } }
+rect 204 674 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .trig_row = -1 }
 text 213 678 { 225, 230, 240, 255 } "-"
 text 246 678 { 225, 230, 240, 255 } "row 5"
-rect 302 674 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .trig_row = 1 } }
+rect 302 674 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .trig_row = 1 }
 text 311 678 { 225, 230, 240, 255 } "+"
 rect 344 674 74 24 { 52, 96, 170, 255 }
 text 353 678 { 225, 230, 240, 255 } "falling"
-rect 424 674 66 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .trig_rising = true } }
+rect 424 674 66 24 { 38, 43, 54, 255 } -> panel 0 .{ .trig_rising = true }
 text 433 678 { 225, 230, 240, 255 } "rising"
 text 12 706 { 150, 160, 178, 255 } "level"
-rect 76 702 122 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .trig_auto = true } }
+rect 76 702 122 24 { 38, 43, 54, 255 } -> panel 0 .{ .trig_auto = true }
 text 85 706 { 225, 230, 240, 255 } "follows noise"
 rect 204 702 58 24 { 52, 96, 170, 255 }
 text 213 706 { 225, 230, 240, 255 } "fixed"
-rect 268 702 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .trig_level = 0.8695652173913043 } }
+rect 268 702 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .trig_level = 0.8695652173913043 }
 text 277 706 { 225, 230, 240, 255 } "-"
 text 311 706 { 225, 230, 240, 255 } "-62 µV"
-rect 376 702 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .trig_level = 1.15 } }
+rect 376 702 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .trig_level = 1.15 }
 text 385 706 { 225, 230, 240, 255 } "+"
 text 418 706 { 150, 160, 178, 255 } "holdoff"
-rect 482 702 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .trig_holdoff = false } }
+rect 482 702 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .trig_holdoff = false }
 text 491 706 { 225, 230, 240, 255 } "-"
 text 528 706 { 225, 230, 240, 255 } "2 ms"
-rect 580 702 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .trig_holdoff = true } }
+rect 580 702 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .trig_holdoff = true }
 text 589 706 { 225, 230, 240, 255 } "+"
 text 76 734 { 150, 160, 178, 255 } "overlaid"
-rect 148 730 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .overlay = 9 } }
+rect 148 730 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .overlay = 9 }
 text 157 734 { 225, 230, 240, 255 } "-"
 text 189 734 { 225, 230, 240, 255 } "10 sweeps"
-rect 276 730 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .overlay = 11 } }
+rect 276 730 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .overlay = 11 }
 text 285 734 { 225, 230, 240, 255 } "+"
 rect 12 760 776 1 { 48, 52, 62, 255 }
 text 12 770 { 225, 230, 240, 255 } "Port B"
 text 68 770 { 150, 160, 178, 255 } "16 electrode channels"
-rect 722 766 58 24 { 38, 43, 54, 255 } -> .{ .panel = 1, .action = .{ .reset = void } }
+rect 722 766 58 24 { 38, 43, 54, 255 } -> panel 1 .{ .reset = void }
 text 731 770 { 225, 230, 240, 255 } "reset"
 text 12 798 { 150, 160, 178, 255 } "view"
-rect 76 794 66 24 { 38, 43, 54, 255 } -> .{ .panel = 1, .action = .{ .mode = .scroll } }
+rect 76 794 66 24 { 38, 43, 54, 255 } -> panel 1 .{ .mode = .scroll }
 text 85 798 { 225, 230, 240, 255 } "scroll"
 rect 148 794 58 24 { 52, 96, 170, 255 }
 text 157 798 { 225, 230, 240, 255 } "sweep"
-rect 212 794 90 24 { 38, 43, 54, 255 } -> .{ .panel = 1, .action = .{ .mode = .triggered } }
+rect 212 794 90 24 { 38, 43, 54, 255 } -> panel 1 .{ .mode = .triggered }
 text 221 798 { 225, 230, 240, 255 } "triggered"
 text 322 798 { 150, 160, 178, 255 } "time"
-rect 362 794 26 24 { 38, 43, 54, 255 } -> .{ .panel = 1, .action = .{ .zoom = 0.8 } }
+rect 362 794 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .zoom = 0.8 }
 text 371 798 { 225, 230, 240, 255 } "-"
 text 435 798 { 225, 230, 240, 255 } "500 ms"
-rect 530 794 26 24 { 38, 43, 54, 255 } -> .{ .panel = 1, .action = .{ .zoom = 1.25 } }
+rect 530 794 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .zoom = 1.25 }
 text 539 798 { 225, 230, 240, 255 } "+"
 text 76 826 { 150, 160, 178, 255 } "scale"
-rect 124 822 26 24 { 38, 43, 54, 255 } -> .{ .panel = 1, .action = .{ .scale = 0.8 } }
+rect 124 822 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .scale = 0.8 }
 text 133 826 { 225, 230, 240, 255 } "-"
 text 167 826 { 225, 230, 240, 255 } "1.50 mV/row"
-rect 272 822 26 24 { 38, 43, 54, 255 } -> .{ .panel = 1, .action = .{ .scale = 1.25 } }
+rect 272 822 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .scale = 1.25 }
 text 281 826 { 225, 230, 240, 255 } "+"
 text 12 854 { 150, 160, 178, 255 } "filter"
-rect 76 850 42 24 { 38, 43, 54, 255 } -> .{ .panel = 1, .action = .{ .filter = false } }
+rect 76 850 42 24 { 38, 43, 54, 255 } -> panel 1 .{ .filter = false }
 text 85 854 { 225, 230, 240, 255 } "raw"
 rect 124 850 50 24 { 52, 96, 170, 255 }
 text 133 854 { 225, 230, 240, 255 } "band"
 text 194 854 { 150, 160, 178, 255 } "from"
-rect 234 850 26 24 { 38, 43, 54, 255 } -> .{ .panel = 1, .action = .{ .corner = .{ .high = false, .up = false } } }
+rect 234 850 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .corner = .{ .high = false, .up = false } }
 text 243 854 { 225, 230, 240, 255 } "-"
 text 294 854 { 225, 230, 240, 255 } "off"
-rect 352 850 26 24 { 38, 43, 54, 255 } -> .{ .panel = 1, .action = .{ .corner = .{ .high = false, .up = true } } }
+rect 352 850 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .corner = .{ .high = false, .up = true } }
 text 361 854 { 225, 230, 240, 255 } "+"
 text 394 854 { 150, 160, 178, 255 } "to"
-rect 418 850 26 24 { 38, 43, 54, 255 } -> .{ .panel = 1, .action = .{ .corner = .{ .high = true, .up = false } } }
+rect 418 850 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .corner = .{ .high = true, .up = false } }
 text 427 854 { 225, 230, 240, 255 } "-"
 text 462 854 { 225, 230, 240, 255 } "6000 Hz"
-rect 536 850 26 24 { 38, 43, 54, 255 } -> .{ .panel = 1, .action = .{ .corner = .{ .high = true, .up = true } } }
+rect 536 850 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .corner = .{ .high = true, .up = true } }
 text 545 854 { 225, 230, 240, 255 } "+"
 text 12 882 { 150, 160, 178, 255 } "rows shown"
-rect 116 878 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .row_hidden = 0 } }
+rect 116 878 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 0 }
 text 127 882 { 225, 230, 240, 255 } "1"
-rect 149 878 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .row_hidden = 1 } }
+rect 149 878 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 1 }
 text 160 882 { 225, 230, 240, 255 } "2"
-rect 182 878 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .row_hidden = 2 } }
+rect 182 878 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 2 }
 text 193 882 { 225, 230, 240, 255 } "3"
-rect 215 878 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .row_hidden = 3 } }
+rect 215 878 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 3 }
 text 226 882 { 225, 230, 240, 255 } "4"
-rect 248 878 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .row_hidden = 4 } }
+rect 248 878 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 4 }
 text 259 882 { 225, 230, 240, 255 } "5"
-rect 281 878 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .row_hidden = 5 } }
+rect 281 878 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 5 }
 text 292 882 { 225, 230, 240, 255 } "6"
-rect 314 878 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .row_hidden = 6 } }
+rect 314 878 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 6 }
 text 325 882 { 225, 230, 240, 255 } "7"
-rect 347 878 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .row_hidden = 7 } }
+rect 347 878 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 7 }
 text 358 882 { 225, 230, 240, 255 } "8"
-rect 380 878 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .row_hidden = 8 } }
+rect 380 878 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 8 }
 text 391 882 { 225, 230, 240, 255 } "9"
-rect 413 878 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .row_hidden = 9 } }
+rect 413 878 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 9 }
 text 420 882 { 225, 230, 240, 255 } "10"
-rect 446 878 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .row_hidden = 10 } }
+rect 446 878 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 10 }
 text 453 882 { 225, 230, 240, 255 } "11"
-rect 479 878 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .row_hidden = 11 } }
+rect 479 878 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 11 }
 text 486 882 { 225, 230, 240, 255 } "12"
-rect 512 878 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .row_hidden = 12 } }
+rect 512 878 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 12 }
 text 519 882 { 225, 230, 240, 255 } "13"
-rect 545 878 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .row_hidden = 13 } }
+rect 545 878 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 13 }
 text 552 882 { 225, 230, 240, 255 } "14"
-rect 578 878 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .row_hidden = 14 } }
+rect 578 878 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 14 }
 text 585 882 { 225, 230, 240, 255 } "15"
-rect 611 878 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .row_hidden = 15 } }
+rect 611 878 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 15 }
 text 618 882 { 225, 230, 240, 255 } "16"
 text 12 910 { 150, 160, 178, 255 } "filtered"
-rect 116 906 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .row_raw = 0 } }
+rect 116 906 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 0 }
 text 127 910 { 225, 230, 240, 255 } "1"
-rect 149 906 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .row_raw = 1 } }
+rect 149 906 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 1 }
 text 160 910 { 225, 230, 240, 255 } "2"
-rect 182 906 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .row_raw = 2 } }
+rect 182 906 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 2 }
 text 193 910 { 225, 230, 240, 255 } "3"
-rect 215 906 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .row_raw = 3 } }
+rect 215 906 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 3 }
 text 226 910 { 225, 230, 240, 255 } "4"
-rect 248 906 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .row_raw = 4 } }
+rect 248 906 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 4 }
 text 259 910 { 225, 230, 240, 255 } "5"
-rect 281 906 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .row_raw = 5 } }
+rect 281 906 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 5 }
 text 292 910 { 225, 230, 240, 255 } "6"
-rect 314 906 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .row_raw = 6 } }
+rect 314 906 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 6 }
 text 325 910 { 225, 230, 240, 255 } "7"
-rect 347 906 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .row_raw = 7 } }
+rect 347 906 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 7 }
 text 358 910 { 225, 230, 240, 255 } "8"
-rect 380 906 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .row_raw = 8 } }
+rect 380 906 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 8 }
 text 391 910 { 225, 230, 240, 255 } "9"
-rect 413 906 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .row_raw = 9 } }
+rect 413 906 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 9 }
 text 420 910 { 225, 230, 240, 255 } "10"
-rect 446 906 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .row_raw = 10 } }
+rect 446 906 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 10 }
 text 453 910 { 225, 230, 240, 255 } "11"
-rect 479 906 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .row_raw = 11 } }
+rect 479 906 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 11 }
 text 486 910 { 225, 230, 240, 255 } "12"
-rect 512 906 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .row_raw = 12 } }
+rect 512 906 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 12 }
 text 519 910 { 225, 230, 240, 255 } "13"
-rect 545 906 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .row_raw = 13 } }
+rect 545 906 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 13 }
 text 552 910 { 225, 230, 240, 255 } "14"
-rect 578 906 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .row_raw = 14 } }
+rect 578 906 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 14 }
 text 585 910 { 225, 230, 240, 255 } "15"
-rect 611 906 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .row_raw = 15 } }
+rect 611 906 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 15 }
 text 618 910 { 225, 230, 240, 255 } "16"
 text 12 938 { 150, 160, 178, 255 } "CAR"
-rect 76 934 42 24 { 38, 43, 54, 255 } -> .{ .panel = 1, .action = .{ .car = false } }
+rect 76 934 42 24 { 38, 43, 54, 255 } -> panel 1 .{ .car = false }
 text 85 938 { 225, 230, 240, 255 } "off"
 rect 124 934 34 24 { 52, 96, 170, 255 }
 text 133 938 { 225, 230, 240, 255 } "on"
 text 12 966 { 150, 160, 178, 255 } "average of"
-rect 116 962 42 24 { 38, 43, 54, 255 } -> .{ .panel = 1, .action = .{ .car_ref_all = true } }
+rect 116 962 42 24 { 38, 43, 54, 255 } -> panel 1 .{ .car_ref_all = true }
 text 125 966 { 225, 230, 240, 255 } "all"
-rect 164 962 50 24 { 38, 43, 54, 255 } -> .{ .panel = 1, .action = .{ .car_ref_all = false } }
+rect 164 962 50 24 { 38, 43, 54, 255 } -> panel 1 .{ .car_ref_all = false }
 text 173 966 { 225, 230, 240, 255 } "none"
-rect 226 962 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .car_ref_row = 0 } }
+rect 226 962 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 0 }
 text 237 966 { 225, 230, 240, 255 } "1"
-rect 259 962 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .car_ref_row = 1 } }
+rect 259 962 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 1 }
 text 270 966 { 225, 230, 240, 255 } "2"
-rect 292 962 30 24 { 38, 43, 54, 255 } -> .{ .panel = 1, .action = .{ .car_ref_row = 2 } }
+rect 292 962 30 24 { 38, 43, 54, 255 } -> panel 1 .{ .car_ref_row = 2 }
 text 303 966 { 150, 160, 178, 255 } "3"
-rect 325 962 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .car_ref_row = 3 } }
+rect 325 962 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 3 }
 text 336 966 { 225, 230, 240, 255 } "4"
-rect 358 962 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .car_ref_row = 4 } }
+rect 358 962 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 4 }
 text 369 966 { 225, 230, 240, 255 } "5"
-rect 391 962 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .car_ref_row = 5 } }
+rect 391 962 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 5 }
 text 402 966 { 225, 230, 240, 255 } "6"
-rect 424 962 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .car_ref_row = 6 } }
+rect 424 962 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 6 }
 text 435 966 { 225, 230, 240, 255 } "7"
-rect 457 962 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .car_ref_row = 7 } }
+rect 457 962 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 7 }
 text 468 966 { 225, 230, 240, 255 } "8"
-rect 490 962 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .car_ref_row = 8 } }
+rect 490 962 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 8 }
 text 501 966 { 225, 230, 240, 255 } "9"
-rect 523 962 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .car_ref_row = 9 } }
+rect 523 962 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 9 }
 text 530 966 { 225, 230, 240, 255 } "10"
-rect 556 962 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .car_ref_row = 10 } }
+rect 556 962 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 10 }
 text 563 966 { 225, 230, 240, 255 } "11"
-rect 589 962 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .car_ref_row = 11 } }
+rect 589 962 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 11 }
 text 596 966 { 225, 230, 240, 255 } "12"
-rect 622 962 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .car_ref_row = 12 } }
+rect 622 962 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 12 }
 text 629 966 { 225, 230, 240, 255 } "13"
-rect 655 962 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .car_ref_row = 13 } }
+rect 655 962 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 13 }
 text 662 966 { 225, 230, 240, 255 } "14"
-rect 688 962 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .car_ref_row = 14 } }
+rect 688 962 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 14 }
 text 695 966 { 225, 230, 240, 255 } "15"
-rect 721 962 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .car_ref_row = 15 } }
+rect 721 962 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 15 }
 text 728 966 { 225, 230, 240, 255 } "16"
 text 12 994 { 150, 160, 178, 255 } "subtract from"
-rect 124 990 42 24 { 38, 43, 54, 255 } -> .{ .panel = 1, .action = .{ .car_sub_all = true } }
+rect 124 990 42 24 { 38, 43, 54, 255 } -> panel 1 .{ .car_sub_all = true }
 text 133 994 { 225, 230, 240, 255 } "all"
-rect 172 990 50 24 { 38, 43, 54, 255 } -> .{ .panel = 1, .action = .{ .car_sub_all = false } }
+rect 172 990 50 24 { 38, 43, 54, 255 } -> panel 1 .{ .car_sub_all = false }
 text 181 994 { 225, 230, 240, 255 } "none"
-rect 234 990 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .car_sub_row = 0 } }
+rect 234 990 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 0 }
 text 245 994 { 225, 230, 240, 255 } "1"
-rect 267 990 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .car_sub_row = 1 } }
+rect 267 990 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 1 }
 text 278 994 { 225, 230, 240, 255 } "2"
-rect 300 990 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .car_sub_row = 2 } }
+rect 300 990 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 2 }
 text 311 994 { 225, 230, 240, 255 } "3"
-rect 333 990 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .car_sub_row = 3 } }
+rect 333 990 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 3 }
 text 344 994 { 225, 230, 240, 255 } "4"
-rect 366 990 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .car_sub_row = 4 } }
+rect 366 990 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 4 }
 text 377 994 { 225, 230, 240, 255 } "5"
-rect 399 990 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .car_sub_row = 5 } }
+rect 399 990 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 5 }
 text 410 994 { 225, 230, 240, 255 } "6"
-rect 432 990 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .car_sub_row = 6 } }
+rect 432 990 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 6 }
 text 443 994 { 225, 230, 240, 255 } "7"
-rect 465 990 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .car_sub_row = 7 } }
+rect 465 990 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 7 }
 text 476 994 { 225, 230, 240, 255 } "8"
-rect 498 990 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .car_sub_row = 8 } }
+rect 498 990 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 8 }
 text 509 994 { 225, 230, 240, 255 } "9"
-rect 531 990 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .car_sub_row = 9 } }
+rect 531 990 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 9 }
 text 538 994 { 225, 230, 240, 255 } "10"
-rect 564 990 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .car_sub_row = 10 } }
+rect 564 990 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 10 }
 text 571 994 { 225, 230, 240, 255 } "11"
-rect 597 990 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .car_sub_row = 11 } }
+rect 597 990 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 11 }
 text 604 994 { 225, 230, 240, 255 } "12"
-rect 630 990 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .car_sub_row = 12 } }
+rect 630 990 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 12 }
 text 637 994 { 225, 230, 240, 255 } "13"
-rect 663 990 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .car_sub_row = 13 } }
+rect 663 990 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 13 }
 text 670 994 { 225, 230, 240, 255 } "14"
-rect 696 990 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .car_sub_row = 14 } }
+rect 696 990 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 14 }
 text 703 994 { 225, 230, 240, 255 } "15"
-rect 729 990 30 24 { 52, 96, 170, 255 } -> .{ .panel = 1, .action = .{ .car_sub_row = 15 } }
+rect 729 990 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 15 }
 text 736 994 { 225, 230, 240, 255 } "16"
 rect 12 1020 776 1 { 48, 52, 62, 255 }
 text 12 1030 { 150, 160, 178, 255 } "On the display: wheel = scale, Ctrl+wheel = one row, Shift+wheel = time,"
@@ -1136,39 +1136,39 @@ text 12 14 { 225, 230, 240, 255 } "oEZ"
 text 44 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
 rect 0 36 800 30 { 190, 25, 25, 245 }
 text 12 42 { 225, 230, 240, 255 } "RECORDING STOPPED: disk full"
-rect 670 38 106 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .acknowledge = void } }
+rect 670 38 106 24 { 38, 43, 54, 255 } -> .{ .acknowledge = void }
 text 679 42 { 225, 230, 240, 255 } "Acknowledge"
 text 12 70 { 150, 160, 178, 255 } "display 4.3 ms   144 fps   running 125 s"
 text 340 70 { 255, 190, 90, 255 } "display skipped 3 blocks"
-rect 630 66 90 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .save_view = void } }
+rect 630 66 90 24 { 52, 96, 170, 255 } -> .{ .save_view = void }
 text 639 70 { 225, 230, 240, 255 } "Save view"
-rect 726 66 50 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .quit = void } }
+rect 726 66 50 24 { 38, 43, 54, 255 } -> .{ .quit = void }
 text 735 70 { 225, 230, 240, 255 } "Quit"
 rect 12 96 776 1 { 48, 52, 62, 255 }
-rect 12 102 66 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .record = true } }
+rect 12 102 66 24 { 38, 43, 54, 255 } -> .{ .record = true }
 text 21 106 { 225, 230, 240, 255 } "Record"
 text 84 106 { 150, 160, 178, 255 } "not recording"
 rect 12 132 776 1 { 48, 52, 62, 255 }
 text 12 142 { 225, 230, 240, 255 } "Review"
-rect 76 138 58 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .start } }
+rect 76 138 58 24 { 38, 43, 54, 255 } -> .{ .review = .start }
 text 85 142 { 225, 230, 240, 255 } "start"
-rect 140 138 90 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .page_back } }
+rect 140 138 90 24 { 38, 43, 54, 255 } -> .{ .review = .page_back }
 text 149 142 { 225, 230, 240, 255 } "<< window"
-rect 236 138 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .back } }
+rect 236 138 26 24 { 38, 43, 54, 255 } -> .{ .review = .back }
 text 245 142 { 225, 230, 240, 255 } "<"
-rect 268 138 66 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .toggle } }
+rect 268 138 66 24 { 38, 43, 54, 255 } -> .{ .review = .toggle }
 text 277 142 { 225, 230, 240, 255 } "freeze"
-rect 340 138 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .forward } }
+rect 340 138 26 24 { 38, 43, 54, 255 } -> .{ .review = .forward }
 text 349 142 { 225, 230, 240, 255 } ">"
-rect 372 138 90 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .page_forward } }
+rect 372 138 90 24 { 38, 43, 54, 255 } -> .{ .review = .page_forward }
 text 381 142 { 225, 230, 240, 255 } "window >>"
 rect 468 138 50 24 { 52, 96, 170, 255 }
 text 477 142 { 225, 230, 240, 255 } "LIVE"
 rect 12 168 776 1 { 48, 52, 62, 255 }
 text 12 178 { 225, 230, 240, 255 } "Notes"
-rect 76 174 98 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .note_preset = 1 } }
+rect 76 174 98 24 { 38, 43, 54, 255 } -> .{ .note_preset = 1 }
 text 85 178 { 225, 230, 240, 255 } "1 laser on"
-rect 180 174 82 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .note_preset = 4 } }
+rect 180 174 82 24 { 38, 43, 54, 255 } -> .{ .note_preset = 4 }
 text 189 178 { 225, 230, 240, 255 } "4 µ-stim"
 text 268 178 { 150, 160, 178, 255 } "2 drafts (` stamps one)"
 text 28 206 { 150, 160, 178, 255 } "1:02:05  cell 3, 2100 µm"
@@ -1177,23 +1177,23 @@ rect 12 260 776 1 { 48, 52, 62, 255 }
 text 12 270 { 225, 230, 240, 255 } "Audio"
 rect 76 266 34 24 { 52, 96, 170, 255 }
 text 85 270 { 225, 230, 240, 255 } "on"
-rect 116 266 42 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .enabled = false } } }
+rect 116 266 42 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .enabled = false } }
 text 125 270 { 225, 230, 240, 255 } "off"
-rect 164 266 50 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .mute = true } } }
+rect 164 266 50 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .mute = true } }
 text 173 270 { 225, 230, 240, 255 } "mute"
 text 220 270 { 150, 160, 178, 255 } "volume"
-rect 276 266 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .volume = false } } }
+rect 276 266 26 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .volume = false } }
 text 285 270 { 225, 230, 240, 255 } "-"
 text 318 270 { 225, 230, 240, 255 } "-6 dB"
-rect 374 266 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .volume = true } } }
+rect 374 266 26 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .volume = true } }
 text 383 270 { 225, 230, 240, 255 } "+"
 rect 416 266 66 24 { 52, 96, 170, 255 }
 text 425 270 { 225, 230, 240, 255 } "shaped"
-rect 488 266 58 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .reference = true } } }
+rect 488 266 58 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .reference = true } }
 text 497 270 { 225, 230, 240, 255 } "plain"
-rect 552 266 42 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .car = false } } }
+rect 552 266 42 24 { 52, 96, 170, 255 } -> .{ .audio = .{ .car = false } }
 text 561 270 { 225, 230, 240, 255 } "CAR"
-rect 600 266 106 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .recalibrate = void } } }
+rect 600 266 106 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .recalibrate = void } }
 text 609 270 { 225, 230, 240, 255 } "recalibrate"
 text 12 298 { 150, 160, 178, 255 } "listening to A1-5, B1-3"
 text 204 298 { 150, 160, 178, 255 } "noise 7.4 µV, held"
@@ -1204,85 +1204,85 @@ text 12 334 { 225, 230, 240, 255 } "Headstages"
 text 100 334 { 150, 160, 178, 255 } "(these change what is recorded)"
 text 12 362 { 150, 160, 178, 255 } "amplifier band"
 text 132 362 { 150, 160, 178, 255 } "from"
-rect 172 358 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .lower = false } } }
+rect 172 358 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
 text 181 362 { 225, 230, 240, 255 } "-"
 text 216 362 { 225, 230, 240, 255 } "0.58 Hz"
-rect 290 358 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .lower = true } } }
+rect 290 358 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
 text 299 362 { 225, 230, 240, 255 } "+"
 text 332 362 { 150, 160, 178, 255 } "to"
-rect 356 358 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .upper = false } } }
+rect 356 358 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
 text 365 362 { 225, 230, 240, 255 } "-"
 text 396 362 { 225, 230, 240, 255 } "7.60 kHz"
-rect 474 358 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .upper = true } } }
+rect 474 358 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
 text 483 362 { 225, 230, 240, 255 } "+"
 text 12 390 { 150, 160, 178, 255 } "DSP high-pass"
-rect 132 386 42 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .dsp = false } } }
+rect 132 386 42 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp = false } }
 text 141 390 { 225, 230, 240, 255 } "off"
 rect 180 386 34 24 { 52, 96, 170, 255 }
 text 189 390 { 225, 230, 240, 255 } "on"
 text 234 390 { 150, 160, 178, 255 } "cutoff"
-rect 290 386 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .dsp_cutoff = false } } }
+rect 290 386 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp_cutoff = false } }
 text 299 390 { 225, 230, 240, 255 } "-"
 text 334 390 { 225, 230, 240, 255 } "1.17 Hz"
-rect 408 386 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .dsp_cutoff = true } } }
+rect 408 386 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp_cutoff = true } }
 text 417 390 { 225, 230, 240, 255 } "+"
 text 12 418 { 150, 160, 178, 255 } "sample rate"
-rect 132 414 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .rate = false } } }
+rect 132 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .rate = false } }
 text 141 418 { 225, 230, 240, 255 } "-"
 text 172 418 { 225, 230, 240, 255 } "30000 Hz"
-rect 250 414 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .rate = true } } }
+rect 250 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .rate = true } }
 text 259 418 { 225, 230, 240, 255 } "+"
 text 292 418 { 150, 160, 178, 255 } "A1"
 rect 316 414 58 24 { 52, 96, 170, 255 }
 text 325 418 { 225, 230, 240, 255 } "32 ch"
-rect 380 414 82 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .half = 0 } } }
+rect 380 414 82 24 { 38, 43, 54, 255 } -> .{ .board = .{ .half = 0 } }
 text 389 418 { 225, 230, 240, 255 } "16 of 32"
 rect 12 444 776 1 { 48, 52, 62, 255 }
 text 12 454 { 225, 230, 240, 255 } "Port A"
 text 68 454 { 150, 160, 178, 255 } "6 electrode channels"
-rect 722 450 58 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .reset = void } }
+rect 722 450 58 24 { 38, 43, 54, 255 } -> panel 0 .{ .reset = void }
 text 731 454 { 225, 230, 240, 255 } "reset"
 text 12 482 { 150, 160, 178, 255 } "view"
 rect 76 478 66 24 { 52, 96, 170, 255 }
 text 85 482 { 225, 230, 240, 255 } "scroll"
-rect 148 478 58 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .mode = .sweep } }
+rect 148 478 58 24 { 38, 43, 54, 255 } -> panel 0 .{ .mode = .sweep }
 text 157 482 { 225, 230, 240, 255 } "sweep"
-rect 212 478 90 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .mode = .triggered } }
+rect 212 478 90 24 { 38, 43, 54, 255 } -> panel 0 .{ .mode = .triggered }
 text 221 482 { 225, 230, 240, 255 } "triggered"
 text 322 482 { 150, 160, 178, 255 } "time"
-rect 362 478 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .zoom = 0.8 } }
+rect 362 478 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .zoom = 0.8 }
 text 371 482 { 225, 230, 240, 255 } "-"
 text 435 482 { 225, 230, 240, 255 } "2.00 s"
-rect 530 478 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .zoom = 1.25 } }
+rect 530 478 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .zoom = 1.25 }
 text 539 482 { 225, 230, 240, 255 } "+"
 text 76 510 { 150, 160, 178, 255 } "scale"
-rect 124 506 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .scale = 0.8 } }
+rect 124 506 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .scale = 0.8 }
 text 133 510 { 225, 230, 240, 255 } "-"
 text 171 510 { 225, 230, 240, 255 } "400 µV/row"
-rect 272 506 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .scale = 1.25 } }
+rect 272 506 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .scale = 1.25 }
 text 281 510 { 225, 230, 240, 255 } "+"
 text 12 538 { 150, 160, 178, 255 } "filter"
 rect 76 534 42 24 { 52, 96, 170, 255 }
 text 85 538 { 225, 230, 240, 255 } "raw"
-rect 124 534 50 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .filter = true } }
+rect 124 534 50 24 { 38, 43, 54, 255 } -> panel 0 .{ .filter = true }
 text 133 538 { 225, 230, 240, 255 } "band"
 text 12 566 { 150, 160, 178, 255 } "rows shown"
-rect 116 562 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 0 } }
+rect 116 562 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 0 }
 text 127 566 { 225, 230, 240, 255 } "1"
-rect 149 562 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 1 } }
+rect 149 562 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 1 }
 text 160 566 { 225, 230, 240, 255 } "2"
-rect 182 562 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 2 } }
+rect 182 562 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 2 }
 text 193 566 { 225, 230, 240, 255 } "3"
-rect 215 562 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 3 } }
+rect 215 562 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 3 }
 text 226 566 { 225, 230, 240, 255 } "4"
-rect 248 562 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 4 } }
+rect 248 562 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 4 }
 text 259 566 { 225, 230, 240, 255 } "5"
-rect 281 562 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 5 } }
+rect 281 562 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 5 }
 text 292 566 { 225, 230, 240, 255 } "6"
 text 12 594 { 150, 160, 178, 255 } "CAR"
 rect 76 590 42 24 { 52, 96, 170, 255 }
 text 85 594 { 225, 230, 240, 255 } "off"
-rect 124 590 34 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .car = true } }
+rect 124 590 34 24 { 38, 43, 54, 255 } -> panel 0 .{ .car = true }
 text 133 594 { 225, 230, 240, 255 } "on"
 rect 12 620 776 1 { 48, 52, 62, 255 }
 text 12 630 { 150, 160, 178, 255 } "On the display: wheel = scale, Ctrl+wheel = one row, Shift+wheel = time,"
@@ -1291,34 +1291,34 @@ text 12 658 { 150, 160, 178, 255 } "keys  - =  [ ]  m  t  f  , .  ; '  r  q"
 text 12 14 { 225, 230, 240, 255 } "oEZ"
 text 44 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
 text 12 42 { 150, 160, 178, 255 } "starting"
-rect 630 38 90 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .save_view = void } }
+rect 630 38 90 24 { 52, 96, 170, 255 } -> .{ .save_view = void }
 text 639 42 { 225, 230, 240, 255 } "Save view"
-rect 726 38 50 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .quit = void } }
+rect 726 38 50 24 { 38, 43, 54, 255 } -> .{ .quit = void }
 text 735 42 { 225, 230, 240, 255 } "Quit"
 rect 12 68 776 1 { 48, 52, 62, 255 }
 text 12 78 { 150, 160, 178, 255 } "finishing the recording"
 text 204 78 { 255, 96, 96, 255 } "REC 0:00   0.00 GB   0.0 M samples"
 rect 12 104 776 1 { 48, 52, 62, 255 }
 text 12 114 { 225, 230, 240, 255 } "Review"
-rect 76 110 58 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .start } }
+rect 76 110 58 24 { 38, 43, 54, 255 } -> .{ .review = .start }
 text 85 114 { 225, 230, 240, 255 } "start"
-rect 140 110 90 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .page_back } }
+rect 140 110 90 24 { 38, 43, 54, 255 } -> .{ .review = .page_back }
 text 149 114 { 225, 230, 240, 255 } "<< window"
-rect 236 110 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .back } }
+rect 236 110 26 24 { 38, 43, 54, 255 } -> .{ .review = .back }
 text 245 114 { 225, 230, 240, 255 } "<"
-rect 268 110 66 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .toggle } }
+rect 268 110 66 24 { 38, 43, 54, 255 } -> .{ .review = .toggle }
 text 277 114 { 225, 230, 240, 255 } "freeze"
-rect 340 110 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .forward } }
+rect 340 110 26 24 { 38, 43, 54, 255 } -> .{ .review = .forward }
 text 349 114 { 225, 230, 240, 255 } ">"
-rect 372 110 90 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .review = .page_forward } }
+rect 372 110 90 24 { 38, 43, 54, 255 } -> .{ .review = .page_forward }
 text 381 114 { 225, 230, 240, 255 } "window >>"
 rect 468 110 50 24 { 52, 96, 170, 255 }
 text 477 114 { 225, 230, 240, 255 } "LIVE"
 rect 12 140 776 1 { 48, 52, 62, 255 }
 text 12 150 { 225, 230, 240, 255 } "Notes"
-rect 76 146 98 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .note_preset = 1 } }
+rect 76 146 98 24 { 38, 43, 54, 255 } -> .{ .note_preset = 1 }
 text 85 150 { 225, 230, 240, 255 } "1 laser on"
-rect 180 146 82 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .note_preset = 4 } }
+rect 180 146 82 24 { 38, 43, 54, 255 } -> .{ .note_preset = 4 }
 text 189 150 { 225, 230, 240, 255 } "4 µ-stim"
 text 268 150 { 150, 160, 178, 255 } "2 drafts (` stamps one)"
 text 28 178 { 150, 160, 178, 255 } "1:02:05  cell 3, 2100 µm"
@@ -1327,23 +1327,23 @@ rect 12 232 776 1 { 48, 52, 62, 255 }
 text 12 242 { 225, 230, 240, 255 } "Audio"
 rect 76 238 34 24 { 52, 96, 170, 255 }
 text 85 242 { 225, 230, 240, 255 } "on"
-rect 116 238 42 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .enabled = false } } }
+rect 116 238 42 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .enabled = false } }
 text 125 242 { 225, 230, 240, 255 } "off"
-rect 164 238 50 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .mute = true } } }
+rect 164 238 50 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .mute = true } }
 text 173 242 { 225, 230, 240, 255 } "mute"
 text 220 242 { 150, 160, 178, 255 } "volume"
-rect 276 238 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .volume = false } } }
+rect 276 238 26 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .volume = false } }
 text 285 242 { 225, 230, 240, 255 } "-"
 text 318 242 { 225, 230, 240, 255 } "-6 dB"
-rect 374 238 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .volume = true } } }
+rect 374 238 26 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .volume = true } }
 text 383 242 { 225, 230, 240, 255 } "+"
 rect 416 238 66 24 { 52, 96, 170, 255 }
 text 425 242 { 225, 230, 240, 255 } "shaped"
-rect 488 238 58 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .reference = true } } }
+rect 488 238 58 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .reference = true } }
 text 497 242 { 225, 230, 240, 255 } "plain"
-rect 552 238 42 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .car = false } } }
+rect 552 238 42 24 { 52, 96, 170, 255 } -> .{ .audio = .{ .car = false } }
 text 561 242 { 225, 230, 240, 255 } "CAR"
-rect 600 238 106 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .audio = .{ .recalibrate = void } } }
+rect 600 238 106 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .recalibrate = void } }
 text 609 242 { 225, 230, 240, 255 } "recalibrate"
 text 12 270 { 150, 160, 178, 255 } "listening to nothing (click a row on the display)"
 text 412 270 { 150, 160, 178, 255 } "2 gaps in the sound"
@@ -1352,191 +1352,191 @@ text 12 306 { 225, 230, 240, 255 } "Headstages"
 text 100 306 { 150, 160, 178, 255 } "(these change what is recorded)"
 text 12 334 { 150, 160, 178, 255 } "amplifier band"
 text 132 334 { 150, 160, 178, 255 } "from"
-rect 172 330 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .lower = false } } }
+rect 172 330 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
 text 181 334 { 225, 230, 240, 255 } "-"
 text 216 334 { 225, 230, 240, 255 } "0.58 Hz"
-rect 290 330 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .lower = true } } }
+rect 290 330 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
 text 299 334 { 225, 230, 240, 255 } "+"
 text 332 334 { 150, 160, 178, 255 } "to"
-rect 356 330 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .upper = false } } }
+rect 356 330 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
 text 365 334 { 225, 230, 240, 255 } "-"
 text 396 334 { 225, 230, 240, 255 } "7.60 kHz"
-rect 474 330 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .upper = true } } }
+rect 474 330 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
 text 483 334 { 225, 230, 240, 255 } "+"
 text 12 362 { 150, 160, 178, 255 } "DSP high-pass"
-rect 132 358 42 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .dsp = false } } }
+rect 132 358 42 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp = false } }
 text 141 362 { 225, 230, 240, 255 } "off"
 rect 180 358 34 24 { 52, 96, 170, 255 }
 text 189 362 { 225, 230, 240, 255 } "on"
 text 234 362 { 150, 160, 178, 255 } "cutoff"
-rect 290 358 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .dsp_cutoff = false } } }
+rect 290 358 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp_cutoff = false } }
 text 299 362 { 225, 230, 240, 255 } "-"
 text 334 362 { 225, 230, 240, 255 } "1.17 Hz"
-rect 408 358 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .dsp_cutoff = true } } }
+rect 408 358 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp_cutoff = true } }
 text 417 362 { 225, 230, 240, 255 } "+"
 text 12 390 { 150, 160, 178, 255 } "sample rate"
-rect 132 386 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .rate = false } } }
+rect 132 386 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .rate = false } }
 text 141 390 { 225, 230, 240, 255 } "-"
 text 172 390 { 225, 230, 240, 255 } "30000 Hz"
-rect 250 386 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .rate = true } } }
+rect 250 386 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .rate = true } }
 text 259 390 { 225, 230, 240, 255 } "+"
 text 292 390 { 150, 160, 178, 255 } "A1"
 rect 316 386 58 24 { 52, 96, 170, 255 }
 text 325 390 { 225, 230, 240, 255 } "32 ch"
-rect 380 386 82 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .board = .{ .half = 0 } } }
+rect 380 386 82 24 { 38, 43, 54, 255 } -> .{ .board = .{ .half = 0 } }
 text 389 390 { 225, 230, 240, 255 } "16 of 32"
 rect 12 416 776 1 { 48, 52, 62, 255 }
 text 12 426 { 225, 230, 240, 255 } "Port C"
 text 68 426 { 150, 160, 178, 255 } "4 electrode channels"
-rect 722 422 58 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .reset = void } }
+rect 722 422 58 24 { 38, 43, 54, 255 } -> panel 0 .{ .reset = void }
 text 731 426 { 225, 230, 240, 255 } "reset"
 text 12 454 { 150, 160, 178, 255 } "view"
-rect 76 450 66 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .mode = .scroll } }
+rect 76 450 66 24 { 38, 43, 54, 255 } -> panel 0 .{ .mode = .scroll }
 text 85 454 { 225, 230, 240, 255 } "scroll"
-rect 148 450 58 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .mode = .sweep } }
+rect 148 450 58 24 { 38, 43, 54, 255 } -> panel 0 .{ .mode = .sweep }
 text 157 454 { 225, 230, 240, 255 } "sweep"
 rect 212 450 90 24 { 52, 96, 170, 255 }
 text 221 454 { 225, 230, 240, 255 } "triggered"
 text 322 454 { 150, 160, 178, 255 } "window"
-rect 378 450 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .zoom = 0.8 } }
+rect 378 450 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .zoom = 0.8 }
 text 387 454 { 225, 230, 240, 255 } "-"
 text 411 454 { 225, 230, 240, 255 } "-10.0 / +40.0 ms"
-rect 546 450 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .zoom = 1.25 } }
+rect 546 450 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .zoom = 1.25 }
 text 555 454 { 225, 230, 240, 255 } "+"
 text 76 482 { 150, 160, 178, 255 } "scale"
-rect 124 478 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .scale = 0.8 } }
+rect 124 478 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .scale = 0.8 }
 text 133 482 { 225, 230, 240, 255 } "-"
 text 171 482 { 225, 230, 240, 255 } "400 µV/row"
-rect 272 478 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .scale = 1.25 } }
+rect 272 478 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .scale = 1.25 }
 text 281 482 { 225, 230, 240, 255 } "+"
 text 12 510 { 150, 160, 178, 255 } "filter"
 rect 76 506 42 24 { 52, 96, 170, 255 }
 text 85 510 { 225, 230, 240, 255 } "raw"
-rect 124 506 50 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .filter = true } }
+rect 124 506 50 24 { 38, 43, 54, 255 } -> panel 0 .{ .filter = true }
 text 133 510 { 225, 230, 240, 255 } "band"
 text 12 538 { 150, 160, 178, 255 } "rows shown"
-rect 116 534 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 0 } }
+rect 116 534 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 0 }
 text 127 538 { 225, 230, 240, 255 } "1"
-rect 149 534 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 1 } }
+rect 149 534 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 1 }
 text 160 538 { 225, 230, 240, 255 } "2"
-rect 182 534 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 2 } }
+rect 182 534 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 2 }
 text 193 538 { 225, 230, 240, 255 } "3"
-rect 215 534 30 24 { 52, 96, 170, 255 } -> .{ .panel = 0, .action = .{ .row_hidden = 3 } }
+rect 215 534 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 3 }
 text 226 538 { 225, 230, 240, 255 } "4"
 text 12 566 { 150, 160, 178, 255 } "CAR"
 rect 76 562 42 24 { 52, 96, 170, 255 }
 text 85 566 { 225, 230, 240, 255 } "off"
-rect 124 562 34 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .car = true } }
+rect 124 562 34 24 { 38, 43, 54, 255 } -> panel 0 .{ .car = true }
 text 133 566 { 225, 230, 240, 255 } "on"
 text 12 594 { 150, 160, 178, 255 } "trigger"
-rect 76 590 42 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .trig_source = .ttl } }
+rect 76 590 42 24 { 38, 43, 54, 255 } -> panel 0 .{ .trig_source = .ttl }
 text 85 594 { 225, 230, 240, 255 } "TTL"
 rect 124 590 66 24 { 52, 96, 170, 255 }
 text 133 594 { 225, 230, 240, 255 } "spikes"
-rect 204 590 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .trig_row = -1 } }
+rect 204 590 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .trig_row = -1 }
 text 213 594 { 225, 230, 240, 255 } "-"
 text 246 594 { 225, 230, 240, 255 } "row 1"
-rect 302 590 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .trig_row = 1 } }
+rect 302 590 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .trig_row = 1 }
 text 311 594 { 225, 230, 240, 255 } "+"
-rect 344 590 74 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .trig_rising = false } }
+rect 344 590 74 24 { 38, 43, 54, 255 } -> panel 0 .{ .trig_rising = false }
 text 353 594 { 225, 230, 240, 255 } "falling"
 rect 424 590 66 24 { 52, 96, 170, 255 }
 text 433 594 { 225, 230, 240, 255 } "rising"
 text 12 622 { 150, 160, 178, 255 } "level"
 rect 76 618 122 24 { 52, 96, 170, 255 }
 text 85 622 { 225, 230, 240, 255 } "follows noise"
-rect 204 618 58 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .trig_auto = false } }
+rect 204 618 58 24 { 38, 43, 54, 255 } -> panel 0 .{ .trig_auto = false }
 text 213 622 { 225, 230, 240, 255 } "fixed"
 text 268 622 { 225, 230, 240, 255 } "-48 µV"
 text 324 622 { 150, 160, 178, 255 } "holdoff"
-rect 388 618 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .trig_holdoff = false } }
+rect 388 618 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .trig_holdoff = false }
 text 397 622 { 225, 230, 240, 255 } "-"
 text 434 622 { 225, 230, 240, 255 } "0 ms"
-rect 486 618 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .trig_holdoff = true } }
+rect 486 618 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .trig_holdoff = true }
 text 495 622 { 225, 230, 240, 255 } "+"
 text 528 622 { 150, 160, 178, 255 } "overlaid"
-rect 600 618 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .overlay = 9 } }
+rect 600 618 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .overlay = 9 }
 text 609 622 { 225, 230, 240, 255 } "-"
 text 641 622 { 225, 230, 240, 255 } "10 sweeps"
-rect 728 618 26 24 { 38, 43, 54, 255 } -> .{ .panel = 0, .action = .{ .overlay = 11 } }
+rect 728 618 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .overlay = 11 }
 text 737 622 { 225, 230, 240, 255 } "+"
 rect 12 648 776 1 { 48, 52, 62, 255 }
 text 12 658 { 225, 230, 240, 255 } "AUX"
 text 44 658 { 150, 160, 178, 255 } "3 AUX channels"
-rect 722 654 58 24 { 38, 43, 54, 255 } -> .{ .panel = 1, .action = .{ .reset = void } }
+rect 722 654 58 24 { 38, 43, 54, 255 } -> panel 1 .{ .reset = void }
 text 731 658 { 225, 230, 240, 255 } "reset"
 text 12 686 { 150, 160, 178, 255 } "view"
 rect 76 682 66 24 { 52, 96, 170, 255 }
 text 85 686 { 225, 230, 240, 255 } "scroll"
-rect 148 682 58 24 { 38, 43, 54, 255 } -> .{ .panel = 1, .action = .{ .mode = .sweep } }
+rect 148 682 58 24 { 38, 43, 54, 255 } -> panel 1 .{ .mode = .sweep }
 text 157 686 { 225, 230, 240, 255 } "sweep"
-rect 212 682 90 24 { 38, 43, 54, 255 } -> .{ .panel = 1, .action = .{ .mode = .triggered } }
+rect 212 682 90 24 { 38, 43, 54, 255 } -> panel 1 .{ .mode = .triggered }
 text 221 686 { 225, 230, 240, 255 } "triggered"
 text 322 686 { 150, 160, 178, 255 } "time"
-rect 362 682 26 24 { 38, 43, 54, 255 } -> .{ .panel = 1, .action = .{ .zoom = 0.8 } }
+rect 362 682 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .zoom = 0.8 }
 text 371 686 { 225, 230, 240, 255 } "-"
 text 435 686 { 225, 230, 240, 255 } "2.00 s"
-rect 530 682 26 24 { 38, 43, 54, 255 } -> .{ .panel = 1, .action = .{ .zoom = 1.25 } }
+rect 530 682 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .zoom = 1.25 }
 text 539 686 { 225, 230, 240, 255 } "+"
 text 76 714 { 150, 160, 178, 255 } "scale"
-rect 124 710 26 24 { 38, 43, 54, 255 } -> .{ .panel = 1, .action = .{ .scale = 0.8 } }
+rect 124 710 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .scale = 0.8 }
 text 133 714 { 225, 230, 240, 255 } "-"
 text 171 714 { 225, 230, 240, 255 } "1.00 V/row"
-rect 272 710 26 24 { 38, 43, 54, 255 } -> .{ .panel = 1, .action = .{ .scale = 1.25 } }
+rect 272 710 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .scale = 1.25 }
 text 281 714 { 225, 230, 240, 255 } "+"
 rect 12 740 776 1 { 48, 52, 62, 255 }
 text 12 750 { 225, 230, 240, 255 } "ADC"
 text 44 750 { 150, 160, 178, 255 } "8 ADC channels"
-rect 722 746 58 24 { 38, 43, 54, 255 } -> .{ .panel = 2, .action = .{ .reset = void } }
+rect 722 746 58 24 { 38, 43, 54, 255 } -> panel 2 .{ .reset = void }
 text 731 750 { 225, 230, 240, 255 } "reset"
 text 12 778 { 150, 160, 178, 255 } "view"
 rect 76 774 66 24 { 52, 96, 170, 255 }
 text 85 778 { 225, 230, 240, 255 } "scroll"
-rect 148 774 58 24 { 38, 43, 54, 255 } -> .{ .panel = 2, .action = .{ .mode = .sweep } }
+rect 148 774 58 24 { 38, 43, 54, 255 } -> panel 2 .{ .mode = .sweep }
 text 157 778 { 225, 230, 240, 255 } "sweep"
-rect 212 774 90 24 { 38, 43, 54, 255 } -> .{ .panel = 2, .action = .{ .mode = .triggered } }
+rect 212 774 90 24 { 38, 43, 54, 255 } -> panel 2 .{ .mode = .triggered }
 text 221 778 { 225, 230, 240, 255 } "triggered"
 text 322 778 { 150, 160, 178, 255 } "time"
-rect 362 774 26 24 { 38, 43, 54, 255 } -> .{ .panel = 2, .action = .{ .zoom = 0.8 } }
+rect 362 774 26 24 { 38, 43, 54, 255 } -> panel 2 .{ .zoom = 0.8 }
 text 371 778 { 225, 230, 240, 255 } "-"
 text 435 778 { 225, 230, 240, 255 } "2.00 s"
-rect 530 774 26 24 { 38, 43, 54, 255 } -> .{ .panel = 2, .action = .{ .zoom = 1.25 } }
+rect 530 774 26 24 { 38, 43, 54, 255 } -> panel 2 .{ .zoom = 1.25 }
 text 539 778 { 225, 230, 240, 255 } "+"
 text 76 806 { 150, 160, 178, 255 } "scale"
-rect 124 802 26 24 { 38, 43, 54, 255 } -> .{ .panel = 2, .action = .{ .scale = 0.8 } }
+rect 124 802 26 24 { 38, 43, 54, 255 } -> panel 2 .{ .scale = 0.8 }
 text 133 806 { 225, 230, 240, 255 } "-"
 text 171 806 { 225, 230, 240, 255 } "250 mV/row"
-rect 272 802 26 24 { 38, 43, 54, 255 } -> .{ .panel = 2, .action = .{ .scale = 1.25 } }
+rect 272 802 26 24 { 38, 43, 54, 255 } -> panel 2 .{ .scale = 1.25 }
 text 281 806 { 225, 230, 240, 255 } "+"
 rect 12 832 776 1 { 48, 52, 62, 255 }
 text 12 842 { 225, 230, 240, 255 } "TTL"
 text 44 842 { 150, 160, 178, 255 } "8 TTL channels"
-rect 722 838 58 24 { 38, 43, 54, 255 } -> .{ .panel = 3, .action = .{ .reset = void } }
+rect 722 838 58 24 { 38, 43, 54, 255 } -> panel 3 .{ .reset = void }
 text 731 842 { 225, 230, 240, 255 } "reset"
 text 12 870 { 150, 160, 178, 255 } "view"
-rect 76 866 66 24 { 38, 43, 54, 255 } -> .{ .panel = 3, .action = .{ .mode = .scroll } }
+rect 76 866 66 24 { 38, 43, 54, 255 } -> panel 3 .{ .mode = .scroll }
 text 85 870 { 225, 230, 240, 255 } "scroll"
-rect 148 866 58 24 { 38, 43, 54, 255 } -> .{ .panel = 3, .action = .{ .mode = .sweep } }
+rect 148 866 58 24 { 38, 43, 54, 255 } -> panel 3 .{ .mode = .sweep }
 text 157 870 { 225, 230, 240, 255 } "sweep"
 rect 212 866 90 24 { 52, 96, 170, 255 }
 text 221 870 { 225, 230, 240, 255 } "triggered"
 text 322 870 { 150, 160, 178, 255 } "window"
-rect 378 866 26 24 { 38, 43, 54, 255 } -> .{ .panel = 3, .action = .{ .zoom = 0.8 } }
+rect 378 866 26 24 { 38, 43, 54, 255 } -> panel 3 .{ .zoom = 0.8 }
 text 387 870 { 225, 230, 240, 255 } "-"
 text 411 870 { 225, 230, 240, 255 } "-10.0 / +40.0 ms"
-rect 546 866 26 24 { 38, 43, 54, 255 } -> .{ .panel = 3, .action = .{ .zoom = 1.25 } }
+rect 546 866 26 24 { 38, 43, 54, 255 } -> panel 3 .{ .zoom = 1.25 }
 text 555 870 { 225, 230, 240, 255 } "+"
 text 12 898 { 150, 160, 178, 255 } "trigger"
-rect 76 894 26 24 { 38, 43, 54, 255 } -> .{ .panel = 3, .action = .{ .trig_line = 1 } }
+rect 76 894 26 24 { 38, 43, 54, 255 } -> panel 3 .{ .trig_line = 1 }
 text 85 898 { 225, 230, 240, 255 } "-"
 text 118 898 { 225, 230, 240, 255 } "TTL 2"
-rect 174 894 26 24 { 38, 43, 54, 255 } -> .{ .panel = 3, .action = .{ .trig_line = 3 } }
+rect 174 894 26 24 { 38, 43, 54, 255 } -> panel 3 .{ .trig_line = 3 }
 text 183 898 { 225, 230, 240, 255 } "+"
 text 216 898 { 150, 160, 178, 255 } "overlaid"
-rect 288 894 26 24 { 38, 43, 54, 255 } -> .{ .panel = 3, .action = .{ .overlay = 9 } }
+rect 288 894 26 24 { 38, 43, 54, 255 } -> panel 3 .{ .overlay = 9 }
 text 297 898 { 225, 230, 240, 255 } "-"
 text 329 898 { 225, 230, 240, 255 } "10 sweeps"
-rect 416 894 26 24 { 38, 43, 54, 255 } -> .{ .panel = 3, .action = .{ .overlay = 11 } }
+rect 416 894 26 24 { 38, 43, 54, 255 } -> panel 3 .{ .overlay = 11 }
 text 425 898 { 225, 230, 240, 255 } "+"
 rect 12 924 776 1 { 48, 52, 62, 255 }
 text 12 934 { 150, 160, 178, 255 } "On the display: wheel = scale, Ctrl+wheel = one row, Shift+wheel = time,"

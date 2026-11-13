@@ -304,37 +304,40 @@ pub fn main(init: std.process.Init) !u8 {
         var quit_answer: ?control.QuitAnswer = null;
         // What was clicked in the control window.
         while (shared.pop()) |e| {
-            if (e.action == .quit_answer) quit_answer = e.action.quit_answer;
-            if (e.action == .review) review.queue(e.action.review);
-            if (e.action == .save_view) {
-                if (view_file.save(io, views_path, &display.set)) |_| {
-                    board_ctl.status.setNote("view saved to {s}", .{views_path});
-                } else |err| board_ctl.status.setNote("could not save {s}: {t}", .{ views_path, err });
-            }
-            if (e.action == .note_preset) notes.stampPreset(e.action.note_preset, note_stamp, recording.sessionPath());
-            if (display.applyEdit(e)) quit = true;
             snap_dirty = true;
-            if (e.action == .board) board_ctl.edit(e.action.board, &acq, fs, recording.active(), io, gpa, config_path);
-            if (e.action == .record) {
-                if (e.action.record and !recording.active()) {
-                    // Review of an earlier recording ends where a new one begins.
-                    review.active = false;
-                    alarms.seen.gaps = 0;
-                    if (!recording.start(gpa, io, &ring, .{
-                        .layout = layout,
-                        .settings = source.settings(),
-                        .gateware = if (board) |b| b.fw else @splat(0),
-                        .board_id = if (board) |b| b.device_id else 0,
-                        .cable_delay = if (board) |b| b.cable_delay else @splat(0),
-                        .board_kind = if (board != null) "Open Ephys acquisition board (ECP5, FT600, ONI)" else "simulated",
-                        .session = true,
-                        .ttl_names = names: {
-                            var names: [8][]const u8 = undefined;
-                            for (&names, 1..) |*n, line| n.* = display.set.ttlName(line);
-                            break :names names;
-                        },
-                    }, &acq.events, nowNs())) alarms.recording_failed = true;
-                } else if (!e.action.record) recording.requestStop();
+            switch (e) {
+                .panel => |p| display.applyPanelEdit(p.index, p.action),
+                .audio => |a| display.applyAudio(a),
+                .board => |b| board_ctl.edit(b, &acq, fs, recording.active(), io, gpa, config_path),
+                .record => |on| {
+                    if (on and !recording.active()) {
+                        // Review of an earlier recording ends where a new one begins.
+                        review.active = false;
+                        alarms.seen.gaps = 0;
+                        if (!recording.start(gpa, io, &ring, .{
+                            .layout = layout,
+                            .settings = source.settings(),
+                            .gateware = if (board) |b| b.fw else @splat(0),
+                            .board_id = if (board) |b| b.device_id else 0,
+                            .cable_delay = if (board) |b| b.cable_delay else @splat(0),
+                            .board_kind = if (board != null) "Open Ephys acquisition board (ECP5, FT600, ONI)" else "simulated",
+                            .session = true,
+                            .ttl_names = names: {
+                                var names: [8][]const u8 = undefined;
+                                for (&names, 1..) |*n, line| n.* = display.set.ttlName(line);
+                                break :names names;
+                            },
+                        }, &acq.events, nowNs())) alarms.recording_failed = true;
+                    } else if (!on) recording.requestStop();
+                },
+                .review => |r| review.queue(r),
+                .note_preset => |n| notes.stampPreset(n, note_stamp, recording.sessionPath()),
+                .acknowledge => display.acknowledged = true,
+                .save_view => if (view_file.save(io, views_path, &display.set)) |_| {
+                    board_ctl.status.setNote("view saved to {s}", .{views_path});
+                } else |err| board_ctl.status.setNote("could not save {s}: {t}", .{ views_path, err }),
+                .quit_answer => |answer| quit_answer = answer,
+                .quit => quit = true,
             }
         }
         if (review.step(.{

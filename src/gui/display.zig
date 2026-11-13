@@ -280,30 +280,24 @@ pub const Display = struct {
         p.* = was.*;
     }
 
-    /// Applies an edit from the control window. True means quit.
-    pub fn applyEdit(self: *Display, edit: control.Edit) bool {
-        if (edit.action == .quit) return true;
-        if (edit.action == .acknowledge) {
-            self.acknowledged = true;
-            return false;
+    /// A change to the audio monitor's settings, from the control window.
+    pub fn applyAudio(self: *Display, action: control.AudioAction) void {
+        switch (action) {
+            .enabled => |on| self.audio.enabled = on,
+            .mute => |on| self.audio.mute = on,
+            .volume => |up| self.audio.volume_db = std.math.clamp(self.audio.volume_db + (if (up) @as(f64, 2) else -2), -60, 12),
+            .reference => |on| self.audio.reference = on,
+            .car => |on| self.audio_car = on,
+            .recalibrate => self.audio_recalibrate = true,
         }
-        if (edit.action == .audio) {
-            switch (edit.action.audio) {
-                .enabled => |on| self.audio.enabled = on,
-                .mute => |on| self.audio.mute = on,
-                .volume => |up| self.audio.volume_db = std.math.clamp(self.audio.volume_db + (if (up) @as(f64, 2) else -2), -60, 12),
-                .reference => |on| self.audio.reference = on,
-                .car => |on| self.audio_car = on,
-                .recalibrate => self.audio_recalibrate = true,
-            }
-            self.audio_dirty = true;
-            return false;
-        }
-        if (edit.action == .record or edit.action == .board or edit.action == .quit_answer or
-            edit.action == .note_preset or edit.action == .save_view or edit.action == .review or
-            edit.panel >= self.set.len) return false;
-        const p = &self.set.items[edit.panel];
-        switch (edit.action) {
+        self.audio_dirty = true;
+    }
+
+    /// A change to panel `index`, from the control window.
+    pub fn applyPanelEdit(self: *Display, index: usize, action: control.PanelAction) void {
+        if (index >= self.set.len) return;
+        const p = &self.set.items[index];
+        switch (action) {
             .scale => |f| p.scale *= f,
             .zoom => |f| if (p.mode == .triggered) {
                 p.pre_ms *= f;
@@ -345,11 +339,9 @@ pub const Display = struct {
                 up,
             ),
             .overlay => |n| p.overlay = n,
-            .reset => self.reset(edit.panel),
-            .quit, .record, .board, .quit_answer, .audio, .note_preset, .save_view, .review, .acknowledge => {},
+            .reset => self.reset(index),
         }
         p.clamp();
-        return false;
     }
 
     /// Applies what the user did to the target panel. True means quit.
