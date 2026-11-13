@@ -61,6 +61,11 @@ pub fn build(b: *std.Build) void {
     scanner.generate("wp_tearing_control_manager_v1", 1);
     scanner.addSystemProtocol("staging/content-type/content-type-v1.xml");
     scanner.generate("wp_content_type_manager_v1", 1);
+    // The pointer's shape (a hand over something that can be dragged). The protocol also
+    // names tablet tools, so the tablet protocol has to be known to the scanner.
+    scanner.addSystemProtocol("stable/tablet/tablet-v2.xml");
+    scanner.addSystemProtocol("staging/cursor-shape/cursor-shape-v1.xml");
+    scanner.generate("wp_cursor_shape_manager_v1", 1);
     const wayland = b.createModule(.{ .root_source_file = scanner.result });
 
     // Vulkan bindings are generated from the system's registry (vulkan-headers).

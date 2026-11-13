@@ -95,6 +95,9 @@ fn qwertyKey(code: u32) u32 {
     };
 }
 
+/// What the pointer looks like over a window.
+pub const Cursor = enum { default, grab, grabbing };
+
 /// What the user did since the last `takeInput`.
 pub const Input = struct {
     /// Wheel or two-finger scroll, in the compositor's axis units (a wheel click is about 15).
@@ -104,6 +107,8 @@ pub const Input = struct {
     pinch: f64 = 1,
     keys: [16]Key = undefined,
     num_keys: usize = 0,
+    /// The left mouse button is held down (for dragging).
+    left_down: bool = false,
     /// Presses of the left, right and middle mouse buttons.
     clicks: u32 = 0,
     right_clicks: u32 = 0,
@@ -161,6 +166,12 @@ pub const Window = struct {
     pinch: ?*zwp.PointerGesturePinchV1 = null,
     presentation: ?*wp.Presentation = null,
     tearing_manager: ?*wp.TearingControlManagerV1 = null,
+    /// The pointer's shape: the manager, this pointer's shape device, the serial of the
+    /// last enter (a shape may only be set for it), and the shape last set.
+    cursor_manager: ?*wp.CursorShapeManagerV1 = null,
+    cursor_device: ?*wp.CursorShapeDeviceV1 = null,
+    enter_serial: u32 = 0,
+    cursor: Cursor = .default,
     tearing: ?*wp.TearingControlV1 = null,
     content_type_manager: ?*wp.ContentTypeManagerV1 = null,
     /// Monitors, with their connector names (DP-1, ...).
@@ -362,6 +373,8 @@ pub const Window = struct {
                     self.content_type_manager = registry.bind(g.name, wp.ContentTypeManagerV1, 1) catch null;
                 } else if (std.mem.eql(u8, name, std.mem.span(wp.TearingControlManagerV1.interface.name))) {
                     self.tearing_manager = registry.bind(g.name, wp.TearingControlManagerV1, 1) catch null;
+                } else if (std.mem.eql(u8, name, std.mem.span(wp.CursorShapeManagerV1.interface.name))) {
+                    self.cursor_manager = registry.bind(g.name, wp.CursorShapeManagerV1, 1) catch null;
                 } else if (std.mem.eql(u8, name, std.mem.span(wl.Output.interface.name))) {
                     if (g.version >= 4 and self.num_outputs < self.outputs.len) {
                         const o = &self.outputs[self.num_outputs];
@@ -478,19 +491,49 @@ pub const Window = struct {
         }
     }
 
+    /// The pointer's shape over this window: the ordinary arrow, or a hand over something
+    /// that can be dragged. Does nothing where the compositor has no cursor-shape protocol.
+    pub fn setCursor(self: *Window, cursor: Cursor) void {
+        if (cursor == self.cursor) return;
+        self.cursor = cursor;
+        self.applyCursor();
+    }
+
+    fn applyCursor(self: *Window) void {
+        const manager = self.cursor_manager orelse return;
+        const pointer = self.pointer orelse return;
+        if (self.cursor_device == null) self.cursor_device = manager.getPointer(pointer) catch null;
+        const device = self.cursor_device orelse return;
+        device.setShape(self.enter_serial, switch (self.cursor) {
+            .default => .default,
+            .grab => .grab,
+            .grabbing => .grabbing,
+        });
+    }
+
     fn onPointer(_: *wl.Pointer, event: wl.Pointer.Event, self: *Window) void {
         switch (event) {
             .enter => |e| {
                 self.input.pointer_x = e.surface_x.toDouble();
                 self.input.pointer_y = e.surface_y.toDouble();
+                // A client must say what the pointer looks like over its surface, at
+                // every enter.
+                self.enter_serial = e.serial;
+                self.applyCursor();
             },
+            .leave => self.input.left_down = false,
             .motion => |m| {
                 self.input.pointer_x = m.surface_x.toDouble();
                 self.input.pointer_y = m.surface_y.toDouble();
             },
             // BTN_LEFT, BTN_RIGHT, BTN_MIDDLE.
-            .button => |b| if (b.state == .pressed) switch (b.button) {
-                0x110 => self.input.clicks += 1,
+            .button => |b| if (b.state == .released) {
+                if (b.button == 0x110) self.input.left_down = false;
+            } else switch (b.button) {
+                0x110 => {
+                    self.input.clicks += 1;
+                    self.input.left_down = true;
+                },
                 0x111 => self.input.right_clicks += 1,
                 0x112 => self.input.middle_clicks += 1,
                 else => {},
