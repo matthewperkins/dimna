@@ -205,7 +205,7 @@ pub const Alarms = struct {
     /// Writes the alarm and warning texts into `status`. `behind_s`: how far the recorder
     /// is behind acquisition, if recording. `acknowledged` is cleared when it was set.
     /// True if either text's presence changed.
-    pub fn update(self: *Alarms, status: *control.Status, now: Counts, behind_s: ?f64, acknowledged: *bool) bool {
+    pub fn update(self: *Alarms, status: *display_mod.Status, now: Counts, behind_s: ?f64, acknowledged: *bool) bool {
         if (acknowledged.*) {
             acknowledged.* = false;
             self.seen = now;

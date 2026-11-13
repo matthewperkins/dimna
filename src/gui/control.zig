@@ -19,33 +19,10 @@ const font = @import("font.zig");
 const ui_mod = @import("ui.zig");
 const theme = @import("theme.zig");
 const Env = @import("env.zig").Env;
+const Status = @import("display.zig").Status;
 const format = @import("format.zig");
 const Atomic = std.atomic.Value;
 const log = std.log.scoped(.control);
-
-/// What the display's corner read-out and the control window show; refreshed once a second.
-pub const Status = struct {
-    valid: bool = false,
-    latency_ms: f64 = 0,
-    fps: u64 = 0,
-    /// Blocks the display missed (the recording does not depend on these).
-    lost: u64 = 0,
-    recording: bool = false,
-    rec_seconds: f64 = 0,
-    /// Something is wrong with what is being acquired or recorded (text for a banner
-    /// across the display, until acknowledged), or a milder warning.
-    alarm_buf: [200]u8 = undefined,
-    alarm_len: usize = 0,
-    warning_buf: [120]u8 = undefined,
-    warning_len: usize = 0,
-
-    pub fn alarm(self: *const Status) []const u8 {
-        return self.alarm_buf[0..self.alarm_len];
-    }
-    pub fn warning(self: *const Status) []const u8 {
-        return self.warning_buf[0..self.warning_len];
-    }
-};
 
 /// The recording, as the control window shows it.
 pub const RecStatus = struct {

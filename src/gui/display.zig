@@ -11,7 +11,6 @@ const format = @import("format.zig");
 const fmtSpan = format.fmtSpan;
 const fmtScale = format.fmtScale;
 const control = @import("control.zig");
-const Status = control.Status;
 const notes_mod = @import("notes.zig");
 const tiles_mod = @import("tiles.zig");
 const Args = @import("args.zig").Args;
@@ -71,6 +70,31 @@ pub const Surface = struct {
             .hist_cap = gpu.hist_cap,
             .row_gains = gpu.row_gains,
         };
+    }
+};
+
+/// How the display is doing: what its corner read-out and the control window show,
+/// refreshed once a second, and the alarm or warning to put across it.
+pub const Status = struct {
+    valid: bool = false,
+    latency_ms: f64 = 0,
+    fps: u64 = 0,
+    /// Blocks the display missed (the recording does not depend on these).
+    lost: u64 = 0,
+    recording: bool = false,
+    rec_seconds: f64 = 0,
+    /// Something is wrong with what is being acquired or recorded (text for a banner
+    /// across the display, until acknowledged), or a milder warning.
+    alarm_buf: [200]u8 = undefined,
+    alarm_len: usize = 0,
+    warning_buf: [120]u8 = undefined,
+    warning_len: usize = 0,
+
+    pub fn alarm(self: *const Status) []const u8 {
+        return self.alarm_buf[0..self.alarm_len];
+    }
+    pub fn warning(self: *const Status) []const u8 {
+        return self.warning_buf[0..self.warning_len];
     }
 };
 
@@ -753,7 +777,9 @@ fn noteMarks(o: *Output, r: panels_mod.Rect, t: PanelTime, notes: *const notes_m
     var k: usize = 0;
     while (notes.recentNote(k)) |note| : (k += 1) {
         const at = note.sample;
-        if (at < pass_start - span_i) break;
+        // Not `break`: notes are kept in the order they were saved, and a typed note is
+        // stamped when it was begun, so an older one can come before a newer.
+        if (at < pass_start - span_i) continue;
         // This pass (or, scrolling, the window); else the previous pass, where
         // the cursor has not yet gone over it.
         const from: i64 = if (at >= pass_start)
@@ -844,13 +870,16 @@ fn panelTitle(o: *Output, p: *const Panel, r: panels_mod.Rect, in_review: bool, 
     var title_buf: [128]u8 = undefined;
     var band_buf: [48]u8 = undefined;
     var trig_buf: [48]u8 = undefined;
+    // A TTL panel has no scale to name.
+    var per_row_buf: [32]u8 = undefined;
+    const per_row = if (p.kind == .ttl) "" else format.fmt(&per_row_buf, "   {s}/row", .{fmtScale(&scale_buf, p.kind, p.scale)});
     const title = if (p.mode == .triggered)
-        format.fmt(&title_buf, "{s}   {s}   -{d:.1}/+{d:.1} ms   {s}/row{s}   {d} sweeps{s}", .{
+        format.fmt(&title_buf, "{s}   {s}   -{d:.1}/+{d:.1} ms{s}{s}   {d} sweeps{s}", .{
             p.name(),
             trigText(&trig_buf, p),
             p.trigger.pre_ms,
             p.trigger.post_ms,
-            fmtScale(&scale_buf, p.kind, p.scale),
+            per_row,
             fmtBand(&band_buf, p),
             shown_sweeps,
             if (shown_sweeps == 0) " (waiting for a trigger)" else "",
@@ -862,10 +891,10 @@ fn panelTitle(o: *Output, p: *const Panel, r: panels_mod.Rect, in_review: bool, 
             if (in_review) "   review" else if (p.mode == .sweep) "   sweep" else "",
         })
     else
-        format.fmt(&title_buf, "{s}   {s}   {s}/row{s}{s}", .{
+        format.fmt(&title_buf, "{s}   {s}{s}{s}{s}", .{
             p.name(),
             fmtSpan(&span_buf, p.span_s),
-            fmtScale(&scale_buf, p.kind, p.scale),
+            per_row,
             fmtBand(&band_buf, p),
             if (in_review) "   review" else if (p.mode == .sweep) "   sweep" else "",
         });
