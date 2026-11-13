@@ -168,7 +168,9 @@ pub fn main(init: std.process.Init) !u8 {
         .audio_shared = &audio_shared,
         .tiles_shared = &tiles_shared,
     };
-    pl.init() catch |e| return if (e == error.BadPanels) 2 else e;
+    // The detection thresholds: from the view file; the display keeps them from then on
+    // (and across a restart).
+    pl.init(oez.thresholds.Thresholds.read(args.views_doc)) catch |e| return if (e == error.BadPanels) 2 else e;
     // Stops acquisition, the audio monitor and the tiles, then frees the ring. It runs
     // after the recording below is closed, which reads the ring to its end.
     defer pl.deinit();
@@ -216,9 +218,9 @@ pub fn main(init: std.process.Init) !u8 {
     // However the loop ends, a recording in progress is closed properly.
     defer recording.deinit();
     var rec_published_ns: i128 = 0;
-    // What "Save view" saves: the panels and the tile window's view. (Pointers that stay
-    // valid; what they point to changes.)
-    const view: session.ViewFile.View = .{ .set = &display.set, .tiles = &tile_view, .layout = layout };
+    // What "Save view" saves: the panels, the tile window's view and the thresholds.
+    // (Pointers that stay valid; what they point to changes.)
+    const view: session.ViewFile.View = .{ .set = &display.set, .tiles = &tile_view, .thresholds = &display.thresholds, .layout = layout };
     var view_file = try session.ViewFile.init(gpa, view);
     defer view_file.deinit(gpa);
     var review: session.ReviewSession = .{};

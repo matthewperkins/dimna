@@ -58,12 +58,13 @@ pub const Pipeline = struct {
     audio_dev: ?*audio_out.AudioOut = null,
     tiles_win: ?*tiles_mod.Tiles = null,
 
-    /// Puts the pipeline together for the source as it is configured now. Starts nothing.
-    /// `error.BadPanels`: the config's panels do not fit the source (already reported).
-    pub fn init(self: *Pipeline) !void {
+    /// Puts the pipeline together for the source as it is configured now, the display with
+    /// `thresholds`. Starts nothing. `error.BadPanels`: the config's panels do not fit the
+    /// source (already reported).
+    pub fn init(self: *Pipeline, thresholds: oez.thresholds.Thresholds) !void {
         var audio: oez.audio.Settings = .{};
         audio.volume_db = self.args.volume_db;
-        try self.assemble(null, audio, true);
+        try self.assemble(null, audio, thresholds, true);
     }
 
     /// Stops the threads and frees everything.
@@ -122,9 +123,10 @@ pub const Pipeline = struct {
         };
         // The panels again from the config (their sources may have moved), keeping what
         // was set by hand where the panels still correspond. Channel numbers mean
-        // something else now, so the sound goes back to the first channel.
+        // something else now, so the sound goes back to the first channel. The thresholds
+        // are kept as they are, channel by channel (as the tile window's view is).
         const old_set = self.display.set;
-        try self.assemble(&old_set, self.display.audio, false);
+        try self.assemble(&old_set, self.display.audio, self.display.thresholds, false);
         log.info("restarted: {d} channels ({d} electrode) at {d} Hz", .{ self.nch, self.layout.num_electrodes, self.fs });
         try self.run();
         return refused;
@@ -134,7 +136,14 @@ pub const Pipeline = struct {
     /// `carry`: the panels as they were, whose hand-set values are kept where the new
     /// panels correspond. `strict`: panels that do not fit the source are an error
     /// (start-up); otherwise the default panels take their place (a restart must go on).
-    fn assemble(self: *Pipeline, carry: ?*const oez.panels.Set, audio: oez.audio.Settings, strict: bool) !void {
+    /// `thresholds`: the detection thresholds the new display starts with.
+    fn assemble(
+        self: *Pipeline,
+        carry: ?*const oez.panels.Set,
+        audio: oez.audio.Settings,
+        thresholds: oez.thresholds.Thresholds,
+        strict: bool,
+    ) !void {
         const gpa = self.gpa;
         const layout = self.source.layout();
         const nch = layout.numChannels();
@@ -183,6 +192,7 @@ pub const Pipeline = struct {
         self.assembled = true;
 
         self.display.audio = audio;
+        self.display.thresholds = thresholds;
         self.display.listenToFirst();
         self.audio_shared.publish(&self.display.audio);
         self.tiles_shared.publish(&self.display.tileConfig());

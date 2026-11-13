@@ -2170,6 +2170,40 @@ test "a trigger channel's threshold that changes sides starts the slope trigger 
     try testing.expect(d.slopes[0].?.seen < 1000);
 }
 
+test "the thresholds are saved with the view; a change of them is something to save" {
+    const session = @import("session.zig");
+    const files = @import("files.zig");
+    const gpa = testing.allocator;
+    var d = clickDisplay(0);
+    const tiles: oez.tile_view.TileView = .{};
+    const layout = frameLayout();
+    const view: session.ViewFile.View = .{ .set = &d.set, .tiles = &tiles, .thresholds = &d.thresholds, .layout = &layout };
+    var view_file = try session.ViewFile.init(gpa, view);
+    defer view_file.deinit(gpa);
+    try testing.expect(!view_file.unsaved(view));
+    d.applyThreshold(.{ .sigmas = true });
+    try testing.expect(view_file.unsaved(view));
+    d.applyThreshold(.{ .sigmas = false });
+    try testing.expect(!view_file.unsaved(view));
+    d.setThreshold(3, -61.25);
+    d.setThreshold(47, 120);
+    try testing.expect(view_file.unsaved(view));
+    // What is written: the [thresholds] table for the 48 electrodes, which reads back the
+    // same, after the panels' views (which read as they did).
+    const buf = try gpa.alloc(u8, 96 * 1024);
+    defer gpa.free(buf);
+    const text = files.renderViews(buf, &d.set, &tiles, &d.thresholds, layout.num_electrodes).?;
+    try testing.expect(std.mem.indexOf(u8, text, "\n[thresholds]\nsigmas = 4.5\nfixed_uv = [0, 0, 0, -61.25, 0,") != null);
+    var arena_state: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_state.deinit();
+    const doc = try oez.toml.parse(arena_state.allocator(), text, null);
+    try testing.expect(oez.thresholds.Thresholds.read(doc).eql(&d.thresholds));
+    var set = d.set;
+    var diag: panels_mod.Diagnostics = .{};
+    try testing.expectEqual(2, try panels_mod.applyViews(&set, doc, &diag));
+    try testing.expect(!diag.retired);
+}
+
 test "Shift+a acknowledges an alarm, a alone does not" {
     var d = clickDisplay(0);
     var in: Input = .{};

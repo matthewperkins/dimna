@@ -247,15 +247,18 @@ pub const ViewFile = struct {
     saved: []u8,
     saved_len: usize = 0,
 
-    /// What is saved: the panels' settings and the tile window's view.
+    /// What is saved: the panels' settings, the tile window's view and the detection
+    /// thresholds.
     pub const View = struct {
         set: *const panels_mod.Set,
         tiles: *const oez.tile_view.TileView,
-        /// For how many electrodes there are (a tile each); it changes at a restart.
+        thresholds: *const oez.thresholds.Thresholds,
+        /// For how many electrodes there are (a tile and a threshold each); it changes at a
+        /// restart.
         layout: *const oez.types.Layout,
 
         fn render(self: View, buf: []u8) ?[]const u8 {
-            return files.renderViews(buf, self.set, self.tiles, self.layout.num_electrodes);
+            return files.renderViews(buf, self.set, self.tiles, self.thresholds, self.layout.num_electrodes);
         }
     };
 
