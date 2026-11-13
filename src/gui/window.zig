@@ -532,7 +532,7 @@ pub const Window = struct {
                     }
                 }
                 if (k.state == .pressed and sym != 0 and self.input.num_keys < self.input.keys.len) {
-                    self.input.keys[self.input.num_keys] = @enumFromInt(sym);
+                    self.input.keys[self.input.num_keys] = @fromBackingInt(@intCast(sym));
                     self.input.num_keys += 1;
                 }
             },

@@ -398,8 +398,8 @@ pub const Display = struct {
                 } else p.setTrigSource(.ttl);
             },
             .t => p.mode = if (p.mode == .triggered) .scroll else .triggered,
-            else => if (p.mode == .triggered and p.trig_source == .ttl and @intFromEnum(k) >= '1' and @intFromEnum(k) <= '8') {
-                p.trig_line = @intCast(@intFromEnum(k) - '0');
+            else => if (p.mode == .triggered and p.trig_source == .ttl and @backingInt(k) >= '1' and @backingInt(k) <= '8') {
+                p.trig_line = @intCast(@backingInt(k) - '0');
             },
         };
         // A click on an electrode row listens to it (Ctrl: adds or removes it).
@@ -581,8 +581,7 @@ pub const Display = struct {
             var trig_buf: [48]u8 = undefined;
             const title = if (p.mode == .triggered)
                 std.fmt.bufPrint(&title_buf, "{s}   {s}   -{d:.1}/+{d:.1} ms   {s}/row{s}   {d} sweeps{s}", .{ p.name(), trigText(&trig_buf, p), p.pre_ms, p.post_ms, fmtScale(&scale_buf, p), fmtBand(&band_buf, p), shown_sweeps, if (shown_sweeps == 0) " (waiting for a trigger)" else "" }) catch ""
-            else
-if (p.kind == .ttl)
+            else if (p.kind == .ttl)
                 std.fmt.bufPrint(&title_buf, "{s}   {s}{s}", .{ p.name(), fmtSpan(&span_buf, p.span_s), if (in_review) "   review" else if (p.mode == .sweep) "   sweep" else "" }) catch ""
             else
                 std.fmt.bufPrint(&title_buf, "{s}   {s}   {s}/row{s}{s}", .{ p.name(), fmtSpan(&span_buf, p.span_s), fmtScale(&scale_buf, p), fmtBand(&band_buf, p), if (in_review) "   review" else if (p.mode == .sweep) "   sweep" else "" }) catch "";

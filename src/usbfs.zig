@@ -256,7 +256,7 @@ pub const Device = struct {
         }
         const actual: usize = @intCast(@max(urb.actual_length, 0));
         if (urb.status == 0) return .{ .actual = actual, .timed_out = false };
-        const e: linux.E = @enumFromInt(-urb.status);
+        const e: linux.E = @fromBackingInt(@intCast(-urb.status));
         return switch (e) {
             // Cancelled by us (ENOENT), or the kernel's own unlink code (ECONNRESET).
             .NOENT, .CONNRESET => .{ .actual = actual, .timed_out = true },

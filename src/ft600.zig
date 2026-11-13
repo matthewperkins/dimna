@@ -63,10 +63,10 @@ pub const Channel = enum(u1) {
     control = 1,
 
     pub fn in(self: Channel) u8 {
-        return 0x82 + @as(u8, @intFromEnum(self));
+        return 0x82 + @as(u8, @backingInt(self));
     }
     pub fn out(self: Channel) u8 {
-        return 0x02 + @as(u8, @intFromEnum(self));
+        return 0x02 + @as(u8, @backingInt(self));
     }
 };
 
@@ -219,7 +219,7 @@ pub const Ft600 = struct {
     /// transfer (its FIFO ran empty), so often fewer. Zero means nothing arrived within
     /// `timeout_ms`; the announcement then stays pending and the next call continues it.
     pub fn read(self: *Ft600, ch: Channel, buf: []u8, timeout_ms: i32) Error!usize {
-        const i = @intFromEnum(ch);
+        const i = @backingInt(ch);
         if (self.outstanding[i] == 0) {
             try self.command(ch.in(), cmd_transfer, @intCast(buf.len));
             self.outstanding[i] = buf.len;

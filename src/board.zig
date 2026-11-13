@@ -313,13 +313,13 @@ pub const Board = struct {
         try self.setCableDelay(port, d + 1);
     }
     fn uploadCommandList(self: *Board, list: []const i32, slot: AuxSlot, bank: u32) Error!void {
-        const base = 0x4000 + (bank << 10) + (@intFromEnum(slot) << 14);
+        const base = 0x4000 + (bank << 10) + (@backingInt(slot) << 14);
         for (list, 0..) |cmd, i| try self.ctx.writeReg(device_rhythm, base + @as(u32, @intCast(i)), @bitCast(cmd));
     }
     /// Uploads an AuxCmd3 list, writing only the entries that differ from what the bank is
     /// known to hold (all of them if unknown).
     fn uploadCmd3(self: *Board, list: *const registers.CommandList, bank: u32) Error!usize {
-        const base = 0x4000 + (bank << 10) + (@intFromEnum(AuxSlot.cmd3) << 14);
+        const base = 0x4000 + (bank << 10) + (@backingInt(AuxSlot.cmd3) << 14);
         const known = if (self.cmd3_banks[bank]) |*k| (if (k.len == list.len) k else null) else null;
         // A failed write leaves the bank partly updated: forget what it holds.
         errdefer self.cmd3_banks[bank] = null;
@@ -336,14 +336,14 @@ pub const Board = struct {
     }
     fn selectAuxBank(self: *Board, port: usize, slot: AuxSlot, bank: u32) Error!void {
         const sh: u5 = @intCast(4 * port);
-        try self.rw(reg.auxcmd_bank_1 + @intFromEnum(slot), bank << sh, @as(u32, 0xf) << sh);
+        try self.rw(reg.auxcmd_bank_1 + @backingInt(slot), bank << sh, @as(u32, 0xf) << sh);
     }
     fn selectAuxBankAll(self: *Board, slot: AuxSlot, bank: u32) Error!void {
         for (0..4) |p| try self.selectAuxBank(p, slot, bank);
     }
     fn selectAuxLength(self: *Board, slot: AuxSlot, loop_idx: u32, end_idx: u32) Error!void {
-        try self.ctx.writeReg(device_rhythm, reg.loop_auxcmd_index_1 + @intFromEnum(slot), loop_idx);
-        try self.ctx.writeReg(device_rhythm, reg.max_auxcmd_index_1 + @intFromEnum(slot), end_idx);
+        try self.ctx.writeReg(device_rhythm, reg.loop_auxcmd_index_1 + @backingInt(slot), loop_idx);
+        try self.ctx.writeReg(device_rhythm, reg.max_auxcmd_index_1 + @backingInt(slot), end_idx);
     }
     fn setDspSettle(self: *Board, on: bool) Error!void {
         try self.rw(reg.mode, @as(u32, @intFromBool(on)) << mode_dsp_settle, 1 << mode_dsp_settle);
@@ -614,7 +614,7 @@ pub const Board = struct {
     /// All four ports to the normal or fast-settle bank of the current pair, in one write.
     fn selectRegBank(self: *Board, fast: bool) Error!void {
         const b = self.reg_banks[@intFromBool(fast)];
-        try self.rw(reg.auxcmd_bank_1 + @intFromEnum(AuxSlot.cmd3), b * 0x1111, 0xffff);
+        try self.rw(reg.auxcmd_bank_1 + @backingInt(AuxSlot.cmd3), b * 0x1111, 0xffff);
     }
 
     /// Run `n` frames of the (already started) SPI sequence and collect the aux words.

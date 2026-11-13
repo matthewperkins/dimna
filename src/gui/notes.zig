@@ -140,7 +140,7 @@ pub const Notes = struct {
         // Not editing: /, ` and the digits that have a preset are ours.
         var kept: usize = 0;
         for (in.keys[0..in.num_keys]) |k| {
-            const code = @intFromEnum(k);
+            const code = @backingInt(k);
             if (k == .slash) {
                 self.editing = true;
                 self.draft = .{ .sample = now_sample };

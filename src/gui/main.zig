@@ -615,9 +615,9 @@ pub fn main(init: std.process.Init) !u8 {
             const r = pacer.second();
             const tp = &display.set.items[display.target];
             log.info("t={d:.0}s {d} fps, latency ms avg {d:.1} min {d:.1} max {d:.1}, at the refresh aimed at {d}, a refresh later {d}, recovery skips {d}, margin {d:.1} ms, refresh {d:.2} ms, display lost {d} blocks, ring overflow {d}, panel {d} span {d:.2} s scale {d:.1}, {d}x{d}", .{
-                secs,        r.frames,                           r.avg_ms,           r.min_ms,  r.max_ms,
-                r.on_time,   r.late,                             r.skips,            r.margin_ms, r.refresh_ms,
-                reader.lost, acq.ring_overflow.load(.monotonic), display.target + 1, tp.span_s, tp.scale,
+                secs,             r.frames,                           r.avg_ms,           r.min_ms,    r.max_ms,
+                r.on_time,        r.late,                             r.skips,            r.margin_ms, r.refresh_ms,
+                reader.lost,      acq.ring_overflow.load(.monotonic), display.target + 1, tp.span_s,   tp.scale,
                 gpu.extent.width, gpu.extent.height,
             });
             status.valid = r.valid;

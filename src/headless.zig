@@ -322,13 +322,13 @@ pub fn main(init: std.process.Init) !u8 {
             age_sum = 0;
             age_n = 0;
             std.debug.print("t={d:>4}s samples={d} (+{d}) dropped={d} gaps={d} bad={d} rderr={d} hwbuf={d:.1}% (peak {d:.1}) ring={d}/{d} overflow={d} gapblk={d} tstep={d}..{d} lat avg {d:.2} max {d:.2} ms, delivery +{d:.2} avg +{d:.2} max ms\n", .{
-                @as(u64, @intCast(next_tick)),                                                             s,                                       s - last_samples,
-                health.dropped_samples.load(.monotonic),                               health.discontinuities.load(.monotonic), health.bad_frames.load(.monotonic),
-                health.read_errors.load(.monotonic),                                   pct(health.hw_buffer_milli_pct.load(.monotonic)), pct(health.hw_buffer_peak_milli_pct.load(.monotonic)),
-                ring_peak,                                                             ring.capacity(),                         acq.ring_overflow.load(.monotonic),
-                gap_blocks,                                                            if (tstep_max == 0) 0 else tstep_min,    tstep_max,
-                lat_avg_ms,                                                            @as(f64, @floatFromInt(lat_max_ns)) / 1e6,
-                d_avg,                                                                 d_max,
+                @as(u64, @intCast(next_tick)),           s,                                                s - last_samples,
+                health.dropped_samples.load(.monotonic), health.discontinuities.load(.monotonic),          health.bad_frames.load(.monotonic),
+                health.read_errors.load(.monotonic),     pct(health.hw_buffer_milli_pct.load(.monotonic)), pct(health.hw_buffer_peak_milli_pct.load(.monotonic)),
+                ring_peak,                               ring.capacity(),                                  acq.ring_overflow.load(.monotonic),
+                gap_blocks,                              if (tstep_max == 0) 0 else tstep_min,             tstep_max,
+                lat_avg_ms,                              @as(f64, @floatFromInt(lat_max_ns)) / 1e6,        d_avg,
+                d_max,
             });
             last_samples = s;
             ring_peak = 0;
@@ -384,8 +384,8 @@ pub fn main(init: std.process.Init) !u8 {
     // Rate over the acquisition window (the drain after stopping adds at most a few blocks).
     const secs = @as(f64, @floatFromInt(run_ms)) / 1000.0;
     std.debug.print("\nsummary: {d:.1} s, {d} samples in {d} blocks ({d:.1} samples/s), dropped={d} gaps={d} bad={d} overflow={d} gapblk={d} tstep={d}..{d}, realtime={}, hwbuf peak {d:.1}%\n", .{
-        secs,     consumed_samples, blocks,     @as(f64, @floatFromInt(consumed_samples)) / secs, dropped,                                              gaps, bad, overflow,
-        gap_blocks, if (tstep_max == 0) 0 else tstep_min, tstep_max, acq.realtime.load(.acquire), pct(health.hw_buffer_peak_milli_pct.load(.monotonic)),
+        secs,       consumed_samples,                     blocks,    @as(f64, @floatFromInt(consumed_samples)) / secs, dropped,                                               gaps, bad, overflow,
+        gap_blocks, if (tstep_max == 0) 0 else tstep_min, tstep_max, acq.realtime.load(.acquire),                      pct(health.hw_buffer_peak_milli_pct.load(.monotonic)),
     });
     if (delay_ticks > 0) std.debug.print("delivery delay of a block's newest sample, beyond the quickest in each second: avg {d:.2} ms, worst {d:.2} ms\n", .{ delay_avg_sum / delay_ticks, delay_max });
     if (failed) {
