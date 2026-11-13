@@ -154,7 +154,9 @@ pub fn replaceTable(gpa: std.mem.Allocator, text: []const u8, table: []const u8)
 /// Lines of text saying what changed, kept as plain data (it is copied between threads).
 pub const Diff = struct {
     pub const max_lines = 12;
-    pub const max_len = 64;
+    /// Long enough for the longest line there is: half_channels with every port on both
+    /// sides, 17 + 2 x 30 + 7 bytes (a test checks).
+    pub const max_len = 96;
 
     bufs: [max_lines][max_len]u8 = undefined,
     lens: [max_lines]usize = @splat(0),
@@ -345,4 +347,18 @@ test "diff lists what changed; steps walk the offered values" {
     try testing.expectApproxEqAbs(1.166, stepDsp(30000, 0.5, true), 0.01);
     try testing.expectApproxEqAbs(0.291, stepDsp(30000, 0.5, false), 0.01);
     try testing.expectApproxEqAbs(3310.0, stepDsp(30000, 3310, true), 5.0);
+}
+
+test "the longest change there is still shows as a change" {
+    // All eight headstages in 16-channel mode but one, then all eight: the line names
+    // fifteen ports. A line that did not fit used to be dropped, so this change did not
+    // count as one: quitting did not ask, and saving saved nothing.
+    var old: Settings = .{};
+    var new: Settings = .{};
+    for (&old.rhd2132_16ch, 0..) |*h, i| h.* = i != 7;
+    for (&new.rhd2132_16ch) |*h| h.* = true;
+    const d = diff(&old, &new);
+    try testing.expectEqual(1, d.count);
+    try testing.expect(std.mem.indexOf(u8, d.line(0), "D2") != null);
+    try testing.expect(d.line(0).len > 64 and d.line(0).len < Diff.max_len);
 }
