@@ -226,9 +226,9 @@ const Display = struct {
             // another hidden row, the second panel's reference off and on.
             if (self.seen % 300 == 0) {
                 const a = &set.items[0];
-                a.band_low_hz = if (a.band_low_hz == 300) 600 else 300;
-                a.car_ref.set(6, !a.car_ref.has(6));
-                a.hidden.set(11, !a.hidden.has(11));
+                a.filter.low_hz = if (a.filter.low_hz == 300) 600 else 300;
+                a.reference.ref.set(6, !a.reference.ref.has(6));
+                a.per_row.hidden.set(11, !a.per_row.hidden.has(11));
                 set.items[1].setCar(!set.items[1].carActive());
                 if (try feed.sync(gpa, &set, 8192, hist, hist_cap)) self.syncs += 1;
             }

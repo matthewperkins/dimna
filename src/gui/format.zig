@@ -2,7 +2,7 @@
 //! labels are formatted.
 
 const std = @import("std");
-const Panel = @import("oez").panels.Panel;
+const Kind = @import("oez").panels.Kind;
 
 /// Formats into `buf`. Text that does not fit is cut, at a character boundary (it never
 /// ends inside a UTF-8 character); there is no error to handle. For labels, where a cut
@@ -31,15 +31,14 @@ pub fn fmtSpan(buf: []u8, s: f64) []const u8 {
     return if (s < 0.9995) fmt(buf, "{d:.0} ms", .{s * 1000}) else fmt(buf, "{d:.2} s", .{s});
 }
 
-/// A panel's scale per row with a unit that keeps the number readable: "400 µV", "1.50 mV",
-/// "250 mV", "5.00 V".
-pub fn fmtScale(buf: []u8, p: *const Panel) []const u8 {
-    const v = p.scale;
-    if (p.kind == .ttl) return "";
-    return if (p.kind == .electrode)
-        (if (v < 999.5) fmt(buf, "{d:.0} µV", .{v}) else fmt(buf, "{d:.2} mV", .{v / 1000}))
-    else
-        (if (v < 0.9995) fmt(buf, "{d:.0} mV", .{v * 1000}) else fmt(buf, "{d:.2} V", .{v}));
+/// A scale per row with a unit that keeps the number readable: "400 µV", "1.50 mV",
+/// "250 mV", "5.00 V". `v` is in the kind's unit: µV for electrodes, V for aux and adc.
+pub fn fmtScale(buf: []u8, kind: Kind, v: f64) []const u8 {
+    return switch (kind) {
+        .ttl => "",
+        .electrode => if (v < 999.5) fmt(buf, "{d:.0} µV", .{v}) else fmt(buf, "{d:.2} mV", .{v / 1000}),
+        .aux, .adc => if (v < 0.9995) fmt(buf, "{d:.0} mV", .{v * 1000}) else fmt(buf, "{d:.2} V", .{v}),
+    };
 }
 
 const testing = std.testing;
@@ -79,4 +78,13 @@ test "fmt: a cut never leaves an incomplete character, whatever the buffer's siz
         // Nothing more is cut than the character that did not fit.
         try testing.expect(got.len + 3 >= n);
     }
+}
+
+test "fmtScale picks the unit that keeps the number readable" {
+    var buf: [24]u8 = undefined;
+    try testing.expectEqualStrings("400 µV", fmtScale(&buf, .electrode, 400));
+    try testing.expectEqualStrings("1.50 mV", fmtScale(&buf, .electrode, 1500));
+    try testing.expectEqualStrings("250 mV", fmtScale(&buf, .adc, 0.25));
+    try testing.expectEqualStrings("5.00 V", fmtScale(&buf, .aux, 5));
+    try testing.expectEqualStrings("", fmtScale(&buf, .ttl, 1));
 }

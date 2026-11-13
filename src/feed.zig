@@ -50,13 +50,13 @@ const Config = struct {
         var band_rows: panels.RowSet = .{};
         for (0..@min(p.rows, panels.max_rows)) |r| band_rows.set(r, p.rowFiltered(r));
         return .{
-            .low_hz = p.band_low_hz,
-            .high_hz = p.band_high_hz,
+            .low_hz = p.filter.low_hz,
+            .high_hz = p.filter.high_hz,
             .band_rows = band_rows,
-            .hidden = p.hidden,
+            .hidden = p.per_row.hidden,
             .car = car,
-            .ref = if (car) p.car_ref else .{},
-            .sub = if (car) p.car_sub else .{},
+            .ref = if (car) p.reference.ref else .{},
+            .sub = if (car) p.reference.sub else .{},
         };
     }
 
@@ -313,9 +313,9 @@ test "rows carry raw channels and each electrode panel's filtered copy; refilter
     layout.num_electrodes = 2;
     layout.num_adc = 1;
     var set = panels.default(&layout, .scroll);
-    set.items[0].filtered = true;
-    set.items[0].band_low_hz = 300;
-    set.items[0].band_high_hz = 6000;
+    set.items[0].filter.on = true;
+    set.items[0].filter.low_hz = 300;
+    set.items[0].filter.high_hz = 6000;
     var feed = try Feed.init(gpa, &layout, &set, 4096, 256);
     defer feed.deinit(gpa);
     try testing.expectEqual(3, feed.nch);
@@ -364,8 +364,8 @@ test "rows carry raw channels and each electrode panel's filtered copy; refilter
 
     // New corners (a 0–100 Hz low-pass): the past is filtered again, so now the slow sine
     // passes and the fast one is gone, and the offset stays.
-    set.items[0].band_low_hz = 0;
-    set.items[0].band_high_hz = 100;
+    set.items[0].filter.low_hz = 0;
+    set.items[0].filter.high_hz = 100;
     try testing.expect(try feed.sync(gpa, &set, 2000, hist, cap));
     try testing.expect(!try feed.sync(gpa, &set, 2000, hist, cap));
     const slow = Peak.of(hist, feed.width, 4, newest - 1000, newest);
@@ -398,11 +398,11 @@ test "rows takes blocks up to max_block, also after sync and restart; a longer o
     layout.num_electrodes = 4;
     var set = panels.default(&layout, .scroll);
     const p = &set.items[0];
-    p.filtered = true;
-    p.car = true;
+    p.filter.on = true;
+    p.reference.on = true;
     for (0..4) |r| {
-        p.car_ref.set(r, true);
-        p.car_sub.set(r, true);
+        p.reference.ref.set(r, true);
+        p.reference.sub.set(r, true);
     }
     const max_block = 300;
     // Less raw history than one refilter of `recent` below would want, more than a block.
@@ -429,7 +429,7 @@ test "rows takes blocks up to max_block, also after sync and restart; a longer o
     try testing.expectEqual(n, feed.newest);
 
     // A sync that refilters 2048 samples (more than `max_block`), then full blocks again.
-    p.band_low_hz = 600;
+    p.filter.low_hz = 600;
     try testing.expect(try feed.sync(gpa, &set, 4000, hist, cap));
     try testing.expect(feed.mean_buf.len >= 2048);
     for (0..3) |_| {
@@ -454,9 +454,9 @@ test "common average reference: the shared part goes, each channel's own stays" 
     var set = panels.default(&layout, .scroll);
     const p = &set.items[0];
     // Unfiltered, reference = rows 1 to 3, subtracted from rows 1, 2 and 4.
-    p.car = true;
-    for ([_]usize{ 0, 1, 2 }) |r| p.car_ref.set(r, true);
-    for ([_]usize{ 0, 1, 3 }) |r| p.car_sub.set(r, true);
+    p.reference.on = true;
+    for ([_]usize{ 0, 1, 2 }) |r| p.reference.ref.set(r, true);
+    for ([_]usize{ 0, 1, 3 }) |r| p.reference.sub.set(r, true);
     var feed = try Feed.init(gpa, &layout, &set, 2048, 256);
     defer feed.deinit(gpa);
     try testing.expectEqual(4, p.slot);
@@ -494,7 +494,7 @@ test "common average reference: the shared part goes, each channel's own stays" 
     }
     // Taking row 3 out of the reference changes the past too: the mean is then the wave
     // + 150.
-    p.car_ref.set(2, false);
+    p.reference.ref.set(2, false);
     try testing.expect(try feed.sync(gpa, &set, 1024, hist, cap));
     k = 100;
     while (k < 1024) : (k += 97) {
@@ -518,9 +518,9 @@ test "one panel: some rows filtered, some as they are, some hidden" {
     var set = panels.default(&layout, .scroll);
     const p = &set.items[0];
     // Rows 1 and 2 through 300 Hz to 6 kHz, row 3 hidden, row 4 as it is.
-    p.filtered = true;
-    p.raw_rows.set(3, true);
-    p.hidden.set(2, true);
+    p.filter.on = true;
+    p.per_row.raw.set(3, true);
+    p.per_row.hidden.set(2, true);
     var feed = try Feed.init(gpa, &layout, &set, 4096, 256);
     defer feed.deinit(gpa);
     try testing.expectEqual(3, p.shownRows());
@@ -554,8 +554,8 @@ test "one panel: some rows filtered, some as they are, some hidden" {
     }
     // Showing row 3 again and taking row 1 out of the filter redoes the past: now four
     // columns, row 1 as acquired, row 2 filtered, row 3 filtered, row 4 as acquired.
-    p.hidden.set(2, false);
-    p.raw_rows.set(0, true);
+    p.per_row.hidden.set(2, false);
+    p.per_row.raw.set(0, true);
     try testing.expect(try feed.sync(gpa, &set, 3000, hist, cap));
     k = 1500;
     while (k < 3072) : (k += 131) {

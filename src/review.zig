@@ -277,8 +277,8 @@ test "review reads a recording back through the feed, in pieces, in any order" {
     layout.num_electrodes = 2;
     var set = panels.default(&layout, .scroll);
     // Row 1 as acquired, row 2 through 300 Hz to 6 kHz; and a lane for TTL line 2.
-    set.items[0].filtered = true;
-    set.items[0].raw_rows.set(0, true);
+    set.items[0].filter.on = true;
+    set.items[0].per_row.raw.set(0, true);
     set.items[1] = set.items[0];
     set.items[1].kind = .ttl;
     set.items[1].rows = 1;
@@ -370,7 +370,7 @@ test "review reads a recording back through the feed, in pieces, in any order" {
     try testing.expectEqual(end, rv.hi);
     try testing.expectEqual(@as(i16, @intCast(@mod(end - 1, 30000))), at(ring, width, end - 1, 0));
     // A change of the panels' filters drops what is held.
-    set.items[0].raw_rows.set(1, true);
+    set.items[0].per_row.raw.set(1, true);
     try rv.follow(&set);
     try testing.expect(!rv.holds(end - 3000, end, end));
     try testing.expect(try rv.fill(end - 3000, end, end, 100000));

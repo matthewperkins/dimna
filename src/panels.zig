@@ -89,14 +89,66 @@ pub const TrigSource = enum { ttl, channel };
 
 pub const Rect = struct { x: u32, y: u32, w: u32, h: u32 };
 
+/// Where a panel is: position and size as fractions of the display.
+pub const Place = struct { x: f64, y: f64, w: f64, h: f64 };
+
+/// Triggered mode: what starts a sweep, and what is shown around it.
+pub const Trigger = struct {
+    source: TrigSource = .ttl,
+    /// The TTL input line (1-based).
+    line: u8 = 2,
+    /// Slope trigger: the panel row it listens to, the slope, whether the level follows
+    /// the noise or is fixed (µV), and the holdoff after each trigger.
+    row: u32 = 0,
+    rising: bool = false,
+    auto: bool = true,
+    level_uv: f64 = -50,
+    holdoff_ms: f64 = 0,
+    /// The level in use right now, µV (set by the display, for showing).
+    level_now_uv: f64 = 0,
+    /// The window around the trigger in ms, and how many sweeps are overlaid.
+    pre_ms: f64 = 10,
+    post_ms: f64 = 40,
+    overlay: u32 = 10,
+    /// The window of the trigger source that is not in use (TTL: -10/+40 ms, slope: -1/+2),
+    /// swapped in by `setTrigSource`.
+    other_pre_ms: f64 = 1,
+    other_post_ms: f64 = 2,
+};
+
+/// Common average reference (electrodes only; like the filter, never applied to what is
+/// recorded): the plain mean of the `ref` rows, sample by sample, is subtracted from the
+/// `sub` rows. It is taken from the samples as acquired and subtracted before any filter,
+/// which for these (linear) filters is the same as filtering everything alike first.
+pub const Reference = struct {
+    on: bool = false,
+    ref: RowSet = .{},
+    sub: RowSet = .{},
+};
+
+/// Display filter (electrodes only; never applied to what is recorded): whether the panel
+/// shows its channels band-passed, and the band's corners in Hz (0 = that side off).
+/// 4th-order Butterworth each side, see `dsp.Band`.
+pub const Filter = struct {
+    on: bool = false,
+    low_hz: f64 = 300,
+    high_hz: f64 = 6000,
+};
+
+/// What single rows have of their own.
+pub const PerRow = struct {
+    /// Rows that stay unfiltered when the display filter is on (slow signals beside fast
+    /// ones on one headstage), and rows that are not shown at all.
+    raw: RowSet = .{},
+    hidden: RowSet = .{},
+    /// A factor on the panel's `scale` (Ctrl+wheel over a row); 1 = the panel's scale.
+    gain: [max_rows]f32 = @splat(1),
+};
+
 pub const Panel = struct {
     name_buf: [32]u8 = undefined,
     name_len: usize = 0,
-    /// Position and size as fractions of the display.
-    x: f64,
-    y: f64,
-    w: f64,
-    h: f64,
+    place: Place,
     kind: Kind,
     /// First channel (index into a sample) and how many: one row each.
     first_ch: u32,
@@ -106,50 +158,14 @@ pub const Panel = struct {
     /// Units per row: µV for electrodes, V for aux and adc.
     scale: f64,
     mode: Mode = .scroll,
-    /// Triggered mode: the TTL input line (1-based), the window around the trigger in ms,
-    /// and how many sweeps are overlaid.
-    trig_line: u8 = 2,
-    pre_ms: f64 = 10,
-    post_ms: f64 = 40,
-    overlay: u32 = 10,
-    trig_source: TrigSource = .ttl,
-    /// Slope trigger: the panel row it listens to, the slope, whether the level follows
-    /// the noise or is fixed (µV), and the holdoff after each trigger.
-    trig_row: u32 = 0,
-    trig_rising: bool = false,
-    trig_auto: bool = true,
-    trig_level_uv: f64 = -50,
-    trig_holdoff_ms: f64 = 0,
-    /// The level in use right now, µV (set by the display, for showing).
-    trig_level_now_uv: f64 = 0,
-    /// The window of the trigger source that is not in use (TTL: -10/+40 ms, slope: -1/+2),
-    /// swapped in by `setTrigSource`.
-    other_pre_ms: f64 = 1,
-    other_post_ms: f64 = 2,
-    /// A factor on `scale` for single rows (Ctrl+wheel over a row); 1 = the panel's scale.
-    row_gain: [max_rows]f32 = @splat(1),
+    trigger: Trigger = .{},
+    per_row: PerRow = .{},
+    reference: Reference = .{},
+    filter: Filter = .{},
     /// Source "ttl": the input lines shown, 1-based, one per row.
     ttl_lines: [8]u8 = .{ 1, 2, 3, 4, 5, 6, 7, 8 },
     /// A TTL line (1-based) whose high state is shown as a tint over the whole panel, or 0.
     tint_line: u8 = 0,
-    /// Common average reference (electrodes only; like the filter, never applied to what is
-    /// recorded): the plain mean of the `car_ref` rows, sample by sample, is subtracted
-    /// from the `car_sub` rows. It is taken from the samples as acquired and subtracted
-    /// before any filter, which for these (linear) filters is the same as filtering
-    /// everything alike first.
-    car: bool = false,
-    car_ref: RowSet = .{},
-    car_sub: RowSet = .{},
-    /// Rows that stay unfiltered when the display filter is on (slow signals beside fast
-    /// ones on one headstage), and rows that are not shown at all.
-    raw_rows: RowSet = .{},
-    hidden: RowSet = .{},
-    /// Display filter (electrodes only; never applied to what is recorded): whether the
-    /// panel shows its channels band-passed, and the band's corners in Hz (0 = that side
-    /// off). 4th-order Butterworth each side, see `dsp.Band`.
-    filtered: bool = false,
-    band_low_hz: f64 = 300,
-    band_high_hz: f64 = 6000,
     /// Where the band-passed copy of the panel's channels is in a row of the display's
     /// sample history (set by `feed.Feed.init`).
     slot: u32 = 0,
@@ -170,17 +186,17 @@ pub const Panel = struct {
 
     /// The reference is on and has something to average.
     pub fn carActive(self: *const Panel) bool {
-        return self.car and self.kind == .electrode and self.car_ref.count(self.rows) > 0;
+        return self.reference.on and self.kind == .electrode and self.reference.ref.count(self.rows) > 0;
     }
 
     /// Turns the reference on or off; turning it on with nothing chosen yet takes every
     /// row for both sets.
     pub fn setCar(self: *Panel, on: bool) void {
         if (self.kind != .electrode) return;
-        self.car = on;
-        if (on and self.car_ref.count(self.rows) == 0) {
-            self.car_ref = .all(self.rows);
-            self.car_sub = .all(self.rows);
+        self.reference.on = on;
+        if (on and self.reference.ref.count(self.rows) == 0) {
+            self.reference.ref = .all(self.rows);
+            self.reference.sub = .all(self.rows);
         }
     }
 
@@ -188,28 +204,28 @@ pub const Panel = struct {
     /// reference): for noticing that something made from it is out of date.
     pub fn signalSignature(self: *const Panel) u64 {
         var h = std.hash.Wyhash.init(0);
-        h.update(std.mem.asBytes(&self.filtered));
-        h.update(std.mem.asBytes(&self.band_low_hz));
-        h.update(std.mem.asBytes(&self.band_high_hz));
-        h.update(std.mem.asBytes(&self.raw_rows.bits));
-        h.update(std.mem.asBytes(&self.hidden.bits));
-        h.update(std.mem.asBytes(&self.car));
-        h.update(std.mem.asBytes(&self.car_ref.bits));
-        h.update(std.mem.asBytes(&self.car_sub.bits));
+        h.update(std.mem.asBytes(&self.filter.on));
+        h.update(std.mem.asBytes(&self.filter.low_hz));
+        h.update(std.mem.asBytes(&self.filter.high_hz));
+        h.update(std.mem.asBytes(&self.per_row.raw.bits));
+        h.update(std.mem.asBytes(&self.per_row.hidden.bits));
+        h.update(std.mem.asBytes(&self.reference.on));
+        h.update(std.mem.asBytes(&self.reference.ref.bits));
+        h.update(std.mem.asBytes(&self.reference.sub.bits));
         return h.final();
     }
 
     /// Switches between TTL and slope triggering, each with its own window.
     pub fn setTrigSource(self: *Panel, source: TrigSource) void {
-        if (source == self.trig_source or (source == .channel and self.kind != .electrode)) return;
-        self.trig_source = source;
-        std.mem.swap(f64, &self.pre_ms, &self.other_pre_ms);
-        std.mem.swap(f64, &self.post_ms, &self.other_post_ms);
+        if (source == self.trigger.source or (source == .channel and self.kind != .electrode)) return;
+        self.trigger.source = source;
+        std.mem.swap(f64, &self.trigger.pre_ms, &self.trigger.other_pre_ms);
+        std.mem.swap(f64, &self.trigger.post_ms, &self.trigger.other_post_ms);
     }
 
     /// Units per row of one row.
     pub fn rowScale(self: *const Panel, row: usize) f64 {
-        return self.scale * (if (row < max_rows) self.row_gain[row] else 1.0);
+        return self.scale * (if (row < max_rows) self.per_row.gain[row] else 1.0);
     }
 
     /// Scales one row alone by `factor`, within the limits of the scale.
@@ -217,20 +233,23 @@ pub const Panel = struct {
         if (row >= max_rows or row >= self.rows) return;
         const lim = self.scaleLimits();
         const target = std.math.clamp(self.rowScale(row) * factor, lim[0], lim[1]);
-        self.row_gain[row] = @floatCast(target / self.scale);
+        self.per_row.gain[row] = @floatCast(target / self.scale);
     }
 
     /// The row at a height given as a fraction of the display, if it is in the panel.
     pub fn rowAt(self: *const Panel, fy: f64) ?usize {
         const shown = self.shownRows();
-        if (fy < self.y or fy >= self.y + self.h or shown == 0) return null;
-        return self.rowOfShown(@min(shown - 1, @as(usize, @intFromFloat((fy - self.y) / self.h * @as(f64, @floatFromInt(shown))))));
+        if (fy < self.place.y or fy >= self.place.y + self.place.h or shown == 0) return null;
+        return self.rowOfShown(@min(
+            shown - 1,
+            @as(usize, @intFromFloat((fy - self.place.y) / self.place.h * @as(f64, @floatFromInt(shown)))),
+        ));
     }
 
     /// How many rows are drawn (all of them, less the hidden ones of an electrode panel).
     pub fn shownRows(self: *const Panel) u32 {
         if (self.kind != .electrode) return self.rows;
-        return self.rows - @as(u32, @intCast(self.hidden.count(self.rows)));
+        return self.rows - @as(u32, @intCast(self.per_row.hidden.count(self.rows)));
     }
 
     /// The row drawn `k`-th from the top.
@@ -238,7 +257,7 @@ pub const Panel = struct {
         if (self.kind != .electrode) return if (k < self.rows) k else null;
         var seen: usize = 0;
         for (0..self.rows) |r| {
-            if (self.hidden.has(r)) continue;
+            if (self.per_row.hidden.has(r)) continue;
             if (seen == k) return r;
             seen += 1;
         }
@@ -249,15 +268,15 @@ pub const Panel = struct {
     pub fn shownIndex(self: *const Panel, row: usize) ?usize {
         if (row >= self.rows) return null;
         if (self.kind != .electrode) return row;
-        if (self.hidden.has(row)) return null;
+        if (self.per_row.hidden.has(row)) return null;
         var k: usize = 0;
-        for (0..row) |r| k += @intFromBool(!self.hidden.has(r));
+        for (0..row) |r| k += @intFromBool(!self.per_row.hidden.has(r));
         return k;
     }
 
     /// Whether `row` is shown through the display filter.
     pub fn rowFiltered(self: *const Panel, row: usize) bool {
-        return self.filtered and self.kind == .electrode and !self.raw_rows.has(row);
+        return self.filter.on and self.kind == .electrode and !self.per_row.raw.has(row);
     }
 
     /// The first history column the panel draws: its slot (electrodes: what is shown of
@@ -274,7 +293,7 @@ pub const Panel = struct {
     /// the high corner above the low one.
     pub fn stepCorner(self: *Panel, high: bool, up: bool) void {
         const list: []const f64 = if (high) &high_corners else &low_corners;
-        const cur = if (high) self.band_high_hz else self.band_low_hz;
+        const cur = if (high) self.filter.high_hz else self.filter.low_hz;
         // "Off" is the bottom of the low list and the top of the high list.
         const rank = struct {
             fn f(v: f64, is_high: bool) f64 {
@@ -295,11 +314,11 @@ pub const Panel = struct {
             }
         }
         if (high) {
-            if (next != 0 and next <= self.band_low_hz) return;
-            self.band_high_hz = next;
+            if (next != 0 and next <= self.filter.low_hz) return;
+            self.filter.high_hz = next;
         } else {
-            if (self.band_high_hz != 0 and next >= self.band_high_hz) return;
-            self.band_low_hz = next;
+            if (self.filter.high_hz != 0 and next >= self.filter.high_hz) return;
+            self.filter.low_hz = next;
         }
     }
 
@@ -341,13 +360,13 @@ pub const Panel = struct {
         const longest: f64 = if (self.mode == .sweep) sweep_span_max else span_max;
         self.span_s = std.math.clamp(self.span_s, span_min, longest);
         self.scale = std.math.clamp(self.scale, lim[0], lim[1]);
-        self.pre_ms = std.math.clamp(self.pre_ms, 0, 1000);
-        self.post_ms = std.math.clamp(self.post_ms, 0.2, 2000);
-        self.trig_row = @min(self.trig_row, self.rows -| 1);
-        self.trig_holdoff_ms = std.math.clamp(self.trig_holdoff_ms, 0, 1000);
-        self.trig_level_uv = std.math.clamp(self.trig_level_uv, -5000, 5000);
-        self.overlay = std.math.clamp(self.overlay, 1, @import("sweeps.zig").max_sweeps);
-        self.trig_line = std.math.clamp(self.trig_line, 1, 8);
+        self.trigger.pre_ms = std.math.clamp(self.trigger.pre_ms, 0, 1000);
+        self.trigger.post_ms = std.math.clamp(self.trigger.post_ms, 0.2, 2000);
+        self.trigger.row = @min(self.trigger.row, self.rows -| 1);
+        self.trigger.holdoff_ms = std.math.clamp(self.trigger.holdoff_ms, 0, 1000);
+        self.trigger.level_uv = std.math.clamp(self.trigger.level_uv, -5000, 5000);
+        self.trigger.overlay = std.math.clamp(self.trigger.overlay, 1, @import("sweeps.zig").max_sweeps);
+        self.trigger.line = std.math.clamp(self.trigger.line, 1, 8);
     }
 
     /// The panel's rectangle in pixels on a display of `width` x `height`. Neighbouring
@@ -355,10 +374,10 @@ pub const Panel = struct {
     pub fn pixelRect(self: *const Panel, width: u32, height: u32) Rect {
         const fw: f64 = @floatFromInt(width);
         const fh: f64 = @floatFromInt(height);
-        const x0: u32 = @intFromFloat(@round(self.x * fw));
-        const y0: u32 = @intFromFloat(@round(self.y * fh));
-        const x1: u32 = @intFromFloat(@round((self.x + self.w) * fw));
-        const y1: u32 = @intFromFloat(@round((self.y + self.h) * fh));
+        const x0: u32 = @intFromFloat(@round(self.place.x * fw));
+        const y0: u32 = @intFromFloat(@round(self.place.y * fh));
+        const x1: u32 = @intFromFloat(@round((self.place.x + self.place.w) * fw));
+        const y1: u32 = @intFromFloat(@round((self.place.y + self.place.h) * fh));
         return .{ .x = x0, .y = y0, .w = @max(x1, x0 + 1) - x0, .h = @max(y1, y0 + 1) - y0 };
     }
 
@@ -401,7 +420,7 @@ pub const Set = struct {
         while (i > 0) {
             i -= 1;
             const p = &self.items[i];
-            if (fx >= p.x and fx < p.x + p.w and fy >= p.y and fy < p.y + p.h) return i;
+            if (fx >= p.place.x and fx < p.place.x + p.place.w and fy >= p.place.y and fy < p.place.y + p.place.h) return i;
         }
         return null;
     }
@@ -459,10 +478,12 @@ pub fn default(layout: *const types.Layout, mode: Mode) Set {
     const n = @min(layout.num_headstages, max_panels);
     for (layout.headstageSlice()[0..n], 0..) |h, i| {
         var p: Panel = .{
-            .x = @as(f64, @floatFromInt(i)) / @as(f64, @floatFromInt(n)),
-            .y = 0,
-            .w = 1.0 / @as(f64, @floatFromInt(n)),
-            .h = 1,
+            .place = .{
+                .x = @as(f64, @floatFromInt(i)) / @as(f64, @floatFromInt(n)),
+                .y = 0,
+                .w = 1.0 / @as(f64, @floatFromInt(n)),
+                .h = 1,
+            },
             .kind = .electrode,
             .first_ch = @intCast(h.first_channel),
             .rows = @intCast(h.num_channels),
@@ -527,7 +548,7 @@ fn applyKeys(p: *Panel, doc: toml.Document, table: []const u8, i: usize, diag: *
     }
     if (doc.number(table, i, "trigger")) |v| {
         if (v < 1 or v > 8 or v != @floor(v)) return diag.fail("panel {d}: trigger is a TTL input line, 1 to 8", .{i + 1});
-        p.trig_line = @intFromFloat(v);
+        p.trigger.line = @intFromFloat(v);
     }
     if (doc.number(table, i, "trigger_channel")) |v| {
         if (p.kind != .electrode) return diag.fail("panel {d}: trigger_channel is for electrode panels", .{i + 1});
@@ -536,49 +557,49 @@ fn applyKeys(p: *Panel, doc: toml.Document, table: []const u8, i: usize, diag: *
             .{ i + 1, p.rows },
         );
         p.setTrigSource(.channel);
-        p.trig_row = @intFromFloat(v - 1);
+        p.trigger.row = @intFromFloat(v - 1);
     }
     if (doc.number(table, i, "level_uv")) |v| {
-        p.trig_auto = false;
-        p.trig_level_uv = v;
+        p.trigger.auto = false;
+        p.trigger.level_uv = v;
     }
-    if (doc.boolean(table, i, "level_auto")) |on| p.trig_auto = on;
+    if (doc.boolean(table, i, "level_auto")) |on| p.trigger.auto = on;
     if (doc.string(table, i, "slope")) |v| {
         if (std.mem.eql(u8, v, "rising"))
-            p.trig_rising = true
+            p.trigger.rising = true
         else if (!std.mem.eql(u8, v, "falling"))
             return diag.fail("panel {d}: slope must be \"falling\" or \"rising\"", .{i + 1});
     }
-    if (doc.number(table, i, "holdoff_ms")) |v| p.trig_holdoff_ms = v;
-    if (doc.number(table, i, "pre_ms")) |v| p.pre_ms = v;
-    if (doc.number(table, i, "post_ms")) |v| p.post_ms = v;
-    if (doc.number(table, i, "sweeps")) |v| p.overlay = @intFromFloat(std.math.clamp(v, 1, 1000));
+    if (doc.number(table, i, "holdoff_ms")) |v| p.trigger.holdoff_ms = v;
+    if (doc.number(table, i, "pre_ms")) |v| p.trigger.pre_ms = v;
+    if (doc.number(table, i, "post_ms")) |v| p.trigger.post_ms = v;
+    if (doc.number(table, i, "sweeps")) |v| p.trigger.overlay = @intFromFloat(std.math.clamp(v, 1, 1000));
     if (doc.boolean(table, i, "car")) |on| {
         if (on and p.kind != .electrode) return diag.fail("panel {d}: car is for electrode panels", .{i + 1});
-        p.car = on;
-        p.car_ref = .all(p.rows);
-        p.car_sub = .all(p.rows);
+        p.reference.on = on;
+        p.reference.ref = .all(p.rows);
+        p.reference.sub = .all(p.rows);
     }
     if (try rowSetFrom(doc, table, i, "car_ref", p, diag)) |rows| {
-        p.car_ref = rows;
+        p.reference.ref = rows;
         // Naming rows turns the reference on unless `car = false` says otherwise, and
         // without `car` or `car_subtract` it is subtracted from every row.
-        if (doc.boolean(table, i, "car") == null) p.car = true;
-        if (doc.get(table, i, "car_subtract") == null and doc.boolean(table, i, "car") == null) p.car_sub = .all(p.rows);
+        if (doc.boolean(table, i, "car") == null) p.reference.on = true;
+        if (doc.get(table, i, "car_subtract") == null and doc.boolean(table, i, "car") == null) p.reference.sub = .all(p.rows);
     }
     if (try rowSetFrom(doc, table, i, "car_subtract", p, diag)) |rows| {
-        p.car_sub = rows;
+        p.reference.sub = rows;
         // The same the other way round: without `car` or `car_ref`, every row is averaged.
-        if (doc.boolean(table, i, "car") == null) p.car = true;
-        if (doc.get(table, i, "car_ref") == null and doc.boolean(table, i, "car") == null) p.car_ref = .all(p.rows);
+        if (doc.boolean(table, i, "car") == null) p.reference.on = true;
+        if (doc.get(table, i, "car_ref") == null and doc.boolean(table, i, "car") == null) p.reference.ref = .all(p.rows);
     }
-    if (try rowSetFrom(doc, table, i, "raw_rows", p, diag)) |rows| p.raw_rows = rows;
-    if (try rowSetFrom(doc, table, i, "hide", p, diag)) |rows| p.hidden = rows;
+    if (try rowSetFrom(doc, table, i, "raw_rows", p, diag)) |rows| p.per_row.raw = rows;
+    if (try rowSetFrom(doc, table, i, "hide", p, diag)) |rows| p.per_row.hidden = rows;
     if (doc.number(table, i, "raw_scale")) |v| {
         // The raw rows' own scale, as a factor on the panel's.
         const lim = p.scaleLimits();
         for (0..@min(p.rows, max_rows)) |r| {
-            if (p.raw_rows.has(r)) p.row_gain[r] = @floatCast(std.math.clamp(v, lim[0], lim[1]) / p.scale);
+            if (p.per_row.raw.has(r)) p.per_row.gain[r] = @floatCast(std.math.clamp(v, lim[0], lim[1]) / p.scale);
         }
     }
     if (doc.get(table, i, "band")) |v| {
@@ -586,16 +607,16 @@ fn applyKeys(p: *Panel, doc: toml.Document, table: []const u8, i: usize, diag: *
         if (band.len != 2 or band[0] < 0 or band[1] < 0 or (band[1] != 0 and band[1] <= band[0]))
             return diag.fail("panel {d}: band needs [low, high] in Hz, low below high (0 leaves a side out)", .{i + 1});
         if (p.kind != .electrode) return diag.fail("panel {d}: band is for electrodes; aux and adc are drawn as they are", .{i + 1});
-        p.filtered = true;
-        p.band_low_hz = band[0];
-        p.band_high_hz = band[1];
+        p.filter.on = true;
+        p.filter.low_hz = band[0];
+        p.filter.high_hz = band[1];
     }
-    if (doc.boolean(table, i, "filtered")) |on| p.filtered = on and p.kind == .electrode;
+    if (doc.boolean(table, i, "filtered")) |on| p.filter.on = on and p.kind == .electrode;
     if (doc.numbers(table, i, "row_scale")) |list| {
         // Every row's own scale, in the panel's unit, in order.
         const lim = p.scaleLimits();
         for (list, 0..) |v, r| {
-            if (r < @min(p.rows, max_rows)) p.row_gain[r] = @floatCast(std.math.clamp(v, lim[0], lim[1]) / p.scale);
+            if (r < @min(p.rows, max_rows)) p.per_row.gain[r] = @floatCast(std.math.clamp(v, lim[0], lim[1]) / p.scale);
         }
     }
 }
@@ -631,10 +652,12 @@ pub fn fromConfig(doc: toml.Document, layout: *const types.Layout, diag: *Diagno
                 .{ i + 1, rect[0], rect[1], rect[2], rect[3] },
             );
         var p: Panel = .{
-            .x = rect[0],
-            .y = rect[1],
-            .w = @min(rect[2], 1.0 - rect[0]),
-            .h = @min(rect[3], 1.0 - rect[1]),
+            .place = .{
+                .x = rect[0],
+                .y = rect[1],
+                .w = @min(rect[2], 1.0 - rect[0]),
+                .h = @min(rect[3], 1.0 - rect[1]),
+            },
             .kind = src.kind,
             .first_ch = @intCast(src.first),
             .rows = @intCast(src.rows),
@@ -744,23 +767,23 @@ test "band: from the config, and stepped by keys" {
         \\rect = [0.5, 0, 0.5, 1]
     , null), &l, &diag);
     const p = &set.items[0];
-    try testing.expect(p.filtered);
-    try testing.expectEqual(10, p.band_low_hz);
-    try testing.expectEqual(0, p.band_high_hz);
-    try testing.expect(!set.items[1].filtered);
-    try testing.expectEqual(300, set.items[1].band_low_hz);
+    try testing.expect(p.filter.on);
+    try testing.expectEqual(10, p.filter.low_hz);
+    try testing.expectEqual(0, p.filter.high_hz);
+    try testing.expect(!set.items[1].filter.on);
+    try testing.expectEqual(300, set.items[1].filter.low_hz);
     p.stepCorner(false, true);
-    try testing.expectEqual(30, p.band_low_hz);
+    try testing.expectEqual(30, p.filter.low_hz);
     p.stepCorner(true, false); // from off down to the top of the list
-    try testing.expectEqual(10000, p.band_high_hz);
-    p.band_high_hz = 100;
+    try testing.expectEqual(10000, p.filter.high_hz);
+    p.filter.high_hz = 100;
     p.stepCorner(false, true); // 100 would meet the high corner: refused
-    try testing.expectEqual(30, p.band_low_hz);
+    try testing.expectEqual(30, p.filter.low_hz);
     p.stepCorner(true, false); // already the lowest
-    try testing.expectEqual(100, p.band_high_hz);
-    p.band_low_hz = 1;
+    try testing.expectEqual(100, p.filter.high_hz);
+    p.filter.low_hz = 1;
     p.stepCorner(false, false);
-    try testing.expectEqual(0, p.band_low_hz);
+    try testing.expectEqual(0, p.filter.low_hz);
     try testing.expectError(
         error.BadPanel,
         fromConfig(try toml.parse(a, "[[panel]]\nsource = \"A1\"\nrect = [0,0,1,1]\nband = [6000, 300]", null), &l, &diag),
@@ -794,13 +817,13 @@ test "triggered panels from the config" {
     , null), &l, &diag);
     const p = &set.items[0];
     try testing.expectEqual(Mode.triggered, p.mode);
-    try testing.expectEqual(3, p.trig_line);
-    try testing.expectEqual(2, p.pre_ms);
-    try testing.expectEqual(2000, p.post_ms); // clamped
-    try testing.expectEqual(32, p.overlay); // clamped
-    try testing.expectEqual(2, set.items[1].trig_line);
-    try testing.expectEqual(10, set.items[1].pre_ms);
-    try testing.expectEqual(40, set.items[1].post_ms);
+    try testing.expectEqual(3, p.trigger.line);
+    try testing.expectEqual(2, p.trigger.pre_ms);
+    try testing.expectEqual(2000, p.trigger.post_ms); // clamped
+    try testing.expectEqual(32, p.trigger.overlay); // clamped
+    try testing.expectEqual(2, set.items[1].trigger.line);
+    try testing.expectEqual(10, set.items[1].trigger.pre_ms);
+    try testing.expectEqual(40, set.items[1].trigger.post_ms);
     try testing.expectError(
         error.BadPanel,
         fromConfig(try toml.parse(a, "[[panel]]\nsource = \"A1\"\nrect = [0,0,1,1]\ntrigger = 9", null), &l, &diag),
@@ -884,18 +907,18 @@ test "slope trigger from the config, with its own window" {
         \\post_ms = 3
     , null), &l, &diag);
     const p = &set.items[0];
-    try testing.expectEqual(TrigSource.channel, p.trig_source);
-    try testing.expectEqual(4, p.trig_row);
-    try testing.expect(p.trig_rising and !p.trig_auto);
-    try testing.expectEqual(-80, p.trig_level_uv);
-    try testing.expectEqual(1, p.pre_ms);
-    try testing.expectEqual(3, p.post_ms);
+    try testing.expectEqual(TrigSource.channel, p.trigger.source);
+    try testing.expectEqual(4, p.trigger.row);
+    try testing.expect(p.trigger.rising and !p.trigger.auto);
+    try testing.expectEqual(-80, p.trigger.level_uv);
+    try testing.expectEqual(1, p.trigger.pre_ms);
+    try testing.expectEqual(3, p.trigger.post_ms);
     // Back to TTL: its own window returns, and the slope's is kept for next time.
     p.setTrigSource(.ttl);
-    try testing.expectEqual(10, p.pre_ms);
-    try testing.expectEqual(40, p.post_ms);
+    try testing.expectEqual(10, p.trigger.pre_ms);
+    try testing.expectEqual(40, p.trigger.post_ms);
     p.setTrigSource(.channel);
-    try testing.expectEqual(3, p.post_ms);
+    try testing.expectEqual(3, p.trigger.post_ms);
     try testing.expectError(
         error.BadPanel,
         fromConfig(try toml.parse(a, "[[panel]]\nsource = \"A1\"\nrect = [0,0,1,1]\ntrigger_channel = 99", null), &l, &diag),
@@ -925,13 +948,13 @@ test "common average reference from the config" {
     , null), &l, &diag);
     const p = &set.items[0];
     try testing.expect(p.carActive());
-    try testing.expectEqual(16, p.car_ref.count(p.rows));
-    try testing.expectEqual(16, p.car_sub.count(p.rows));
+    try testing.expectEqual(16, p.reference.ref.count(p.rows));
+    try testing.expectEqual(16, p.reference.sub.count(p.rows));
     const q = &set.items[1];
     try testing.expect(q.carActive());
-    try testing.expectEqual(4, q.car_ref.count(q.rows));
-    try testing.expect(q.car_ref.has(15) and !q.car_ref.has(3));
-    try testing.expect(q.car_sub.has(4) and q.car_sub.has(5) and !q.car_sub.has(0));
+    try testing.expectEqual(4, q.reference.ref.count(q.rows));
+    try testing.expect(q.reference.ref.has(15) and !q.reference.ref.has(3));
+    try testing.expect(q.reference.sub.has(4) and q.reference.sub.has(5) and !q.reference.sub.has(0));
     // An electrode panel draws its slot.
     q.slot = 77;
     try testing.expectEqual(77, q.drawColumn());
@@ -940,7 +963,7 @@ test "common average reference from the config" {
     // Turning it on with nothing chosen takes every row.
     var fresh = default(&l, .scroll);
     fresh.items[0].setCar(true);
-    try testing.expectEqual(16, fresh.items[0].car_ref.count(16));
+    try testing.expectEqual(16, fresh.items[0].reference.ref.count(16));
     try testing.expectError(
         error.BadPanel,
         fromConfig(try toml.parse(a, "[[panel]]\nsource = \"A1\"\nrect = [0,0,1,1]\ncar_ref = [0, 40]", null), &l, &diag),
@@ -979,7 +1002,7 @@ test "rows shown raw beside filtered ones, and hidden rows" {
     try testing.expectEqual(0, p.rowAt(0.26).?);
     try testing.expectEqual(11, p.rowAt(0.74).?);
     // Hiding a row in the middle moves the ones below it up.
-    p.hidden.set(2, true);
+    p.per_row.hidden.set(2, true);
     try testing.expectEqual(11, p.shownRows());
     try testing.expectEqual(3, p.rowOfShown(2).?);
     try testing.expectEqual(2, p.shownIndex(3).?);
@@ -1097,24 +1120,24 @@ pub fn renderViews(w: *std.Io.Writer, set: *const Set) !void {
             .{ p.name(), p.rows, p.span_s, p.scale, p.mode },
         );
         if (p.tint_line != 0) try w.print("tint = {d}\n", .{p.tint_line});
-        try w.print("trigger = {d}\nsweeps = {d}\n", .{ p.trig_line, p.overlay });
+        try w.print("trigger = {d}\nsweeps = {d}\n", .{ p.trigger.line, p.trigger.overlay });
         if (p.kind == .electrode) {
-            try w.print("trigger_source = \"{s}\"\n", .{if (p.trig_source == .channel) "spikes" else "ttl"});
-            if (p.trig_source == .channel) try w.print("trigger_channel = {d}\n", .{p.trig_row + 1});
-            try w.print("level_uv = {d}\nlevel_auto = {}\n", .{ p.trig_level_uv, p.trig_auto });
-            try w.print("slope = \"{s}\"\nholdoff_ms = {d}\n", .{ if (p.trig_rising) "rising" else "falling", p.trig_holdoff_ms });
+            try w.print("trigger_source = \"{s}\"\n", .{if (p.trigger.source == .channel) "spikes" else "ttl"});
+            if (p.trigger.source == .channel) try w.print("trigger_channel = {d}\n", .{p.trigger.row + 1});
+            try w.print("level_uv = {d}\nlevel_auto = {}\n", .{ p.trigger.level_uv, p.trigger.auto });
+            try w.print("slope = \"{s}\"\nholdoff_ms = {d}\n", .{ if (p.trigger.rising) "rising" else "falling", p.trigger.holdoff_ms });
         }
-        try w.print("pre_ms = {d}\npost_ms = {d}\n", .{ p.pre_ms, p.post_ms });
+        try w.print("pre_ms = {d}\npost_ms = {d}\n", .{ p.trigger.pre_ms, p.trigger.post_ms });
         if (p.kind == .electrode) {
-            try w.print("band = [{d}, {d}]\nfiltered = {}\n", .{ p.band_low_hz, p.band_high_hz, p.filtered });
-            try writeRows(w, "raw_rows", &p.raw_rows, p.rows);
-            try writeRows(w, "hide", &p.hidden, p.rows);
-            try w.print("car = {}\n", .{p.car});
-            try writeRows(w, "car_ref", &p.car_ref, p.rows);
-            try writeRows(w, "car_subtract", &p.car_sub, p.rows);
+            try w.print("band = [{d}, {d}]\nfiltered = {}\n", .{ p.filter.low_hz, p.filter.high_hz, p.filter.on });
+            try writeRows(w, "raw_rows", &p.per_row.raw, p.rows);
+            try writeRows(w, "hide", &p.per_row.hidden, p.rows);
+            try w.print("car = {}\n", .{p.reference.on});
+            try writeRows(w, "car_ref", &p.reference.ref, p.rows);
+            try writeRows(w, "car_subtract", &p.reference.sub, p.rows);
         }
         var own = false;
-        for (0..@min(p.rows, max_rows)) |r| own = own or p.row_gain[r] != 1;
+        for (0..@min(p.rows, max_rows)) |r| own = own or p.per_row.gain[r] != 1;
         if (own) {
             try w.writeAll("row_scale = [");
             for (0..@min(p.rows, max_rows)) |r| try w.print("{s}{d}", .{ if (r == 0) "" else ", ", p.rowScale(r) });
@@ -1149,21 +1172,21 @@ test "a view file brings back what the control window had set" {
     const pa = &set.items[0];
     pa.mode = .triggered;
     pa.setTrigSource(.channel);
-    pa.trig_row = 4;
-    pa.trig_auto = false;
-    pa.trig_level_uv = -75;
-    pa.post_ms = 3.5;
+    pa.trigger.row = 4;
+    pa.trigger.auto = false;
+    pa.trigger.level_uv = -75;
+    pa.trigger.post_ms = 3.5;
     pa.span_s = 0.5;
     const pb = &set.items[1];
     pb.scale = 250;
-    pb.filtered = true;
-    pb.band_low_hz = 10;
-    pb.band_high_hz = 0;
-    pb.raw_rows.set(8, true);
-    pb.hidden = .{}; // row 16 shown again, although the config hides it
-    pb.hidden.set(12, true);
+    pb.filter.on = true;
+    pb.filter.low_hz = 10;
+    pb.filter.high_hz = 0;
+    pb.per_row.raw.set(8, true);
+    pb.per_row.hidden = .{}; // row 16 shown again, although the config hides it
+    pb.per_row.hidden.set(12, true);
     pb.setCar(true);
-    pb.car_ref.set(0, false);
+    pb.reference.ref.set(0, false);
     pb.scaleRow(8, 4.0);
     set.items[2].scale = 2.5;
     set.items[2].tint_line = 2;
@@ -1176,18 +1199,18 @@ test "a view file brings back what the control window had set" {
     try testing.expectEqual(3, try applyViews(&again, try toml.parse(a, w.buffered(), null), &diag));
     const qa = &again.items[0];
     try testing.expectEqual(Mode.triggered, qa.mode);
-    try testing.expectEqual(TrigSource.channel, qa.trig_source);
-    try testing.expectEqual(4, qa.trig_row);
-    try testing.expect(!qa.trig_auto);
-    try testing.expectEqual(-75, qa.trig_level_uv);
-    try testing.expectEqual(3.5, qa.post_ms);
+    try testing.expectEqual(TrigSource.channel, qa.trigger.source);
+    try testing.expectEqual(4, qa.trigger.row);
+    try testing.expect(!qa.trigger.auto);
+    try testing.expectEqual(-75, qa.trigger.level_uv);
+    try testing.expectEqual(3.5, qa.trigger.post_ms);
     try testing.expectEqual(0.5, qa.span_s);
     const qb = &again.items[1];
     try testing.expectEqual(250, qb.scale);
-    try testing.expect(qb.filtered and qb.band_low_hz == 10 and qb.band_high_hz == 0);
-    try testing.expect(qb.raw_rows.has(8) and !qb.raw_rows.has(7));
-    try testing.expect(qb.hidden.has(12) and !qb.hidden.has(15));
-    try testing.expect(qb.car and !qb.car_ref.has(0) and qb.car_ref.has(1) and qb.car_sub.has(0));
+    try testing.expect(qb.filter.on and qb.filter.low_hz == 10 and qb.filter.high_hz == 0);
+    try testing.expect(qb.per_row.raw.has(8) and !qb.per_row.raw.has(7));
+    try testing.expect(qb.per_row.hidden.has(12) and !qb.per_row.hidden.has(15));
+    try testing.expect(qb.reference.on and !qb.reference.ref.has(0) and qb.reference.ref.has(1) and qb.reference.sub.has(0));
     try testing.expectApproxEqAbs(1000.0, qb.rowScale(8), 0.01);
     try testing.expectEqual(250, qb.rowScale(7));
     try testing.expectEqual(2.5, again.items[2].scale);

@@ -745,14 +745,14 @@ fn panelView(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Shared) 
     ui.space(14);
     var value_buf: [48]u8 = undefined;
     const time_text = if (p.mode == .triggered)
-        format.fmt(&value_buf, "-{d:.1} / +{d:.1} ms", .{ p.pre_ms, p.post_ms })
+        format.fmt(&value_buf, "-{d:.1} / +{d:.1} ms", .{ p.trigger.pre_ms, p.trigger.post_ms })
     else
         format.fmtSpan(&value_buf, p.span_s);
     const dt = ui.stepper(if (p.mode == .triggered) "window" else "time", time_text, 130);
     if (dt != 0) shared.push(.{ .panel = .{ .index = i, .action = .{ .zoom = if (dt > 0) step_up else 1.0 / step_up } } });
     if (p.kind != .ttl) {
         var scale_buf: [32]u8 = undefined;
-        const ds = ui.stepper("scale", format.fmt(&buf, "{s}/row", .{format.fmtScale(&scale_buf, p)}), 110);
+        const ds = ui.stepper("scale", format.fmt(&buf, "{s}/row", .{format.fmtScale(&scale_buf, p.kind, p.scale)}), 110);
         if (ds != 0) shared.push(.{ .panel = .{ .index = i, .action = .{ .scale = if (ds > 0) step_up else 1.0 / step_up } } });
     }
     ui.newline();
@@ -764,26 +764,26 @@ fn panelFilter(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Shared
     var value_buf: [48]u8 = undefined;
     ui.text("filter", theme.text_dim);
     ui.column(64);
-    if (ui.button("raw", !p.filtered) and p.filtered) shared.push(.{ .panel = .{ .index = i, .action = .{ .filter = false } } });
-    if (ui.button("band", p.filtered) and !p.filtered) shared.push(.{ .panel = .{ .index = i, .action = .{ .filter = true } } });
-    if (p.filtered) {
+    if (ui.button("raw", !p.filter.on) and p.filter.on) shared.push(.{ .panel = .{ .index = i, .action = .{ .filter = false } } });
+    if (ui.button("band", p.filter.on) and !p.filter.on) shared.push(.{ .panel = .{ .index = i, .action = .{ .filter = true } } });
+    if (p.filter.on) {
         ui.space(14);
-        const lo = ui.stepper("from", if (p.band_low_hz > 0) format.fmt(&value_buf, "{d} Hz", .{p.band_low_hz}) else "off", 80);
+        const lo = ui.stepper("from", if (p.filter.low_hz > 0) format.fmt(&value_buf, "{d} Hz", .{p.filter.low_hz}) else "off", 80);
         if (lo != 0) shared.push(.{ .panel = .{ .index = i, .action = .{ .corner = .{ .high = false, .up = lo > 0 } } } });
-        const hi = ui.stepper("to", if (p.band_high_hz > 0) format.fmt(&value_buf, "{d} Hz", .{p.band_high_hz}) else "off", 80);
+        const hi = ui.stepper("to", if (p.filter.high_hz > 0) format.fmt(&value_buf, "{d} Hz", .{p.filter.high_hz}) else "off", 80);
         if (hi != 0) shared.push(.{ .panel = .{ .index = i, .action = .{ .corner = .{ .high = true, .up = hi > 0 } } } });
     }
     ui.newline();
     // Row by row: which are shown, and (filter on) which go through the filter.
     inline for (.{ "rows shown", "filtered" }, .{ true, false }) |label, is_shown| {
-        if (is_shown or p.filtered) {
+        if (is_shown or p.filter.on) {
             ui.text(label, theme.text_dim);
             ui.column(104);
             const saved_indent = ui.indent;
             ui.indent = 104;
             for (0..@min(p.rows, panels.max_rows)) |r| {
                 var nb: [8]u8 = undefined;
-                const on = if (is_shown) !p.hidden.has(r) else !p.raw_rows.has(r);
+                const on = if (is_shown) !p.per_row.hidden.has(r) else !p.per_row.raw.has(r);
                 if (ui.chip(format.fmt(&nb, "{d}", .{r + 1}), on))
                     shared.push(.{ .panel = .{ .index = i, .action = if (is_shown) .{ .row_hidden = r } else .{ .row_raw = r } } });
             }
@@ -798,12 +798,12 @@ fn panelFilter(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Shared
 fn panelCar(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Shared) void {
     ui.text("CAR", theme.text_dim);
     ui.column(64);
-    if (ui.button("off", !p.car) and p.car) shared.push(.{ .panel = .{ .index = i, .action = .{ .car = false } } });
-    if (ui.button("on", p.car) and !p.car) shared.push(.{ .panel = .{ .index = i, .action = .{ .car = true } } });
-    if (p.car) {
+    if (ui.button("off", !p.reference.on) and p.reference.on) shared.push(.{ .panel = .{ .index = i, .action = .{ .car = false } } });
+    if (ui.button("on", p.reference.on) and !p.reference.on) shared.push(.{ .panel = .{ .index = i, .action = .{ .car = true } } });
+    if (p.reference.on) {
         ui.newline();
         inline for (.{ "average of", "subtract from" }, .{ true, false }) |label, is_ref| {
-            const rows = if (is_ref) &p.car_ref else &p.car_sub;
+            const rows = if (is_ref) &p.reference.ref else &p.reference.sub;
             ui.text(label, theme.text_dim);
             ui.column(104);
             const saved_indent = ui.indent;
@@ -830,39 +830,46 @@ fn panelTrigger(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Share
     ui.text("trigger", theme.text_dim);
     ui.column(64);
     if (p.kind == .electrode) {
-        if (ui.button("TTL", p.trig_source == .ttl) and p.trig_source != .ttl)
+        if (ui.button("TTL", p.trigger.source == .ttl) and p.trigger.source != .ttl)
             shared.push(.{ .panel = .{ .index = i, .action = .{ .trig_source = .ttl } } });
-        if (ui.button("spikes", p.trig_source == .channel) and p.trig_source != .channel)
+        if (ui.button("spikes", p.trigger.source == .channel) and p.trigger.source != .channel)
             shared.push(.{ .panel = .{ .index = i, .action = .{ .trig_source = .channel } } });
         ui.space(8);
     }
-    if (p.trig_source == .ttl) {
-        const dl = ui.stepper("", format.fmt(&value_buf, "TTL {d}", .{p.trig_line}), 60);
-        if (dl != 0) shared.push(.{ .panel = .{ .index = i, .action = .{ .trig_line = @intCast(std.math.clamp(@as(i32, p.trig_line) + dl, 1, 8)) } } });
+    if (p.trigger.source == .ttl) {
+        const dl = ui.stepper("", format.fmt(&value_buf, "TTL {d}", .{p.trigger.line}), 60);
+        if (dl != 0)
+            shared.push(.{ .panel = .{ .index = i, .action = .{
+                .trig_line = @intCast(std.math.clamp(@as(i32, p.trigger.line) + dl, 1, 8)),
+            } } });
     } else {
-        const dw = ui.stepper("", format.fmt(&value_buf, "row {d}", .{p.trig_row + 1}), 60);
+        const dw = ui.stepper("", format.fmt(&value_buf, "row {d}", .{p.trigger.row + 1}), 60);
         if (dw != 0) shared.push(.{ .panel = .{ .index = i, .action = .{ .trig_row = dw } } });
-        if (ui.button("falling", !p.trig_rising) and p.trig_rising) shared.push(.{ .panel = .{ .index = i, .action = .{ .trig_rising = false } } });
-        if (ui.button("rising", p.trig_rising) and !p.trig_rising) shared.push(.{ .panel = .{ .index = i, .action = .{ .trig_rising = true } } });
+        if (ui.button("falling", !p.trigger.rising) and p.trigger.rising)
+            shared.push(.{ .panel = .{ .index = i, .action = .{ .trig_rising = false } } });
+        if (ui.button("rising", p.trigger.rising) and !p.trigger.rising)
+            shared.push(.{ .panel = .{ .index = i, .action = .{ .trig_rising = true } } });
         ui.newline();
         ui.text("level", theme.text_dim);
         ui.column(64);
-        if (ui.button("follows noise", p.trig_auto) and !p.trig_auto) shared.push(.{ .panel = .{ .index = i, .action = .{ .trig_auto = true } } });
-        if (ui.button("fixed", !p.trig_auto) and p.trig_auto) shared.push(.{ .panel = .{ .index = i, .action = .{ .trig_auto = false } } });
-        if (p.trig_auto) {
-            ui.text(format.fmt(&value_buf, "{d:.0} µV", .{p.trig_level_now_uv}), theme.text_bright);
+        if (ui.button("follows noise", p.trigger.auto) and !p.trigger.auto)
+            shared.push(.{ .panel = .{ .index = i, .action = .{ .trig_auto = true } } });
+        if (ui.button("fixed", !p.trigger.auto) and p.trigger.auto)
+            shared.push(.{ .panel = .{ .index = i, .action = .{ .trig_auto = false } } });
+        if (p.trigger.auto) {
+            ui.text(format.fmt(&value_buf, "{d:.0} µV", .{p.trigger.level_now_uv}), theme.text_bright);
         } else {
             // "+" makes the level larger in size, whichever its sign.
-            const dv = ui.stepper("", format.fmt(&value_buf, "{d:.0} µV", .{p.trig_level_uv}), 70);
+            const dv = ui.stepper("", format.fmt(&value_buf, "{d:.0} µV", .{p.trigger.level_uv}), 70);
             if (dv != 0) shared.push(.{ .panel = .{ .index = i, .action = .{ .trig_level = if (dv > 0) 1.15 else 1.0 / 1.15 } } });
         }
-        const dh = ui.stepper("holdoff", format.fmt(&value_buf, "{d} ms", .{p.trig_holdoff_ms}), 60);
+        const dh = ui.stepper("holdoff", format.fmt(&value_buf, "{d} ms", .{p.trigger.holdoff_ms}), 60);
         if (dh != 0) shared.push(.{ .panel = .{ .index = i, .action = .{ .trig_holdoff = dh > 0 } } });
     }
-    const dn = ui.stepper("overlaid", format.fmt(&value_buf, "{d} sweeps", .{p.overlay}), 90);
+    const dn = ui.stepper("overlaid", format.fmt(&value_buf, "{d} sweeps", .{p.trigger.overlay}), 90);
     if (dn != 0)
         shared.push(.{ .panel = .{ .index = i, .action = .{
-            .overlay = @intCast(std.math.clamp(@as(i32, @intCast(p.overlay)) + dn, 1, oez.sweeps.max_sweeps)),
+            .overlay = @intCast(std.math.clamp(@as(i32, @intCast(p.trigger.overlay)) + dn, 1, oez.sweeps.max_sweeps)),
         } } });
     ui.newline();
 }
@@ -988,10 +995,7 @@ fn setText(buf: []u8, len: *usize, s: []const u8) void {
 
 fn layoutPanel(name: []const u8, kind: panels.Kind, rows: u32) panels.Panel {
     var p: panels.Panel = .{
-        .x = 0,
-        .y = 0,
-        .w = 1,
-        .h = 1,
+        .place = .{ .x = 0, .y = 0, .w = 1, .h = 1 },
         .kind = kind,
         .first_ch = 0,
         .rows = rows,
@@ -1111,22 +1115,22 @@ fn panelSnapshots(out: []Snapshot, base: *const Snapshot) void {
     s.status.warning_len = 0;
     var a = layoutPanel("Port A", .electrode, 32);
     a.mode = .triggered;
-    a.trig_source = .channel;
-    a.trig_row = 4;
-    a.trig_auto = false;
-    a.trig_level_uv = -62;
-    a.trig_holdoff_ms = 2;
-    a.pre_ms = 1;
-    a.post_ms = 2;
-    a.filtered = true;
-    a.raw_rows.set(3, true);
-    a.hidden.set(7, true);
+    a.trigger.source = .channel;
+    a.trigger.row = 4;
+    a.trigger.auto = false;
+    a.trigger.level_uv = -62;
+    a.trigger.holdoff_ms = 2;
+    a.trigger.pre_ms = 1;
+    a.trigger.post_ms = 2;
+    a.filter.on = true;
+    a.per_row.raw.set(3, true);
+    a.per_row.hidden.set(7, true);
     s.set.items[0] = a;
     var b = layoutPanel("Port B", .electrode, 16);
     b.setCar(true);
-    b.car_ref.set(2, false);
-    b.filtered = true;
-    b.band_low_hz = 0;
+    b.reference.ref.set(2, false);
+    b.filter.on = true;
+    b.filter.low_hz = 0;
     b.scale = 1500;
     b.span_s = 0.5;
     b.mode = .sweep;
@@ -1144,9 +1148,9 @@ fn panelSnapshots(out: []Snapshot, base: *const Snapshot) void {
     t.mode = .triggered;
     var e = layoutPanel("Port C", .electrode, 4);
     e.mode = .triggered;
-    e.trig_source = .channel;
-    e.trig_rising = true;
-    e.trig_level_now_uv = -48.4;
+    e.trigger.source = .channel;
+    e.trigger.rising = true;
+    e.trigger.level_now_uv = -48.4;
     s.set.items[0] = e;
     s.set.items[1] = layoutPanel("AUX", .aux, 3);
     s.set.items[2] = layoutPanel("ADC", .adc, 8);

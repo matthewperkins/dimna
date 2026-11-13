@@ -32,9 +32,9 @@ pub const max_draws = panels_mod.max_panels * oez.sweeps.max_sweeps;
 /// or nothing when the panel shows its channels as they are.
 pub fn fmtBand(buf: []u8, p: *const Panel) []const u8 {
     if (p.kind != .electrode) return "";
-    if (!p.filtered) return if (p.carActive()) "   CAR" else "";
-    const lo = p.band_low_hz;
-    const hi = p.band_high_hz;
+    if (!p.filter.on) return if (p.carActive()) "   CAR" else "";
+    const lo = p.filter.low_hz;
+    const hi = p.filter.high_hz;
     const car: []const u8 = if (p.carActive()) "   CAR" else "";
     return if (lo > 0 and hi > 0)
         format.fmt(buf, "   {d}-{d} Hz{s}", .{ lo, hi, car })
@@ -64,10 +64,12 @@ pub const ReviewView = struct {
 
 /// What triggers a panel's sweeps: "TTL2", or "row 5 falling -62 µV".
 pub fn trigText(buf: []u8, p: *const Panel) []const u8 {
-    return if (p.trig_source == .ttl)
-        format.fmt(buf, "TTL{d}", .{p.trig_line})
+    return if (p.trigger.source == .ttl)
+        format.fmt(buf, "TTL{d}", .{p.trigger.line})
     else
-        format.fmt(buf, "row {d} {s} {d:.0} µV", .{ p.trig_row + 1, if (p.trig_rising) "rising" else "falling", p.trig_level_now_uv });
+        format.fmt(buf, "row {d} {s} {d:.0} µV", .{
+            p.trigger.row + 1, if (p.trigger.rising) "rising" else "falling", p.trigger.level_now_uv,
+        });
 }
 
 /// How many recent samples to filter again when a panel's corners change: what its window
@@ -141,10 +143,10 @@ pub const Display = struct {
     pub fn carChannels(self: *const Display, channel: u32, out: []u32) usize {
         for (self.set.items[0..self.set.len]) |*p| {
             if (!p.carActive() or channel < p.first_ch or channel >= p.first_ch + p.rows) continue;
-            if (!p.car_sub.has(channel - p.first_ch)) continue;
+            if (!p.reference.sub.has(channel - p.first_ch)) continue;
             var n: usize = 0;
             for (0..p.rows) |r| {
-                if (!p.car_ref.has(r) or n == out.len) continue;
+                if (!p.reference.ref.has(r) or n == out.len) continue;
                 out[n] = p.first_ch + @as(u32, @intCast(r));
                 n += 1;
             }
@@ -165,14 +167,14 @@ pub const Display = struct {
             if (!p.carActive() or g >= oez.spikes.Car.max_groups) continue;
             var n: usize = 0;
             for (0..p.rows) |r| {
-                if (!p.car_ref.has(r) or n == oez.spikes.Car.max_ref) continue;
+                if (!p.reference.ref.has(r) or n == oez.spikes.Car.max_ref) continue;
                 cfg.car.ref[g][n] = p.first_ch + @as(u32, @intCast(r));
                 n += 1;
             }
             cfg.car.ref_len[g] = @intCast(n);
             for (0..p.rows) |r| {
                 const ch = p.first_ch + r;
-                if (p.car_sub.has(r) and ch < cfg.car.group_of.len and cfg.car.group_of[ch] < 0) cfg.car.group_of[ch] = @intCast(g);
+                if (p.reference.sub.has(r) and ch < cfg.car.group_of.len and cfg.car.group_of[ch] < 0) cfg.car.group_of[ch] = @intCast(g);
             }
             cfg.use_car = true;
         }
@@ -231,28 +233,28 @@ pub const Display = struct {
     /// interleaved, as acquired) for slope triggers, the digital `words` for TTL edges.
     pub fn feedBlock(self: *Display, first: i64, samples: []const i16, nch: usize, fs: f64, words: []const u16) void {
         for (self.set.items[0..self.set.len], self.triggers[0..self.set.len], self.pulses[0..self.set.len], 0..) |*p, *t, *pl, i| {
-            const channel = p.trig_source == .channel and p.kind == .electrode;
-            const made_from: u64 = if (channel) 0x100 + @as(u64, p.trig_row) else p.trig_line;
+            const channel = p.trigger.source == .channel and p.kind == .electrode;
+            const made_from: u64 = if (channel) 0x100 + @as(u64, p.trigger.row) else p.trigger.line;
             if (self.trig_made_from[i] != made_from) {
                 self.trig_made_from[i] = made_from;
-                t.reset(p.trig_line);
+                t.reset(p.trigger.line);
                 self.slopes[i] = null;
             }
             if (channel) {
                 const want: oez.slope.Settings = .{
-                    .rising = p.trig_rising,
-                    .auto = p.trig_auto,
-                    .level = p.trig_level_uv / oez.types.electrode_uv_per_bit,
-                    .holdoff_ms = p.trig_holdoff_ms,
+                    .rising = p.trigger.rising,
+                    .auto = p.trigger.auto,
+                    .level = p.trigger.level_uv / oez.types.electrode_uv_per_bit,
+                    .holdoff_ms = p.trigger.holdoff_ms,
                 };
                 if (self.slopes[i] == null) self.slopes[i] = .init(fs, want);
                 const sl = &self.slopes[i].?;
                 sl.settings = want;
                 // With the panel's reference, if the trigger's row is one it applies to.
                 var ref: [oez.audio.max_car_ref]u32 = undefined;
-                const nref = self.carChannels(p.first_ch + p.trig_row, &ref);
-                sl.feed(first, samples, nch, p.first_ch + p.trig_row, ref[0..nref], t);
-                p.trig_level_now_uv = sl.level() * oez.types.electrode_uv_per_bit;
+                const nref = self.carChannels(p.first_ch + p.trigger.row, &ref);
+                sl.feed(first, samples, nch, p.first_ch + p.trigger.row, ref[0..nref], t);
+                p.trigger.level_now_uv = sl.level() * oez.types.electrode_uv_per_bit;
             } else t.feed(first, words);
             if (p.tint_line == 0) continue;
             if (pl.line != p.tint_line) pl.reset(p.tint_line);
@@ -300,45 +302,45 @@ pub const Display = struct {
         switch (action) {
             .scale => |f| p.scale *= f,
             .zoom => |f| if (p.mode == .triggered) {
-                p.pre_ms *= f;
-                p.post_ms *= f;
+                p.trigger.pre_ms *= f;
+                p.trigger.post_ms *= f;
             } else {
                 p.span_s *= f;
             },
             .mode => |m| p.mode = m,
-            .filter => |on| p.filtered = on and p.kind == .electrode,
+            .filter => |on| p.filter.on = on and p.kind == .electrode,
             .corner => |c| p.stepCorner(c.high, c.up),
-            .trig_line => |l| p.trig_line = l,
-            .row_hidden => |row| p.hidden.set(row, !p.hidden.has(row)),
-            .row_raw => |row| p.raw_rows.set(row, !p.raw_rows.has(row)),
+            .trig_line => |l| p.trigger.line = l,
+            .row_hidden => |row| p.per_row.hidden.set(row, !p.per_row.hidden.has(row)),
+            .row_raw => |row| p.per_row.raw.set(row, !p.per_row.raw.has(row)),
             .car => |on| p.setCar(on),
-            .car_ref_row => |r| p.car_ref.set(r, !p.car_ref.has(r)),
-            .car_sub_row => |r| p.car_sub.set(r, !p.car_sub.has(r)),
-            .car_ref_all => |on| p.car_ref = if (on) .all(p.rows) else .{},
-            .car_sub_all => |on| p.car_sub = if (on) .all(p.rows) else .{},
+            .car_ref_row => |r| p.reference.ref.set(r, !p.reference.ref.has(r)),
+            .car_sub_row => |r| p.reference.sub.set(r, !p.reference.sub.has(r)),
+            .car_ref_all => |on| p.reference.ref = if (on) .all(p.rows) else .{},
+            .car_sub_all => |on| p.reference.sub = if (on) .all(p.rows) else .{},
             .trig_source => |s| p.setTrigSource(s),
-            .trig_row => |d| p.trig_row = @intCast(std.math.clamp(@as(i64, p.trig_row) + d, 0, @as(i64, p.rows) - 1)),
+            .trig_row => |d| p.trigger.row = @intCast(std.math.clamp(@as(i64, p.trigger.row) + d, 0, @as(i64, p.rows) - 1)),
             .trig_rising => |on| {
                 // The fixed level changes side with the slope.
-                if (on != p.trig_rising) p.trig_level_uv = -p.trig_level_uv;
-                p.trig_rising = on;
+                if (on != p.trigger.rising) p.trigger.level_uv = -p.trigger.level_uv;
+                p.trigger.rising = on;
             },
             .trig_auto => |on| {
                 // Going to a fixed level starts from where the level is now.
-                if (!on and p.trig_auto and p.trig_level_now_uv != 0) p.trig_level_uv = @round(p.trig_level_now_uv);
-                p.trig_auto = on;
+                if (!on and p.trigger.auto and p.trigger.level_now_uv != 0) p.trigger.level_uv = @round(p.trigger.level_now_uv);
+                p.trigger.auto = on;
             },
-            .trig_level => |f| p.trig_level_uv = if (@abs(p.trig_level_uv * f) < 5)
-                (if (p.trig_level_uv < 0) -5.0 else 5.0)
+            .trig_level => |f| p.trigger.level_uv = if (@abs(p.trigger.level_uv * f) < 5)
+                (if (p.trigger.level_uv < 0) -5.0 else 5.0)
             else
-                p.trig_level_uv * f,
-            .trig_holdoff => |up| p.trig_holdoff_ms = oez.board_config.step(
+                p.trigger.level_uv * f,
+            .trig_holdoff => |up| p.trigger.holdoff_ms = oez.board_config.step(
                 f64,
                 &.{ 0, 1, 2, 5, 10, 20, 50, 100, 200, 500 },
-                p.trig_holdoff_ms,
+                p.trigger.holdoff_ms,
                 up,
             ),
-            .overlay => |n| p.overlay = n,
+            .overlay => |n| p.trigger.overlay = n,
             .reset => self.reset(index),
         }
         p.clamp();
@@ -378,31 +380,31 @@ pub const Display = struct {
             else => {},
         };
         if (p.mode == .triggered) {
-            p.pre_ms *= zoom;
-            p.post_ms *= zoom;
+            p.trigger.pre_ms *= zoom;
+            p.trigger.post_ms *= zoom;
         } else p.span_s *= zoom;
         for (in.keys[0..in.num_keys]) |k| switch (k) {
             .minus => p.scale *= 1.25,
             .equal => p.scale /= 1.25,
             .r => self.reset(self.target),
-            .f => p.filtered = p.kind == .electrode and !p.filtered,
-            .comma => if (p.filtered) p.stepCorner(false, false),
-            .dot => if (p.filtered) p.stepCorner(false, true),
-            .semicolon => if (p.filtered) p.stepCorner(true, false),
-            .apostrophe => if (p.filtered) p.stepCorner(true, true),
+            .f => p.filter.on = p.kind == .electrode and !p.filter.on,
+            .comma => if (p.filter.on) p.stepCorner(false, false),
+            .dot => if (p.filter.on) p.stepCorner(false, true),
+            .semicolon => if (p.filter.on) p.stepCorner(true, false),
+            .apostrophe => if (p.filter.on) p.stepCorner(true, true),
             .m => p.mode = if (p.mode == .scroll) .sweep else .scroll,
             .a => self.acknowledged = true,
             // Triggered mode: s switches between a TTL line and spikes on the row under
             // the pointer.
             .s => if (p.mode == .triggered) {
-                if (p.trig_source == .ttl) {
+                if (p.trigger.source == .ttl) {
                     p.setTrigSource(.channel);
-                    if (p.rowAt(self.pointer_fy)) |row| p.trig_row = @intCast(row);
+                    if (p.rowAt(self.pointer_fy)) |row| p.trigger.row = @intCast(row);
                 } else p.setTrigSource(.ttl);
             },
             .t => p.mode = if (p.mode == .triggered) .scroll else .triggered,
-            else => if (p.mode == .triggered and p.trig_source == .ttl and @backingInt(k) >= '1' and @backingInt(k) <= '8') {
-                p.trig_line = @intCast(@backingInt(k) - '0');
+            else => if (p.mode == .triggered and p.trigger.source == .ttl and @backingInt(k) >= '1' and @backingInt(k) <= '8') {
+                p.trigger.line = @intCast(@backingInt(k) - '0');
             },
         };
         // A click on an electrode row listens to it (Ctrl: adds or removes it).
@@ -410,8 +412,8 @@ pub const Display = struct {
             if (p.rowAt(self.pointer_fy)) |row| self.listenClick(p.first_ch + @as(u32, @intCast(row)), in.ctrl);
         }
         // A click on a row of a spike-triggered panel moves the trigger to that row.
-        if (in.clicks > 0 and p.mode == .triggered and p.trig_source == .channel) {
-            if (p.rowAt(self.pointer_fy)) |row| p.trig_row = @intCast(row);
+        if (in.clicks > 0 and p.mode == .triggered and p.trigger.source == .channel) {
+            if (p.rowAt(self.pointer_fy)) |row| p.trigger.row = @intCast(row);
         }
         p.clamp();
         return quit;
@@ -469,19 +471,19 @@ pub const Display = struct {
             // The rows' own scales, for the shader, in the order the rows are drawn.
             if (gpu.row_gains.len >= (i + 1) * gpu_mod.max_rows) {
                 const gains = gpu.row_gains[i * gpu_mod.max_rows ..][0..gpu_mod.max_rows];
-                for (0..@min(shown, gpu_mod.max_rows)) |k| gains[k] = p.row_gain[p.rowOfShown(k) orelse k];
+                for (0..@min(shown, gpu_mod.max_rows)) |k| gains[k] = p.per_row.gain[p.rowOfShown(k) orelse k];
             }
             const rect: gpu_mod.PixelRect = .{ .x = r.x, .y = r.y, .w = r.w, .h = r.h };
             var shown_sweeps: usize = 0;
             if (p.mode == .triggered) {
                 // One draw per sweep, oldest first and dimmest, the newest on top.
                 const trig = &self.triggers[i];
-                const pre: i64 = @intFromFloat(@round(p.pre_ms * 1e-3 * fs));
-                const post: i64 = @max(1, @as(i64, @intFromFloat(@round(p.post_ms * 1e-3 * fs))));
+                const pre: i64 = @intFromFloat(@round(p.trigger.pre_ms * 1e-3 * fs));
+                const post: i64 = @max(1, @as(i64, @intFromFloat(@round(p.trigger.post_ms * 1e-3 * fs))));
                 const window: f64 = @floatFromInt(pre + post);
                 // Sweeps whose samples the history may no longer hold are left out.
                 const keep: i64 = @as(i64, @intCast(gpu.hist_cap)) - @as(i64, @intFromFloat(fs));
-                var k: usize = @min(p.overlay, trig.len);
+                var k: usize = @min(p.trigger.overlay, trig.len);
                 while (k > 0) {
                     k -= 1;
                     const s = trig.recent(k).?;
@@ -494,7 +496,7 @@ pub const Display = struct {
                     params.phase = -1;
                     params.future = @floatCast(future);
                     params.gain = if (k == 0) 1.0 else 0.6 - 0.4 * @as(f32, @floatFromInt(k - 1)) /
-                        @as(f32, @floatFromInt(@max(1, p.overlay -| 2)));
+                        @as(f32, @floatFromInt(@max(1, p.trigger.overlay -| 2)));
                     if (nd < draws.len) {
                         draws[nd] = .{ .rect = rect, .params = params };
                         nd += 1;
@@ -505,14 +507,14 @@ pub const Display = struct {
                 // (the laser), and a line at the trigger.
                 const w: f32 = @floatFromInt(r.w);
                 const x0 = px + w * @as(f32, @floatFromInt(pre)) / @as(f32, @floatCast(window));
-                if (p.trig_source == .channel) {
+                if (p.trigger.source == .channel) {
                     // The level, as a line across the trigger's row (in the row's own
                     // scale: it sits on the trace when the panel shows the spike band).
                     const row_h = @as(f32, @floatFromInt(r.h)) / @as(f32, @floatFromInt(@max(shown, 1)));
-                    const centre = py + (@as(f32, @floatFromInt(p.shownIndex(p.trig_row) orelse 0)) + 0.5) * row_h;
-                    const dy: f32 = @floatCast(std.math.clamp(p.trig_level_now_uv / p.rowScale(p.trig_row), -1.5, 1.5));
+                    const centre = py + (@as(f32, @floatFromInt(p.shownIndex(p.trigger.row) orelse 0)) + 0.5) * row_h;
+                    const dy: f32 = @floatCast(std.math.clamp(p.trigger.level_now_uv / p.rowScale(p.trigger.row), -1.5, 1.5));
                     var x = px;
-                    if (p.shownIndex(p.trig_row) != null)
+                    if (p.shownIndex(p.trigger.row) != null)
                         while (x < px + w) : (x += 12) batch.rect(x, @round(centre - dy * row_h), 6, 1, theme.trigger_level);
                 } else if (trig.recent(0)) |s| {
                     const until = @min(s.fall orelse newest, s.t0 + post);
@@ -613,9 +615,9 @@ pub const Display = struct {
                 format.fmt(&title_buf, "{s}   {s}   -{d:.1}/+{d:.1} ms   {s}/row{s}   {d} sweeps{s}", .{
                     p.name(),
                     trigText(&trig_buf, p),
-                    p.pre_ms,
-                    p.post_ms,
-                    fmtScale(&scale_buf, p),
+                    p.trigger.pre_ms,
+                    p.trigger.post_ms,
+                    fmtScale(&scale_buf, p.kind, p.scale),
                     fmtBand(&band_buf, p),
                     shown_sweeps,
                     if (shown_sweeps == 0) " (waiting for a trigger)" else "",
@@ -630,7 +632,7 @@ pub const Display = struct {
                 format.fmt(&title_buf, "{s}   {s}   {s}/row{s}{s}", .{
                     p.name(),
                     fmtSpan(&span_buf, p.span_s),
-                    fmtScale(&scale_buf, p),
+                    fmtScale(&scale_buf, p.kind, p.scale),
                     fmtBand(&band_buf, p),
                     if (in_review) "   review" else if (p.mode == .sweep) "   sweep" else "",
                 });
@@ -646,14 +648,20 @@ pub const Display = struct {
                 const bottom = py + @as(f32, @floatFromInt(r.h)) - line_h - 4;
                 const w: f32 = @floatFromInt(r.w);
                 var t_buf: [24]u8 = undefined;
-                const right = format.fmt(&t_buf, "+{d:.1} ms", .{p.post_ms});
+                const right = format.fmt(&t_buf, "+{d:.1} ms", .{p.trigger.post_ms});
                 _ = batch.label(px + w - batch.font.width(right) - 8, bottom, right, theme.text_dim);
-                if (p.pre_ms > 0) {
-                    _ = batch.label(px + w * @as(f32, @floatCast(p.pre_ms / (p.pre_ms + p.post_ms))) + 4, bottom, "0", theme.text_dim);
+                if (p.trigger.pre_ms > 0) {
+                    _ = batch.label(
+                        px + w * @as(f32, @floatCast(p.trigger.pre_ms / (p.trigger.pre_ms + p.trigger.post_ms))) + 4,
+                        bottom,
+                        "0",
+                        theme.text_dim,
+                    );
                     var l_buf: [24]u8 = undefined;
-                    const left = format.fmt(&l_buf, "-{d:.1} ms", .{p.pre_ms});
+                    const left = format.fmt(&l_buf, "-{d:.1} ms", .{p.trigger.pre_ms});
                     // Only where it fits between the row labels and the trigger line.
-                    if (px + 48 + batch.font.width(left) + 8 < px + w * @as(f32, @floatCast(p.pre_ms / (p.pre_ms + p.post_ms))))
+                    if (px + 48 + batch.font.width(left) + 8 <
+                        px + w * @as(f32, @floatCast(p.trigger.pre_ms / (p.trigger.pre_ms + p.trigger.post_ms))))
                         _ = batch.label(px + 48, bottom, left, theme.text_dim);
                 }
             }
@@ -677,13 +685,11 @@ pub const Display = struct {
                     if (heard) theme.heard else theme.text_dim,
                 );
                 // In a filtered panel, the rows shown as they are say so.
-                if (p.filtered and p.kind == .electrode and !p.rowFiltered(row)) after = batch.label(after + 4, y, "raw", theme.text_dim);
+                if (p.filter.on and p.kind == .electrode and !p.rowFiltered(row)) after = batch.label(after + 4, y, "raw", theme.text_dim);
                 // A row with a scale of its own says so.
-                if (row < panels_mod.max_rows and p.row_gain[row] != 1) {
-                    var own: Panel = p.*;
-                    own.scale = p.rowScale(row);
+                if (row < panels_mod.max_rows and p.per_row.gain[row] != 1) {
                     var own_buf: [24]u8 = undefined;
-                    _ = batch.label(after + 4, y, fmtScale(&own_buf, &own), theme.row_scale_text);
+                    _ = batch.label(after + 4, y, fmtScale(&own_buf, p.kind, p.rowScale(row)), theme.row_scale_text);
                 }
             }
         }

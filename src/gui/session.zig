@@ -609,28 +609,28 @@ pub fn carryOver(new: *panels_mod.Set, old: *const panels_mod.Set) void {
         p.span_s = o.span_s;
         p.scale = o.scale;
         p.mode = o.mode;
-        p.filtered = o.filtered;
-        p.band_low_hz = o.band_low_hz;
-        p.band_high_hz = o.band_high_hz;
+        p.filter.on = o.filter.on;
+        p.filter.low_hz = o.filter.low_hz;
+        p.filter.high_hz = o.filter.high_hz;
         if (p.rows == o.rows) {
-            p.raw_rows = o.raw_rows;
-            p.hidden = o.hidden;
-            p.row_gain = o.row_gain;
-            p.car = o.car;
-            p.car_ref = o.car_ref;
-            p.car_sub = o.car_sub;
+            p.per_row.raw = o.per_row.raw;
+            p.per_row.hidden = o.per_row.hidden;
+            p.per_row.gain = o.per_row.gain;
+            p.reference.on = o.reference.on;
+            p.reference.ref = o.reference.ref;
+            p.reference.sub = o.reference.sub;
         }
-        p.trig_line = o.trig_line;
-        p.trig_source = o.trig_source;
-        p.trig_row = @min(o.trig_row, p.rows -| 1);
-        p.trig_rising = o.trig_rising;
-        p.trig_auto = o.trig_auto;
-        p.trig_level_uv = o.trig_level_uv;
-        p.trig_holdoff_ms = o.trig_holdoff_ms;
-        p.other_pre_ms = o.other_pre_ms;
-        p.other_post_ms = o.other_post_ms;
-        p.pre_ms = o.pre_ms;
-        p.post_ms = o.post_ms;
-        p.overlay = o.overlay;
+        p.trigger.line = o.trigger.line;
+        p.trigger.source = o.trigger.source;
+        p.trigger.row = @min(o.trigger.row, p.rows -| 1);
+        p.trigger.rising = o.trigger.rising;
+        p.trigger.auto = o.trigger.auto;
+        p.trigger.level_uv = o.trigger.level_uv;
+        p.trigger.holdoff_ms = o.trigger.holdoff_ms;
+        p.trigger.other_pre_ms = o.trigger.other_pre_ms;
+        p.trigger.other_post_ms = o.trigger.other_post_ms;
+        p.trigger.pre_ms = o.trigger.pre_ms;
+        p.trigger.post_ms = o.trigger.post_ms;
+        p.trigger.overlay = o.trigger.overlay;
     }
 }
