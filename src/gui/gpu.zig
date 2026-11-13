@@ -205,9 +205,9 @@ pub const Gpu = struct {
         const instance_exts = [_][*:0]const u8{ "VK_KHR_surface", "VK_KHR_wayland_surface" };
         return vkb.createInstance(&.{
             .p_application_info = &.{
-                .p_application_name = "oez",
+                .p_application_name = "dimna",
                 .application_version = 0,
-                .p_engine_name = "oez",
+                .p_engine_name = "dimna",
                 .engine_version = 0,
                 .api_version = @bitCast(vk.API_VERSION_1_2),
             },

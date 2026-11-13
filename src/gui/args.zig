@@ -3,7 +3,7 @@
 const std = @import("std");
 const dimna = @import("dimna");
 const gpu_mod = @import("gpu.zig");
-const log = std.log.scoped(.oez);
+const log = std.log.scoped(.dimna);
 
 pub const Args = struct {
     seconds: f64 = 0,
@@ -18,7 +18,7 @@ pub const Args = struct {
     monitor: []const u8 = "",
     tearing: bool = false,
     /// Where recordings go: one session folder per recording beneath it.
-    record_dir: []const u8 = "~/oez-recordings",
+    record_dir: []const u8 = "~/dimna-recordings",
     /// The spike tiles (a third window).
     tiles: bool = true,
     /// The spike audio monitor.
@@ -40,9 +40,9 @@ pub const Args = struct {
     doc: dimna.toml.Document = .{ .entries = &.{} },
 };
 
-/// What `oez --help` prints. Every option `parseArgs` accepts is listed here (a test checks).
+/// What `dimna --help` prints. Every option `parseArgs` accepts is listed here (a test checks).
 pub const usage =
-    \\oez: the oEZ display. Without --sim it opens the acquisition board.
+    \\dimna: the dimna display. Without --sim it opens the acquisition board.
     \\
     \\  --sim 32,16         simulate headstages of these channel counts instead of the board
     \\  --16ch A1,B1        these RHD2132 headstages carry 16 electrodes (half-channel mode)
@@ -62,7 +62,7 @@ pub const usage =
     \\  --script STEPS      synthetic input for tests (see src/gui/script.zig)
     \\  --help
     \\
-    \\Config file: $XDG_CONFIG_HOME/oez/config.toml (default ~/.config/oez); options above
+    \\Config file: $XDG_CONFIG_HOME/dimna/config.toml (default ~/.config/dimna); options above
     \\win. See the README for its keys and the [[panel]] tables.
     \\
     \\On the display (? shows these there, with the spike-tile window's):
@@ -238,7 +238,7 @@ pub fn parseArgs(args: []const [:0]const u8, doc: dimna.toml.Document) !Args {
                 a.settings.rhd2132_16ch[slot] = true;
             }
         } else {
-            log.err("unknown argument '{s}' (oez --help lists them)", .{arg});
+            log.err("unknown argument '{s}' (dimna --help lists them)", .{arg});
             return error.BadArgs;
         }
     }

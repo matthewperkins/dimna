@@ -63,7 +63,7 @@ void oni_set_driver_search_dir(const char* dir)
     snprintf(oni_driver_search_dir, sizeof(oni_driver_search_dir), "%s", dir);
 }
 
-// oEZ patch: one driver compiled into the program. When its name is asked for, its function
+// dimna patch: one driver compiled into the program. When its name is asked for, its function
 // table is used instead of loading libonidriver_<name>.so.
 static const char* oni_builtin_name = NULL;
 static oni_driver_t oni_builtin_driver;

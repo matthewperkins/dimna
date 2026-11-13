@@ -31,7 +31,7 @@ pub fn build(b: *std.Build) void {
     dimna.linkLibrary(liboni);
 
     const headless = b.addExecutable(.{
-        .name = "oez-headless",
+        .name = "dimna-headless",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/headless.zig"),
             .target = target,
@@ -46,7 +46,7 @@ pub fn build(b: *std.Build) void {
     run.addPassthruArgs();
     b.step("headless", "Run the headless acquisition tool").dependOn(&run.step);
 
-    // ---- oez: the GUI. Wayland directly (zig-wayland), Vulkan (vulkan-zig). ----
+    // ---- dimna: the GUI. Wayland directly (zig-wayland), Vulkan (vulkan-zig). ----
     const scanner = Scanner.create(b, .{});
     scanner.addSystemProtocol("stable/xdg-shell/xdg-shell.xml");
     scanner.addSystemProtocol("stable/presentation-time/presentation-time.xml");
@@ -123,7 +123,7 @@ pub fn build(b: *std.Build) void {
         gui_mod.addAnonymousImport(name ++ ".spv", .{ .root_source_file = spv });
         gui_test_mod.addAnonymousImport(name ++ ".spv", .{ .root_source_file = spv });
     }
-    const gui = b.addExecutable(.{ .name = "oez", .root_module = gui_mod });
+    const gui = b.addExecutable(.{ .name = "dimna", .root_module = gui_mod });
     b.installArtifact(gui);
     const run_gui = b.addRunArtifact(gui);
     run_gui.step.dependOn(b.getInstallStep());

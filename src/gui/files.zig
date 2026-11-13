@@ -1,4 +1,4 @@
-//! Writing the files oEZ keeps settings in: the view file and the config's [board] table.
+//! Writing the files dimna keeps settings in: the view file and the config's [board] table.
 
 const std = @import("std");
 const dimna = @import("dimna");

@@ -152,8 +152,8 @@ pub const Tiles = struct {
 
         var win: Window = undefined;
         var class_buf: [64]u8 = undefined;
-        const class = std.fmt.bufPrintSentinel(&class_buf, "{s}-tiles", .{self.env.app_id}, 0) catch "oez-tiles";
-        try win.init("oEZ spikes", class, self.env.key_debug);
+        const class = std.fmt.bufPrintSentinel(&class_buf, "{s}-tiles", .{self.env.app_id}, 0) catch "dimna-tiles";
+        try win.init("dimna spikes", class, self.env.key_debug);
         defer win.deinit();
         var gpu = try gpu_mod.Gpu.init(gpa, .{ .display = win.display, .surface = win.surface }, .fifo, self.display_gpu);
         defer gpu.deinit();
@@ -816,7 +816,7 @@ fn drawReadouts(batch: *font.Batch, scene: Scene, r: [4]f32, ch: u32) void {
     }
 }
 
-/// Scripted input for tests (OEZ_TILE_CLICKS): steps "SECONDS:X,Y[,ACTION]" separated by
+/// Scripted input for tests (DIMNA_TILE_CLICKS): steps "SECONDS:X,Y[,ACTION]" separated by
 /// ';'. SECONDS after the window opened, the pointer goes to (X, Y) in pixels and ACTION
 /// happens; a negative X means at -X with Ctrl held. ACTION is:
 ///
@@ -895,7 +895,7 @@ const Script = struct {
                 in.left_down = false;
                 self.held = null;
             },
-            else => log.warn("OEZ_TILE_CLICKS: unknown action \"{s}\"", .{action}),
+            else => log.warn("DIMNA_TILE_CLICKS: unknown action \"{s}\"", .{action}),
         }
     }
 };
@@ -1624,7 +1624,7 @@ test "the display's thresholds reach the detector with its config" {
 // few states with the hand-made font, and everything it puts into the batch is written
 // out in order as text (rectangles; runs of waveform segments joined end to end, with
 // their colour and width; runs of text) and compared with `testdata/tiles_draw.txt`. Set
-// OEZ_TILES_DRAW_OUT to a path to write what this run produced there. The detectors are
+// DIMNA_TILES_DRAW_OUT to a path to write what this run produced there. The detectors are
 // fed `testSample`: noise on every channel, spikes of four sizes on channels 4, 9, 40, 70.
 
 const draw_states = [_][]const u8{
@@ -1834,7 +1834,7 @@ test "what the tile window draws is unchanged" {
         try writeState(&out.writer, name, st, &dets[which].?, vertices);
     }
     const got = out.written();
-    if (std.c.getenv("OEZ_TILES_DRAW_OUT")) |path| {
+    if (std.c.getenv("DIMNA_TILES_DRAW_OUT")) |path| {
         const file = try std.Io.Dir.cwd().createFile(testing.io, std.mem.span(path), .{});
         defer file.close(testing.io);
         try file.writeStreamingAll(testing.io, got);

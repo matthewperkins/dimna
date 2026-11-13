@@ -20,7 +20,7 @@ const Cursor = @import("window.zig").Cursor;
 const Key = @import("window.zig").Key;
 const panels_mod = dimna.panels;
 const Panel = panels_mod.Panel;
-const log = std.log.scoped(.oez);
+const log = std.log.scoped(.dimna);
 
 pub const max_text_vertices = 24 * 1024;
 
@@ -1650,7 +1650,7 @@ pub const Text = struct {
 // writes everything `frame` returns, in order, as text: each trace draw with every field
 // of its parameters, the rows' own scales it puts into the gain buffer, each fill, and the
 // batch's rectangles and text runs. It is compared with `testdata/display_frame.txt`. Set
-// OEZ_DISPLAY_FRAME_OUT to a path to write what this run produced there.
+// DIMNA_DISPLAY_FRAME_OUT to a path to write what this run produced there.
 
 const testing = std.testing;
 
@@ -2318,7 +2318,7 @@ test "what the display draws is unchanged" {
         try writeFrame(&out.writer, name, st, gains, vertices);
     }
     const got = out.written();
-    if (std.c.getenv("OEZ_DISPLAY_FRAME_OUT")) |path| {
+    if (std.c.getenv("DIMNA_DISPLAY_FRAME_OUT")) |path| {
         const file = try std.Io.Dir.cwd().createFile(testing.io, std.mem.span(path), .{});
         defer file.close(testing.io);
         try file.writeStreamingAll(testing.io, got);

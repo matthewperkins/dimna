@@ -1112,7 +1112,7 @@ fn writeRows(w: *std.Io.Writer, key: []const u8, rows: *const RowSet, n: usize) 
 
 /// Writes the panels' settings as a view file.
 pub fn renderViews(w: *std.Io.Writer, set: *const Set) !void {
-    try w.writeAll("# oEZ view settings, written by \"Save view\" in the control window and applied on top\n# of config.toml at launch (panels are matched by name). Delete the file to go back to\n# the config's own settings.\n");
+    try w.writeAll("# dimna view settings, written by \"Save view\" in the control window and applied on top\n# of config.toml at launch (panels are matched by name). Delete the file to go back to\n# the config's own settings.\n");
     for (set.items[0..set.len]) |*p| {
         try w.print(
             "\n[[view]]\nname = \"{s}\"\nrows = {d}\nspan_s = {d}\nscale = {d}\nmode = \"{t}\"\n",
@@ -1237,7 +1237,7 @@ test "a view file of the version before, with level_uv, level_auto and slope, is
     // As that version's `renderViews` wrote a slope-triggered electrode panel, and a TTL
     // panel that never wrote them.
     const old =
-        \\# oEZ view settings, written by "Save view" in the control window and applied on top
+        \\# dimna view settings, written by "Save view" in the control window and applied on top
         \\# of config.toml at launch (panels are matched by name). Delete the file to go back to
         \\# the config's own settings.
         \\

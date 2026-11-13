@@ -1,4 +1,4 @@
-//! The recorder: a ring reader that writes the oEZ recording format (v1). See `meta.toml` in
+//! The recorder: a ring reader that writes the dimna recording format (v1). See `meta.toml` in
 //! any recording for the layout; in short, one folder per recording:
 //!
 //!   samples.i16      int16 LE, sample-major [n_samples][num_channels], raw as acquired
@@ -82,7 +82,7 @@ pub const Info = struct {
     board_id: u32,
     cable_delay: [4]i32,
     board_kind: []const u8 = "Open Ephys acquisition board (ECP5, FT600, ONI)",
-    software: []const u8 = "oez 0.0.0",
+    software: []const u8 = "dimna 0.0.0",
     /// Session layout: the files go into `<root>/<date_time>/ephys/` (so videos and notes of
     /// the same take can sit beside them), and `<root>/current` is made a link to the
     /// session folder. Otherwise the files go straight into `<root>/<date_time>/`.
@@ -587,7 +587,7 @@ fn writeToml(w: *Io.Writer, r: *const Recorder, final_end: ?i64) !void {
     const l = &r.info.layout;
     const st = &r.info.settings;
     try w.writeAll(
-        \\# oEZ recording. All binary files are little-endian and append-only.
+        \\# dimna recording. All binary files are little-endian and append-only.
         \\#   samples.i16     int16 [n_samples][num_channels]; physical value = raw * bit_volts
         \\#   index.bin       48-byte records, one per chunk:
         \\#                   first_sample i64, n_samples u32, flags u32 (bit 0 = gap before),
@@ -600,7 +600,7 @@ fn writeToml(w: *Io.Writer, r: *const Recorder, final_end: ?i64) !void {
         \\
         \\
     );
-    try w.print("format = \"oez-recording\"\nformat_version = {d}\nbyte_order = \"little\"\n", .{format_version});
+    try w.print("format = \"dimna-recording\"\nformat_version = {d}\nbyte_order = \"little\"\n", .{format_version});
     try w.writeAll("software = ");
     try tomlStr(w, r.info.software);
     try w.print("\ncreated = {s}\n", .{r.created_local[0..r.created_len]});

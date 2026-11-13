@@ -1,4 +1,4 @@
-//! oez: the GUI's main thread. It owns the neural display (a Wayland window drawn with
+//! dimna: the GUI's main thread. It owns the neural display (a Wayland window drawn with
 //! Vulkan, fullscreen on its own monitor in normal use) and runs the one loop that moves
 //! samples from the acquisition ring into the GPU's history, takes input, and draws.
 //!
@@ -15,8 +15,8 @@
 //! between turns is in session.zig (recording, review, alarms, view file, board settings),
 //! pacing.zig (when to draw, latency figures) and display.zig (panels, input, drawing).
 //!
-//! Options: args.zig (`oez --help`). Keys and the mouse: README, "The display". The config
-//! file ($XDG_CONFIG_HOME/oez/config.toml; command-line options win) and `[[panel]]`
+//! Options: args.zig (`dimna --help`). Keys and the mouse: README, "The display". The config
+//! file ($XDG_CONFIG_HOME/dimna/config.toml; command-line options win) and `[[panel]]`
 //! tables: args.zig and src/panels.zig. How frames are paced and what latency was
 //! measured: docs/latency.md. Scripted input for tests (--script): script.zig.
 
@@ -35,7 +35,7 @@ const notes_mod = @import("notes.zig");
 const tiles_mod = @import("tiles.zig");
 const Status = display_mod.Status;
 const Io = std.Io;
-const log = std.log.scoped(.oez);
+const log = std.log.scoped(.dimna);
 const args_mod = @import("args.zig");
 const Args = args_mod.Args;
 const parseArgs = args_mod.parseArgs;
@@ -77,9 +77,9 @@ pub fn main(init: std.process.Init) !u8 {
     // Not a label: a path too long for the buffer is "", and the run starts without a
     // config, as if there were none, without saying why.
     const config_path = if (init.environ_map.get("XDG_CONFIG_HOME")) |x|
-        std.fmt.bufPrint(&path_buf, "{s}/oez/config.toml", .{x}) catch ""
+        std.fmt.bufPrint(&path_buf, "{s}/dimna/config.toml", .{x}) catch ""
     else
-        std.fmt.bufPrint(&path_buf, "{s}/.config/oez/config.toml", .{init.environ_map.get("HOME") orelse ""}) catch "";
+        std.fmt.bufPrint(&path_buf, "{s}/.config/dimna/config.toml", .{init.environ_map.get("HOME") orelse ""}) catch "";
     const config_text: []const u8 = Io.Dir.cwd().readFileAlloc(io, config_path, init.arena.allocator(), .limited(1 << 16)) catch "";
     if (config_text.len > 0) log.info("config: {s}", .{config_path});
     var toml_diag: dimna.toml.Diagnostics = .{};
@@ -127,8 +127,8 @@ pub fn main(init: std.process.Init) !u8 {
     // ---- window and renderer ----
     var win: Window = undefined;
     var app_id_buf: [64:0]u8 = @splat(0);
-    const app_id = std.fmt.bufPrintSentinel(&app_id_buf, "{s}", .{env.app_id}, 0) catch "oez";
-    try win.init("oEZ", app_id, env.key_debug);
+    const app_id = std.fmt.bufPrintSentinel(&app_id_buf, "{s}", .{env.app_id}, 0) catch "dimna";
+    try win.init("dimna", app_id, env.key_debug);
     defer win.deinit();
     const fullscreen = args.monitor.len > 0;
     if (fullscreen) {
@@ -544,7 +544,7 @@ pub fn main(init: std.process.Init) !u8 {
             if (!env.no_title) {
                 if (std.fmt.bufPrintSentinel(
                     &title_buf,
-                    "oEZ   {s}: {d:.2} s  {d:.1} {s}/row   latency {d:.1} ms   {d} fps",
+                    "dimna   {s}: {d:.2} s  {d:.1} {s}/row   latency {d:.1} ms   {d} fps",
                     .{ tp.name(), tp.span_s, tp.scale, tp.unit(), r.avg_ms, r.frames },
                     0,
                 )) |t| win.setTitle(t) else |_| {}

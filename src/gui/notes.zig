@@ -12,7 +12,7 @@
 //! one frame (a few ms) late.
 //!
 //! A saved note goes three ways: into the recording's events.tsv (kind "note") if one is
-//! running, into a log of all notes ($XDG_STATE_HOME/oez/notes.log, default
+//! running, into a log of all notes ($XDG_STATE_HOME/dimna/notes.log, default
 //! ~/.local/state), and onto the traces as a marker.
 
 const std = @import("std");
@@ -79,9 +79,9 @@ pub const Notes = struct {
         }
         var path_buf: [std.fs.max_path_bytes]u8 = undefined;
         const dir = (if (state_home.len > 0)
-            std.fmt.bufPrintSentinel(&path_buf, "{s}/oez", .{state_home}, 0)
+            std.fmt.bufPrintSentinel(&path_buf, "{s}/dimna", .{state_home}, 0)
         else
-            std.fmt.bufPrintSentinel(&path_buf, "{s}/.local/state/oez", .{home}, 0)) catch return self;
+            std.fmt.bufPrintSentinel(&path_buf, "{s}/.local/state/dimna", .{home}, 0)) catch return self;
         mkdirs(dir);
         var file_buf: [std.fs.max_path_bytes]u8 = undefined;
         const file = std.fmt.bufPrintSentinel(&file_buf, "{s}/notes.log", .{dir}, 0) catch return self;
@@ -232,8 +232,8 @@ fn mkdirs(path: [:0]const u8) void {
 
 // ---- Tests ----
 //
-// None of these calls `Notes.init`, which opens $XDG_STATE_HOME/oez/notes.log (default
-// ~/.local/state/oez/notes.log): a `Notes` made with `.{}` has `log_fd == -1` and logs
+// None of these calls `Notes.init`, which opens $XDG_STATE_HOME/dimna/notes.log (default
+// ~/.local/state/dimna/notes.log): a `Notes` made with `.{}` has `log_fd == -1` and logs
 // nowhere. The test of the log line gives it a file under /tmp instead.
 
 const testing = std.testing;
@@ -479,7 +479,7 @@ test "recent keeps the last 32 notes, newest first" {
 
 test "a saved note is one line in the log: time, sample, session, text" {
     var dir_buf: [64]u8 = undefined;
-    const dir = try std.fmt.bufPrintSentinel(&dir_buf, "/tmp/oez-notes-test-{d}", .{linux.getpid()}, 0);
+    const dir = try std.fmt.bufPrintSentinel(&dir_buf, "/tmp/dimna-notes-test-{d}", .{linux.getpid()}, 0);
     var file_buf: [96]u8 = undefined;
     const file = try std.fmt.bufPrintSentinel(&file_buf, "{s}/notes.log", .{dir}, 0);
     _ = linux.mkdir(dir, 0o755);

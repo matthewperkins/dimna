@@ -1,8 +1,8 @@
-//! oez-headless: open the board, acquire for a while, and check the stream.
+//! dimna-headless: open the board, acquire for a while, and check the stream.
 //!
-//!   oez-headless [--seconds S] [--16ch A1,B1] [--aux] [--adc] [--leds] [--rate HZ] [--block N]
-//!                [--record ROOT] [--live-test] [--driver d3xx|usb] [--usb-block BYTES]
-//!                [--sim 32,16] [--band LOW,HIGH] [--no-dsp]
+//!   dimna-headless [--seconds S] [--16ch A1,B1] [--aux] [--adc] [--leds] [--rate HZ] [--block N]
+//!                  [--record ROOT] [--live-test] [--driver d3xx|usb] [--usb-block BYTES]
+//!                  [--sim 32,16] [--band LOW,HIGH] [--no-dsp]
 //!
 //! --sim runs from simulated headstages (channels each) instead of the board: no hardware is
 //! touched, and the acquisition thread does not ask for real-time priority.

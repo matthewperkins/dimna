@@ -14,7 +14,7 @@ const linux = std.os.linux;
 const xkb = @import("gui_c");
 const log = std.log.scoped(.window);
 
-/// A key oez acts on, by what the key is labelled in the user's keyboard layout (its
+/// A key dimna acts on, by what the key is labelled in the user's keyboard layout (its
 /// symbol without modifiers, from the compositor's keymap through xkbcommon), not by where
 /// it sits: on Dvorak, 'r' is the key marked r.
 pub const Key = union(enum) {
@@ -24,7 +24,7 @@ pub const Key = union(enum) {
 
     pub const Named = enum { escape, enter, backspace, tab, home, end, page_up, page_down, left, up, right, down };
 
-    /// From an X keysym; null for a key oez has no use for.
+    /// From an X keysym; null for a key dimna has no use for.
     pub fn fromKeysym(sym: u32) ?Key {
         return switch (sym) {
             0x20...0x7e => .{ .char = @intCast(sym) },
@@ -161,7 +161,7 @@ pub const Window = struct {
     xkb_context: ?*xkb.xkb_context = null,
     xkb_keymap: ?*xkb.xkb_keymap = null,
     xkb_state: ?*xkb.xkb_state = null,
-    /// OEZ_KEY_DEBUG=1 logs keyboard focus and every key.
+    /// DIMNA_KEY_DEBUG=1 logs keyboard focus and every key.
     key_debug: bool = false,
     gestures: ?*zwp.PointerGesturesV1 = null,
     pinch: ?*zwp.PointerGesturePinchV1 = null,

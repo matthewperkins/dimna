@@ -23,7 +23,7 @@ const Env = @import("env.zig").Env;
 const Display = display_mod.Display;
 const Panel = dimna.panels.Panel;
 const Io = std.Io;
-const log = std.log.scoped(.oez);
+const log = std.log.scoped(.dimna);
 
 pub const Pipeline = struct {
     // For the whole run.

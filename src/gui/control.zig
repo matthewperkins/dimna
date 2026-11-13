@@ -350,8 +350,8 @@ fn loop(cfg: *Config) !void {
     var win: Window = undefined;
     // A class too long for the buffer gives the usual one.
     var class_buf: [64]u8 = undefined;
-    const class = std.fmt.bufPrintSentinel(&class_buf, "{s}-control", .{cfg.env.app_id}, 0) catch "oez-control";
-    try win.init("oEZ control", class, cfg.env.key_debug);
+    const class = std.fmt.bufPrintSentinel(&class_buf, "{s}-control", .{cfg.env.app_id}, 0) catch "dimna-control";
+    try win.init("dimna control", class, cfg.env.key_debug);
     defer win.deinit();
     var gpu = try gpu_mod.Gpu.init(gpa, .{ .display = win.display, .surface = win.surface }, .fifo, cfg.display_gpu);
     defer gpu.deinit();
@@ -477,7 +477,7 @@ fn sectionHeading(ui: *ui_mod.Ui, label: []const u8, open: *bool, summary: []con
 
 /// The name, the source, and the alarm (or a warning).
 fn titleSection(ui: *ui_mod.Ui, snap: *const Snapshot, shared: *Shared) void {
-    ui.text("oEZ", theme.text_bright);
+    ui.text("dimna", theme.text_bright);
     ui.text(snap.about_buf[0..snap.about_len], theme.text_dim);
     ui.newline();
     if (snap.status.alarm_len > 0) {
@@ -992,7 +992,7 @@ test "edits queue and snapshots cross between the two sides" {
 // character, so the batch holds every rectangle and every glyph in the order drawn. Each
 // is written out as text (glyphs merged into runs of text), with the edits that a click
 // in the middle of each rectangle queues, and compared with `testdata/control_layout.txt`.
-// Set OEZ_CONTROL_LAYOUT_OUT to a path to write what this run produced there.
+// Set DIMNA_CONTROL_LAYOUT_OUT to a path to write what this run produced there.
 
 var layout_atlas: [1]u8 = .{0};
 
@@ -1174,7 +1174,7 @@ fn layoutSnapshots(out: []Snapshot) void {
     out[14] = out[4];
     out[15] = out[0];
     out[15].board.unsaved = true;
-    out[15].board.setNote("view saved to {s}", .{"/home/user/.config/oez/views.toml"});
+    out[15].board.setNote("view saved to {s}", .{"/home/user/.config/dimna/views.toml"});
     out[16] = out[7];
     out[17] = summarySnapshot(&out[0]);
 }
@@ -1277,7 +1277,7 @@ fn stateSnapshots(out: []Snapshot, base: *const Snapshot) void {
     s = base.*;
     s.quit_prompt.active = true;
     for (0..3) |k| s.quit_prompt.changes.add("setting {d} changed", .{k});
-    setText(&s.quit_prompt.path_buf, &s.quit_prompt.path_len, "/home/user/.config/oez/oez.toml");
+    setText(&s.quit_prompt.path_buf, &s.quit_prompt.path_len, "/home/user/.config/dimna/dimna.toml");
     out[3] = s;
 
     // A restart pending (half-channel mode), not recording; a board note; review of the
@@ -1365,7 +1365,7 @@ test "the control window's layout is unchanged" {
     defer out.deinit();
     for (layout_states, snaps) |state, *snap| try writeLayout(&out.writer, rig, state.name, snap, state.open);
     const got = out.written();
-    if (std.c.getenv("OEZ_CONTROL_LAYOUT_OUT")) |path| {
+    if (std.c.getenv("DIMNA_CONTROL_LAYOUT_OUT")) |path| {
         const file = try std.Io.Dir.cwd().createFile(testing.io, std.mem.span(path), .{});
         defer file.close(testing.io);
         try file.writeStreamingAll(testing.io, got);
@@ -1397,7 +1397,7 @@ test "which sections are open is saved with the view, but is not by itself somet
     try testing.expect(view_file.unsaved(view));
     // Saving writes the [control] table after the others, and then nothing is unsaved.
     var path_buf: [96]u8 = undefined;
-    const dir = try std.fmt.bufPrint(&path_buf, "/tmp/oez-control-view-test-{d}", .{std.os.linux.getpid()});
+    const dir = try std.fmt.bufPrint(&path_buf, "/tmp/dimna-control-view-test-{d}", .{std.os.linux.getpid()});
     defer std.Io.Dir.cwd().deleteTree(io, dir) catch {};
     var file_buf: [128]u8 = undefined;
     const path = try std.fmt.bufPrint(&file_buf, "{s}/views.toml", .{dir});

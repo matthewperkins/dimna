@@ -16,7 +16,7 @@ const audio_out = @import("audio_out.zig");
 const Env = @import("env.zig").Env;
 const panels_mod = dimna.panels;
 const Io = std.Io;
-const log = std.log.scoped(.oez);
+const log = std.log.scoped(.dimna);
 
 /// Scroll-back review (see review.zig): where the display is looking when it is not looking
 /// at now. From the recording's file while there is one; else a freeze of the last seconds

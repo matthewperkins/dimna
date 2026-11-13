@@ -98,10 +98,10 @@ fn allowed(request_type: u8, request: u8) bool {
     return false;
 }
 
-/// `OEZ_USB_TRACE=1` logs every command and transfer to stderr.
+/// `DIMNA_USB_TRACE=1` logs every command and transfer to stderr.
 var trace_on: ?bool = null;
 fn tracing() bool {
-    if (trace_on == null) trace_on = std.c.getenv("OEZ_USB_TRACE") != null;
+    if (trace_on == null) trace_on = std.c.getenv("DIMNA_USB_TRACE") != null;
     return trace_on.?;
 }
 fn trace(comptime fmt: []const u8, args: anytype) void {
