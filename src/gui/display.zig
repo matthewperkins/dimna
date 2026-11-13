@@ -202,6 +202,62 @@ pub const grab_px = 4;
 /// the pixel row it was taken at; nothing changes until the pointer has left it.
 pub const Drag = struct { panel: usize, ch: u32, row: usize, from_y: f32, moved: bool = false };
 
+/// One line of the key summary (`?`): in which window, the key or mouse action, what it
+/// does. ASCII, so that it lines up in the fixed-width font.
+pub const KeyHelp = struct { window: enum { display, tiles }, key: []const u8, what: []const u8 };
+
+/// The key summary, the one place it is written: the display's keys (they agree with
+/// `args.usage`, a test checks) and the spike-tile window's (tiles.zig).
+pub const key_help = [_]KeyHelp{
+    .{ .window = .display, .key = "wheel", .what = "Y scale (uV per row)" },
+    .{ .window = .display, .key = "Ctrl+wheel", .what = "Y scale of the row alone" },
+    .{ .window = .display, .key = "Shift+wheel", .what = "back / forward in time (review)" },
+    .{ .window = .display, .key = "sideways scroll", .what = "the same as Shift+wheel" },
+    .{ .window = .display, .key = "Alt+wheel", .what = "time base (triggered: window)" },
+    .{ .window = .display, .key = "touchpad pinch", .what = "time base" },
+    .{ .window = .display, .key = "- =", .what = "Y scale" },
+    .{ .window = .display, .key = "[ ]", .what = "time base" },
+    .{ .window = .display, .key = "r", .what = "the panel as configured" },
+    .{ .window = .display, .key = "m", .what = "scrolling <-> sweep" },
+    .{ .window = .display, .key = "f", .what = "display filter on / off" },
+    .{ .window = .display, .key = ", .", .what = "low corner down / up" },
+    .{ .window = .display, .key = "; '", .what = "high corner down / up" },
+    .{ .window = .display, .key = "t", .what = "triggered sweeps on / off" },
+    .{ .window = .display, .key = "1-8", .what = "triggered on TTL: the line" },
+    .{ .window = .display, .key = "s", .what = "triggered: TTL <-> spikes, this row" },
+    .{ .window = .display, .key = "left-click a row", .what = "focus (spikes: trigger there)" },
+    .{ .window = .display, .key = "right-click a row", .what = "listen to it alone" },
+    .{ .window = .display, .key = "Ctrl+right-click", .what = "add to / take from the sound" },
+    .{ .window = .display, .key = "middle-click", .what = "no channel in focus" },
+    .{ .window = .display, .key = "drag a red line", .what = "its threshold, fixed (uV)" },
+    .{ .window = .display, .key = "n", .what = "threshold: fixed <-> the noise" },
+    .{ .window = .display, .key = "Space", .what = "freeze / back to live" },
+    .{ .window = .display, .key = "Left / Right", .what = "back / forward 1/10 window" },
+    .{ .window = .display, .key = "PgUp / PgDn", .what = "back / forward a window" },
+    .{ .window = .display, .key = "Home / End", .what = "start of recording / live" },
+    .{ .window = .display, .key = "l", .what = "back to live" },
+    .{ .window = .display, .key = "/", .what = "type a note (Enter saves)" },
+    .{ .window = .display, .key = "`", .what = "stamp the first draft note" },
+    .{ .window = .display, .key = "1-9", .what = "stamp a preset note" },
+    .{ .window = .display, .key = "Shift+a", .what = "acknowledge an alarm" },
+    .{ .window = .display, .key = "?", .what = "these keys (? or Esc closes)" },
+    .{ .window = .display, .key = "q or Esc", .what = "quit" },
+    .{ .window = .tiles, .key = "wheel", .what = "scale the tiles shown" },
+    .{ .window = .tiles, .key = "Ctrl+wheel", .what = "scale the tile alone" },
+    .{ .window = .tiles, .key = "Ctrl+Shift+wheel", .what = "the tile's threshold" },
+    .{ .window = .tiles, .key = "r", .what = "tiles shown: common range" },
+    .{ .window = .tiles, .key = "a", .what = "tiles shown: own range, fixed" },
+    .{ .window = .tiles, .key = "u", .what = "undo a change of scale" },
+    .{ .window = .tiles, .key = "Shift+u", .what = "redo a change of scale" },
+    .{ .window = .tiles, .key = "n", .what = "threshold: fixed <-> the noise" },
+    .{ .window = .tiles, .key = "left-click", .what = "focus on that channel" },
+    .{ .window = .tiles, .key = "right-click", .what = "listen to it alone" },
+    .{ .window = .tiles, .key = "Ctrl+right-click", .what = "add to / take from the sound" },
+    .{ .window = .tiles, .key = "middle-click", .what = "no channel in focus" },
+    .{ .window = .tiles, .key = "drag the red line", .what = "its threshold, fixed (uV)" },
+    .{ .window = .tiles, .key = "the chips", .what = "one port's tiles, or all" },
+};
+
 /// The label of one row: the electrode's number on its headstage (with the headstage's name
 /// when the panel spans more than one), or AUXn / ADCn.
 pub fn rowLabel(buf: []u8, p: *const Panel, row: u32, layout: *const oez.types.Layout, set: *const panels_mod.Set) []const u8 {
@@ -259,6 +315,8 @@ pub const Display = struct {
     cursor: Cursor = .default,
     /// A threshold line being dragged with the left button.
     drag: ?Drag = null,
+    /// The key summary is shown over the display (`?`; `?` or Esc hides it).
+    help: bool = false,
     /// Per panel: the channel it triggers on (in triggered mode, on a channel) as last
     /// seen, and whether it still owes that channel a latch (see `updateLatches`).
     trig_on: [panels_mod.max_panels]?u32 = @splat(null),
@@ -605,7 +663,10 @@ pub const Display = struct {
         }
         var quit = false;
         for (in_given.keys[0..in_given.num_keys]) |k| {
-            if (k.isNamed(.escape) or k.is('q')) quit = true;
+            // Esc with the key summary up hides it, and does not quit.
+            if (k.isNamed(.escape) and self.help) {
+                self.help = false;
+            } else if (k.isNamed(.escape) or k.is('q')) quit = true;
         }
         if (self.set.len == 0) return quit;
         var in = in_given;
@@ -702,6 +763,45 @@ pub const Display = struct {
                 else => {},
             },
         }
+    }
+
+    /// `?` shows or hides the key summary, and is taken out of `in` so that it does not also
+    /// start a note (a note begins at `/`, and `?` is Shift+/ on a US layout). Call it before
+    /// the notes take their keys, and not while a note is being typed (then `?` is text).
+    ///
+    /// Which key is `?` is read from what the keys typed (`in.text`): xkbcommon gives it
+    /// with the modifiers held when each key went down, in the layout in use. `in.shift` is
+    /// the modifiers' state when the input was taken, which a quick Shift+/ may have left
+    /// already, and `keys` hold the unshifted symbol (`/`). Only without a keymap (no text
+    /// at all) is `/` with Shift held taken for `?`. The `/` keys that typed a `?` (paired
+    /// in order with the `/` and `?` typed) are removed.
+    pub fn helpKey(self: *Display, in: *Input) void {
+        var typed: [16]u8 = undefined;
+        var n_typed: usize = 0;
+        var asked: usize = 0;
+        for (in.text[0..in.text_len]) |c| {
+            if (c != '/' and c != '?') continue;
+            asked += @intFromBool(c == '?');
+            if (n_typed < typed.len) typed[n_typed] = c;
+            n_typed += 1;
+        }
+        const no_text = in.text_len == 0;
+        var kept: usize = 0;
+        var slash: usize = 0;
+        for (in.keys[0..in.num_keys]) |k| {
+            if (k.is('/')) {
+                defer slash += 1;
+                const is_help = if (no_text) in.shift else slash < typed.len and slash < n_typed and typed[slash] == '?';
+                if (is_help) {
+                    if (no_text) asked += 1;
+                    continue;
+                }
+            }
+            in.keys[kept] = k;
+            kept += 1;
+        }
+        in.num_keys = kept;
+        if (asked % 2 == 1) self.help = !self.help;
     }
 
     /// What this turn's input asks of scroll-back review: the keys (Space, Left / Right,
@@ -871,6 +971,7 @@ pub const Display = struct {
         if (notes.editing and o.line_h > 0) noteDraft(&o, notes, height, fs);
         if (status.valid and o.line_h > 0) statusReadout(&o, status, width, height);
         if (self.set.len > 1) targetBar(&o, self.set.items[self.target].pixelRect(width, height));
+        if (self.help and o.line_h > 0) helpPanel(&o, width, height);
         return .{ .draws = draws[0..o.nd], .fills = fills[0..o.nf], .text = batch.vertices[0..batch.len] };
     }
 
@@ -1429,6 +1530,48 @@ fn statusReadout(o: *Output, status: Status, width: u32, height: u32) void {
     }
 }
 
+/// The key summary (`key_help`) over the middle of the display: the display's keys on the
+/// left, the spike-tile window's on the right, each a column of keys and a column of what
+/// they do, in the fixed-width font (the ordinary one if there is none). Where the display
+/// is too small, it is cut at the right and bottom edges.
+fn helpPanel(o: *Output, width: u32, height: u32) void {
+    const batch = o.batch;
+    const f = batch.font;
+    const line_h = o.line_h;
+    const pad: f32 = 12;
+    const title = "Keys and the mouse   (? or Esc closes this)";
+    const headings = [2][]const u8{ "On the display", "In the spike-tile window" };
+    // Per column: how wide its keys and its descriptions are, and how many lines.
+    var key_w: [2]f32 = @splat(0);
+    var what_w: [2]f32 = @splat(0);
+    var lines: [2]usize = @splat(0);
+    for (key_help) |k| {
+        const c = @backingInt(k.window);
+        key_w[c] = @max(key_w[c], f.widthMono(k.key));
+        what_w[c] = @max(what_w[c], f.widthMono(k.what), f.widthMono(headings[c]));
+        lines[c] += 1;
+    }
+    const sp = f.widthMono("  ");
+    const col_w = [2]f32{ key_w[0] + sp + what_w[0], key_w[1] + sp + what_w[1] };
+    const gap = f.widthMono("    ");
+    const w = @max(col_w[0] + gap + col_w[1], f.widthMono(title)) + 2 * pad;
+    const h = @as(f32, @floatFromInt(@max(lines[0], lines[1]) + 3)) * line_h + 2 * pad;
+    const x0 = @round(@max(0, (@as(f32, @floatFromInt(width)) - w) / 2));
+    const y0 = @round(@max(0, (@as(f32, @floatFromInt(height)) - h) / 2));
+    batch.rect(x0, y0, w, h, theme.help_backing);
+    _ = batch.textMono(x0 + pad, y0 + pad, title, theme.help_title);
+    const col_x = [2]f32{ x0 + pad, x0 + pad + col_w[0] + gap };
+    var row: [2]usize = @splat(0);
+    for (headings, col_x) |heading, x| _ = batch.textMono(x, y0 + pad + 2 * line_h, heading, theme.help_title);
+    for (key_help) |k| {
+        const c = @backingInt(k.window);
+        const y = y0 + pad + @as(f32, @floatFromInt(row[c] + 3)) * line_h;
+        _ = batch.textMono(col_x[c], y, k.key, theme.help_key);
+        _ = batch.textMono(col_x[c] + key_w[c] + sp, y, k.what, theme.help_text);
+        row[c] += 1;
+    }
+}
+
 /// A bar along the top of the panel that input goes to.
 fn targetBar(o: *Output, r: panels_mod.Rect) void {
     o.fills[o.nf] = .{ .rect = .{ .x = r.x, .y = r.y, .w = r.w, .h = 3 }, .colour = theme.target_bar };
@@ -1471,10 +1614,12 @@ pub const Text = struct {
     pub fn init(self: *Text, gpa: std.mem.Allocator, gpu: *Gpu, args: Args) void {
         var name_buf: [128]u8 = undefined;
         const family = std.fmt.bufPrintSentinel(&name_buf, "{s}", .{args.font}, 0) catch "sans-serif";
-        const f = font.Font.init(gpa, family, args.font_px) catch |e| {
+        var f = font.Font.init(gpa, family, args.font_px) catch |e| {
             log.warn("no font '{s}' ({t}): the display has no text", .{ args.font, e });
             return;
         };
+        // The key summary's fixed-width glyphs, in the same atlas (before it is uploaded).
+        f.addMono("monospace") catch |e| log.warn("no fixed-width font ({t}): the key summary uses '{s}'", .{ e, args.font });
         self.font = f;
         const vertices = gpa.alloc(font.Vertex, max_text_vertices) catch return;
         gpu.createText(f.atlas, font.atlas_size, max_text_vertices) catch |e| {
@@ -1512,16 +1657,25 @@ const testing = std.testing;
 var frame_atlas: [1]u8 = .{0};
 
 /// The hand-made font (as control.zig's test has it); a line height of 0 is a display
-/// without a font.
-fn frameFont(line_height: f32) font.Font {
+/// without a font. With `mono`, fixed-width glyphs too: 10 pixels wide, at atlas x 8 +
+/// `frame_mono_at` + (code point - 32).
+fn frameFont(line_height: f32, mono: bool) font.Font {
     var f: font.Font = .{ .atlas = &frame_atlas, .px = 14, .ascent = 12, .line_height = line_height };
     for (&f.glyphs, 0..) |*g, k| g.* = .{ .x = @intCast(8 + k), .y = 8, .w = 1, .h = 1, .top = 12, .advance = 8 };
+    if (mono) {
+        for (&f.mono, 0..) |*g, k| g.* = .{ .x = @intCast(8 + frame_mono_at + k), .y = 8, .w = 1, .h = 1, .top = 12, .advance = 10 };
+        f.has_mono = true;
+    }
     return f;
 }
 
-/// The code point of glyph `k` of `frameFont` (as `font.Font.glyph` numbers them).
+const frame_mono_at = 300;
+
+/// The code point of glyph `k` of `frameFont` (as `font.Font.glyph` numbers them, then
+/// the fixed-width ones from `frame_mono_at`).
 fn frameCodepoint(k: usize) u21 {
     const extra = [_]u21{ 0x03C3, 0x2013, 0x2192, 0x266A };
+    if (k >= frame_mono_at) return @intCast(32 + k - frame_mono_at);
     return if (k < 224) @intCast(32 + k) else extra[k - 224];
 }
 
@@ -1599,6 +1753,8 @@ const FrameState = struct {
     height: u32 = 700,
     hist_cap: usize = 1 << 20,
     no_text: bool = false,
+    /// The font has fixed-width glyphs.
+    mono: bool = false,
 
     fn panels(self: *FrameState, list: []const Panel) void {
         var set: panels_mod.Set = .{};
@@ -1691,6 +1847,8 @@ const frame_states = [_][]const u8{
     "dragging the focused row's line: drawn at the value dragged to",
     "the trigger row in focus: one line, dashed, in the threshold's colour",
     "review entered by Shift+wheel: three clicks back over Port A (5 s): 1.5 s behind",
+    "the key summary (?), in the fixed-width font",
+    "the key summary (?), without a fixed-width font",
 };
 
 /// Puts state `k` of `frame_states` into `st`.
@@ -1716,6 +1874,7 @@ fn frameState(st: *FrameState, k: usize) void {
         25 => dragState(st),
         26 => triggerFocusState(st),
         27 => scrolledReviewState(st),
+        28, 29 => helpState(st, k == 28),
         else => unreachable,
     }
 }
@@ -2054,8 +2213,27 @@ fn scrolledReviewState(st: *FrameState) void {
     st.review = review.view(frame_newest, frame_fs);
 }
 
+/// The key summary over two panels, opened by `?` as typed (Shift+/), on a 1280 x 800
+/// display; `mono`: the font has fixed-width glyphs.
+fn helpState(st: *FrameState, mono: bool) void {
+    st.panels(&.{
+        framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0, .w = 0.5, .h = 1 }),
+        framePanel("Port B", .electrode, 32, 16, .{ .x = 0.5, .y = 0, .w = 0.5, .h = 1 }),
+    });
+    st.width = 1280;
+    st.height = 800;
+    st.mono = mono;
+    var in: Input = .{ .num_keys = 1, .shift = true };
+    in.keys[0] = .{ .char = '/' };
+    setText(&in.text, &in.text_len, "?");
+    st.display.helpKey(&in);
+    st.notes.handle(&in, frame_newest, "");
+    _ = st.display.applyInput(in);
+}
+
 /// Writes the batch's quads as rectangles and runs of text (glyphs on one row, of one
-/// colour, 8 pixels apart). Returns how many of each; with `w` null, only counts.
+/// colour, 8 pixels apart; "mono": fixed-width glyphs, 10 apart). Returns how many of
+/// each; with `w` null, only counts.
 fn writeQuads(w: ?*std.Io.Writer, verts: []const font.Vertex) !struct { rects: usize, runs: usize } {
     const quads = verts.len / 6;
     var rects: usize = 0;
@@ -2073,16 +2251,18 @@ fn writeQuads(w: ?*std.Io.Writer, verts: []const font.Vertex) !struct { rects: u
             continue;
         }
         runs += 1;
-        if (w) |out| try out.print("text {d} {d} {any} \"", .{ x, y, col });
+        const mono = v[0].uv[0] * font.atlas_size - 8 >= frame_mono_at;
+        if (w) |out| try out.print("{s} {d} {d} {any} \"", .{ if (mono) "mono" else "text", x, y, col });
         var next_x = x;
         while (q < quads) : (q += 1) {
             const g = verts[q * 6 ..][0..6];
             const gu = g[0].uv[0] * font.atlas_size;
             if (gu < 8 or g[0].pos[0] != next_x or g[0].pos[1] != y or !std.mem.eql(u8, &g[0].colour, &col)) break;
+            if ((gu - 8 >= frame_mono_at) != mono) break;
             var utf: [4]u8 = undefined;
             const n = std.unicode.utf8Encode(frameCodepoint(@intFromFloat(gu - 8)), &utf) catch unreachable;
             if (w) |out| try out.writeAll(utf[0..n]);
-            next_x += 8;
+            next_x += if (mono) 10 else 8;
         }
         if (w) |out| try out.writeAll("\"\n");
     }
@@ -2092,7 +2272,7 @@ fn writeQuads(w: ?*std.Io.Writer, verts: []const font.Vertex) !struct { rects: u
 /// Runs `frame` on `st` and writes what it returned.
 fn writeFrame(w: *std.Io.Writer, name: []const u8, st: *FrameState, gains: []f32, vertices: []font.Vertex) !void {
     const layout = frameLayout();
-    const face = frameFont(if (st.no_text) 0 else 16);
+    const face = frameFont(if (st.no_text) 0 else 16, st.mono);
     var batch: font.Batch = .{ .font = &face, .vertices = vertices };
     var draws: [max_draws]gpu_mod.PanelDraw = undefined;
     var fills: [max_fills]gpu_mod.Fill = undefined;
@@ -2225,6 +2405,100 @@ test "script steps: press, move and release drag a line; n toggles" {
     }
 }
 
+/// Input with the keys `keys` (characters, `\x1b` for Esc), typed text `text` and Shift
+/// held or not, as the window gives it.
+fn typedInput(keys: []const u8, text: []const u8, shift: bool) Input {
+    var in: Input = .{ .shift = shift, .num_keys = keys.len };
+    for (keys, 0..) |c, k| in.keys[k] = if (c == 0x1b) .{ .named = .escape } else .{ .char = c };
+    setText(&in.text, &in.text_len, text);
+    return in;
+}
+
+/// One turn of the display loop's key handling: the key summary, the notes, the display.
+/// True means quit.
+fn helpTurn(d: *Display, notes: *notes_mod.Notes, given: Input) bool {
+    var in = given;
+    if (!notes.editing) d.helpKey(&in);
+    notes.handle(&in, 1000, "");
+    return d.applyInput(in);
+}
+
+test "?: shows and hides the key summary and starts no note; / alone still does; Esc hides it, else quits" {
+    var d = clickDisplay(5);
+    var notes: notes_mod.Notes = .{};
+    // Shift+/ typing "?": shown, no note.
+    try testing.expect(!helpTurn(&d, &notes, typedInput("/", "?", true)));
+    try testing.expect(d.help and !notes.editing);
+    // While it is shown, other keys do what they do: m to sweep.
+    _ = helpTurn(&d, &notes, typedInput("m", "m", false));
+    try testing.expectEqual(.sweep, d.set.items[0].mode);
+    // ? again: hidden.
+    _ = helpTurn(&d, &notes, typedInput("/", "?", true));
+    try testing.expect(!d.help and !notes.editing);
+    // Shown again, then Esc: hidden, and no quitting.
+    _ = helpTurn(&d, &notes, typedInput("/", "?", true));
+    try testing.expect(!helpTurn(&d, &notes, typedInput("\x1b", "", false)));
+    try testing.expect(!d.help);
+    // Esc without it: quit. q quits with it shown, too.
+    try testing.expect(helpTurn(&d, &notes, typedInput("\x1b", "", false)));
+    _ = helpTurn(&d, &notes, typedInput("/", "?", true));
+    try testing.expect(helpTurn(&d, &notes, typedInput("q", "q", false)) and d.help);
+    d.help = false;
+    // Shift is read from the text, not the modifier state: "?" typed with Shift already
+    // let go is ?, and "/" typed with Shift still held (as reported) is /.
+    _ = helpTurn(&d, &notes, typedInput("/", "?", false));
+    try testing.expect(d.help and !notes.editing);
+    d.help = false;
+    _ = helpTurn(&d, &notes, typedInput("/", "/", true));
+    try testing.expect(!d.help and notes.editing);
+    // While a note is open, ? is part of it.
+    _ = helpTurn(&d, &notes, typedInput("/", "?", true));
+    try testing.expect(!d.help);
+    try testing.expectEqualStrings("?", notes.draft.text());
+    notes.editing = false;
+    // / then ? in one turn: a note for the /, the summary for the ?.
+    _ = helpTurn(&d, &notes, typedInput("//", "/?", true));
+    try testing.expect(d.help and notes.editing);
+    notes.editing = false;
+    d.help = false;
+    // Without a keymap there is no text: / with Shift held is ?.
+    _ = helpTurn(&d, &notes, typedInput("/", "", true));
+    try testing.expect(d.help and !notes.editing);
+    _ = helpTurn(&d, &notes, typedInput("/", "", false));
+    try testing.expect(d.help and notes.editing);
+}
+
+test "the key summary agrees with the usage text on the display's keys" {
+    const usage = @import("args.zig").usage;
+    const start = std.mem.indexOf(u8, usage, "\nOn the display").?;
+    const end = std.mem.indexOfPos(u8, usage, start + 1, "\n\n") orelse usage.len;
+    var lines = std.mem.splitScalar(u8, usage[start + 1 .. end], '\n');
+    _ = lines.next();
+    // Each line that names a key: two spaces, then the key up to a run of two spaces.
+    var k: usize = 0;
+    while (lines.next()) |line| {
+        if (line.len < 3 or line[2] == ' ') continue;
+        const key = line[2 .. std.mem.indexOfPos(u8, line, 2, "  ") orelse line.len];
+        while (k < key_help.len and key_help[k].window != .display) k += 1;
+        if (k == key_help.len or !std.mem.eql(u8, key_help[k].key, key)) {
+            const has = if (k < key_help.len) key_help[k].key else "nothing";
+            std.debug.print("usage lists '{s}' where the key summary has '{s}'\n", .{ key, has });
+            return error.TestUnexpectedResult;
+        }
+        k += 1;
+    }
+    while (k < key_help.len and key_help[k].window != .display) k += 1;
+    if (k < key_help.len) {
+        std.debug.print("the key summary has '{s}', the usage text does not\n", .{key_help[k].key});
+        return error.TestUnexpectedResult;
+    }
+    // Every line of the summary is ASCII, so the columns line up in the fixed-width font.
+    for (key_help) |h| {
+        for (h.key) |c| try testing.expect(c >= 0x20 and c < 0x7f);
+        for (h.what) |c| try testing.expect(c >= 0x20 and c < 0x7f);
+    }
+}
+
 test "script steps: swheel, awheel and l" {
     const runScript = @import("script.zig").runScript;
     var d = clickDisplay(5);
@@ -2239,6 +2513,13 @@ test "script steps: swheel, awheel and l" {
     try testing.expect(in.alt and !in.shift and in.scroll_y == 30);
     const acts = d.reviewActions(&in, frame_fs);
     try testing.expect(acts.len == 1 and acts.items[0] == .live and acts.scroll == 0);
+    // ? is Shift+/ typing "?": the key summary.
+    pos = 0;
+    in = .{};
+    runScript("0:?", &pos, 0, &in, &d);
+    try testing.expect(in.shift and in.keys[0].is('/') and std.mem.eql(u8, in.text[0..in.text_len], "?"));
+    d.helpKey(&in);
+    try testing.expect(d.help and in.num_keys == 0);
 }
 
 test "a dragged line is drawn where the shader draws a sample of the value it set" {
@@ -2270,7 +2551,7 @@ const ThresholdRects = struct {
 /// x, y, w, h.
 fn thresholdRects(st: *FrameState, vertices: []font.Vertex) !ThresholdRects {
     const layout = frameLayout();
-    const face = frameFont(16);
+    const face = frameFont(16, false);
     var batch: font.Batch = .{ .font = &face, .vertices = vertices };
     var draws: [max_draws]gpu_mod.PanelDraw = undefined;
     var fills: [max_fills]gpu_mod.Fill = undefined;

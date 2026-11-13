@@ -72,6 +72,17 @@ pub const alarm_hint_text: Colour = .{ 255, 210, 210, 255 };
 /// The REVIEW badge's text.
 pub const review_badge_text: Colour = .{ 255, 240, 200, 255 };
 
+// Display: the key summary (`?`).
+
+/// The box behind it: nearly opaque, so the traces do not show through the text.
+pub const help_backing: Colour = .{ 14, 16, 22, 245 };
+/// Its title and the two columns' headings.
+pub const help_title: Colour = .{ 225, 230, 240, 255 };
+/// A key or mouse action.
+pub const help_key: Colour = .{ 150, 200, 255, 255 };
+/// What it does.
+pub const help_text: Colour = .{ 175, 184, 200, 255 };
+
 // Display: fills (`gpu.Fill`, `[4]f32`).
 
 /// The display's background, where the sweep cursor blanks the stretch ahead of it.
