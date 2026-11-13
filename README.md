@@ -544,6 +544,19 @@ the FT600 protocol from D3XX.
 
 Use explicit little-endian dtypes (`'<i2'`, `'<i8'`, `'<u2'`) in other readers.
 
+### Testing the recorder
+
+`zig build test` includes `src/record_test.zig`: a producer thread feeds the ring blocks whose
+every value is a function of (sample number, channel), and each recording is read back and
+checked (every sample, every TTL change, index offsets, CRCs and gap flags, `events.tsv`,
+`[final]`). It covers a whole stream, attaching to a running stream, stopping while the
+producer carries on (and the ring being let go), lost blocks, an injected write failure, and
+events from both queues. `tools/crash-test.sh [SECONDS]` records from the simulator, kills
+`oez-headless` with `kill -9` after that many seconds, and checks with `oez_read.py` that the
+indexed part verifies, that the recording is marked interrupted, and that the unverified tail
+is under 1.5 s. Neither touches the board. The crash test kills the process only (the page
+cache survives), so it says nothing about power loss or a full disk.
+
 ## Hardware safety
 
 Only volatile FPGA and Intan-chip registers are written (same sequence as oers and stock).
