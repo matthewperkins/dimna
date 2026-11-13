@@ -2,10 +2,13 @@
 //!
 //!   oez-headless [--seconds S] [--16ch A1,B1] [--aux] [--adc] [--leds] [--rate HZ] [--block N]
 //!                [--record ROOT] [--live-test] [--driver d3xx|usb] [--usb-block BYTES]
-//!                [--sim 32,16]
+//!                [--sim 32,16] [--band LOW,HIGH] [--no-dsp]
 //!
 //! --sim runs from simulated headstages (channels each) instead of the board: no hardware is
 //! touched, and the acquisition thread does not ask for real-time priority.
+//!
+//! --band sets the amplifier band in Hz and --no-dsp turns the chips' DSP high-pass off, for
+//! every port (see docs/OPEN.md: this board does not take different settings per port).
 //!
 //! --usb-block sets how many bytes liboni fetches at a time (default 8192, about 1.4 ms at 46
 //! channels). Nothing reaches the pipeline until a block is complete, so smaller means lower
@@ -96,6 +99,13 @@ fn parseArgs(args: []const [:0]const u8) !Args {
             }
         } else if (std.mem.eql(u8, arg, "--live-test")) {
             a.live_test = true;
+        } else if (std.mem.eql(u8, arg, "--band")) {
+            // LOW,HIGH: the amplifier band in Hz.
+            var it = std.mem.tokenizeScalar(u8, try next(args, &i, arg), ',');
+            a.settings.lower_bandwidth = try std.fmt.parseFloat(f64, it.next() orelse "");
+            a.settings.upper_bandwidth = try std.fmt.parseFloat(f64, it.next() orelse "");
+        } else if (std.mem.eql(u8, arg, "--no-dsp")) {
+            a.settings.dsp_enabled = false;
         } else if (std.mem.eql(u8, arg, "--aux")) {
             a.settings.acquire_aux = true;
         } else if (std.mem.eql(u8, arg, "--adc")) {

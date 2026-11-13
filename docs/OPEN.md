@@ -44,6 +44,36 @@ seen, so it can be told apart from a guess. Remove an entry when it is fixed or 
 - **`Display.frame` never reads `Display.acknowledged`**: acknowledging works because the
   alarm is taken out of `Status` (session.zig). Correct today, easy to break.
 
+## Tried, and not possible on this board
+
+- **Different amplifier settings per port** (the band and the DSP high-pass of port A's
+  headstage apart from port B's). The driver has a bank selector per port
+  (`AUXCMD_BANK_3`, four bits each for A to D) and the stock software always sets all
+  four alike. On this board (ECP5-ONI gateware 2.0.0) the register holds what is written
+  (read back `0x3313` and the like) but **port B's chips run port A's list**, whatever
+  port B's own field says and whichever bank numbers are used. Measured 2026-11-13 with
+  the headstages as they hung (16-ch on A, Myomatrix on B), 14 s recordings, median
+  2-100 Hz rms per port in µV:
+
+  | lower corner asked for | port A | port B |
+  |---|---|---|
+  | both 1 Hz | 198 | 10.3 |
+  | both 300 Hz | 21.0 | 2.6 |
+  | A 300 Hz, B 0.1 Hz | 21.9 | 2.6 (as A) |
+  | A 0.1 Hz, B 300 Hz | 199.7 | 9.8 (as A) |
+  | A 0.1 Hz, rest 300 Hz | 225.9 | 14.9 (as A) |
+  | B 300 Hz, rest 0.1 Hz | 200.0 | 9.9 (as A) |
+  | the last two again with B's bank allocated first | 198.9 / 21.2 | 9.6 / 2.7 (as A) |
+  | A 300 / B 0.1, then A 0.1 / B 300, repeated with the board checked free before and after each run | 21.0 / 250.4 | 2.6 / 48.3 (as A) |
+
+  The cause is presumably in the gateware (one command stream for all ports); that is an
+  inference from the measurements, not something read in its source. The driver, config
+  and metadata changes that implemented per-port settings were not kept, since a setting
+  the board ignores would put false values in a recording's `meta.toml`; they are saved
+  as `~/oez-test/per-port-filters.patch` (against commit `fecc02a`). `tools/band_power.py`
+  is the measurement. What works instead: the widest band any port needs, board-wide,
+  and each panel's display filter for the rest (the recording is wide-band either way).
+
 ## Seen, not explained
 
 - **The latency read-out shows about 8 ms while in review** (2.2 ms live), on the board.
