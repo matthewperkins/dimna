@@ -29,8 +29,9 @@
 //! on every electrode, whichever are shown, so neither the display nor acquisition waits
 //! on it, and a hidden tile window costs only the detection. With the display it shares
 //! no lock (tile_link.zig): the display publishes `Config`, requests go back through a
-//! small queue, and this window publishes a `Report` (the focused channel's threshold, and
-//! its view: the port shown and the ranges, which the display thread saves).
+//! small queue, and this window publishes a `Report` (every electrode's threshold in use,
+//! and its view: the port shown and the ranges, which the display thread saves). The
+//! thresholds themselves are the display's, in `Config`.
 
 const std = @import("std");
 const Env = @import("env.zig").Env;
@@ -56,7 +57,8 @@ const max_tiles = tile_scale.max_tiles;
 
 /// Waveforms are many short lines: room for 16 of 47 segments on 64 tiles.
 const max_vertices = 300 * 1024;
-/// The focused channel's threshold moves with the noise: it is reported at most this often.
+/// A threshold that follows the noise moves with it: the thresholds are reported at most
+/// this often.
 const threshold_report_ns = 100 * std.time.ns_per_ms;
 
 pub const Tiles = struct {
@@ -155,9 +157,7 @@ pub const Tiles = struct {
         while (!shared.stop.load(.acquire) and !win.closed) {
             try win.pump(4);
             // Detection goes on whether or not the window is being shown, for every channel.
-            const before = seen;
-            shared.read(&cfg, &seen);
-            if (seen != before) dirty = true;
+            if (takeConfig(shared, &cfg, &seen, &det)) dirty = true;
             while (reader.next(&blk)) {
                 if (blk.len == 0) continue;
                 try det.feed(blk.first_sample, blk.samples(), nch, if (cfg.use_car) &cfg.car else null);
@@ -181,7 +181,7 @@ pub const Tiles = struct {
             };
             if (view.apply(&in, scene, &shared.requests, msOf(now))) dirty = true;
             _ = view.scale.tick(msOf(now));
-            view.publish(&shared.report, &det, &cfg, now);
+            view.publish(&shared.report, &det, now);
             // At most 20 pictures a second: the tiles are for looking at, not for timing.
             if (!dirty or !win.frame_ready or now - last_draw < 50 * std.time.ns_per_ms) continue;
             if (win.resized or gpu.swapchain == .null) {
@@ -205,6 +205,16 @@ pub const Tiles = struct {
         if (win.closed) log.info("spike tile window closed", .{});
     }
 };
+
+/// Takes the display's newest `Config` into `cfg`, if there is a new one, and gives the
+/// detector its thresholds. True if it was new.
+fn takeConfig(shared: *Shared, cfg: *Config, seen: *u32, det: *spikes.Detector) bool {
+    const before = seen.*;
+    shared.read(cfg, seen);
+    if (seen.* == before) return false;
+    det.thresholds = cfg.thresholds;
+    return true;
+}
 
 /// Puts the batch on the screen. True if it was presented.
 fn present(gpu: *gpu_mod.Gpu, win: *Window, batch: *const font.Batch, tag: u64) !bool {
@@ -338,27 +348,22 @@ const View = struct {
         return changed;
     }
 
-    /// What the display is told: the focused channel's threshold, and the view.
-    fn report(self: *const View, det: *const spikes.Detector, cfg: *const Config) link.Report {
+    /// What the display is told: every electrode's threshold in use, and the view.
+    fn report(self: *const View, det: *const spikes.Detector) link.Report {
         var r: link.Report = .{ .view = .{ .port = self.port, .range_uv = self.scale.ranges } };
-        if (cfg.focus) |f| {
-            r.threshold_channel = f;
-            if (f < det.units.len) {
-                r.threshold_uv = @floatCast(det.threshold(&det.units[f]) * oez.types.electrode_uv_per_bit);
-                r.threshold_valid = true;
-            }
-        }
+        const n = @min(det.units.len, r.thresholds.uv.len);
+        for (r.thresholds.uv[0..n], 0..) |*uv, ch| uv.* = @floatCast(det.threshold(ch) * oez.types.electrode_uv_per_bit);
+        r.thresholds.len = n;
         return r;
     }
 
-    /// Publishes the report when something in it changed; a change of the threshold alone
+    /// Publishes the report when something in it changed; a change of the thresholds alone
     /// at most every `threshold_report_ns`.
-    fn publish(self: *View, out: anytype, det: *const spikes.Detector, cfg: *const Config, now_ns: i128) void {
-        const r = self.report(det, cfg);
+    fn publish(self: *View, out: anytype, det: *const spikes.Detector, now_ns: i128) void {
+        const r = self.report(det);
         const old = &self.reported;
-        const now_needed = !self.ever_reported or !r.view.eql(&old.view) or r.threshold_valid != old.threshold_valid or
-            r.threshold_channel != old.threshold_channel;
-        const threshold_moved = r.threshold_valid and r.threshold_uv != old.threshold_uv and
+        const now_needed = !self.ever_reported or !r.view.eql(&old.view) or r.thresholds.len != old.thresholds.len;
+        const threshold_moved = !std.mem.eql(f32, &r.thresholds.uv, &old.thresholds.uv) and
             now_ns - self.reported_ns >= threshold_report_ns;
         if (!now_needed and !threshold_moved) return;
         out.publish(&r);
@@ -557,7 +562,7 @@ fn drawTile(batch: *font.Batch, scene: Scene, r: [4]f32, ch: u32, hovered: bool)
         }
     }.f;
     // The threshold, and the trough's place in time.
-    const thr_y = yOf(zero, per_unit, top, bottom, det.threshold(u));
+    const thr_y = yOf(zero, per_unit, top, bottom, det.threshold(ch));
     batch.rect(x + 3, @round(thr_y), w - 6, 1, theme.tile_threshold);
     // Oldest first, so the newest is on top and brightest.
     var k = shown;
@@ -974,7 +979,7 @@ test "the start: ranges and port from the initial view; a port without a headsta
     try testing.expectEqualSlices(bool, &.{ true, true, false, false }, &u.view.has_port);
 }
 
-test "the report: the focused electrode's threshold in µV, published when it changes" {
+test "the report: every electrode's threshold in µV, published when it changes" {
     const t = try testing.allocator.create(InputTest);
     defer testing.allocator.destroy(t);
     try t.init(&two_ports, .{});
@@ -989,38 +994,61 @@ test "the report: the focused electrode's threshold in µV, published when it ch
     };
     var sink: Sink = .{};
     const ms = std.time.ns_per_ms;
-    // Nothing in focus: no threshold; the first report goes out at once.
-    t.view.publish(&sink, &t.det, &t.cfg, 0);
+    // The first report goes out at once, with all 48 electrodes' thresholds (the AUX and
+    // ADC channels have none), each the detector's in µV: here following the noise, so
+    // negative.
+    t.view.publish(&sink, &t.det, 0);
     try testing.expectEqual(1, sink.count);
-    try testing.expect(!sink.last.threshold_valid);
-    t.view.publish(&sink, &t.det, &t.cfg, 1);
+    try testing.expectEqual(48, sink.last.thresholds.len);
+    try testing.expectEqual(null, sink.last.thresholds.get(48));
+    for (0..48) |ch| {
+        const want: f32 = @floatCast(t.det.threshold(ch) * 0.195);
+        try testing.expect(want < 0);
+        try testing.expectEqual(want, sink.last.thresholds.get(ch).?);
+    }
+    t.view.publish(&sink, &t.det, 1);
     try testing.expectEqual(1, sink.count);
-    // Focus on electrode 4: its threshold, negative, in µV, at once.
-    t.cfg.focus = 4;
-    t.view.publish(&sink, &t.det, &t.cfg, 2 * ms);
-    try testing.expectEqual(2, sink.count);
-    try testing.expect(sink.last.threshold_valid);
-    try testing.expectEqual(4, sink.last.threshold_channel);
-    const want: f32 = @floatCast(t.det.threshold(&t.det.units[4]) * 0.195);
-    try testing.expect(want < 0);
-    try testing.expectEqual(want, sink.last.threshold_uv);
-    // The threshold moving: at most every 100 ms.
+    // A threshold moving with the noise: at most every 100 ms.
     t.det.units[4].mad *= 1.01;
-    t.view.publish(&sink, &t.det, &t.cfg, 50 * ms);
+    t.view.publish(&sink, &t.det, 50 * ms);
+    try testing.expectEqual(1, sink.count);
+    t.view.publish(&sink, &t.det, 102 * ms);
     try testing.expectEqual(2, sink.count);
-    t.view.publish(&sink, &t.det, &t.cfg, 102 * ms);
+    try testing.expectEqual(@as(f32, @floatCast(t.det.threshold(4) * 0.195)), sink.last.thresholds.get(4).?);
+    // A fixed one, as the display's `Config` sets it: reported as it is (rising here).
+    t.det.thresholds.set(9, 75);
+    t.view.publish(&sink, &t.det, 210 * ms);
     try testing.expectEqual(3, sink.count);
+    try testing.expectApproxEqAbs(75, sink.last.thresholds.get(9).?, 1e-4);
     // A change of the view goes out at once.
     t.view.scale.ranges[0] = 99;
-    t.view.publish(&sink, &t.det, &t.cfg, 103 * ms);
+    t.view.publish(&sink, &t.det, 211 * ms);
     try testing.expectEqual(4, sink.count);
     try testing.expectEqual(99, sink.last.view.range_uv[0]);
     try testing.expectEqual(null, sink.last.view.port);
-    // Focus on a channel that is not an electrode (an AUX): no threshold.
-    t.cfg.focus = 50;
-    t.view.publish(&sink, &t.det, &t.cfg, 104 * ms);
-    try testing.expectEqual(5, sink.count);
-    try testing.expect(!sink.last.threshold_valid);
+}
+
+test "the display's thresholds reach the detector with its config" {
+    const shared = try testing.allocator.create(Shared);
+    defer testing.allocator.destroy(shared);
+    shared.* = .{};
+    var det = try spikes.Detector.init(testing.allocator, test_fs, 8);
+    defer det.deinit();
+    var cfg: Config = .{};
+    var seen: u32 = 0;
+    try testing.expect(!takeConfig(shared, &cfg, &seen, &det));
+    var sent: Config = .{};
+    sent.thresholds.sigmas = 5.5;
+    sent.thresholds.set(3, -80);
+    shared.publish(&sent);
+    try testing.expect(takeConfig(shared, &cfg, &seen, &det));
+    try testing.expectEqual(5.5, det.thresholds.sigmas);
+    try testing.expectEqual(-80, det.thresholds.fixed_uv[3]);
+    try testing.expectEqual(@as(f64, -80) / 0.195, det.threshold(3));
+    // Nothing new: nothing changes.
+    det.thresholds = .{};
+    try testing.expect(!takeConfig(shared, &cfg, &seen, &det));
+    try testing.expect(!det.thresholds.isFixed(3));
 }
 
 // ---- What the tile window draws ----

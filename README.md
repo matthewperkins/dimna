@@ -174,8 +174,9 @@ The focused channel's detection threshold is drawn on its trace on the display a
 red line, in that row's own scale, so the threshold can be read against the signal. It is
 drawn only where the row shows about the detector's band (the row goes through the
 panel's filter, with corners within 250 to 350 Hz and 5 to 7 kHz); elsewhere the row's
-label says "thr" instead, because a line would not sit on what is shown. The threshold
-comes from the tile window's detector, so there is none with `--no-tiles`.
+label says "thr" instead, because a line would not sit on what is shown. A threshold that
+follows the noise is known from the tile window's detector, so with `--no-tiles` only a
+fixed one is drawn.
 
 *The tiles' vertical scale.* A tile's range is the µV from zero to its edge. At first every
 tile scales itself to its own waveforms. In the tile window:
@@ -194,10 +195,19 @@ headstage and for all of them: the tiles shown are the chosen port's (detection 
 for every channel). The wheel, `r` and `a` act on the tiles shown. The ranges and the port
 are saved by "Save view", in a `[tiles]` table of `views.toml`.
 
+*Thresholds.* Each electrode has one detection threshold, used by its tile and by any
+slope trigger on it alike (`src/thresholds.zig`). It either follows the noise, a number of
+sigmas below zero that is the same for every channel (4 to 6 in halves, 4.5 at first: the
+control window's "spike threshold" row), or is fixed in µV, its sign the slope: negative
+is crossed falling and aligned on the trough, positive rising and aligned on the peak. The
+display owns the thresholds and tells the tile window; "Save view" keeps them, in a
+`[thresholds]` table of `views.toml` (`sigmas = 4.5`, `fixed_uv = [...]` per electrode,
+0 = follows the noise).
+
 Detection (`src/spikes.zig`) is the slope trigger's, for every electrode at once: 300 Hz
-to 6 kHz, a threshold 4.5 sigma below zero with sigma from a running median (spikes
-hardly move it), each crossing aligned on the trough that follows, 1 ms dead time. It
-takes the panels' common average references. A large spike can make the band-pass ring
+to 6 kHz, each channel's threshold with sigma from a running median (spikes hardly move
+it), each crossing aligned on the extreme that follows, 1 ms dead time. It takes the
+panels' common average references. A large spike can make the band-pass ring
 across the threshold once more; such small waveforms are kept too. The tile window is a
 thread of its own with its own reader on the acquisition ring (`src/gui/tiles.zig`), so
 it never holds the display or acquisition back. `--no-tiles` or `tiles = false` leaves it
@@ -246,13 +256,16 @@ pointer over the row to listen to), the TTL / spikes buttons in the control wind
 `trigger_channel = 5` in the config. Clicking another row moves the trigger there.
 
 - The channel is band-passed 300 Hz to 6 kHz for the detection, whatever the panel shows.
-- The level follows the noise by default (4.5 sigma, sigma from the median of the
-  absolute signal, so spikes hardly move it), or is fixed in µV (`level_uv`). A dashed
+- The level and slope are the channel's threshold (above), and a channel a triggered panel
+  triggers on always has a fixed one: when the panel starts triggering on a channel whose
+  threshold follows the noise, it is fixed where it is at that moment (as the tile window
+  reports it, or without one after the trigger's first second of signal). In the control
+  window the level's − / + scales it by 15 % and falling / rising flips its sign. A dashed
   line shows it on the trigger's row, in that row's scale; it sits on the trace when the
-  panel shows a band near 300-6000 Hz.
-- Falling (default) or rising slope; the sweep is aligned on the extreme within 0.5 ms
-  after the crossing (the spike's trough or peak); 1 ms dead time plus an optional
-  holdoff.
+  panel shows a band near 300-6000 Hz. (`level_uv`, `level_auto` and `slope` are no longer
+  panel settings: a config or view file with them is read without them.)
+- The sweep is aligned on the extreme within 0.5 ms after the crossing (the spike's
+  trough or peak); 1 ms dead time plus an optional holdoff.
 - The window is its own: -1 / +2 ms, kept apart from the TTL window (-10 / +40 ms).
 
 After a very large spike the band-pass rings for a few ms and can trigger once more once
@@ -445,7 +458,8 @@ window's stepper does that).
 **Saving the view.** `config.toml` is the rig's setup, written by hand, and oEZ never
 rewrites its panels. What you set in the control window or with keys and wheel (scale,
 time base, mode, filter and corners, rows raw or hidden, per-row scales, CAR and its
-rows, trigger settings, tint) is kept in a second file beside it, `views.toml`, written
+rows, trigger settings, tint; the tiles' view and the detection thresholds) is kept in a
+second file beside it, `views.toml`, written
 by "Save view" in the control window (lit while there is something unsaved) and applied
 on top of the config at launch. Panels are matched by name; a view for a panel that is
 gone or has another number of rows is skipped. Delete `views.toml` to go back to the

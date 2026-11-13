@@ -247,15 +247,18 @@ pub const ViewFile = struct {
     saved: []u8,
     saved_len: usize = 0,
 
-    /// What is saved: the panels' settings and the tile window's view.
+    /// What is saved: the panels' settings, the tile window's view and the detection
+    /// thresholds.
     pub const View = struct {
         set: *const panels_mod.Set,
         tiles: *const oez.tile_view.TileView,
-        /// For how many electrodes there are (a tile each); it changes at a restart.
+        thresholds: *const oez.thresholds.Thresholds,
+        /// For how many electrodes there are (a tile and a threshold each); it changes at a
+        /// restart.
         layout: *const oez.types.Layout,
 
         fn render(self: View, buf: []u8) ?[]const u8 {
-            return files.renderViews(buf, self.set, self.tiles, self.layout.num_electrodes);
+            return files.renderViews(buf, self.set, self.tiles, self.thresholds, self.layout.num_electrodes);
         }
     };
 
@@ -633,9 +636,6 @@ pub fn carryOver(new: *panels_mod.Set, old: *const panels_mod.Set) void {
         p.trigger.line = o.trigger.line;
         p.trigger.source = o.trigger.source;
         p.trigger.row = @min(o.trigger.row, p.rows -| 1);
-        p.trigger.rising = o.trigger.rising;
-        p.trigger.auto = o.trigger.auto;
-        p.trigger.level_uv = o.trigger.level_uv;
         p.trigger.holdoff_ms = o.trigger.holdoff_ms;
         p.trigger.other_pre_ms = o.trigger.other_pre_ms;
         p.trigger.other_post_ms = o.trigger.other_post_ms;

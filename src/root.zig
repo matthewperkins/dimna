@@ -26,6 +26,7 @@ pub const ft600 = @import("ft600.zig");
 pub const oni_usb = @import("oni_usb.zig");
 pub const tile_view = @import("tile_view.zig");
 pub const tile_scale = @import("tile_scale.zig");
+pub const thresholds = @import("thresholds.zig");
 pub const independence_test = @import("independence_test.zig");
 pub const published = @import("published.zig");
 pub const clock = @import("clock.zig");

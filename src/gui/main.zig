@@ -168,7 +168,9 @@ pub fn main(init: std.process.Init) !u8 {
         .audio_shared = &audio_shared,
         .tiles_shared = &tiles_shared,
     };
-    pl.init() catch |e| return if (e == error.BadPanels) 2 else e;
+    // The detection thresholds: from the view file; the display keeps them from then on
+    // (and across a restart).
+    pl.init(oez.thresholds.Thresholds.read(args.views_doc)) catch |e| return if (e == error.BadPanels) 2 else e;
     // Stops acquisition, the audio monitor and the tiles, then frees the ring. It runs
     // after the recording below is closed, which reads the ring to its end.
     defer pl.deinit();
@@ -216,9 +218,9 @@ pub fn main(init: std.process.Init) !u8 {
     // However the loop ends, a recording in progress is closed properly.
     defer recording.deinit();
     var rec_published_ns: i128 = 0;
-    // What "Save view" saves: the panels and the tile window's view. (Pointers that stay
-    // valid; what they point to changes.)
-    const view: session.ViewFile.View = .{ .set = &display.set, .tiles = &tile_view, .layout = layout };
+    // What "Save view" saves: the panels, the tile window's view and the thresholds.
+    // (Pointers that stay valid; what they point to changes.)
+    const view: session.ViewFile.View = .{ .set = &display.set, .tiles = &tile_view, .thresholds = &display.thresholds, .layout = layout };
     var view_file = try session.ViewFile.init(gpa, view);
     defer view_file.deinit(gpa);
     var review: session.ReviewSession = .{};
@@ -292,6 +294,7 @@ pub fn main(init: std.process.Init) !u8 {
             snap_dirty = true;
             switch (e) {
                 .panel => |p| display.applyPanelEdit(p.index, p.action),
+                .threshold => |t| display.applyThreshold(t),
                 .audio => |a| display.applyAudio(a),
                 .board => |b| board_ctl.edit(b, acq, pl.fs, recording.active(), io, gpa, config_path),
                 .record => |on| {
@@ -343,26 +346,23 @@ pub fn main(init: std.process.Init) !u8 {
             notes.dirty = false;
             snap_dirty = true;
         }
-        // What was asked for in the tile window: focus a channel, clear the focus, listen.
-        while (tiles_shared.requests.pop()) |request| switch (request) {
-            .focus => |channel| display.setFocus(channel),
-            .unfocus => display.setFocus(null),
-            .listen => |l| display.listenClick(l.channel, l.add),
-        };
-        // What the tile window reports: the focused channel's threshold, and its view.
+        // What was asked for in the tile window: focus a channel, clear the focus, listen,
+        // set a threshold.
+        while (tiles_shared.requests.pop()) |request| display.tileRequest(request);
+        // What the tile window reports: every electrode's threshold in use, and its view.
         {
             var report: tile_link.Report = undefined;
             if (tiles_shared.report.read(&report, &tile_report_seen)) {
-                display.focus_threshold_uv = if (report.threshold_valid and display.focus == report.threshold_channel)
-                    report.threshold_uv
-                else
-                    null;
+                display.reported = report.thresholds;
                 if (!report.view.eql(&tile_view)) {
                     tile_view = report.view;
                     snap_dirty = true;
                 }
             }
-            if (display.focus == null) display.focus_threshold_uv = null;
+        }
+        if (display.thresholds_changed) {
+            display.thresholds_changed = false;
+            snap_dirty = true;
         }
         if (pl.tiles_win != null and nowNs() - tiles_published_ns > 200 * std.time.ns_per_ms) {
             tiles_published_ns = nowNs();
@@ -455,6 +455,8 @@ pub fn main(init: std.process.Init) !u8 {
             snap_target = display.target;
             shared.publish(&.{
                 .set = display.set,
+                .thresholds = display.thresholds,
+                .reported = display.reported,
                 .target = display.target,
                 .status = status,
                 .ring_overflow = acq.ring_overflow.load(.monotonic),

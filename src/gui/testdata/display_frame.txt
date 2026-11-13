@@ -283,7 +283,7 @@ rect 2 586 46 18 { 8, 10, 14, 200 }
 text 5 587 { 150, 160, 178, 255 } "laser"
 rect 2 656 38 18 { 8, 10, 14, 200 }
 text 5 657 { 150, 160, 178, 255 } "TTL3"
-== triggered on a slope: fixed level, and following the noise: 15 draws, 2 fills, 54 text runs, 140 rects
+== triggered on a slope: a fixed level, and one latched from following the noise: 15 draws, 2 fills, 54 text runs, 140 rects
 draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=2992545 first_ch=7 cols=500 rows=31 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.20000002 gain_base=0
 draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=2994548 first_ch=7 cols=500 rows=31 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.25000003 gain_base=0
 draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=2996551 first_ch=7 cols=500 rows=31 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.3 gain_base=0
@@ -294,11 +294,11 @@ draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=3004563 first_ch=7 
 draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=3006566 first_ch=7 cols=500 rows=31 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.55 gain_base=0
 draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=3008569 first_ch=7 cols=500 rows=31 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.6 gain_base=0
 draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=3010572 first_ch=7 cols=500 rows=31 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=0
-draw 500 0 500 700 review=false nch=62 cap_mask=1048575 newest=3004560 first_ch=39 cols=500 rows=16 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.20000002 gain_base=256
-draw 500 0 500 700 review=false nch=62 cap_mask=1048575 newest=3006560 first_ch=39 cols=500 rows=16 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.33333334 gain_base=256
-draw 500 0 500 700 review=false nch=62 cap_mask=1048575 newest=3006603 first_ch=39 cols=500 rows=16 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.4666667 gain_base=256
-draw 500 0 500 700 review=false nch=62 cap_mask=1048575 newest=3008558 first_ch=39 cols=500 rows=16 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.6 gain_base=256
-draw 500 0 500 700 review=false nch=62 cap_mask=1048575 newest=3010557 first_ch=39 cols=500 rows=16 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=256
+draw 500 0 500 700 review=false nch=62 cap_mask=1048575 newest=3002567 first_ch=39 cols=500 rows=16 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.20000002 gain_base=256
+draw 500 0 500 700 review=false nch=62 cap_mask=1048575 newest=3004567 first_ch=39 cols=500 rows=16 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.33333334 gain_base=256
+draw 500 0 500 700 review=false nch=62 cap_mask=1048575 newest=3006566 first_ch=39 cols=500 rows=16 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.4666667 gain_base=256
+draw 500 0 500 700 review=false nch=62 cap_mask=1048575 newest=3008565 first_ch=39 cols=500 rows=16 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.6 gain_base=256
+draw 500 0 500 700 review=false nch=62 cap_mask=1048575 newest=3010564 first_ch=39 cols=500 rows=16 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=256
 gain 0 row 3: 1.5
 fill 500 0 1 700 0.22 0.24 0.28 1
 fill 0 0 500 3 0.3 0.55 0.95 1
@@ -415,51 +415,51 @@ rect 2 657 22 18 { 8, 10, 14, 200 }
 text 5 658 { 150, 160, 178, 255 } "31"
 rect 2 680 22 18 { 8, 10, 14, 200 }
 text 5 681 { 150, 160, 178, 255 } "32"
-rect 500 105 6 1 { 255, 205, 120, 200 }
-rect 512 105 6 1 { 255, 205, 120, 200 }
-rect 524 105 6 1 { 255, 205, 120, 200 }
-rect 536 105 6 1 { 255, 205, 120, 200 }
-rect 548 105 6 1 { 255, 205, 120, 200 }
-rect 560 105 6 1 { 255, 205, 120, 200 }
-rect 572 105 6 1 { 255, 205, 120, 200 }
-rect 584 105 6 1 { 255, 205, 120, 200 }
-rect 596 105 6 1 { 255, 205, 120, 200 }
-rect 608 105 6 1 { 255, 205, 120, 200 }
-rect 620 105 6 1 { 255, 205, 120, 200 }
-rect 632 105 6 1 { 255, 205, 120, 200 }
-rect 644 105 6 1 { 255, 205, 120, 200 }
-rect 656 105 6 1 { 255, 205, 120, 200 }
-rect 668 105 6 1 { 255, 205, 120, 200 }
-rect 680 105 6 1 { 255, 205, 120, 200 }
-rect 692 105 6 1 { 255, 205, 120, 200 }
-rect 704 105 6 1 { 255, 205, 120, 200 }
-rect 716 105 6 1 { 255, 205, 120, 200 }
-rect 728 105 6 1 { 255, 205, 120, 200 }
-rect 740 105 6 1 { 255, 205, 120, 200 }
-rect 752 105 6 1 { 255, 205, 120, 200 }
-rect 764 105 6 1 { 255, 205, 120, 200 }
-rect 776 105 6 1 { 255, 205, 120, 200 }
-rect 788 105 6 1 { 255, 205, 120, 200 }
-rect 800 105 6 1 { 255, 205, 120, 200 }
-rect 812 105 6 1 { 255, 205, 120, 200 }
-rect 824 105 6 1 { 255, 205, 120, 200 }
-rect 836 105 6 1 { 255, 205, 120, 200 }
-rect 848 105 6 1 { 255, 205, 120, 200 }
-rect 860 105 6 1 { 255, 205, 120, 200 }
-rect 872 105 6 1 { 255, 205, 120, 200 }
-rect 884 105 6 1 { 255, 205, 120, 200 }
-rect 896 105 6 1 { 255, 205, 120, 200 }
-rect 908 105 6 1 { 255, 205, 120, 200 }
-rect 920 105 6 1 { 255, 205, 120, 200 }
-rect 932 105 6 1 { 255, 205, 120, 200 }
-rect 944 105 6 1 { 255, 205, 120, 200 }
-rect 956 105 6 1 { 255, 205, 120, 200 }
-rect 968 105 6 1 { 255, 205, 120, 200 }
-rect 980 105 6 1 { 255, 205, 120, 200 }
-rect 992 105 6 1 { 255, 205, 120, 200 }
+rect 500 114 6 1 { 255, 205, 120, 200 }
+rect 512 114 6 1 { 255, 205, 120, 200 }
+rect 524 114 6 1 { 255, 205, 120, 200 }
+rect 536 114 6 1 { 255, 205, 120, 200 }
+rect 548 114 6 1 { 255, 205, 120, 200 }
+rect 560 114 6 1 { 255, 205, 120, 200 }
+rect 572 114 6 1 { 255, 205, 120, 200 }
+rect 584 114 6 1 { 255, 205, 120, 200 }
+rect 596 114 6 1 { 255, 205, 120, 200 }
+rect 608 114 6 1 { 255, 205, 120, 200 }
+rect 620 114 6 1 { 255, 205, 120, 200 }
+rect 632 114 6 1 { 255, 205, 120, 200 }
+rect 644 114 6 1 { 255, 205, 120, 200 }
+rect 656 114 6 1 { 255, 205, 120, 200 }
+rect 668 114 6 1 { 255, 205, 120, 200 }
+rect 680 114 6 1 { 255, 205, 120, 200 }
+rect 692 114 6 1 { 255, 205, 120, 200 }
+rect 704 114 6 1 { 255, 205, 120, 200 }
+rect 716 114 6 1 { 255, 205, 120, 200 }
+rect 728 114 6 1 { 255, 205, 120, 200 }
+rect 740 114 6 1 { 255, 205, 120, 200 }
+rect 752 114 6 1 { 255, 205, 120, 200 }
+rect 764 114 6 1 { 255, 205, 120, 200 }
+rect 776 114 6 1 { 255, 205, 120, 200 }
+rect 788 114 6 1 { 255, 205, 120, 200 }
+rect 800 114 6 1 { 255, 205, 120, 200 }
+rect 812 114 6 1 { 255, 205, 120, 200 }
+rect 824 114 6 1 { 255, 205, 120, 200 }
+rect 836 114 6 1 { 255, 205, 120, 200 }
+rect 848 114 6 1 { 255, 205, 120, 200 }
+rect 860 114 6 1 { 255, 205, 120, 200 }
+rect 872 114 6 1 { 255, 205, 120, 200 }
+rect 884 114 6 1 { 255, 205, 120, 200 }
+rect 896 114 6 1 { 255, 205, 120, 200 }
+rect 908 114 6 1 { 255, 205, 120, 200 }
+rect 920 114 6 1 { 255, 205, 120, 200 }
+rect 932 114 6 1 { 255, 205, 120, 200 }
+rect 944 114 6 1 { 255, 205, 120, 200 }
+rect 956 114 6 1 { 255, 205, 120, 200 }
+rect 968 114 6 1 { 255, 205, 120, 200 }
+rect 980 114 6 1 { 255, 205, 120, 200 }
+rect 992 114 6 1 { 255, 205, 120, 200 }
 rect 667 0 1 700 { 200, 210, 230, 150 }
-rect 505 5 534 18 { 8, 10, 14, 200 }
-text 508 6 { 225, 230, 240, 255 } "Port B   row 3 rising 42 µV   -1.0/+2.0 ms   400 µV/row   5 sweeps"
+rect 505 5 550 18 { 8, 10, 14, 200 }
+text 508 6 { 225, 230, 240, 255 } "Port B   row 3 falling -41 µV   -1.0/+2.0 ms   400 µV/row   5 sweeps"
 rect 933 679 62 18 { 8, 10, 14, 200 }
 text 936 680 { 150, 160, 178, 255 } "+2.0 ms"
 rect 668 679 14 18 { 8, 10, 14, 200 }
