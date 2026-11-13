@@ -135,6 +135,21 @@ pub const Ui = struct {
         return hot and self.clicked;
     }
 
+    /// A section's heading that opens and closes it: "▸ label" while closed, "▾ label"
+    /// while open, on a flat bar as high as a button. True when clicked.
+    pub fn heading(self: *Ui, label: []const u8, open: bool) bool {
+        var buf: [64]u8 = undefined;
+        const string = std.fmt.bufPrint(&buf, "{s} {s}", .{ if (open) "\u{25BE}" else "\u{25B8}", label }) catch label;
+        const w = self.buttonWidth(string);
+        const h = self.lineHeight() + 8;
+        self.fit(w);
+        const hot = self.hovering(self.x, self.y, w, h);
+        self.batch.rect(self.x, self.y, w, h, if (hot) theme.heading_hover else theme.heading_idle);
+        _ = self.batch.text(self.x + 9, self.y + 4, string, theme.text_bright);
+        self.x += w + 6;
+        return hot and self.clicked;
+    }
+
     /// "label  [-] value [+]". Returns -1 or +1 when a button is clicked or the wheel turns
     /// over it, else 0.
     pub fn stepper(self: *Ui, label: []const u8, string: []const u8, value_width: f32) i32 {
@@ -273,6 +288,23 @@ test "a button is clicked when the pointer is inside it as the button goes down"
     try testing.expect(!ui.button("ab", false));
     try testing.expect(ui.button("cd", false));
     try testing.expect(!ui.chip("1", false));
+}
+
+test "a heading: a triangle, a space and its label on a bar as wide as a button with that text" {
+    var tb: TestBatch = .{};
+    // "▸ ab" is 4 characters: 32 + 18 wide, a line plus 8 high.
+    var ui = tb.ui(800, 20, 20, true, 0);
+    try testing.expect(ui.heading("ab", false));
+    try testing.expectEqual([4]f32{ 12, 10, 50, 24 }, tb.rect(0));
+    try testing.expectEqual(68, ui.x);
+    // Open, the same size; only the heading under the pointer reports the click.
+    ui = tb.ui(800, 80, 20, true, 0);
+    try testing.expect(!ui.heading("ab", true));
+    try testing.expect(ui.heading("cd", true));
+    try testing.expectEqual([4]f32{ 68, 10, 50, 24 }, tb.rect(1));
+    // Not clicked: false, hovered or not.
+    ui = tb.ui(800, 20, 20, false, 0);
+    try testing.expect(!ui.heading("ab", true));
 }
 
 test "a stepper steps on its buttons and on the wheel over it" {

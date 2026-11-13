@@ -247,8 +247,8 @@ pub const ViewFile = struct {
     saved: []u8,
     saved_len: usize = 0,
 
-    /// What is saved: the panels' settings, the tile window's view and the detection
-    /// thresholds.
+    /// What is saved: the panels' settings, the tile window's view, the detection
+    /// thresholds and which sections of the control window are open.
     pub const View = struct {
         set: *const panels_mod.Set,
         tiles: *const oez.tile_view.TileView,
@@ -256,9 +256,15 @@ pub const ViewFile = struct {
         /// For how many electrodes there are (a tile and a threshold each); it changes at a
         /// restart.
         layout: *const oez.types.Layout,
+        /// Which sections of the control window are open (none: no `[control]` table).
+        control: ?*const oez.control_view.ControlView = null,
 
         fn render(self: View, buf: []u8) ?[]const u8 {
-            return files.renderViews(buf, self.set, self.tiles, self.thresholds, self.layout.num_electrodes);
+            const text = files.renderViews(buf, self.set, self.tiles, self.thresholds, self.layout.num_electrodes) orelse return null;
+            const open = self.control orelse return text;
+            var w: Io.Writer = .fixed(buf[text.len..]);
+            open.render(&w) catch return null;
+            return buf[0 .. text.len + w.buffered().len];
         }
     };
 

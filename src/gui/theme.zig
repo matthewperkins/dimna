@@ -108,3 +108,6 @@ pub const button_on: Colour = .{ 52, 96, 170, 255 };
 pub const button_on_hover: Colour = .{ 66, 116, 200, 255 };
 /// The line between sections.
 pub const rule: Colour = .{ 48, 52, 62, 255 };
+/// A section's heading, which opens and closes it: flatter than a button.
+pub const heading_idle: Colour = .{ 26, 30, 38, 255 };
+pub const heading_hover: Colour = .{ 48, 55, 70, 255 };

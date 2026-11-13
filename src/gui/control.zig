@@ -13,6 +13,7 @@
 const std = @import("std");
 const oez = @import("oez");
 const panels = oez.panels;
+const ControlView = oez.control_view.ControlView;
 const Window = @import("window.zig").Window;
 const gpu_mod = @import("gpu.zig");
 const font = @import("font.zig");
@@ -243,13 +244,14 @@ pub const Edit = union(enum) {
     board: BoardAction,
     /// Start (true) or stop a recording.
     record: bool,
-    review: ReviewAction,
     /// Stamp this preset note (1 to 9) now.
     note_preset: u8,
     /// The user has seen the alarm banner.
     acknowledge,
     /// Write the panels' settings to the view file.
     save_view,
+    /// Which sections of the control window are open now (saved with the view).
+    control_view: ControlView,
     quit_answer: QuitAnswer,
     quit,
 };
@@ -324,6 +326,9 @@ pub const Config = struct {
     font_buf: [128:0]u8 = @splat(0),
     font_px: u32 = 14,
     env: *const Env,
+    /// Which sections are open at start (from the view file); read once by the control
+    /// thread, which reports every change as `Edit.control_view`.
+    view: ControlView = .{},
 };
 
 pub fn spawn(cfg: *Config) ?std.Thread {
@@ -365,6 +370,8 @@ fn loop(cfg: *Config) !void {
     var last_x: f64 = -1;
     var last_y: f64 = -1;
     var tag: u64 = 0;
+    // Which sections are open: at start, as the view file says.
+    var view: ControlView = cfg.view;
     // For tests: "SECONDS:X,Y;..." clicks at those pixels of this window.
     var script: []const u8 = cfg.env.control_clicks;
     const t_start = nowSeconds();
@@ -405,7 +412,7 @@ fn loop(cfg: *Config) !void {
             clicks > 0,
             @floatCast(wheel),
         );
-        build(&ui, cfg, &snap, shared);
+        build(&ui, cfg, &snap, shared, &view);
         clicks = 0;
         wheel = 0;
         tag += 1;
@@ -429,9 +436,12 @@ fn nowSeconds() f64 {
 }
 
 /// Describes the whole window for this frame and queues what was clicked. The order of the
-/// calls (and of the `ui.*` calls in each) is the layout.
-fn build(ui: *ui_mod.Ui, cfg: *const Config, snap: *const Snapshot, shared: *Shared) void {
+/// calls (and of the `ui.*` calls in each) is the layout. A click on a section's heading
+/// opens or closes it in `view`, and the display thread is told (it saves `view`).
+fn build(ui: *ui_mod.Ui, cfg: *const Config, snap: *const Snapshot, shared: *Shared, view: *ControlView) void {
     _ = cfg;
+    const before = view.*;
+    defer if (!view.eql(&before)) shared.push(.{ .control_view = view.* });
     titleSection(ui, snap, shared);
     if (snap.quit_prompt.active) {
         // Quitting with board settings that differ from the config: nothing else is shown.
@@ -440,12 +450,11 @@ fn build(ui: *ui_mod.Ui, cfg: *const Config, snap: *const Snapshot, shared: *Sha
     }
     statusSection(ui, snap, shared);
     recordSection(ui, &snap.rec, shared);
-    reviewSection(ui, &snap.review, shared);
-    notesSection(ui, &snap.notes, shared);
-    audioSection(ui, &snap.audio, shared);
+    notesSection(ui, &snap.notes, shared, &view.notes);
+    audioSection(ui, &snap.audio, shared, &view.audio);
     thresholdSection(ui, &snap.thresholds, shared);
-    boardSection(ui, &snap.board, snap.rec.state, shared);
-    for (snap.set.items[0..snap.set.len], 0..) |*p, i| panelSection(ui, p, i, snap, shared);
+    boardSection(ui, &snap.board, snap.rec.state, shared, &view.headstages);
+    for (snap.set.items[0..snap.set.len], 0..) |*p, i| panelSection(ui, p, i, snap, shared, view);
     ui.text("On the display: wheel = scale, Ctrl+wheel = one row, Shift+wheel = time,", theme.text_dim);
     ui.newline();
     ui.text("keys  - =  [ ]  m  t  f  , .  ; '  r  q", theme.text_dim);
@@ -453,6 +462,19 @@ fn build(ui: *ui_mod.Ui, cfg: *const Config, snap: *const Snapshot, shared: *Sha
 
 /// Multiplies the scale or the time base, one stepper click.
 const step_up = 1.25;
+
+/// Where a section's summary starts, after its heading.
+const summary_column = 128;
+
+/// A section's heading, which a click opens or closes (in `open`), then its summary line.
+/// True if the section is open.
+fn sectionHeading(ui: *ui_mod.Ui, label: []const u8, open: *bool, summary: []const u8) bool {
+    if (ui.heading(label, open.*)) open.* = !open.*;
+    ui.column(summary_column);
+    ui.text(summary, theme.text_dim);
+    ui.newline();
+    return open.*;
+}
 
 /// The name, the source, and the alarm (or a warning).
 fn titleSection(ui: *ui_mod.Ui, snap: *const Snapshot, shared: *Shared) void {
@@ -544,38 +566,11 @@ fn recordSection(ui: *ui_mod.Ui, rec: *const RecStatus, shared: *Shared) void {
     ui.separator();
 }
 
-/// Scroll-back review.
-fn reviewSection(ui: *ui_mod.Ui, rv: *const ReviewStatus, shared: *Shared) void {
+/// Notes: how many presets and the newest note; open, the presets as buttons and the
+/// newest notes.
+fn notesSection(ui: *ui_mod.Ui, nt: *const NotesStatus, shared: *Shared, open: *bool) void {
     var buf: [160]u8 = undefined;
-    ui.text("Review", theme.text_bright);
-    ui.column(64);
-    if (ui.button("start", false)) shared.push(.{ .review = .start });
-    if (ui.button("<< window", false)) shared.push(.{ .review = .page_back });
-    if (ui.button("<", false)) shared.push(.{ .review = .back });
-    if (ui.button(if (rv.active) "frozen" else "freeze", rv.active)) shared.push(.{ .review = .toggle });
-    if (ui.button(">", false)) shared.push(.{ .review = .forward });
-    if (ui.button("window >>", false)) shared.push(.{ .review = .page_forward });
-    if (ui.button("LIVE", !rv.active) and rv.active) shared.push(.{ .review = .live });
-    if (rv.active) {
-        var c1: [16]u8 = undefined;
-        ui.text(
-            format.fmt(&buf, "{d:.1} s behind, at {s}{s}{s}", .{
-                rv.behind_s,
-                fmtClock(&c1, rv.at_s),
-                if (rv.from_file) "" else " (last seconds only: not recording)",
-                if (rv.loading) " ..." else "",
-            }),
-            theme.text_warn,
-        );
-    }
-    ui.newline();
-    ui.separator();
-}
-
-/// Notes: the presets as buttons, and the newest notes.
-fn notesSection(ui: *ui_mod.Ui, nt: *const NotesStatus, shared: *Shared) void {
-    var buf: [160]u8 = undefined;
-    ui.text("Notes", theme.text_bright);
+    if (!sectionHeading(ui, "Notes", open, notesSummary(&buf, nt))) return ui.separator();
     ui.column(64);
     var any_preset = false;
     for (&nt.presets, 1..) |*pr, n| {
@@ -597,10 +592,23 @@ fn notesSection(ui: *ui_mod.Ui, nt: *const NotesStatus, shared: *Shared) void {
     ui.separator();
 }
 
-/// The audio monitor.
-fn audioSection(ui: *ui_mod.Ui, au: *const AudioStatus, shared: *Shared) void {
+/// "2 presets   last note 1:02:05  cell 3".
+fn notesSummary(buf: []u8, nt: *const NotesStatus) []const u8 {
+    var presets: usize = 0;
+    for (&nt.presets) |*pr| presets += @intFromBool(pr.len > 0);
+    const plural = if (presets == 1) "" else "s";
+    if (nt.num_recent == 0) return format.fmt(buf, "{d} preset{s}   no notes yet", .{ presets, plural });
+    var clock_buf: [16]u8 = undefined;
+    const last = &nt.recent[0];
+    return format.fmt(buf, "{d} preset{s}   last note {s}  {s}", .{
+        presets, plural, fmtClock(&clock_buf, last.seconds), last.buf[0..last.len],
+    });
+}
+
+/// The audio monitor: on or off, volume, what is listened to, latency; open, its controls.
+fn audioSection(ui: *ui_mod.Ui, au: *const AudioStatus, shared: *Shared, open: *bool) void {
     var buf: [160]u8 = undefined;
-    ui.text("Audio", theme.text_bright);
+    if (!sectionHeading(ui, "Audio", open, audioSummary(&buf, au))) return ui.separator();
     ui.column(64);
     if (ui.button("on", au.settings.enabled) and !au.settings.enabled) shared.push(.{ .audio = .{ .enabled = true } });
     if (ui.button("off", !au.settings.enabled) and au.settings.enabled) shared.push(.{ .audio = .{ .enabled = false } });
@@ -639,15 +647,28 @@ fn audioSection(ui: *ui_mod.Ui, au: *const AudioStatus, shared: *Shared) void {
     ui.separator();
 }
 
+/// "on, muted   -6 dB   listening to A1-5   9 ms".
+fn audioSummary(buf: []u8, au: *const AudioStatus) []const u8 {
+    if (!au.running) return "no audio output";
+    const muted = if (au.settings.mute) ", muted" else "";
+    const db = au.settings.volume_db;
+    if (!au.settings.enabled) return format.fmt(buf, "off{s}   {d:.0} dB", .{ muted, db });
+    if (au.listen_len == 0) return format.fmt(buf, "on{s}   {d:.0} dB   listening to nothing", .{ muted, db });
+    const listen = au.listen_buf[0..au.listen_len];
+    return format.fmt(buf, "on{s}   {d:.0} dB   listening to {s}   {d:.0} ms", .{ muted, db, listen, au.latency_ms });
+}
+
 /// The spike detection threshold of every channel that follows the noise: how many sigmas
-/// below zero.
+/// below zero. One line, always shown: there is nothing more to open.
 fn thresholdSection(ui: *ui_mod.Ui, th: *const oez.thresholds.Thresholds, shared: *Shared) void {
     var buf: [32]u8 = undefined;
-    ui.text("spike threshold", theme.text_dim);
-    ui.column(136);
-    const ds = ui.stepper("", format.fmt(&buf, "{d} σ", .{th.sigmas}), 60);
+    // Where a heading's text starts, though this one does not open.
+    ui.space(9);
+    ui.text("Spikes", theme.text_bright);
+    ui.column(summary_column);
+    const ds = ui.stepper("threshold", format.fmt(&buf, "{d} σ", .{th.sigmas}), 60);
     if (ds != 0) shared.push(.{ .threshold = .{ .sigmas = ds > 0 } });
-    ui.text("below zero, where a channel's threshold follows the noise", theme.text_dim);
+    ui.text("below zero, where it follows the noise", theme.text_dim);
     ui.newline();
     ui.separator();
 }
@@ -655,10 +676,44 @@ fn thresholdSection(ui: *ui_mod.Ui, th: *const oez.thresholds.Thresholds, shared
 /// The headstage chips: these change what is recorded. The amplifier band and the DSP
 /// apply without a gap; the sample rate and half-channel mode need a restart, which waits
 /// while `rec` records.
-fn boardSection(ui: *ui_mod.Ui, bd: *const BoardStatus, rec: RecStatus.State, shared: *Shared) void {
+fn boardSection(ui: *ui_mod.Ui, bd: *const BoardStatus, rec: RecStatus.State, shared: *Shared, open: *bool) void {
+    var buf: [160]u8 = undefined;
+    // Open by itself while "Apply" or "Save as default" matters; a click then does nothing.
+    const forced = bd.restartPending() or bd.unsaved;
+    if (ui.heading("Headstages", open.* or forced) and !forced) open.* = !open.*;
+    ui.column(summary_column);
+    ui.text(boardSummary(&buf, bd), theme.text_dim);
+    if (forced) ui.text(if (bd.restartPending()) "(restart pending)" else "(not saved as default)", theme.text_warn);
+    ui.newline();
+    if (open.* or forced) boardControls(ui, bd, rec, shared);
+    // Shown open or closed: it answers a click (Save view, Save as default).
+    if (bd.note_len > 0) {
+        ui.text(bd.note_buf[0..bd.note_len], theme.text_warn);
+        ui.newline();
+    }
+    ui.separator();
+}
+
+/// "30000 Hz   0.58 Hz–7.60 kHz   DSP off   A1 16 of 32": the settings in use.
+fn boardSummary(buf: []u8, bd: *const BoardStatus) []const u8 {
+    var w: std.Io.Writer = .fixed(buf);
+    var lo_buf: [24]u8 = undefined;
+    var hi_buf: [24]u8 = undefined;
+    // Cut where the buffer ends (the writer keeps what fit).
+    w.print("{d} Hz   {s}–{s}   DSP ", .{
+        bd.settings.sample_rate, fmtHz(&lo_buf, bd.lower_actual), fmtHz(&hi_buf, bd.upper_actual),
+    }) catch {};
+    if (bd.settings.dsp_enabled) w.print("on, {s}", .{fmtHz(&lo_buf, bd.dsp_actual)}) catch {} else w.writeAll("off") catch {};
+    for (bd.headstages[0..bd.num_headstages]) |h| {
+        if (h.rhd2132 and bd.settings.rhd2132_16ch[h.slot]) w.print("   {s} 16 of 32", .{oez.types.headstage_names[h.slot]}) catch {};
+    }
+    return w.buffered();
+}
+
+/// The headstages' settings, each with its controls.
+fn boardControls(ui: *ui_mod.Ui, bd: *const BoardStatus, rec: RecStatus.State, shared: *Shared) void {
     var buf: [160]u8 = undefined;
     var hz_buf: [24]u8 = undefined;
-    ui.text("Headstages", theme.text_bright);
     ui.text("(these change what is recorded)", theme.text_dim);
     ui.newline();
     ui.text("amplifier band", theme.text_dim);
@@ -704,39 +759,66 @@ fn boardSection(ui: *ui_mod.Ui, bd: *const BoardStatus, rec: RecStatus.State, sh
         ui.text("these settings differ from the config file", theme.text_dim);
         ui.newline();
     }
-    if (bd.note_len > 0) {
-        ui.text(bd.note_buf[0..bd.note_len], theme.text_warn);
-        ui.newline();
+}
+
+/// One panel `i` of the display: its name and a summary; open, every setting of it.
+fn panelSection(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, snap: *const Snapshot, shared: *Shared, view: *ControlView) void {
+    var buf: [160]u8 = undefined;
+    if (ui.heading(p.name(), view.panelOpen(p.name()))) view.setPanel(p.name(), !view.panelOpen(p.name()));
+    const open = view.panelOpen(p.name());
+    ui.column(summary_column);
+    ui.text(panelSummary(&buf, p), theme.text_dim);
+    if (open) {
+        ui.x = @max(ui.x, ui.width - 78);
+        if (ui.button("reset", false)) shared.push(.{ .panel = .{ .index = i, .action = .reset } });
+    }
+    ui.newline();
+    if (open) {
+        panelView(ui, p, i, shared);
+        if (p.kind == .electrode) {
+            panelFilter(ui, p, i, shared);
+            panelCar(ui, p, i, shared);
+        }
+        if (p.mode == .triggered) panelTrigger(ui, p, i, snap, shared);
     }
     ui.separator();
 }
 
-/// One panel `i` of the display: what it shows and every setting of it.
-fn panelSection(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, snap: *const Snapshot, shared: *Shared) void {
-    panelView(ui, p, i, shared);
+/// "triggered   -1.0 / +2.0 ms   50 µV/row   band 300–6000 Hz   CAR   on spikes, row 5".
+fn panelSummary(buf: []u8, p: *const panels.Panel) []const u8 {
+    var w: std.Io.Writer = .fixed(buf);
+    var value_buf: [48]u8 = undefined;
+    // Cut where the buffer ends (the writer keeps what fit).
+    const time_text = if (p.mode == .triggered)
+        format.fmt(&value_buf, "-{d:.1} / +{d:.1} ms", .{ p.trigger.pre_ms, p.trigger.post_ms })
+    else
+        format.fmtSpan(&value_buf, p.span_s);
+    w.print("{t}   {s}", .{ p.mode, time_text }) catch {};
+    if (p.kind != .ttl) w.print("   {s}/row", .{format.fmtScale(&value_buf, p.kind, p.scale)}) catch {};
     if (p.kind == .electrode) {
-        panelFilter(ui, p, i, shared);
-        panelCar(ui, p, i, shared);
+        const f = p.filter;
+        if (!f.on) {
+            w.writeAll("   raw") catch {};
+        } else if (f.low_hz > 0 and f.high_hz > 0) {
+            w.print("   band {d}–{d} Hz", .{ f.low_hz, f.high_hz }) catch {};
+        } else if (f.high_hz > 0) {
+            w.print("   band below {d} Hz", .{f.high_hz}) catch {};
+        } else if (f.low_hz > 0) {
+            w.print("   band above {d} Hz", .{f.low_hz}) catch {};
+        } else w.writeAll("   band (no corners)") catch {};
+        if (p.reference.on) w.writeAll("   CAR") catch {};
     }
-    if (p.mode == .triggered) panelTrigger(ui, p, i, snap, shared);
-    ui.separator();
+    if (p.mode == .triggered) {
+        if (p.trigger.source == .ttl) {
+            w.print("   on TTL {d}", .{p.trigger.line}) catch {};
+        } else w.print("   on spikes, row {d}", .{p.trigger.row + 1}) catch {};
+    }
+    return w.buffered();
 }
 
-/// The panel's name and what it shows, reset; its mode, time base and scale.
+/// The panel's mode, time base and scale.
 fn panelView(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Shared) void {
     var buf: [160]u8 = undefined;
-    // Name, and what the panel shows.
-    ui.text(p.name(), theme.text_bright);
-    ui.text(format.fmt(&buf, "{d} {s} channels", .{ p.rows, switch (p.kind) {
-        .electrode => "electrode",
-        .aux => "AUX",
-        .adc => "ADC",
-        .ttl => "TTL",
-    } }), theme.text_dim);
-    ui.x = @max(ui.x, ui.width - 78);
-    if (ui.button("reset", false)) shared.push(.{ .panel = .{ .index = i, .action = .reset } });
-    ui.newline();
-
     ui.text("view", theme.text_dim);
     ui.column(64);
     inline for (.{ panels.Mode.scroll, panels.Mode.sweep, panels.Mode.triggered }) |m| {
@@ -923,7 +1005,7 @@ fn layoutFont() font.Font {
 
 /// The code point of glyph `k` of `layoutFont` (as `font.Font.glyph` numbers them).
 fn layoutCodepoint(k: usize) u21 {
-    const extra = [_]u21{ 0x03C3, 0x2013, 0x2192, 0x266A };
+    const extra = [_]u21{ 0x03C3, 0x2013, 0x2192, 0x266A, 0x25B8, 0x25BE };
     return if (k < 224) @intCast(32 + k) else extra[k - 224];
 }
 
@@ -933,17 +1015,42 @@ const LayoutRig = struct {
     batch: font.Batch = undefined,
     shared: Shared = .{},
     cfg: Config = undefined,
+    /// The sections open at the start of every frame, and after it (a click on a heading
+    /// changes it).
+    start_view: ControlView = .{},
+    view: ControlView = .{},
 
     fn frame(self: *LayoutRig, snap: *const Snapshot, mx: f32, my: f32, clicked: bool) ui_mod.Ui {
         self.batch = .{ .font = &self.face, .vertices = self.vertices };
         self.shared = .{};
+        self.view = self.start_view;
         var ui: ui_mod.Ui = .begin(&self.batch, 800, mx, my, clicked, 0);
-        build(&ui, &self.cfg, snap, &self.shared);
+        build(&ui, &self.cfg, snap, &self.shared, &self.view);
         return ui;
     }
 };
 
-fn writeLayout(w: *std.Io.Writer, rig: *LayoutRig, name: []const u8, snap: *const Snapshot) !void {
+/// The sections a frozen state has open, for `snap`'s panels.
+fn layoutView(open: LayoutOpen, snap: *const Snapshot) ControlView {
+    var v: ControlView = .{ .notes = open.all or open.notes, .audio = open.all or open.audio, .headstages = open.all or open.headstages };
+    if (open.all) {
+        for (snap.set.items[0..snap.set.len]) |*p| v.setPanel(p.name(), true);
+    } else for (open.panels) |name| v.setPanel(name, true);
+    return v;
+}
+
+/// " notes audio [Port A]": what is open.
+fn writeView(w: *std.Io.Writer, v: *const ControlView) !void {
+    if (v.notes) try w.writeAll(" notes");
+    if (v.audio) try w.writeAll(" audio");
+    if (v.headstages) try w.writeAll(" headstages");
+    try w.writeAll(" [");
+    for (0..v.num_panels) |k| try w.print("{s}{s}", .{ if (k > 0) ", " else "", v.name(k) });
+    try w.writeAll("]");
+}
+
+fn writeLayout(w: *std.Io.Writer, rig: *LayoutRig, name: []const u8, snap: *const Snapshot, open: LayoutOpen) !void {
+    rig.start_view = layoutView(open, snap);
     const ui = rig.frame(snap, -1, -1, false);
     const quads = rig.batch.len / 6;
     // A full batch drops quads silently: the comparison would then miss them.
@@ -965,10 +1072,21 @@ fn writeLayout(w: *std.Io.Writer, rig: *LayoutRig, name: []const u8, snap: *cons
             try w.print("rect {d} {d} {d} {d} {any}", .{ x, y, rw, rh, col });
             _ = rig.frame(snap, x + rw / 2, y + rh / 2, true);
             // A panel edit is written flat, so its action is not nested too deeply to print.
+            var queued_view: ?ControlView = null;
             while (rig.shared.pop()) |e| switch (e) {
                 .panel => |pe| try w.print(" -> panel {d} {any}", .{ pe.index, pe.action }),
+                .control_view => |cv| {
+                    queued_view = cv;
+                    try w.writeAll(" -> control_view:");
+                    try writeView(w, &cv);
+                },
                 else => try w.print(" -> {any}", .{e}),
             };
+            // A heading opens or closes its section, and the display thread is told what is
+            // open now; nothing else tells it.
+            if (rig.view.eql(&rig.start_view)) {
+                try testing.expect(queued_view == null);
+            } else try testing.expect(queued_view != null and queued_view.?.eql(&rig.view));
             try w.writeByte('\n');
             q += 1;
             continue;
@@ -1007,22 +1125,92 @@ fn layoutPanel(name: []const u8, kind: panels.Kind, rows: u32) panels.Panel {
     return p;
 }
 
-/// The snapshots the layout is frozen for, written into `out`; returns their names.
-fn layoutSnapshots(out: []Snapshot) []const []const u8 {
-    const names = &[_][]const u8{
-        "not recording",
-        "recording",
-        "review active",
-        "quit prompt",
-        "restart pending",
-        "two panels: slope trigger, reference",
-        "alarm",
-        "other panels",
-    };
+/// Which sections a frozen state has open.
+const LayoutOpen = struct {
+    all: bool = false,
+    notes: bool = false,
+    audio: bool = false,
+    headstages: bool = false,
+    /// The panels open, by name.
+    panels: []const []const u8 = &.{},
+};
+
+const LayoutState = struct { name: []const u8, open: LayoutOpen };
+
+const layout_states = [_]LayoutState{
+    .{ .name = "not recording, all open", .open = .{ .all = true } },
+    .{ .name = "recording, all open", .open = .{ .all = true } },
+    .{ .name = "review active, all open", .open = .{ .all = true } },
+    .{ .name = "quit prompt, all open", .open = .{ .all = true } },
+    .{ .name = "restart pending, all open", .open = .{ .all = true } },
+    .{ .name = "two panels: slope trigger, reference; all open", .open = .{ .all = true } },
+    .{ .name = "alarm, all open", .open = .{ .all = true } },
+    .{ .name = "other panels, all open", .open = .{ .all = true } },
+    .{ .name = "notes open", .open = .{ .notes = true } },
+    .{ .name = "audio open", .open = .{ .audio = true } },
+    .{ .name = "headstages open", .open = .{ .headstages = true } },
+    .{ .name = "Port B open of two panels", .open = .{ .panels = &.{"Port B"} } },
+    .{ .name = "all closed", .open = .{} },
+    .{ .name = "all closed, recording: Headstages open by itself", .open = .{} },
+    .{ .name = "all closed, Headstages open by itself: restart pending", .open = .{} },
+    .{ .name = "all closed, Headstages open by itself: settings not the config file's", .open = .{} },
+    .{ .name = "AUX open of four panels", .open = .{ .panels = &.{"AUX"} } },
+    .{ .name = "panel summaries: triggered, filtered, TTL", .open = .{} },
+};
+
+/// The snapshots the layout is frozen for (one per `layout_states`), written into `out`.
+fn layoutSnapshots(out: []Snapshot) void {
     out[0] = layoutBase();
     stateSnapshots(out, &out[0]);
     panelSnapshots(out, &out[0]);
-    return names;
+    // One section open at a time.
+    out[8] = out[0];
+    out[9] = out[0];
+    out[10] = out[0];
+    out[11] = out[5];
+    // Closed: the summaries; Headstages kept open by a restart pending (while recording,
+    // and not) and by settings that differ from the config file.
+    out[12] = out[0];
+    out[13] = out[1];
+    out[14] = out[4];
+    out[15] = out[0];
+    out[15].board.unsaved = true;
+    out[15].board.setNote("view saved to {s}", .{"/home/user/.config/oez/views.toml"});
+    out[16] = out[7];
+    out[17] = summarySnapshot(&out[0]);
+}
+
+/// Panels whose summaries say the most: triggered on a row's spikes and filtered;
+/// filtered with one corner and the reference on; triggered on a TTL line. Audio off and
+/// muted; no notes, one preset; a headstage in half-channel mode, the DSP off.
+fn summarySnapshot(base: *const Snapshot) Snapshot {
+    var s = base.*;
+    var a = layoutPanel("Port A", .electrode, 32);
+    a.mode = .triggered;
+    a.trigger.source = .channel;
+    a.trigger.row = 4;
+    a.trigger.pre_ms = 1;
+    a.trigger.post_ms = 2;
+    a.filter.on = true;
+    var b = layoutPanel("Port B", .electrode, 16);
+    b.filter.on = true;
+    b.filter.low_hz = 0;
+    b.setCar(true);
+    var t = layoutPanel("TTL", .ttl, 8);
+    t.mode = .triggered;
+    t.trigger.line = 3;
+    s.set.items[0] = a;
+    s.set.items[1] = b;
+    s.set.items[2] = t;
+    s.set.len = 3;
+    s.audio.settings.enabled = false;
+    s.audio.settings.mute = true;
+    s.notes.num_recent = 0;
+    s.notes.presets[3].len = 0;
+    s.board.settings.dsp_enabled = false;
+    s.board.settings.rhd2132_16ch[0] = true;
+    s.board.pending = s.board.settings;
+    return s;
 }
 
 fn layoutBase() Snapshot {
@@ -1170,13 +1358,13 @@ test "the control window's layout is unchanged" {
     rig.* = .{ .face = layoutFont(), .vertices = vertices };
     const no_env: Env = .{};
     rig.cfg = .{ .gpa = gpa, .shared = &rig.shared, .display_gpu = undefined, .env = &no_env };
-    const snaps = try gpa.alloc(Snapshot, 8);
+    const snaps = try gpa.alloc(Snapshot, layout_states.len);
     defer gpa.free(snaps);
-    const names = layoutSnapshots(snaps);
+    layoutSnapshots(snaps);
 
     var out: std.Io.Writer.Allocating = .init(gpa);
     defer out.deinit();
-    for (names, snaps) |name, *snap| try writeLayout(&out.writer, rig, name, snap);
+    for (layout_states, snaps) |state, *snap| try writeLayout(&out.writer, rig, state.name, snap, state.open);
     const got = out.written();
     if (std.c.getenv("OEZ_CONTROL_LAYOUT_OUT")) |path| {
         const file = try std.Io.Dir.cwd().createFile(testing.io, std.mem.span(path), .{});
@@ -1184,4 +1372,29 @@ test "the control window's layout is unchanged" {
         try file.writeStreamingAll(testing.io, got);
     }
     try testing.expectEqualStrings(@embedFile("testdata/control_layout.txt"), got);
+}
+
+test "which sections are open is saved with the view, and a change of it is something to save" {
+    const session = @import("session.zig");
+    const gpa = testing.allocator;
+    var set: panels.Set = .{};
+    set.items[0] = layoutPanel("Port A", .electrode, 6);
+    set.len = 1;
+    const tiles: oez.tile_view.TileView = .{};
+    const thresholds: oez.thresholds.Thresholds = .{};
+    const layout: oez.types.Layout = .{ .sample_rate = 30000, .hw_clock_hz = 50e6, .num_electrodes = 6 };
+    var open: ControlView = .{};
+    const view: session.ViewFile.View = .{ .set = &set, .tiles = &tiles, .thresholds = &thresholds, .layout = &layout, .control = &open };
+    var view_file = try session.ViewFile.init(gpa, view);
+    defer view_file.deinit(gpa);
+    try testing.expect(!view_file.unsaved(view));
+    open.setPanel("Port A", true);
+    open.audio = true;
+    try testing.expect(view_file.unsaved(view));
+    // `unsaved` rendered the view into `now`: the [control] table comes after the others.
+    const want = "\n[thresholds]\nsigmas = 4.5\nfixed_uv = [0, 0, 0, 0, 0, 0]\n" ++
+        "\n[control]\nnotes = false\naudio = true\nheadstages = false\npanels = \"Port A\"\n";
+    try testing.expect(std.mem.indexOf(u8, view_file.now, want) != null);
+    open = .{};
+    try testing.expect(!view_file.unsaved(view));
 }
