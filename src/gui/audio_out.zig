@@ -26,15 +26,15 @@
 //! locks.
 
 const std = @import("std");
-const oez = @import("oez");
-const audio = oez.audio;
+const dimna = @import("dimna");
+const audio = dimna.audio;
 const alsa = @import("gui_c");
 const linux = std.os.linux;
 const Atomic = std.atomic.Value;
 const log = std.log.scoped(.audio);
 
 pub const Shared = struct {
-    settings: oez.published.Published(audio.Settings) = .{},
+    settings: dimna.published.Published(audio.Settings) = .{},
     recalibrate: Atomic(bool) = .init(false),
     /// Sound an alarm (a short tone every second) over whatever else is playing, also
     /// when the monitor is off or muted: samples are being lost.
@@ -103,7 +103,7 @@ const margin_max_ms = 25.0;
 pub const AudioOut = struct {
     gpa: std.mem.Allocator,
     shared: *Shared,
-    ring: *oez.ring.BlockRing,
+    ring: *dimna.ring.BlockRing,
     fs_in: f64,
     nch: usize,
     block_samples: usize,
@@ -129,7 +129,7 @@ pub const AudioOut = struct {
     pub fn start(
         gpa: std.mem.Allocator,
         shared: *Shared,
-        ring: *oez.ring.BlockRing,
+        ring: *dimna.ring.BlockRing,
         fs_in: f64,
         nch: usize,
         block_samples: usize,
@@ -253,8 +253,8 @@ pub const AudioOut = struct {
 
     fn feed(self: *AudioOut) !void {
         const gpa = self.gpa;
-        var reader = oez.ring.LossyReader.init(self.ring);
-        var blk = try oez.types.Block.init(gpa, self.nch, self.block_samples);
+        var reader = dimna.ring.LossyReader.init(self.ring);
+        var blk = try dimna.types.Block.init(gpa, self.nch, self.block_samples);
         defer blk.deinit(gpa);
         var monitor: audio.Monitor = .init(gpa, self.fs_in);
         defer monitor.deinit();
@@ -361,7 +361,7 @@ pub const AudioOut = struct {
     }
 };
 
-const nowNs = oez.clock.nowNs;
+const nowNs = dimna.clock.nowNs;
 
 fn sleepUs(us: u32) void {
     const ts: linux.timespec = .{ .sec = 0, .nsec = @as(isize, us) * 1000 };

@@ -1,5 +1,7 @@
 # A second review of oEZ, in my own voice
 
+The program was called oEZ when this was written; it is dimna now.
+
 *By Claude, the assistant that wrote most of this code at the owner's direction. The first
 review (`readability-review.md`) was written in a borrowed voice and looked at how the code
 reads. This one was asked for as myself, with attention to epistemic and ethical issues,

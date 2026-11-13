@@ -1,6 +1,6 @@
-# oEZ icon credits
+# dimna icon credits
 
-The oEZ icon (`oez-icon.svg` and the `oez-*.png` renders) shows **Kalila and Dimna**, the two
+The dimna icon (`dimna-icon.svg` and the `dimna-*.png` renders) shows **Kalila and Dimna**, the two
 jackals whose conversations frame the first books of the *Panchatantra*, known in its Arabic
 and later European versions as *Kalila wa-Dimna* or the *Tales of Bidpai*. Two jackal heads in
 profile overlap like stacked silhouettes: Dimna, the schemer, in slate blue behind; Kalila, the
@@ -25,5 +25,5 @@ use; `b-facing.svg` has the two facing each other with crossing muzzles; `c-roun
 manuscript-style medallion with both looking up at a blossom), and `contact-sheet.png` shows
 each at 32, 48, 64, 128 and 256 px on a dark and a light background.
 
-To re-render the PNGs: `rsvg-convert -w N -h N oez-icon.svg -o oez-N.png` for N in
+To re-render the PNGs: `rsvg-convert -w N -h N dimna-icon.svg -o dimna-N.png` for N in
 32, 48, 64, 128, 256.

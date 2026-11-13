@@ -12,11 +12,11 @@
 //! one frame (a few ms) late.
 //!
 //! A saved note goes three ways: into the recording's events.tsv (kind "note") if one is
-//! running, into a log of all notes ($XDG_STATE_HOME/oez/notes.log, default
+//! running, into a log of all notes ($XDG_STATE_HOME/dimna/notes.log, default
 //! ~/.local/state), and onto the traces as a marker.
 
 const std = @import("std");
-const oez = @import("oez");
+const dimna = @import("dimna");
 const Input = @import("window.zig").Input;
 const Key = @import("window.zig").Key;
 const linux = std.os.linux;
@@ -70,7 +70,7 @@ pub const Notes = struct {
 
     /// Reads the presets from the config's [notes] table and opens the notes log.
     /// `home`, `state_home`: `Env.home` and `Env.state_home`, for where the notes log goes.
-    pub fn init(doc: oez.toml.Document, home: []const u8, state_home: []const u8) Notes {
+    pub fn init(doc: dimna.toml.Document, home: []const u8, state_home: []const u8) Notes {
         var self: Notes = .{};
         for (&self.presets, 1..) |*p, n| {
             var key_buf: [12]u8 = undefined;
@@ -79,9 +79,9 @@ pub const Notes = struct {
         }
         var path_buf: [std.fs.max_path_bytes]u8 = undefined;
         const dir = (if (state_home.len > 0)
-            std.fmt.bufPrintSentinel(&path_buf, "{s}/oez", .{state_home}, 0)
+            std.fmt.bufPrintSentinel(&path_buf, "{s}/dimna", .{state_home}, 0)
         else
-            std.fmt.bufPrintSentinel(&path_buf, "{s}/.local/state/oez", .{home}, 0)) catch return self;
+            std.fmt.bufPrintSentinel(&path_buf, "{s}/.local/state/dimna", .{home}, 0)) catch return self;
         mkdirs(dir);
         var file_buf: [std.fs.max_path_bytes]u8 = undefined;
         const file = std.fmt.bufPrintSentinel(&file_buf, "{s}/notes.log", .{dir}, 0) catch return self;
@@ -211,7 +211,7 @@ pub const Notes = struct {
             const text_line = std.fmt.bufPrint(
                 &line,
                 "{s}\t{d}\t{s}\t{s}\n",
-                .{ oez.record.localTime(&when), sample, if (session.len > 0) session else "-", note.text() },
+                .{ dimna.record.localTime(&when), sample, if (session.len > 0) session else "-", note.text() },
             ) catch return;
             _ = linux.write(self.log_fd, text_line.ptr, text_line.len);
         }
@@ -232,8 +232,8 @@ fn mkdirs(path: [:0]const u8) void {
 
 // ---- Tests ----
 //
-// None of these calls `Notes.init`, which opens $XDG_STATE_HOME/oez/notes.log (default
-// ~/.local/state/oez/notes.log): a `Notes` made with `.{}` has `log_fd == -1` and logs
+// None of these calls `Notes.init`, which opens $XDG_STATE_HOME/dimna/notes.log (default
+// ~/.local/state/dimna/notes.log): a `Notes` made with `.{}` has `log_fd == -1` and logs
 // nowhere. The test of the log line gives it a file under /tmp instead.
 
 const testing = std.testing;
@@ -479,7 +479,7 @@ test "recent keeps the last 32 notes, newest first" {
 
 test "a saved note is one line in the log: time, sample, session, text" {
     var dir_buf: [64]u8 = undefined;
-    const dir = try std.fmt.bufPrintSentinel(&dir_buf, "/tmp/oez-notes-test-{d}", .{linux.getpid()}, 0);
+    const dir = try std.fmt.bufPrintSentinel(&dir_buf, "/tmp/dimna-notes-test-{d}", .{linux.getpid()}, 0);
     var file_buf: [96]u8 = undefined;
     const file = try std.fmt.bufPrintSentinel(&file_buf, "{s}/notes.log", .{dir}, 0);
     _ = linux.mkdir(dir, 0o755);

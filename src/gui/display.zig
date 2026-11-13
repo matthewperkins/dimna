@@ -2,7 +2,7 @@
 //! each frame (traces, overlays, labels, badges).
 
 const std = @import("std");
-const oez = @import("oez");
+const dimna = @import("dimna");
 const gpu_mod = @import("gpu.zig");
 const Gpu = gpu_mod.Gpu;
 const font = @import("font.zig");
@@ -18,9 +18,9 @@ const Args = @import("args.zig").Args;
 const Input = @import("window.zig").Input;
 const Cursor = @import("window.zig").Cursor;
 const Key = @import("window.zig").Key;
-const panels_mod = oez.panels;
+const panels_mod = dimna.panels;
 const Panel = panels_mod.Panel;
-const log = std.log.scoped(.oez);
+const log = std.log.scoped(.dimna);
 
 pub const max_text_vertices = 24 * 1024;
 
@@ -28,7 +28,7 @@ pub const max_text_vertices = 24 * 1024;
 pub const max_fills = 5 * panels_mod.max_panels;
 
 /// One draw per panel, or per overlaid sweep of a triggered panel.
-pub const max_draws = panels_mod.max_panels * oez.sweeps.max_sweeps;
+pub const max_draws = panels_mod.max_panels * dimna.sweeps.max_sweeps;
 
 /// The display filter for a panel's title: "   300-6000 Hz", "   > 10 Hz", "   < 300 Hz",
 /// or nothing when the panel shows its channels as they are.
@@ -49,7 +49,7 @@ pub fn fmtBand(buf: []u8, p: *const Panel) []const u8 {
 }
 
 /// An electrode channel by headstage and number ("A1-5"), or "ch 37" if it is not one.
-pub fn channelName(buf: []u8, layout: *const oez.types.Layout, ch: u32) []const u8 {
+pub fn channelName(buf: []u8, layout: *const dimna.types.Layout, ch: u32) []const u8 {
     return layout.channelName(buf, ch);
 }
 
@@ -260,7 +260,7 @@ pub const key_help = [_]KeyHelp{
 
 /// The label of one row: the electrode's number on its headstage (with the headstage's name
 /// when the panel spans more than one), or AUXn / ADCn.
-pub fn rowLabel(buf: []u8, p: *const Panel, row: u32, layout: *const oez.types.Layout, set: *const panels_mod.Set) []const u8 {
+pub fn rowLabel(buf: []u8, p: *const Panel, row: u32, layout: *const dimna.types.Layout, set: *const panels_mod.Set) []const u8 {
     const ch = p.first_ch + row;
     switch (p.kind) {
         .ttl => {
@@ -292,8 +292,8 @@ pub const Display = struct {
     focus: ?u32 = null,
     /// Every channel's detection threshold (the display's to change; the tile window is
     /// told them), and what the tile window last reported as in use (it knows the noise).
-    thresholds: oez.thresholds.Thresholds = .{},
-    reported: oez.thresholds.Reported = .{},
+    thresholds: dimna.thresholds.Thresholds = .{},
+    reported: dimna.thresholds.Reported = .{},
     /// Set when `thresholds` changed (the control window is to be told).
     thresholds_changed: bool = false,
     /// The panel that wheel, pinch and keys act on.
@@ -322,23 +322,23 @@ pub const Display = struct {
     trig_on: [panels_mod.max_panels]?u32 = @splat(null),
     owes_latch: [panels_mod.max_panels]bool = @splat(false),
     /// The triggers of each panel's TTL line (used by panels in triggered mode).
-    triggers: [panels_mod.max_panels]oez.sweeps.Triggers = @splat(.{}),
+    triggers: [panels_mod.max_panels]dimna.sweeps.Triggers = @splat(.{}),
 
     /// Set by Shift+a (and the control window's button): the alarm banner has been seen.
     acknowledged: bool = false,
     /// The audio monitor's settings (which channels, volume, ...); `audio_dirty` when they
     /// have changed and the audio threads are to be told.
-    audio: oez.audio.Settings = .{},
+    audio: dimna.audio.Settings = .{},
     audio_dirty: bool = true,
     audio_recalibrate: bool = false,
     /// The sound takes the panels' common average references.
     audio_car: bool = true,
 
     /// The pulses of each panel's tint line (see `Panel.tint_line`).
-    pulses: [panels_mod.max_panels]oez.sweeps.Pulses = @splat(.{}),
+    pulses: [panels_mod.max_panels]dimna.sweeps.Pulses = @splat(.{}),
     /// The slope trigger of each panel that triggers on one of its channels, and what its
     /// trigger list was made from (a change of source, line or row starts it afresh).
-    slopes: [panels_mod.max_panels]?oez.slope.Slope = @splat(null),
+    slopes: [panels_mod.max_panels]?dimna.slope.Slope = @splat(null),
     trig_made_from: [panels_mod.max_panels]u64 = @splat(0),
 
     /// The channels whose mean is the reference for `channel`: those of the first panel
@@ -370,10 +370,10 @@ pub const Display = struct {
             .thresholds = self.thresholds,
         };
         for (self.set.items[0..self.set.len], 0..) |*p, g| {
-            if (!p.carActive() or g >= oez.spikes.Car.max_groups) continue;
+            if (!p.carActive() or g >= dimna.spikes.Car.max_groups) continue;
             var n: usize = 0;
             for (0..p.rows) |r| {
-                if (!p.reference.ref.has(r) or n == oez.spikes.Car.max_ref) continue;
+                if (!p.reference.ref.has(r) or n == dimna.spikes.Car.max_ref) continue;
                 cfg.car.ref[g][n] = p.first_ch + @as(u32, @intCast(r));
                 n += 1;
             }
@@ -392,7 +392,7 @@ pub const Display = struct {
     pub fn refreshAudioCar(self: *Display) void {
         const a = &self.audio;
         for (a.channelSlice(), 0..) |ch, k| {
-            var ref: [oez.audio.max_car_ref]u32 = undefined;
+            var ref: [dimna.audio.max_car_ref]u32 = undefined;
             const n = if (self.audio_car) self.carChannels(ch, &ref) else 0;
             if (n == a.car_len[k] and std.mem.eql(u32, ref[0..n], a.car_ref[k][0..n])) continue;
             a.car_len[k] = @intCast(n);
@@ -432,7 +432,7 @@ pub const Display = struct {
 
     /// Fixes channel `ch`'s threshold at `uv` (0: back to the noise).
     pub fn setThreshold(self: *Display, ch: u32, uv: f64) void {
-        if (ch >= oez.thresholds.max) return;
+        if (ch >= dimna.thresholds.max) return;
         const was = self.thresholds.fixed_uv[ch];
         self.thresholds.set(ch, uv);
         if (self.thresholds.fixed_uv[ch] != was) self.thresholds_changed = true;
@@ -501,12 +501,12 @@ pub const Display = struct {
         const sl = &self.slopes[i].?;
         sl.settings = want;
         // With the panel's reference, if the trigger's row is one it applies to.
-        var ref: [oez.audio.max_car_ref]u32 = undefined;
+        var ref: [dimna.audio.max_car_ref]u32 = undefined;
         const nref = self.carChannels(ch, &ref);
         sl.feed(first, samples, nch, ch, ref[0..nref], &self.triggers[i]);
         if (self.owes_latch[i] and !self.thresholds.isFixed(ch) and sl.seen >= @as(u64, @intFromFloat(fs))) {
             // Following the noise, the level is below zero; anything else is no estimate.
-            const level_uv = sl.level() * oez.types.electrode_uv_per_bit;
+            const level_uv = sl.level() * dimna.types.electrode_uv_per_bit;
             if (level_uv < 0) {
                 self.setThreshold(ch, level_uv);
                 self.owes_latch[i] = false;
@@ -516,10 +516,10 @@ pub const Display = struct {
 
     /// What the slope trigger on channel `ch` is to do: trigger at its fixed threshold (the
     /// sign the slope), or follow the noise as a threshold that is not fixed does.
-    fn slopeSettings(self: *const Display, ch: u32, holdoff_ms: f64) oez.slope.Settings {
+    fn slopeSettings(self: *const Display, ch: u32, holdoff_ms: f64) dimna.slope.Settings {
         if (!self.thresholds.isFixed(ch)) return .{ .auto = true, .auto_sigmas = self.thresholds.sigmas, .holdoff_ms = holdoff_ms };
         const uv = self.thresholds.fixed_uv[ch];
-        return .{ .rising = uv > 0, .auto = false, .level = uv / oez.types.electrode_uv_per_bit, .holdoff_ms = holdoff_ms };
+        return .{ .rising = uv > 0, .auto = false, .level = uv / dimna.types.electrode_uv_per_bit, .holdoff_ms = holdoff_ms };
     }
 
     /// If channel `ch`'s threshold follows the noise and the tile window has reported what
@@ -642,7 +642,7 @@ pub const Display = struct {
             .car_sub_all => |on| p.reference.sub = if (on) .all(p.rows) else .{},
             .trig_source => |s| p.setTrigSource(s),
             .trig_row => |d| p.trigger.row = @intCast(std.math.clamp(@as(i64, p.trigger.row) + d, 0, @as(i64, p.rows) - 1)),
-            .trig_holdoff => |up| p.trigger.holdoff_ms = oez.board_config.step(
+            .trig_holdoff => |up| p.trigger.holdoff_ms = dimna.board_config.step(
                 f64,
                 &.{ 0, 1, 2, 5, 10, 20, 50, 100, 200, 500 },
                 p.trigger.holdoff_ms,
@@ -893,7 +893,7 @@ pub const Display = struct {
         var uv = levelAtPixelY(p, r, d.row, @floor(py)) orelse return;
         // Exactly on the centre: the smallest threshold on the side it was (0 would put it
         // back to following the noise).
-        if (uv == 0) uv = std.math.copysign(@as(f64, oez.thresholds.min_uv), @as(f64, self.thresholdUv(d.ch) orelse -1));
+        if (uv == 0) uv = std.math.copysign(@as(f64, dimna.thresholds.min_uv), @as(f64, self.thresholdUv(d.ch) orelse -1));
         self.setThreshold(d.ch, uv);
     }
 
@@ -947,7 +947,7 @@ pub const Display = struct {
     pub fn frame(
         self: *Display,
         surface: Surface,
-        layout: *const oez.types.Layout,
+        layout: *const dimna.types.Layout,
         newest: i64,
         review: ?ReviewView,
         status: Status,
@@ -1111,7 +1111,7 @@ pub const Display = struct {
     }
 
     /// Row labels down the left edge, thinned when rows are shorter than a line.
-    fn rowLabels(self: *const Display, o: *Output, p: *const Panel, r: panels_mod.Rect, layout: *const oez.types.Layout) void {
+    fn rowLabels(self: *const Display, o: *Output, p: *const Panel, r: panels_mod.Rect, layout: *const dimna.types.Layout) void {
         const batch = o.batch;
         const line_h = o.line_h;
         const px: f32 = @floatFromInt(r.x);
@@ -1181,7 +1181,7 @@ const Output = struct {
 /// What one frame is drawn from, besides the display's own state.
 const Scene = struct {
     surface: Surface,
-    layout: *const oez.types.Layout,
+    layout: *const dimna.types.Layout,
     newest: i64,
     review: ?ReviewView,
     notes: *const notes_mod.Notes,
@@ -1315,7 +1315,7 @@ fn noteMarks(o: *Output, r: panels_mod.Rect, t: PanelTime, notes: *const notes_m
 /// A tint over the panel wherever its tint line was high. Scrolling: time runs to the
 /// newest sample at the right edge. Sweep: this pass left of the cursor, the previous pass
 /// right of it.
-fn tintPulses(o: *Output, p: *const Panel, r: panels_mod.Rect, t: PanelTime, pulses: *const oez.sweeps.Pulses) void {
+fn tintPulses(o: *Output, p: *const Panel, r: panels_mod.Rect, t: PanelTime, pulses: *const dimna.sweeps.Pulses) void {
     const batch = o.batch;
     const span = t.span;
     const t_end = t.t_end;
@@ -1579,7 +1579,7 @@ fn targetBar(o: *Output, r: panels_mod.Rect) void {
 }
 
 /// The panels for this run: from the config, or one per headstage.
-pub fn makeDisplay(args: Args, layout: *const oez.types.Layout) ?Display {
+pub fn makeDisplay(args: Args, layout: *const dimna.types.Layout) ?Display {
     var diag: panels_mod.Diagnostics = .{};
     var set = panels_mod.fromConfig(args.doc, layout, &diag) catch {
         log.err("config: {s}", .{diag.message()});
@@ -1650,7 +1650,7 @@ pub const Text = struct {
 // writes everything `frame` returns, in order, as text: each trace draw with every field
 // of its parameters, the rows' own scales it puts into the gain buffer, each fill, and the
 // batch's rectangles and text runs. It is compared with `testdata/display_frame.txt`. Set
-// OEZ_DISPLAY_FRAME_OUT to a path to write what this run produced there.
+// DIMNA_DISPLAY_FRAME_OUT to a path to write what this run produced there.
 
 const testing = std.testing;
 
@@ -1686,8 +1686,8 @@ const frame_nch = 62;
 const frame_newest: i64 = 3_012_345;
 
 /// Two headstages (A: 32 channels, B: 16), 6 AUX and 8 ADC channels.
-fn frameLayout() oez.types.Layout {
-    var l: oez.types.Layout = .{ .sample_rate = frame_fs, .hw_clock_hz = 50e6, .num_electrodes = 48, .num_aux = 6, .num_adc = 8 };
+fn frameLayout() dimna.types.Layout {
+    var l: dimna.types.Layout = .{ .sample_rate = frame_fs, .hw_clock_hz = 50e6, .num_electrodes = 48, .num_aux = 6, .num_adc = 8 };
     l.headstages[0] = .{ .slot = 0, .chip = "RHD2132", .num_channels = 32, .first_channel = 0, .has_bno = false };
     l.headstages[1] = .{ .slot = 2, .chip = "RHD2216", .num_channels = 16, .first_channel = 32, .has_bno = false };
     l.num_headstages = 2;
@@ -2318,7 +2318,7 @@ test "what the display draws is unchanged" {
         try writeFrame(&out.writer, name, st, gains, vertices);
     }
     const got = out.written();
-    if (std.c.getenv("OEZ_DISPLAY_FRAME_OUT")) |path| {
+    if (std.c.getenv("DIMNA_DISPLAY_FRAME_OUT")) |path| {
         const file = try std.Io.Dir.cwd().createFile(testing.io, std.mem.span(path), .{});
         defer file.close(testing.io);
         try file.writeStreamingAll(testing.io, got);
@@ -3075,7 +3075,7 @@ test "the thresholds are saved with the view; a change of them is something to s
     const files = @import("files.zig");
     const gpa = testing.allocator;
     var d = clickDisplay(0);
-    const tiles: oez.tile_view.TileView = .{};
+    const tiles: dimna.tile_view.TileView = .{};
     const layout = frameLayout();
     const view: session.ViewFile.View = .{ .set = &d.set, .tiles = &tiles, .thresholds = &d.thresholds, .layout = &layout };
     var view_file = try session.ViewFile.init(gpa, view);
@@ -3096,8 +3096,8 @@ test "the thresholds are saved with the view; a change of them is something to s
     try testing.expect(std.mem.indexOf(u8, text, "\n[thresholds]\nsigmas = 4.5\nfixed_uv = [0, 0, 0, -61.25, 0,") != null);
     var arena_state: std.heap.ArenaAllocator = .init(gpa);
     defer arena_state.deinit();
-    const doc = try oez.toml.parse(arena_state.allocator(), text, null);
-    try testing.expect(oez.thresholds.Thresholds.read(doc).eql(&d.thresholds));
+    const doc = try dimna.toml.parse(arena_state.allocator(), text, null);
+    try testing.expect(dimna.thresholds.Thresholds.read(doc).eql(&d.thresholds));
     var set = d.set;
     var diag: panels_mod.Diagnostics = .{};
     try testing.expectEqual(2, try panels_mod.applyViews(&set, doc, &diag));
@@ -3168,7 +3168,7 @@ test "review by the wheel: back from live enters, forward to the live edge leave
     defer review.deinit();
     var newest: i64 = 10_000_000;
     const Step = struct {
-        fn run(r: *session.ReviewSession, dsp: *const Display, in: Input, g: *gpu_mod.Gpu, l: *const oez.types.Layout, now: i64) void {
+        fn run(r: *session.ReviewSession, dsp: *const Display, in: Input, g: *gpu_mod.Gpu, l: *const dimna.types.Layout, now: i64) void {
             r.queueInput(dsp.reviewActions(&in, frame_fs));
             const ctx: session.ReviewSession.Context = .{
                 .gpa = testing.allocator,

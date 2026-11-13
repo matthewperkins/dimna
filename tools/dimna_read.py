@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Reference reader for oEZ recordings (format v1). Needs only numpy and the standard library.
+"""Reference reader for dimna recordings (format v1). Needs only numpy and the standard library.
 
-    from oez_read import Recording
+    from dimna_read import Recording
     r = Recording("~/oez-test/2026-11-11_11-49-54")
     uv = r.samples[:, :32] * r.bit_volts[:32]      # electrodes in µV (memory-mapped)
 
 Run as a script to verify a recording: every index record's CRC against samples.i16, chunk
 contiguity, file sizes, TTL edges, and the [final] counts.
 
-    python3 oez_read.py RECORDING_DIR
+    python3 dimna_read.py RECORDING_DIR
 """
 import sys
 import tomllib
@@ -22,6 +22,8 @@ INDEX_DTYPE = np.dtype([
     ("wall_ns", "<i8"), ("board_clock", "<u8"), ("crc32", "<u4"), ("pad", "<u4"),
 ])
 FLAG_GAP = 1
+# The format's name; recordings made before the program was renamed from oez say "oez-recording".
+FORMAT_NAMES = ("dimna-recording", "oez-recording")
 
 
 class Recording:
@@ -30,8 +32,8 @@ class Recording:
         with open(self.path / "meta.toml", "rb") as f:
             self.meta = tomllib.load(f)
         m = self.meta
-        if m.get("format") != "oez-recording" or m.get("format_version") != 1:
-            raise ValueError(f"not an oEZ v1 recording: {self.path}")
+        if m.get("format") not in FORMAT_NAMES or m.get("format_version") != 1:
+            raise ValueError(f"not a dimna v1 recording: {self.path}")
         if m.get("byte_order") != "little":
             raise ValueError("unsupported byte order")
         self.num_channels = m["num_channels"]

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Low- and high-frequency signal per headstage in oEZ recordings.
+"""Low- and high-frequency signal per headstage in dimna recordings.
 
     python3 -I tools/band_power.py RECORDING [RECORDING ...]
 
@@ -14,7 +14,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from oez_read import Recording  # noqa: E402
+from dimna_read import Recording  # noqa: E402
 
 
 def main(paths):

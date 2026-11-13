@@ -1,4 +1,4 @@
-//! oEZ: acquisition for the Open Ephys acquisition board (ECP5 gateware, FT600 USB 3, ONI).
+//! dimna: acquisition for the Open Ephys acquisition board (ECP5 gateware, FT600 USB 3, ONI).
 
 pub const types = @import("types.zig");
 pub const registers = @import("registers.zig");

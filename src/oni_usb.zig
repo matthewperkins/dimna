@@ -12,7 +12,7 @@ const ft600 = @import("ft600.zig");
 const Ft600 = ft600.Ft600;
 const log = std.log.scoped(.oni_usb);
 
-pub const driver_name = "oezusb";
+pub const driver_name = "dimnausb";
 const usb_description = "Open Ephys FT600 USB board";
 
 const cmd_writereg: u8 = 0x01;
@@ -25,9 +25,9 @@ const aux_size = 8192;
 
 const gpa = std.heap.c_allocator;
 
-/// `OEZ_USB_PACE=0` turns read pacing off (see `readStream`).
+/// `DIMNA_USB_PACE=0` turns read pacing off (see `readStream`).
 fn pacing() bool {
-    const v = std.c.getenv("OEZ_USB_PACE") orelse return true;
+    const v = std.c.getenv("DIMNA_USB_PACE") orelse return true;
     return v[0] != '0';
 }
 
@@ -437,7 +437,7 @@ fn getOpt(p: c.oni_driver_ctx, option: c_int, value: ?*anyopaque, len: [*c]usize
     return c.ONI_ESUCCESS;
 }
 
-const driver_info: c.oni_driver_info_t = .{ .name = "oez-ft600-usb", .major = 0, .minor = 1, .patch = 0, .pre_release = null };
+const driver_info: c.oni_driver_info_t = .{ .name = "dimna-ft600-usb", .major = 0, .minor = 1, .patch = 0, .pre_release = null };
 
 fn info() callconv(.c) [*c]const c.oni_driver_info_t {
     return &driver_info;

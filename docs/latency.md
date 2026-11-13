@@ -48,7 +48,7 @@ would remove them).
 The margin is 3 ms. It widens only while frames keep landing late (judged against the
 best latency of the last seconds, so it works in either regime) and then returns;
 --margin-ms fixes it. Direct scanout needs Hyprland's render.direct_scanout = 1, or = 2
-(only surfaces declared as game content, which oez does) and a fullscreen window
+(only surfaces declared as game content, which dimna does) and a fullscreen window
 (--monitor, or `monitor` in the config file). Free-running (--free) without tearing
 queues frames under direct scanout (33.6 ms).
 

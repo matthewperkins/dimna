@@ -360,7 +360,7 @@ test "display processing never changes what is recorded" {
     const gpa = testing.allocator;
     const io = testing.io;
     var base_buf: [64]u8 = undefined;
-    const base = try std.fmt.bufPrint(&base_buf, "/tmp/oez-independence-test-{d}", .{std.os.linux.getpid()});
+    const base = try std.fmt.bufPrint(&base_buf, "/tmp/dimna-independence-test-{d}", .{std.os.linux.getpid()});
     defer Io.Dir.cwd().deleteTree(io, base) catch {};
     var with_root_buf: [96]u8 = undefined;
     var without_root_buf: [96]u8 = undefined;

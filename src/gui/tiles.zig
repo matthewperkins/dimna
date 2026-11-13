@@ -46,9 +46,9 @@
 
 const std = @import("std");
 const Env = @import("env.zig").Env;
-const oez = @import("oez");
-const spikes = oez.spikes;
-const tile_scale = oez.tile_scale;
+const dimna = @import("dimna");
+const spikes = dimna.spikes;
+const tile_scale = dimna.tile_scale;
 const window_mod = @import("window.zig");
 const Window = window_mod.Window;
 const Input = window_mod.Input;
@@ -79,13 +79,13 @@ const line_grab_px = 4;
 /// A threshold just asked for is taken as the channel's for this long (or until `Config`
 /// says so), so wheel clicks and `n` presses quicker than the display's answer add up.
 const asked_hold_ms = 250;
-const uv_per_bit = oez.types.electrode_uv_per_bit;
+const uv_per_bit = dimna.types.electrode_uv_per_bit;
 
 pub const Tiles = struct {
     gpa: std.mem.Allocator,
     shared: *Shared,
-    ring: *oez.ring.BlockRing,
-    layout: oez.types.Layout,
+    ring: *dimna.ring.BlockRing,
+    layout: dimna.types.Layout,
     block_samples: usize,
     display_gpu: *const gpu_mod.Gpu,
     font_buf: [128:0]u8 = @splat(0),
@@ -99,8 +99,8 @@ pub const Tiles = struct {
     pub fn start(
         gpa: std.mem.Allocator,
         shared: *Shared,
-        ring: *oez.ring.BlockRing,
-        layout: *const oez.types.Layout,
+        ring: *dimna.ring.BlockRing,
+        layout: *const dimna.types.Layout,
         block_samples: usize,
         display_gpu: *const gpu_mod.Gpu,
         font_name: []const u8,
@@ -144,16 +144,16 @@ pub const Tiles = struct {
         const shared = self.shared;
         const nch = self.layout.numChannels();
 
-        var reader = oez.ring.LossyReader.init(self.ring);
-        var blk = try oez.types.Block.init(gpa, nch, self.block_samples);
+        var reader = dimna.ring.LossyReader.init(self.ring);
+        var blk = try dimna.types.Block.init(gpa, nch, self.block_samples);
         defer blk.deinit(gpa);
         var det = try spikes.Detector.init(gpa, self.layout.sample_rate, self.layout.num_electrodes);
         defer det.deinit();
 
         var win: Window = undefined;
         var class_buf: [64]u8 = undefined;
-        const class = std.fmt.bufPrintSentinel(&class_buf, "{s}-tiles", .{self.env.app_id}, 0) catch "oez-tiles";
-        try win.init("oEZ spikes", class, self.env.key_debug);
+        const class = std.fmt.bufPrintSentinel(&class_buf, "{s}-tiles", .{self.env.app_id}, 0) catch "dimna-tiles";
+        try win.init("dimna spikes", class, self.env.key_debug);
         defer win.deinit();
         var gpu = try gpu_mod.Gpu.init(gpa, .{ .display = win.display, .surface = win.surface }, .fifo, self.display_gpu);
         defer gpu.deinit();
@@ -294,7 +294,7 @@ const View = struct {
 
     /// From the view the window starts with (a range of 0 is auto; a port without a
     /// headstage is all).
-    fn init(self: *View, layout: *const oez.types.Layout, start: *const link.TileView) void {
+    fn init(self: *View, layout: *const dimna.types.Layout, start: *const link.TileView) void {
         self.* = .{};
         for (layout.headstageSlice()) |h| {
             if (h.slot / 2 < 4) self.has_port[h.slot / 2] = true;
@@ -303,7 +303,7 @@ const View = struct {
         self.setPort(layout, start.port);
     }
 
-    fn setPort(self: *View, layout: *const oez.types.Layout, port: ?u8) void {
+    fn setPort(self: *View, layout: *const dimna.types.Layout, port: ?u8) void {
         self.port = if (port) |p| (if (p < 4 and self.has_port[p]) p else null) else null;
         self.num_shown = 0;
         const n = @min(layout.num_electrodes, max_tiles);
@@ -480,7 +480,7 @@ const View = struct {
     fn report(self: *const View, det: *const spikes.Detector) link.Report {
         var r: link.Report = .{ .view = .{ .port = self.port, .range_uv = self.scale.ranges } };
         const n = @min(det.units.len, r.thresholds.uv.len);
-        for (r.thresholds.uv[0..n], 0..) |*uv, ch| uv.* = @floatCast(det.threshold(ch) * oez.types.electrode_uv_per_bit);
+        for (r.thresholds.uv[0..n], 0..) |*uv, ch| uv.* = @floatCast(det.threshold(ch) * dimna.types.electrode_uv_per_bit);
         r.thresholds.len = n;
         return r;
     }
@@ -504,7 +504,7 @@ const View = struct {
 /// Everything a frame is drawn from (and input is placed by).
 const Scene = struct {
     det: *const spikes.Detector,
-    layout: *const oez.types.Layout,
+    layout: *const dimna.types.Layout,
     cfg: *const Config,
     view: *const View,
     face: *const font.Font,
@@ -538,7 +538,7 @@ fn wavesOf(u: *const spikes.Unit, max_waves: usize) usize {
 
 /// Every tile's auto range, in µV.
 fn autoRanges(det: *const spikes.Detector, max_waves: usize, out: []f32) void {
-    for (out, 0..) |*a, i| a.* = @floatCast(autoRange(det, &det.units[i], max_waves) * oez.types.electrode_uv_per_bit);
+    for (out, 0..) |*a, i| a.* = @floatCast(autoRange(det, &det.units[i], max_waves) * dimna.types.electrode_uv_per_bit);
 }
 
 /// The strip along the bottom: one row of `Ui` widgets.
@@ -712,7 +712,7 @@ fn lineAt(scene: Scene, grid: Grid, x: f32, y: f32) ?usize {
 /// and never 0 (that would be "follow the noise"): at zero, the sign it had (`was`).
 fn dragValue(uv: f64, was: f32) f32 {
     const sign: f64 = if (uv < 0 or (uv == 0 and was < 0)) -1 else 1;
-    return @floatCast(sign * std.math.clamp(@abs(uv), oez.thresholds.min_uv, oez.thresholds.max_uv));
+    return @floatCast(sign * std.math.clamp(@abs(uv), dimna.thresholds.min_uv, dimna.thresholds.max_uv));
 }
 
 /// A fixed threshold: "-52 µV", "+80 µV", "-1.20 mV".
@@ -816,7 +816,7 @@ fn drawReadouts(batch: *font.Batch, scene: Scene, r: [4]f32, ch: u32) void {
     }
 }
 
-/// Scripted input for tests (OEZ_TILE_CLICKS): steps "SECONDS:X,Y[,ACTION]" separated by
+/// Scripted input for tests (DIMNA_TILE_CLICKS): steps "SECONDS:X,Y[,ACTION]" separated by
 /// ';'. SECONDS after the window opened, the pointer goes to (X, Y) in pixels and ACTION
 /// happens; a negative X means at -X with Ctrl held. ACTION is:
 ///
@@ -895,12 +895,12 @@ const Script = struct {
                 in.left_down = false;
                 self.held = null;
             },
-            else => log.warn("OEZ_TILE_CLICKS: unknown action \"{s}\"", .{action}),
+            else => log.warn("DIMNA_TILE_CLICKS: unknown action \"{s}\"", .{action}),
         }
     }
 };
 
-const nowNs = oez.clock.nowNs;
+const nowNs = dimna.clock.nowNs;
 
 const testing = std.testing;
 
@@ -996,8 +996,8 @@ fn testCodepoint(k: usize) u21 {
 const test_fs = 30000.0;
 
 /// Electrodes on headstages `{slot, channels}`, in order, then 6 AUX and 8 ADC channels.
-fn testLayout(heads: []const [2]usize) oez.types.Layout {
-    var l: oez.types.Layout = .{ .sample_rate = test_fs, .hw_clock_hz = 50e6, .num_aux = 6, .num_adc = 8 };
+fn testLayout(heads: []const [2]usize) dimna.types.Layout {
+    var l: dimna.types.Layout = .{ .sample_rate = test_fs, .hw_clock_hz = 50e6, .num_aux = 6, .num_adc = 8 };
     for (heads, 0..) |hs, k| {
         l.headstages[k] = .{ .slot = hs[0], .chip = "RHD", .num_channels = hs[1], .first_channel = l.num_electrodes, .has_bno = false };
         l.num_electrodes += hs[1];
@@ -1029,7 +1029,7 @@ fn testSample(n: i64, ch: usize) i16 {
 }
 
 /// A detector for `layout`'s electrodes, fed `seconds` of `testSample` in blocks of 256.
-fn testDetector(layout: *const oez.types.Layout, seconds: f64) !spikes.Detector {
+fn testDetector(layout: *const dimna.types.Layout, seconds: f64) !spikes.Detector {
     var det = try spikes.Detector.init(testing.allocator, test_fs, layout.num_electrodes);
     errdefer det.deinit();
     const nch = layout.numChannels();
@@ -1164,7 +1164,7 @@ test "scripted input drives a drag through the view as a pointer would" {
 
 /// A view and what it acts in, for the tests of input.
 const InputTest = struct {
-    layout: oez.types.Layout,
+    layout: dimna.types.Layout,
     det: spikes.Detector,
     face: font.Font = testFont(),
     cfg: Config = .{},
@@ -1624,7 +1624,7 @@ test "the display's thresholds reach the detector with its config" {
 // few states with the hand-made font, and everything it puts into the batch is written
 // out in order as text (rectangles; runs of waveform segments joined end to end, with
 // their colour and width; runs of text) and compared with `testdata/tiles_draw.txt`. Set
-// OEZ_TILES_DRAW_OUT to a path to write what this run produced there. The detectors are
+// DIMNA_TILES_DRAW_OUT to a path to write what this run produced there. The detectors are
 // fed `testSample`: noise on every channel, spikes of four sizes on channels 4, 9, 40, 70.
 
 const draw_states = [_][]const u8{
@@ -1640,7 +1640,7 @@ const draw_states = [_][]const u8{
 };
 
 const DrawState = struct {
-    layout: oez.types.Layout,
+    layout: dimna.types.Layout,
     cfg: Config = .{},
     view: View = .{},
     width: f32 = 1000,
@@ -1834,7 +1834,7 @@ test "what the tile window draws is unchanged" {
         try writeState(&out.writer, name, st, &dets[which].?, vertices);
     }
     const got = out.written();
-    if (std.c.getenv("OEZ_TILES_DRAW_OUT")) |path| {
+    if (std.c.getenv("DIMNA_TILES_DRAW_OUT")) |path| {
         const file = try std.Io.Dir.cwd().createFile(testing.io, std.mem.span(path), .{});
         defer file.close(testing.io);
         try file.writeStreamingAll(testing.io, got);

@@ -14,7 +14,7 @@
 const std = @import("std");
 const Presented = @import("window.zig").Presented;
 const DrawResult = @import("gpu.zig").Gpu.DrawResult;
-const log = std.log.scoped(.oez);
+const log = std.log.scoped(.dimna);
 
 const skip_backoff_min: i128 = 250 * std.time.ns_per_ms;
 
@@ -27,7 +27,7 @@ pub const Pacer = struct {
     /// The margin was given (--margin-ms) and is not adapted.
     margin_fixed: bool,
     margin_ms: f64,
-    /// OEZ_FRAME_DEBUG=1: explain frames that land late. =2: also one line per frame.
+    /// DIMNA_FRAME_DEBUG=1: explain frames that land late. =2: also one line per frame.
     debug: bool,
     trace: bool,
 

@@ -6,6 +6,6 @@
 // dlopen() search path when loading libonidriver_<name>.so.
 void oni_set_driver_search_dir(const char *dir);
 
-// oEZ patch in the same file: a driver compiled into the program, selected by name.
+// dimna patch in the same file: a driver compiled into the program, selected by name.
 #include "onidriverloader.h"
 void oni_register_builtin_driver(const char *name, const oni_driver_t *functions);

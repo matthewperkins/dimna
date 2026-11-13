@@ -1,14 +1,14 @@
 //! The command line and the top-level keys of the config file.
 
 const std = @import("std");
-const oez = @import("oez");
+const dimna = @import("dimna");
 const gpu_mod = @import("gpu.zig");
-const log = std.log.scoped(.oez);
+const log = std.log.scoped(.dimna);
 
 pub const Args = struct {
     seconds: f64 = 0,
-    settings: oez.types.Settings = .{},
-    driver: oez.board.Driver = .usb,
+    settings: dimna.types.Settings = .{},
+    driver: dimna.board.Driver = .usb,
     sim: [8]usize = @splat(0),
     num_sim: usize = 0,
     present: gpu_mod.PresentMode = .auto,
@@ -18,7 +18,7 @@ pub const Args = struct {
     monitor: []const u8 = "",
     tearing: bool = false,
     /// Where recordings go: one session folder per recording beneath it.
-    record_dir: []const u8 = "~/oez-recordings",
+    record_dir: []const u8 = "~/dimna-recordings",
     /// The spike tiles (a third window).
     tiles: bool = true,
     /// The spike audio monitor.
@@ -35,14 +35,14 @@ pub const Args = struct {
     font_px: u32 = 14,
     /// The view file (panel settings saved from the control window), applied on top of the
     /// config's panels.
-    views_doc: oez.toml.Document = .{ .entries = &.{} },
+    views_doc: dimna.toml.Document = .{ .entries = &.{} },
     /// The parsed config file (panels are read from it once the channel layout is known).
-    doc: oez.toml.Document = .{ .entries = &.{} },
+    doc: dimna.toml.Document = .{ .entries = &.{} },
 };
 
-/// What `oez --help` prints. Every option `parseArgs` accepts is listed here (a test checks).
+/// What `dimna --help` prints. Every option `parseArgs` accepts is listed here (a test checks).
 pub const usage =
-    \\oez: the oEZ display. Without --sim it opens the acquisition board.
+    \\dimna: the dimna display. Without --sim it opens the acquisition board.
     \\
     \\  --sim 32,16         simulate headstages of these channel counts instead of the board
     \\  --16ch A1,B1        these RHD2132 headstages carry 16 electrodes (half-channel mode)
@@ -62,7 +62,7 @@ pub const usage =
     \\  --script STEPS      synthetic input for tests (see src/gui/script.zig)
     \\  --help
     \\
-    \\Config file: $XDG_CONFIG_HOME/oez/config.toml (default ~/.config/oez); options above
+    \\Config file: $XDG_CONFIG_HOME/dimna/config.toml (default ~/.config/dimna); options above
     \\win. See the README for its keys and the [[panel]] tables.
     \\
     \\On the display (? shows these there, with the spike-tile window's):
@@ -115,7 +115,7 @@ pub const usage =
 ;
 
 /// Applies the config file's top-level keys to `a`. (`[[panel]]` tables are read later.)
-pub fn applyConfig(a: *Args, doc: oez.toml.Document) void {
+pub fn applyConfig(a: *Args, doc: dimna.toml.Document) void {
     a.doc = doc;
     for (doc.entries) |e| {
         if (e.table.len != 0) {
@@ -153,12 +153,12 @@ pub fn applyConfig(a: *Args, doc: oez.toml.Document) void {
     }
 }
 
-pub fn parseArgs(args: []const [:0]const u8, doc: oez.toml.Document) !Args {
+pub fn parseArgs(args: []const [:0]const u8, doc: dimna.toml.Document) !Args {
     var a: Args = .{};
     applyConfig(&a, doc);
     // The [board] table; command-line options below win over it.
-    var board_diag: oez.board_config.Diagnostics = .{};
-    oez.board_config.read(doc, &a.settings, &board_diag) catch {
+    var board_diag: dimna.board_config.Diagnostics = .{};
+    dimna.board_config.read(doc, &a.settings, &board_diag) catch {
         log.err("config: {s}", .{board_diag.message()});
         return error.BadArgs;
     };
@@ -205,7 +205,7 @@ pub fn parseArgs(args: []const [:0]const u8, doc: oez.toml.Document) !Args {
             a.settings.acquire_adc = true;
         } else if (std.mem.eql(u8, arg, "--driver")) {
             const name = try next(args, &i, arg);
-            a.driver = std.meta.stringToEnum(oez.board.Driver, name) orelse {
+            a.driver = std.meta.stringToEnum(dimna.board.Driver, name) orelse {
                 log.err("--driver: '{s}' is not usb or d3xx", .{name});
                 return error.BadArgs;
             };
@@ -229,7 +229,7 @@ pub fn parseArgs(args: []const [:0]const u8, doc: oez.toml.Document) !Args {
         } else if (std.mem.eql(u8, arg, "--16ch")) {
             var it = std.mem.tokenizeScalar(u8, try next(args, &i, arg), ',');
             while (it.next()) |name| {
-                const slot = for (oez.types.headstage_names, 0..) |n, k| {
+                const slot = for (dimna.types.headstage_names, 0..) |n, k| {
                     if (std.ascii.eqlIgnoreCase(n, name)) break k;
                 } else {
                     log.err("--16ch: unknown headstage slot '{s}' (use A1..D2)", .{name});
@@ -238,7 +238,7 @@ pub fn parseArgs(args: []const [:0]const u8, doc: oez.toml.Document) !Args {
                 a.settings.rhd2132_16ch[slot] = true;
             }
         } else {
-            log.err("unknown argument '{s}' (oez --help lists them)", .{arg});
+            log.err("unknown argument '{s}' (dimna --help lists them)", .{arg});
             return error.BadArgs;
         }
     }

@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Compare two oEZ recordings of the same headstages made at different times.
+"""Compare two dimna recordings of the same headstages made at different times.
 
 The samples cannot be equal (different moments), so this compares what should be: layout and
 scales, per-channel noise profile of the electrodes, and AUX / ADC levels.
 
-    python3 oez_compare.py RECORDING_A RECORDING_B
+    python3 dimna_compare.py RECORDING_A RECORDING_B
 """
 import sys
 
 import numpy as np
 
-from oez_read import Recording
+from dimna_read import Recording
 
 
 def profile(r, seconds=10.0):

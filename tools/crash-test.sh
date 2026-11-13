@@ -1,14 +1,14 @@
 #!/bin/bash
 # Crash test of the recorder: record from the simulator, kill -9 the recorder mid-way, and
-# check what a crash leaves behind with the reference reader (tools/oez_read.py):
-#   - the indexed part verifies (every CRC, offsets, gap flags): oez_read.py says OK;
+# check what a crash leaves behind with the reference reader (tools/dimna_read.py):
+#   - the indexed part verifies (every CRC, offsets, gap flags): dimna_read.py says OK;
 #   - the recording is reported as interrupted (meta.toml has no [final]);
 #   - the unverified tail after the last index record is under 1.5 s of data
 #     (the recorder syncs and writes the index about once a second).
 #
 #   tools/crash-test.sh [KILL_AFTER_SECONDS]      (default 4; build first: zig build --release=safe)
 #
-# Simulator only (--sim): never touches the board. Files go to /tmp/oez-crash-test-<pid>/ and
+# Simulator only (--sim): never touches the board. Files go to /tmp/dimna-crash-test-<pid>/ and
 # are removed afterwards. Exit status 0 if every check passed.
 #
 # Note: /tmp is often a tmpfs, and kill -9 ends only the process, not the kernel: data the
@@ -16,8 +16,8 @@
 set -u
 
 here=$(cd "$(dirname "$0")/.." && pwd)
-bin="$here/zig-out/bin/oez-headless"
-reader="$here/tools/oez_read.py"
+bin="$here/zig-out/bin/dimna-headless"
+reader="$here/tools/dimna_read.py"
 kill_after=${1:-4}
 max_tail_s=1.5
 
@@ -26,7 +26,7 @@ if [[ ! -x "$bin" ]]; then
     exit 2
 fi
 
-tmp="/tmp/oez-crash-test-$$"
+tmp="/tmp/dimna-crash-test-$$"
 mkdir -p "$tmp/rec"
 trap 'rm -rf "$tmp"' EXIT
 
@@ -34,13 +34,13 @@ trap 'rm -rf "$tmp"' EXIT
 pid=$!
 sleep "$kill_after"
 if ! kill -0 "$pid" 2>/dev/null; then
-    echo "crash-test: oez-headless exited before the kill; its output:" >&2
+    echo "crash-test: dimna-headless exited before the kill; its output:" >&2
     cat "$tmp/headless.log" >&2
     exit 1
 fi
 kill -9 "$pid"
 wait "$pid" 2>/dev/null
-echo "crash-test: killed oez-headless (kill -9) after ${kill_after} s"
+echo "crash-test: killed dimna-headless (kill -9) after ${kill_after} s"
 
 dirs=("$tmp"/rec/*/)
 if [[ ${#dirs[@]} -ne 1 || ! -d "${dirs[0]}" ]]; then
@@ -60,7 +60,7 @@ check() { # check DESCRIPTION CONDITION-EXIT-STATUS
 }
 
 [[ $status -eq 0 ]] && grep -q '^  OK$' <<<"$out"
-check "the indexed part verifies (oez_read.py exit $status)" $?
+check "the indexed part verifies (dimna_read.py exit $status)" $?
 
 grep -q 'INTERRUPTED (no \[final\])' <<<"$out" && ! grep -q '^\[final\]' "$rec/meta.toml"
 check "reported as interrupted (no [final] in meta.toml)" $?
@@ -79,7 +79,7 @@ else
 fi
 
 if [[ $fail -ne 0 ]]; then
-    echo "crash-test: FAILED; oez-headless output:" >&2
+    echo "crash-test: FAILED; dimna-headless output:" >&2
     cat "$tmp/headless.log" >&2
     exit 1
 fi

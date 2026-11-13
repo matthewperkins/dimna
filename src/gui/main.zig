@@ -1,4 +1,4 @@
-//! oez: the GUI's main thread. It owns the neural display (a Wayland window drawn with
+//! dimna: the GUI's main thread. It owns the neural display (a Wayland window drawn with
 //! Vulkan, fullscreen on its own monitor in normal use) and runs the one loop that moves
 //! samples from the acquisition ring into the GPU's history, takes input, and draws.
 //!
@@ -15,13 +15,13 @@
 //! between turns is in session.zig (recording, review, alarms, view file, board settings),
 //! pacing.zig (when to draw, latency figures) and display.zig (panels, input, drawing).
 //!
-//! Options: args.zig (`oez --help`). Keys and the mouse: README, "The display". The config
-//! file ($XDG_CONFIG_HOME/oez/config.toml; command-line options win) and `[[panel]]`
+//! Options: args.zig (`dimna --help`). Keys and the mouse: README, "The display". The config
+//! file ($XDG_CONFIG_HOME/dimna/config.toml; command-line options win) and `[[panel]]`
 //! tables: args.zig and src/panels.zig. How frames are paced and what latency was
 //! measured: docs/latency.md. Scripted input for tests (--script): script.zig.
 
 const std = @import("std");
-const oez = @import("oez");
+const dimna = @import("dimna");
 const Window = @import("window.zig").Window;
 const gpu_mod = @import("gpu.zig");
 const Gpu = gpu_mod.Gpu;
@@ -35,7 +35,7 @@ const notes_mod = @import("notes.zig");
 const tiles_mod = @import("tiles.zig");
 const Status = display_mod.Status;
 const Io = std.Io;
-const log = std.log.scoped(.oez);
+const log = std.log.scoped(.dimna);
 const args_mod = @import("args.zig");
 const Args = args_mod.Args;
 const parseArgs = args_mod.parseArgs;
@@ -61,10 +61,10 @@ const tile_link = @import("tile_link.zig");
 pub const std_options: std.Options = .{ .log_level = .info };
 
 const Input = @import("window.zig").Input;
-const panels_mod = oez.panels;
+const panels_mod = dimna.panels;
 const Panel = panels_mod.Panel;
 
-const nowNs = oez.clock.nowNs;
+const nowNs = dimna.clock.nowNs;
 
 pub fn main(init: std.process.Init) !u8 {
     const io = init.io;
@@ -77,13 +77,13 @@ pub fn main(init: std.process.Init) !u8 {
     // Not a label: a path too long for the buffer is "", and the run starts without a
     // config, as if there were none, without saying why.
     const config_path = if (init.environ_map.get("XDG_CONFIG_HOME")) |x|
-        std.fmt.bufPrint(&path_buf, "{s}/oez/config.toml", .{x}) catch ""
+        std.fmt.bufPrint(&path_buf, "{s}/dimna/config.toml", .{x}) catch ""
     else
-        std.fmt.bufPrint(&path_buf, "{s}/.config/oez/config.toml", .{init.environ_map.get("HOME") orelse ""}) catch "";
+        std.fmt.bufPrint(&path_buf, "{s}/.config/dimna/config.toml", .{init.environ_map.get("HOME") orelse ""}) catch "";
     const config_text: []const u8 = Io.Dir.cwd().readFileAlloc(io, config_path, init.arena.allocator(), .limited(1 << 16)) catch "";
     if (config_text.len > 0) log.info("config: {s}", .{config_path});
-    var toml_diag: oez.toml.Diagnostics = .{};
-    const doc = oez.toml.parse(init.arena.allocator(), config_text, &toml_diag) catch {
+    var toml_diag: dimna.toml.Diagnostics = .{};
+    const doc = dimna.toml.parse(init.arena.allocator(), config_text, &toml_diag) catch {
         log.err("{s}: syntax error on line {d}", .{ config_path, toml_diag.line });
         return 2;
     };
@@ -94,41 +94,41 @@ pub fn main(init: std.process.Init) !u8 {
     const views_path = std.fmt.bufPrint(&views_path_buf, "{s}/views.toml", .{std.fs.path.dirname(config_path) orelse "."}) catch "";
     const views_text: []const u8 = Io.Dir.cwd().readFileAlloc(io, views_path, init.arena.allocator(), .limited(1 << 18)) catch "";
     if (views_text.len > 0) {
-        if (oez.toml.parse(init.arena.allocator(), views_text, &toml_diag)) |vd| {
+        if (dimna.toml.parse(init.arena.allocator(), views_text, &toml_diag)) |vd| {
             args.views_doc = vd;
         } else |_| log.warn("{s}: syntax error on line {d}; the view file is ignored", .{ views_path, toml_diag.line });
     }
 
     // ---- the source: simulator or board ----
-    var board: ?oez.board.Board = null;
+    var board: ?dimna.board.Board = null;
     defer if (board) |*b| b.close();
-    var sim: ?oez.sim.Sim = null;
+    var sim: ?dimna.sim.Sim = null;
     defer if (sim) |*sm| sm.deinit();
-    const source: oez.source.Source = if (args.num_sim > 0) blk: {
-        sim = try oez.sim.Sim.init(gpa, io, args.sim[0..args.num_sim]);
+    const source: dimna.source.Source = if (args.num_sim > 0) blk: {
+        sim = try dimna.sim.Sim.init(gpa, io, args.sim[0..args.num_sim]);
         try sim.?.applySettings(args.settings);
         log.info("simulated board: {d} headstages, {d} units", .{ args.num_sim, sim.?.units.len });
         break :blk .{ .sim = &sim.? };
     } else blk: {
         var dirbuf: [std.fs.max_path_bytes:0]u8 = undefined;
-        if (args.driver == .d3xx) _ = oez.oni.configureDriverSearch(io, init.environ_map, &dirbuf);
-        if (!oez.acquisition.lockMemory()) log.warn("mlockall failed; pages may be swapped out", .{});
-        board = oez.board.Board.open(io, args.driver) catch |e| {
-            log.err("could not open the board: {t} (liboni: {s})", .{ e, oez.oni.errorStr(oez.oni.lastError()) });
+        if (args.driver == .d3xx) _ = dimna.oni.configureDriverSearch(io, init.environ_map, &dirbuf);
+        if (!dimna.acquisition.lockMemory()) log.warn("mlockall failed; pages may be swapped out", .{});
+        board = dimna.board.Board.open(io, args.driver) catch |e| {
+            log.err("could not open the board: {t} (liboni: {s})", .{ e, dimna.oni.errorStr(dimna.oni.lastError()) });
             return 1;
         };
         try board.?.applySettings(args.settings);
         break :blk .{ .board = &board.? };
     };
-    var health: oez.types.Health = .{};
+    var health: dimna.types.Health = .{};
     // What of the loss counters the user has acknowledged (the alarm shows the rest).
     var alarms: session.Alarms = .{};
 
     // ---- window and renderer ----
     var win: Window = undefined;
     var app_id_buf: [64:0]u8 = @splat(0);
-    const app_id = std.fmt.bufPrintSentinel(&app_id_buf, "{s}", .{env.app_id}, 0) catch "oez";
-    try win.init("oEZ", app_id, env.key_debug);
+    const app_id = std.fmt.bufPrintSentinel(&app_id_buf, "{s}", .{env.app_id}, 0) catch "dimna";
+    try win.init("dimna", app_id, env.key_debug);
     defer win.deinit();
     const fullscreen = args.monitor.len > 0;
     if (fullscreen) {
@@ -154,7 +154,7 @@ pub fn main(init: std.process.Init) !u8 {
     var tiles_shared: tiles_mod.Shared = .{};
     // The tile window's view (port shown, tile ranges): from the view file at first, then
     // as the tile window reports it; saved with the panels by "Save view".
-    var tile_view = oez.tile_view.TileView.read(args.views_doc);
+    var tile_view = dimna.tile_view.TileView.read(args.views_doc);
     tiles_shared.initial_view = tile_view;
     var tile_report_seen: u32 = 0;
     var pl: Pipeline = .{
@@ -170,7 +170,7 @@ pub fn main(init: std.process.Init) !u8 {
     };
     // The detection thresholds: from the view file; the display keeps them from then on
     // (and across a restart).
-    pl.init(oez.thresholds.Thresholds.read(args.views_doc)) catch |e| return if (e == error.BadPanels) 2 else e;
+    pl.init(dimna.thresholds.Thresholds.read(args.views_doc)) catch |e| return if (e == error.BadPanels) 2 else e;
     // Stops acquisition, the audio monitor and the tiles, then frees the ring. It runs
     // after the recording below is closed, which reads the ring to its end.
     defer pl.deinit();
@@ -200,7 +200,7 @@ pub fn main(init: std.process.Init) !u8 {
     var control_cfg: control.Config = .{ .gpa = gpa, .shared = &shared, .display_gpu = &gpu, .font_px = args.font_px, .env = &env };
     // Which of its sections are open: from the view file, then as the control window
     // reports them; saved with the panels by "Save view".
-    var control_view = oez.control_view.ControlView.read(args.views_doc);
+    var control_view = dimna.control_view.ControlView.read(args.views_doc);
     control_cfg.view = control_view;
     var control_thread: ?std.Thread = null;
     if (args.control) {
@@ -538,13 +538,13 @@ pub fn main(init: std.process.Init) !u8 {
                 @as(f64, @floatFromInt(audio_shared.max_block_age_us.swap(0, .monotonic))) / 1000.0,
                 audio_shared.underruns.load(.monotonic),
                 audio_shared.dropped.load(.monotonic),
-                @as(f64, @floatFromInt(audio_shared.held_sigma_c.load(.monotonic))) / 100.0 * oez.types.electrode_uv_per_bit,
+                @as(f64, @floatFromInt(audio_shared.held_sigma_c.load(.monotonic))) / 100.0 * dimna.types.electrode_uv_per_bit,
                 if (audio_shared.held_sigma_c.load(.monotonic) == 0) " (measuring)" else " held",
             });
             if (!env.no_title) {
                 if (std.fmt.bufPrintSentinel(
                     &title_buf,
-                    "oEZ   {s}: {d:.2} s  {d:.1} {s}/row   latency {d:.1} ms   {d} fps",
+                    "dimna   {s}: {d:.2} s  {d:.1} {s}/row   latency {d:.1} ms   {d} fps",
                     .{ tp.name(), tp.span_s, tp.scale, tp.unit(), r.avg_ms, r.frames },
                     0,
                 )) |t| win.setTitle(t) else |_| {}

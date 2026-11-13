@@ -1,4 +1,4 @@
-//! A reader for the subset of TOML that oEZ's config file uses:
+//! A reader for the subset of TOML that dimna's config file uses:
 //!
 //!   key = "string" | number | true | false | [number, number, ...]
 //!   [table]            keys that follow belong to it
@@ -6,7 +6,7 @@
 //!   # comment
 //!
 //! Strings are basic strings with \" and \\ escapes. Anything else is a syntax error with a
-//! line number. (oEZ only reads config; meta.toml is written by `record.zig`.)
+//! line number. (dimna only reads config; meta.toml is written by `record.zig`.)
 
 const std = @import("std");
 
@@ -178,7 +178,7 @@ test "parses keys, tables and arrays of tables" {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const doc = try parse(arena_state.allocator(),
-        \\# oEZ config
+        \\# dimna config
         \\monitor = "DP-2"   # the neural display
         \\tearing = true
         \\margin_ms = 3.5

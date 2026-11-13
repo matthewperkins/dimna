@@ -290,7 +290,7 @@ test "review reads a recording back through the feed, in pieces, in any order" {
     const first: i64 = 5000;
     const total = 40000;
     var dir_buf: [64]u8 = undefined;
-    const dir = try std.fmt.bufPrintSentinel(&dir_buf, "/tmp/oez-review-test-{d}", .{linux.getpid()}, 0);
+    const dir = try std.fmt.bufPrintSentinel(&dir_buf, "/tmp/dimna-review-test-{d}", .{linux.getpid()}, 0);
     _ = linux.mkdir(dir, 0o700);
     defer {
         inline for (.{ "samples.i16", "ttl_sample.i64", "ttl_word.u16" }) |name| {

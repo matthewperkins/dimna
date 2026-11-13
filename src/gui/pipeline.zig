@@ -12,7 +12,7 @@
 //! audio monitor and the tiles hold pointers into it.
 
 const std = @import("std");
-const oez = @import("oez");
+const dimna = @import("dimna");
 const gpu_mod = @import("gpu.zig");
 const audio_out = @import("audio_out.zig");
 const tiles_mod = @import("tiles.zig");
@@ -21,36 +21,36 @@ const session = @import("session.zig");
 const Args = @import("args.zig").Args;
 const Env = @import("env.zig").Env;
 const Display = display_mod.Display;
-const Panel = oez.panels.Panel;
+const Panel = dimna.panels.Panel;
 const Io = std.Io;
-const log = std.log.scoped(.oez);
+const log = std.log.scoped(.dimna);
 
 pub const Pipeline = struct {
     // For the whole run.
     gpa: std.mem.Allocator,
     io: Io,
-    source: oez.source.Source,
+    source: dimna.source.Source,
     args: *const Args,
     env: *const Env,
     gpu: *gpu_mod.Gpu,
-    health: *oez.types.Health,
+    health: *dimna.types.Health,
     audio_shared: *audio_out.Shared,
     tiles_shared: *tiles_mod.Shared,
 
     // Made by `assemble`; these change when acquisition is restarted.
-    layout: oez.types.Layout = undefined,
+    layout: dimna.types.Layout = undefined,
     /// Channels per sample, the sample rate, and samples per block.
     nch: usize = 0,
     fs: f64 = 0,
     bs: usize = 0,
     /// 30 s of blocks: what the recorder may fall behind (a stalled disk) before samples
     /// are lost. The display reads it without holding anything back.
-    ring: oez.ring.BlockRing = undefined,
-    acq: oez.acquisition.Acquisition = undefined,
-    reader: oez.ring.LossyReader = undefined,
-    blk: oez.types.Block = undefined,
+    ring: dimna.ring.BlockRing = undefined,
+    acq: dimna.acquisition.Acquisition = undefined,
+    reader: dimna.ring.LossyReader = undefined,
+    blk: dimna.types.Block = undefined,
     display: Display = undefined,
-    feed: oez.feed.Feed = undefined,
+    feed: dimna.feed.Feed = undefined,
     assembled: bool = false,
 
     // The threads, between `run` and `halt`.
@@ -61,8 +61,8 @@ pub const Pipeline = struct {
     /// Puts the pipeline together for the source as it is configured now, the display with
     /// `thresholds`. Starts nothing. `error.BadPanels`: the config's panels do not fit the
     /// source (already reported).
-    pub fn init(self: *Pipeline, thresholds: oez.thresholds.Thresholds) !void {
-        var audio: oez.audio.Settings = .{};
+    pub fn init(self: *Pipeline, thresholds: dimna.thresholds.Thresholds) !void {
+        var audio: dimna.audio.Settings = .{};
         audio.volume_db = self.args.volume_db;
         try self.assemble(null, audio, thresholds, true);
     }
@@ -112,7 +112,7 @@ pub const Pipeline = struct {
     /// anew. If the source refuses the settings it is put back as it was, and the error is
     /// returned as a value: acquisition is running again either way. An error returned as
     /// an error means it is not.
-    pub fn restart(self: *Pipeline, settings: oez.types.Settings) !?anyerror {
+    pub fn restart(self: *Pipeline, settings: dimna.types.Settings) !?anyerror {
         self.halt();
         const before = self.source.settings();
         var refused: ?anyerror = null;
@@ -139,9 +139,9 @@ pub const Pipeline = struct {
     /// `thresholds`: the detection thresholds the new display starts with.
     fn assemble(
         self: *Pipeline,
-        carry: ?*const oez.panels.Set,
-        audio: oez.audio.Settings,
-        thresholds: oez.thresholds.Thresholds,
+        carry: ?*const dimna.panels.Set,
+        audio: dimna.audio.Settings,
+        thresholds: dimna.thresholds.Thresholds,
         strict: bool,
     ) !void {
         const gpa = self.gpa;
@@ -150,18 +150,18 @@ pub const Pipeline = struct {
         const fs = layout.sample_rate;
         const bs = self.source.settings().block_samples;
 
-        var ring = try oez.ring.BlockRing.init(gpa, ringSlots(fs, bs, self.env.ring_seconds), nch, bs);
+        var ring = try dimna.ring.BlockRing.init(gpa, ringSlots(fs, bs, self.env.ring_seconds), nch, bs);
         errdefer ring.deinit(gpa);
-        var scratch = try oez.types.Block.init(gpa, nch, bs);
+        var scratch = try dimna.types.Block.init(gpa, nch, bs);
         errdefer scratch.deinit(gpa);
-        var blk = try oez.types.Block.init(gpa, nch, bs);
+        var blk = try dimna.types.Block.init(gpa, nch, bs);
         errdefer blk.deinit(gpa);
         var display = display_mod.makeDisplay(self.args.*, &layout) orelse
-            if (strict) return error.BadPanels else Display.init(oez.panels.default(&layout, .scroll));
+            if (strict) return error.BadPanels else Display.init(dimna.panels.default(&layout, .scroll));
         if (carry) |old| session.carryOver(&display.set, old);
         // The longest time base plus a margin, so new samples never overwrite what is drawn.
         const history_samples: usize = @intFromFloat((Panel.span_max + 2.0) * fs);
-        var feed = try oez.feed.Feed.init(gpa, &layout, &display.set, history_samples, bs);
+        var feed = try dimna.feed.Feed.init(gpa, &layout, &display.set, history_samples, bs);
         errdefer feed.deinit(gpa);
         // `r` goes back to the config's values, in the slots the feed has just given out.
         const config_set = display.initial;
@@ -186,7 +186,7 @@ pub const Pipeline = struct {
         self.ring = ring;
         self.acq = .{ .io = self.io, .source = self.source, .ring = &self.ring, .health = self.health, .scratch = scratch };
         self.blk = blk;
-        self.reader = oez.ring.LossyReader.init(&self.ring);
+        self.reader = dimna.ring.LossyReader.init(&self.ring);
         self.feed = feed;
         self.display = display;
         self.assembled = true;
@@ -207,7 +207,7 @@ fn ringSlots(fs: f64, block_samples: usize, seconds: f64) usize {
 }
 
 /// Gives a stopped source new settings.
-fn applyToSource(source: oez.source.Source, settings: oez.types.Settings) !void {
+fn applyToSource(source: dimna.source.Source, settings: dimna.types.Settings) !void {
     switch (source) {
         .board => |b| try b.applySettings(settings),
         .sim => |s| try s.applySettings(settings),

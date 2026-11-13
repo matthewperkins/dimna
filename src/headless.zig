@@ -1,8 +1,8 @@
-//! oez-headless: open the board, acquire for a while, and check the stream.
+//! dimna-headless: open the board, acquire for a while, and check the stream.
 //!
-//!   oez-headless [--seconds S] [--16ch A1,B1] [--aux] [--adc] [--leds] [--rate HZ] [--block N]
-//!                [--record ROOT] [--live-test] [--driver d3xx|usb] [--usb-block BYTES]
-//!                [--sim 32,16] [--band LOW,HIGH] [--no-dsp]
+//!   dimna-headless [--seconds S] [--16ch A1,B1] [--aux] [--adc] [--leds] [--rate HZ] [--block N]
+//!                  [--record ROOT] [--live-test] [--driver d3xx|usb] [--usb-block BYTES]
+//!                  [--sim 32,16] [--band LOW,HIGH] [--no-dsp]
 //!
 //! --sim runs from simulated headstages (channels each) instead of the board: no hardware is
 //! touched, and the acquisition thread does not ask for real-time priority.
@@ -31,8 +31,8 @@
 //! if anything was lost.
 
 const std = @import("std");
-const oez = @import("oez");
-const Board = oez.board.Board;
+const dimna = @import("dimna");
+const Board = dimna.board.Board;
 const Io = std.Io;
 const log = std.log.scoped(.headless);
 
@@ -48,8 +48,8 @@ const Args = struct {
     seconds: f64 = 10.0,
     record_root: ?[]const u8 = null,
     live_test: bool = false,
-    driver: oez.board.Driver = .usb,
-    settings: oez.types.Settings = .{},
+    driver: dimna.board.Driver = .usb,
+    settings: dimna.types.Settings = .{},
     /// Simulated headstages (channels each) instead of the board.
     sim: [8]usize = @splat(0),
     num_sim: usize = 0,
@@ -82,7 +82,7 @@ fn parseArgs(args: []const [:0]const u8) !Args {
             a.record_root = try next(args, &i, arg);
         } else if (std.mem.eql(u8, arg, "--driver")) {
             const name = try next(args, &i, arg);
-            a.driver = std.meta.stringToEnum(oez.board.Driver, name) orelse {
+            a.driver = std.meta.stringToEnum(dimna.board.Driver, name) orelse {
                 log.err("--driver: '{s}' is not d3xx or usb", .{name});
                 return error.BadArgs;
             };
@@ -115,7 +115,7 @@ fn parseArgs(args: []const [:0]const u8) !Args {
         } else if (std.mem.eql(u8, arg, "--16ch")) {
             var it = std.mem.tokenizeScalar(u8, try next(args, &i, arg), ',');
             while (it.next()) |name| {
-                const slot = for (oez.types.headstage_names, 0..) |n, k| {
+                const slot = for (dimna.types.headstage_names, 0..) |n, k| {
                     if (std.ascii.eqlIgnoreCase(n, name)) break k;
                 } else {
                     log.err("--16ch: unknown headstage slot '{s}' (use A1..D2)", .{name});
@@ -138,7 +138,7 @@ pub fn main(init: std.process.Init) !u8 {
 
     var board: ?Board = null;
     defer if (board) |*b| b.close();
-    var sim: ?oez.sim.Sim = null;
+    var sim: ?dimna.sim.Sim = null;
     defer if (sim) |*sm| sm.deinit();
     const source = openSource(init, args, &board, &sim) catch |e| switch (e) {
         error.BoardOpenFailed => return 1,
@@ -153,15 +153,15 @@ pub fn main(init: std.process.Init) !u8 {
     // The ring absorbs consumer stalls: 30 s when recording (disk), else 2 s.
     const ring_s: f64 = if (args.record_root != null) 30.0 else 2.0;
     const slots: usize = @intFromFloat(@ceil(ring_s * layout.sample_rate / @as(f64, @floatFromInt(bs))));
-    var ring = try oez.ring.BlockRing.init(gpa, slots, nch, bs);
+    var ring = try dimna.ring.BlockRing.init(gpa, slots, nch, bs);
     defer ring.deinit(gpa);
     const me = ring.addConsumer().?;
-    var rec: ?*oez.record.Recorder = null;
+    var rec: ?*dimna.record.Recorder = null;
     if (args.record_root) |root| {
         rec = createRecorder(gpa, io, &ring, root, layout, source, if (board) |*b| b else null) catch return 1;
     }
-    var health: oez.types.Health = .{};
-    var acq: oez.acquisition.Acquisition = .{
+    var health: dimna.types.Health = .{};
+    var acq: dimna.acquisition.Acquisition = .{
         .io = io,
         .source = source,
         .ring = &ring,
@@ -199,33 +199,33 @@ pub fn main(init: std.process.Init) !u8 {
 
 /// Opens the simulator (`--sim`) or the board, applies the settings, and returns the source,
 /// which points into `board` or `sim`. error.BoardOpenFailed has been logged already.
-fn openSource(init: std.process.Init, args: Args, board: *?Board, sim: *?oez.sim.Sim) !oez.source.Source {
+fn openSource(init: std.process.Init, args: Args, board: *?Board, sim: *?dimna.sim.Sim) !dimna.source.Source {
     const io = init.io;
     if (args.num_sim > 0) {
-        sim.* = try oez.sim.Sim.init(init.gpa, io, args.sim[0..args.num_sim]);
+        sim.* = try dimna.sim.Sim.init(init.gpa, io, args.sim[0..args.num_sim]);
         try sim.*.?.applySettings(args.settings);
         log.info("simulated board: {d} headstages, {d} units", .{ args.num_sim, sim.*.?.units.len });
         return .{ .sim = &sim.*.? };
     }
     var dirbuf: [std.fs.max_path_bytes:0]u8 = undefined;
     if (args.driver == .d3xx) {
-        if (oez.oni.configureDriverSearch(io, init.environ_map, &dirbuf)) |d| {
+        if (dimna.oni.configureDriverSearch(io, init.environ_map, &dirbuf)) |d| {
             log.info("using libonidriver_ft600.so from {s}", .{d});
         } else log.info("libonidriver_ft600.so not found in known locations; trying the default library path", .{});
     }
-    if (!oez.acquisition.lockMemory()) log.warn("mlockall failed; pages may be swapped out", .{});
+    if (!dimna.acquisition.lockMemory()) log.warn("mlockall failed; pages may be swapped out", .{});
     board.* = Board.open(io, args.driver) catch |e| {
-        log.err("could not open the board: {t} (liboni: {s})", .{ e, oez.oni.errorStr(oez.oni.lastError()) });
+        log.err("could not open the board: {t} (liboni: {s})", .{ e, dimna.oni.errorStr(dimna.oni.lastError()) });
         return error.BoardOpenFailed;
     };
     try board.*.?.applySettings(args.settings);
     return .{ .board = &board.*.? };
 }
 
-fn logLayout(layout: oez.types.Layout) void {
+fn logLayout(layout: dimna.types.Layout) void {
     for (layout.headstageSlice()) |h| {
         log.info("headstage {s}: {s}, {d} ch from channel {d}", .{
-            oez.types.headstage_names[h.slot],
+            dimna.types.headstage_names[h.slot],
             h.chip,
             h.num_channels,
             h.first_channel,
@@ -241,13 +241,13 @@ fn logLayout(layout: oez.types.Layout) void {
 fn createRecorder(
     gpa: std.mem.Allocator,
     io: Io,
-    ring: *oez.ring.BlockRing,
+    ring: *dimna.ring.BlockRing,
     root: []const u8,
-    layout: oez.types.Layout,
-    source: oez.source.Source,
+    layout: dimna.types.Layout,
+    source: dimna.source.Source,
     board: ?*const Board,
-) !*oez.record.Recorder {
-    return oez.record.Recorder.create(gpa, io, ring, root, .{
+) !*dimna.record.Recorder {
+    return dimna.record.Recorder.create(gpa, io, ring, root, .{
         .layout = layout,
         .settings = source.settings(),
         .gateware = if (board) |b| b.fw else @splat(0),
@@ -265,47 +265,47 @@ const LiveTest = struct {
     next_step: usize = 0,
     ok: bool = true,
 
-    const Step = struct { at_ms: i64, name: []const u8, edit: *const fn (*oez.types.Settings) void };
+    const Step = struct { at_ms: i64, name: []const u8, edit: *const fn (*dimna.types.Settings) void };
     const steps = [_]Step{
         .{ .at_ms = 2000, .name = "ADC off (a restart change)", .edit = struct {
-            fn f(st: *oez.types.Settings) void {
+            fn f(st: *dimna.types.Settings) void {
                 st.acquire_adc = !st.acquire_adc;
             }
         }.f },
         .{ .at_ms = 4000, .name = "LEDs on", .edit = struct {
-            fn f(st: *oez.types.Settings) void {
+            fn f(st: *dimna.types.Settings) void {
                 st.leds = true;
             }
         }.f },
         .{ .at_ms = 6000, .name = "LEDs off", .edit = struct {
-            fn f(st: *oez.types.Settings) void {
+            fn f(st: *dimna.types.Settings) void {
                 st.leds = false;
             }
         }.f },
         .{ .at_ms = 8000, .name = "lower bandwidth 300 Hz", .edit = struct {
-            fn f(st: *oez.types.Settings) void {
+            fn f(st: *dimna.types.Settings) void {
                 st.lower_bandwidth = 300.0;
             }
         }.f },
         .{ .at_ms = 14000, .name = "lower bandwidth 1 Hz", .edit = struct {
-            fn f(st: *oez.types.Settings) void {
+            fn f(st: *dimna.types.Settings) void {
                 st.lower_bandwidth = 1.0;
             }
         }.f },
         .{ .at_ms = 18000, .name = "upper bandwidth 1 kHz", .edit = struct {
-            fn f(st: *oez.types.Settings) void {
+            fn f(st: *dimna.types.Settings) void {
                 st.upper_bandwidth = 1000.0;
             }
         }.f },
         .{ .at_ms = 22000, .name = "upper bandwidth 7.5 kHz", .edit = struct {
-            fn f(st: *oez.types.Settings) void {
+            fn f(st: *dimna.types.Settings) void {
                 st.upper_bandwidth = 7500.0;
             }
         }.f },
     };
 
     /// Runs the next step if its time has come.
-    fn poll(self: *LiveTest, acq: *oez.acquisition.Acquisition, elapsed_ms: i64, recording: bool) void {
+    fn poll(self: *LiveTest, acq: *dimna.acquisition.Acquisition, elapsed_ms: i64, recording: bool) void {
         if (self.next_step >= steps.len or elapsed_ms < steps[self.next_step].at_ms) return;
         const step = steps[self.next_step];
         self.next_step += 1;
@@ -327,7 +327,7 @@ const LiveTest = struct {
     }
 
     /// Waits for the queued changes to be applied and prints the result.
-    fn finish(self: *LiveTest, acq: *oez.acquisition.Acquisition, io: Io) void {
+    fn finish(self: *LiveTest, acq: *dimna.acquisition.Acquisition, io: Io) void {
         while (!acq.idle() and !acq.done.load(.acquire)) io.sleep(.fromMilliseconds(5), .awake) catch {};
         std.debug.print(
             "live test: {d} steps run, {d} commands applied, {d} failed, longest apply {d} us\n",
@@ -347,7 +347,7 @@ const Continuity = struct {
     tstep_max: u64 = 0,
     last_hw: ?u64 = null,
 
-    fn countBlock(self: *Continuity, b: *const oez.types.Block) void {
+    fn countBlock(self: *Continuity, b: *const dimna.types.Block) void {
         if (self.expect_next) |e| {
             if (b.first_sample != e) self.gap_blocks += 1;
         }
@@ -356,7 +356,7 @@ const Continuity = struct {
         self.blocks += 1;
     }
 
-    fn checkClock(self: *Continuity, b: *const oez.types.Block) void {
+    fn checkClock(self: *Continuity, b: *const dimna.types.Block) void {
         for (b.hw_time[0..b.len]) |t| {
             if (self.last_hw) |l| {
                 const d = t -% l;
@@ -388,7 +388,7 @@ const Timing = struct {
     delay_max: f64 = 0,
     delay_ticks: f64 = 0,
 
-    fn add(self: *Timing, b: *const oez.types.Block, now: i96) void {
+    fn add(self: *Timing, b: *const dimna.types.Block, now: i96) void {
         const lat = now - b.acquired_ns;
         self.lat_sum_ns += lat;
         self.lat_n += 1;
@@ -407,11 +407,11 @@ const Timing = struct {
 /// The acquisition loop: reads the ring as a consumer, prints one line per second.
 const Soak = struct {
     io: Io,
-    ring: *oez.ring.BlockRing,
+    ring: *dimna.ring.BlockRing,
     me: usize,
-    health: *oez.types.Health,
-    acq: *oez.acquisition.Acquisition,
-    rec: ?*oez.record.Recorder,
+    health: *dimna.types.Health,
+    acq: *dimna.acquisition.Acquisition,
+    rec: ?*dimna.record.Recorder,
     cont: Continuity = .{},
     timing: Timing,
     next_tick: i64 = 1,
@@ -506,7 +506,7 @@ const Soak = struct {
 };
 
 /// Closes the recording and checks it holds every sample the consumer saw.
-fn finishRecording(gpa: std.mem.Allocator, r: *oez.record.Recorder, consumed_samples: u64) !bool {
+fn finishRecording(gpa: std.mem.Allocator, r: *dimna.record.Recorder, consumed_samples: u64) !bool {
     var ok = true;
     const path = try gpa.dupe(u8, r.path);
     defer gpa.free(path);
@@ -527,7 +527,7 @@ fn finishRecording(gpa: std.mem.Allocator, r: *oez.record.Recorder, consumed_sam
 }
 
 /// Prints the summary and returns the exit status: 1 if anything was lost or failed.
-fn summarize(soak: *const Soak, layout: oez.types.Layout, run_ms: i64, failed: bool, live_ok: bool, rec_ok: bool) u8 {
+fn summarize(soak: *const Soak, layout: dimna.types.Layout, run_ms: i64, failed: bool, live_ok: bool, rec_ok: bool) u8 {
     const health = soak.health;
     const acq = soak.acq;
     const cont = &soak.cont;

@@ -1,7 +1,7 @@
 .{
-    .name = .oez,
+    .name = .dimna,
     .version = "0.0.0",
-    .fingerprint = 0x149052cf29e0c493,
+    .fingerprint = 0x6d7ad18df4cda0dd,
     .minimum_zig_version = "0.17.1",
     .dependencies = .{
         .wayland = .{

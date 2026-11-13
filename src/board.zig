@@ -135,7 +135,7 @@ pub fn chipName(id: i32) []const u8 {
 
 /// How the FT600 is reached.
 pub const Driver = enum {
-    /// oEZ's own driver straight on the kernel's USB interface (`oni_usb.zig`). The default.
+    /// dimna's own driver straight on the kernel's USB interface (`oni_usb.zig`). The default.
     usb,
     /// liboni's ft600 driver on FTDI's closed D3XX library (libonidriver_ft600.so): a fallback.
     d3xx,
@@ -1024,7 +1024,7 @@ pub const Board = struct {
     }
 
     pub fn start(self: *Board, health: *Health) Error!void {
-        // DIFF: oers also runs IMU-only configurations; oEZ does not record IMU data yet.
+        // DIFF: oers also runs IMU-only configurations; dimna does not record IMU data yet.
         if (self.num_streams == 0) return error.NoHeadstages;
         try self.checkBoardMem();
         try self.applyLiveSettings();
@@ -1096,7 +1096,7 @@ pub const Board = struct {
             }
             return;
         }
-        // TODO(oEZ): BNO055 IMU frames (oers records them; the rig's headstages have none).
+        // TODO(dimna): BNO055 IMU frames (oers records them; the rig's headstages have none).
         if (!self.bno_warned and dev >= device_bno_a and dev <= device_bno_a + 6 and (dev - device_bno_a) % 2 == 0) {
             self.bno_warned = true;
             log.warn("IMU frames arrive but are not recorded yet", .{});
