@@ -222,7 +222,8 @@ pub fn main(init: std.process.Init) !u8 {
     // However the loop ends, a recording in progress is closed properly.
     defer recording.deinit();
     var rec_published_ns: i128 = 0;
-    // What "Save view" saves: the panels, the tile window's view and the thresholds.
+    // What "Save view" saves: the panels, the tile window's view, the thresholds and which
+    // sections of the control window are open.
     // (Pointers that stay valid; what they point to changes.)
     const view: session.ViewFile.View = .{
         .set = &display.set,

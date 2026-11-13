@@ -272,7 +272,7 @@ pub const ViewFile = struct {
         const now = try gpa.alloc(u8, 96 * 1024);
         errdefer gpa.free(now);
         var self: ViewFile = .{ .now = now, .saved = try gpa.alloc(u8, 96 * 1024) };
-        if (view.render(self.saved)) |rendered| self.saved_len = rendered.len;
+        if (worthAsking(view).render(self.saved)) |rendered| self.saved_len = rendered.len;
         return self;
     }
 
@@ -281,9 +281,11 @@ pub const ViewFile = struct {
         gpa.free(self.saved);
     }
 
-    /// The view differs from what was last saved.
+    /// The view differs from what was last saved. Which sections of the control window
+    /// are open does not count: it is saved with the rest, but opening a section is not a
+    /// change worth being asked about on quitting.
     pub fn unsaved(self: *ViewFile, view: View) bool {
-        const rendered = view.render(self.now) orelse return false;
+        const rendered = worthAsking(view).render(self.now) orelse return false;
         return !std.mem.eql(u8, rendered, self.saved[0..self.saved_len]);
     }
 
@@ -291,8 +293,15 @@ pub const ViewFile = struct {
     pub fn save(self: *ViewFile, io: Io, path: []const u8, view: View) !void {
         const rendered = view.render(self.now) orelse return error.ViewTooLarge;
         try files.writeAtomic(io, path, rendered);
-        @memcpy(self.saved[0..rendered.len], rendered);
-        self.saved_len = rendered.len;
+        const kept = worthAsking(view).render(self.saved) orelse return error.ViewTooLarge;
+        self.saved_len = kept.len;
+    }
+
+    /// `view` without what `unsaved` leaves out.
+    fn worthAsking(view: View) View {
+        var v = view;
+        v.control = null;
+        return v;
     }
 };
 

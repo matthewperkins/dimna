@@ -1374,9 +1374,10 @@ test "the control window's layout is unchanged" {
     try testing.expectEqualStrings(@embedFile("testdata/control_layout.txt"), got);
 }
 
-test "which sections are open is saved with the view, and a change of it is something to save" {
+test "which sections are open is saved with the view, but is not by itself something to ask about" {
     const session = @import("session.zig");
     const gpa = testing.allocator;
+    const io = testing.io;
     var set: panels.Set = .{};
     set.items[0] = layoutPanel("Port A", .electrode, 6);
     set.len = 1;
@@ -1388,13 +1389,26 @@ test "which sections are open is saved with the view, and a change of it is some
     var view_file = try session.ViewFile.init(gpa, view);
     defer view_file.deinit(gpa);
     try testing.expect(!view_file.unsaved(view));
+    // Opening sections is not a change to be asked about on quitting ...
     open.setPanel("Port A", true);
     open.audio = true;
+    try testing.expect(!view_file.unsaved(view));
+    // ... but a change to a panel is, with sections open or not.
+    set.items[0].span_s = 0.5;
     try testing.expect(view_file.unsaved(view));
-    // `unsaved` rendered the view into `now`: the [control] table comes after the others.
+    // Saving writes the [control] table after the others, and then nothing is unsaved.
+    var path_buf: [96]u8 = undefined;
+    const dir = try std.fmt.bufPrint(&path_buf, "/tmp/oez-control-view-test-{d}", .{std.os.linux.getpid()});
+    defer std.Io.Dir.cwd().deleteTree(io, dir) catch {};
+    var file_buf: [128]u8 = undefined;
+    const path = try std.fmt.bufPrint(&file_buf, "{s}/views.toml", .{dir});
+    try view_file.save(io, path, view);
+    try testing.expect(!view_file.unsaved(view));
+    const written = try std.Io.Dir.cwd().readFileAlloc(io, path, gpa, .limited(1 << 20));
+    defer gpa.free(written);
     const want = "\n[thresholds]\nsigmas = 4.5\nfixed_uv = [0, 0, 0, 0, 0, 0]\n" ++
         "\n[control]\nnotes = false\naudio = true\nheadstages = false\npanels = \"Port A\"\n";
-    try testing.expect(std.mem.indexOf(u8, view_file.now, want) != null);
+    try testing.expect(std.mem.endsWith(u8, written, want));
     open = .{};
     try testing.expect(!view_file.unsaved(view));
 }
