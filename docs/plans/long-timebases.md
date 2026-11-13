@@ -99,3 +99,10 @@ of the recording then, and was drawn whole from the overview's pixel columns (sc
 looked at) while panel 2 beside it stayed at 5 s from samples. Latency 2.4 to 2.6 ms
 throughout, 0 gaps in the recording. The review history is 151.0 MB in host memory (the
 phase 0 question). This was with the stand-in `overview.zig` (live rows only, no backfill).
+
+### With the backfill thread (2026-11-13, commit 97227b8)
+
+Same run, 100 s, panel 1 at 56.95 s in review; its display filter switched off at 64 s.
+The screenshot at 70 s shows the whole stretch unfiltered: remade from the file by the
+thread. Latency 2.4 to 2.6 ms, worst frame in the last 12 s 10.8 ms; 0 gaps. Not done: a
+recording of an hour or more, the cameras running beside it, dropped display blocks.

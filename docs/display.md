@@ -242,8 +242,20 @@ each panel's title says "review" too. Triggered panels stay live.
 - **Without a recording** it is a freeze of the last half minute that the live history
   still holds; it ends by itself when that has scrolled away.
 
-Limits for now: the window is as long as a live one (30 s at most; no overview of a whole
-session yet); the newest second of TTL edges may not be in the file yet; the tint is not
+**Long stretches.** While a recording runs, dimna keeps an overview of it in memory: the
+minimum and maximum of every 64 samples of every trace, and of 4, 16, ... times as many
+(`src/pyramid.zig`, `src/overview.zig`). In review the time base (Alt+wheel, `[` `]`) can
+then be as long as the recording, two hours at most, and a panel whose pixel columns hold
+64 samples or more is drawn from the overview instead of from the file, so scrolling
+through minutes is immediate. Back in the live view the time base returns to what it was.
+The overview is built from what the display shows as it arrives; what it missed, and
+everything after a change of a panel's filter, reference or rows, is made again from the
+file by a thread at idle priority (about 50 times real time on the rig's machine), nearest
+the stretch on screen first. Until that is done the panel is empty. It uses about 0.65 GB
+an hour at 72 traces, up to 1.5 GB; beyond that the finest detail of the oldest part is
+let go. It never touches acquisition or the recorder.
+
+Limits for now: the newest second of TTL edges may not be in the file yet; the tint is not
 drawn for stretches older than the last 512 pulses; after lost blocks (gaps in the
 recording) later samples would be shown early by the length of the gap; no dragging with
 the mouse yet.
