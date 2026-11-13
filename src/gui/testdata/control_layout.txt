@@ -13,7 +13,7 @@ rect 12 102 66 24 { 38, 43, 54, 255 } -> .{ .record = true }
 text 21 106 { 225, 230, 240, 255 } "Record"
 text 84 106 { 150, 160, 178, 255 } "not recording"
 rect 12 132 776 1 { 48, 52, 62, 255 }
-rect 12 138 74 24 { 26, 30, 38, 255 } -> open: audio headstages [Port A]
+rect 12 138 74 24 { 26, 30, 38, 255 } -> control_view: audio headstages [Port A]
 text 21 142 { 225, 230, 240, 255 } "▾ Notes"
 text 140 142 { 150, 160, 178, 255 } "2 presets   last note 1:02:05  cell 3, 2100 µm"
 rect 76 166 98 24 { 38, 43, 54, 255 } -> .{ .note_preset = 1 }
@@ -24,7 +24,7 @@ text 268 170 { 150, 160, 178, 255 } "2 drafts (` stamps one)"
 text 28 198 { 150, 160, 178, 255 } "1:02:05  cell 3, 2100 µm"
 text 28 226 { 150, 160, 178, 255 } "1:01  moved"
 rect 12 252 776 1 { 48, 52, 62, 255 }
-rect 12 258 74 24 { 26, 30, 38, 255 } -> open: notes headstages [Port A]
+rect 12 258 74 24 { 26, 30, 38, 255 } -> control_view: notes headstages [Port A]
 text 21 262 { 225, 230, 240, 255 } "▾ Audio"
 text 140 262 { 150, 160, 178, 255 } "on   -6 dB   listening to A1-5, B1-3   9 ms"
 rect 76 286 34 24 { 52, 96, 170, 255 }
@@ -61,7 +61,7 @@ rect 318 350 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = true } }
 text 327 354 { 225, 230, 240, 255 } "+"
 text 360 354 { 150, 160, 178, 255 } "below zero, where it follows the noise"
 rect 12 380 776 1 { 48, 52, 62, 255 }
-rect 12 386 114 24 { 26, 30, 38, 255 } -> open: notes audio [Port A]
+rect 12 386 114 24 { 26, 30, 38, 255 } -> control_view: notes audio [Port A]
 text 21 390 { 225, 230, 240, 255 } "▾ Headstages"
 text 140 390 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.17 Hz"
 text 12 418 { 150, 160, 178, 255 } "(these change what is recorded)"
@@ -101,7 +101,7 @@ text 325 502 { 225, 230, 240, 255 } "32 ch"
 rect 380 498 82 24 { 38, 43, 54, 255 } -> .{ .board = .{ .half = 0 } }
 text 389 502 { 225, 230, 240, 255 } "16 of 32"
 rect 12 528 776 1 { 48, 52, 62, 255 }
-rect 12 534 82 24 { 26, 30, 38, 255 } -> open: notes audio headstages []
+rect 12 534 82 24 { 26, 30, 38, 255 } -> control_view: notes audio headstages []
 text 21 538 { 225, 230, 240, 255 } "▾ Port A"
 text 140 538 { 150, 160, 178, 255 } "scroll   2.00 s   400 µV/row   raw"
 rect 722 534 58 24 { 38, 43, 54, 255 } -> panel 0 .{ .reset = void }
@@ -171,7 +171,7 @@ text 644 134 { 255, 190, 90, 255 } "1 gaps"
 text 12 162 { 150, 160, 178, 255 } "started at 12:00"
 text 12 190 { 150, 160, 178, 255 } "/data/2026-11-12_12-00-00"
 rect 12 216 776 1 { 48, 52, 62, 255 }
-rect 12 222 74 24 { 26, 30, 38, 255 } -> open: audio headstages [Port A]
+rect 12 222 74 24 { 26, 30, 38, 255 } -> control_view: audio headstages [Port A]
 text 21 226 { 225, 230, 240, 255 } "▾ Notes"
 text 140 226 { 150, 160, 178, 255 } "2 presets   last note 1:02:05  cell 3, 2100 µm"
 rect 76 250 98 24 { 38, 43, 54, 255 } -> .{ .note_preset = 1 }
@@ -183,7 +183,7 @@ text 380 254 { 150, 160, 178, 255 } "2 drafts (` stamps one)"
 text 28 282 { 150, 160, 178, 255 } "1:02:05  cell 3, 2100 µm"
 text 28 310 { 150, 160, 178, 255 } "1:01  moved"
 rect 12 336 776 1 { 48, 52, 62, 255 }
-rect 12 342 74 24 { 26, 30, 38, 255 } -> open: notes headstages [Port A]
+rect 12 342 74 24 { 26, 30, 38, 255 } -> control_view: notes headstages [Port A]
 text 21 346 { 225, 230, 240, 255 } "▾ Audio"
 text 140 346 { 150, 160, 178, 255 } "on   -6 dB   listening to A1-5, B1-3   9 ms"
 rect 76 370 34 24 { 52, 96, 170, 255 }
@@ -265,7 +265,7 @@ rect 12 638 138 24 { 38, 43, 54, 255 } -> .{ .board = .{ .save = void } }
 text 21 642 { 225, 230, 240, 255 } "Save as default"
 text 156 642 { 150, 160, 178, 255 } "these settings differ from the config file"
 rect 12 668 776 1 { 48, 52, 62, 255 }
-rect 12 674 82 24 { 26, 30, 38, 255 } -> open: notes audio headstages []
+rect 12 674 82 24 { 26, 30, 38, 255 } -> control_view: notes audio headstages []
 text 21 678 { 225, 230, 240, 255 } "▾ Port A"
 text 140 678 { 150, 160, 178, 255 } "scroll   2.00 s   400 µV/row   raw"
 rect 722 674 58 24 { 38, 43, 54, 255 } -> panel 0 .{ .reset = void }
@@ -331,12 +331,12 @@ text 21 106 { 225, 230, 240, 255 } "Record"
 text 84 106 { 255, 190, 90, 255 } "RECORDING FAILED"
 text 12 134 { 255, 190, 90, 255 } "cannot create /data"
 rect 12 160 776 1 { 48, 52, 62, 255 }
-rect 12 166 74 24 { 26, 30, 38, 255 } -> open: audio headstages [Port A]
+rect 12 166 74 24 { 26, 30, 38, 255 } -> control_view: audio headstages [Port A]
 text 21 170 { 225, 230, 240, 255 } "▾ Notes"
 text 140 170 { 150, 160, 178, 255 } "0 presets   no notes yet"
 text 76 198 { 150, 160, 178, 255 } "on the display: / types a note, Enter saves it"
 rect 12 224 776 1 { 48, 52, 62, 255 }
-rect 12 230 74 24 { 26, 30, 38, 255 } -> open: notes headstages [Port A]
+rect 12 230 74 24 { 26, 30, 38, 255 } -> control_view: notes headstages [Port A]
 text 21 234 { 225, 230, 240, 255 } "▾ Audio"
 text 140 234 { 150, 160, 178, 255 } "off, muted   -6 dB"
 rect 76 258 34 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .enabled = true } }
@@ -370,7 +370,7 @@ rect 318 322 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = true } }
 text 327 326 { 225, 230, 240, 255 } "+"
 text 360 326 { 150, 160, 178, 255 } "below zero, where it follows the noise"
 rect 12 352 776 1 { 48, 52, 62, 255 }
-rect 12 358 114 24 { 26, 30, 38, 255 } -> open: notes audio [Port A]
+rect 12 358 114 24 { 26, 30, 38, 255 } -> control_view: notes audio [Port A]
 text 21 362 { 225, 230, 240, 255 } "▾ Headstages"
 text 140 362 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.17 Hz"
 text 12 390 { 150, 160, 178, 255 } "(these change what is recorded)"
@@ -410,7 +410,7 @@ text 325 474 { 225, 230, 240, 255 } "32 ch"
 rect 380 470 82 24 { 38, 43, 54, 255 } -> .{ .board = .{ .half = 0 } }
 text 389 474 { 225, 230, 240, 255 } "16 of 32"
 rect 12 500 776 1 { 48, 52, 62, 255 }
-rect 12 506 82 24 { 26, 30, 38, 255 } -> open: notes audio headstages []
+rect 12 506 82 24 { 26, 30, 38, 255 } -> control_view: notes audio headstages []
 text 21 510 { 225, 230, 240, 255 } "▾ Port A"
 text 140 510 { 150, 160, 178, 255 } "scroll   2.00 s   400 µV/row   raw"
 rect 722 506 58 24 { 38, 43, 54, 255 } -> panel 0 .{ .reset = void }
@@ -491,7 +491,7 @@ rect 12 102 66 24 { 38, 43, 54, 255 } -> .{ .record = true }
 text 21 106 { 225, 230, 240, 255 } "Record"
 text 84 106 { 150, 160, 178, 255 } "not recording"
 rect 12 132 776 1 { 48, 52, 62, 255 }
-rect 12 138 74 24 { 26, 30, 38, 255 } -> open: audio headstages [Port A]
+rect 12 138 74 24 { 26, 30, 38, 255 } -> control_view: audio headstages [Port A]
 text 21 142 { 225, 230, 240, 255 } "▾ Notes"
 text 140 142 { 150, 160, 178, 255 } "2 presets   last note 1:02:05  cell 3, 2100 µm"
 rect 76 166 98 24 { 38, 43, 54, 255 } -> .{ .note_preset = 1 }
@@ -502,7 +502,7 @@ text 268 170 { 150, 160, 178, 255 } "2 drafts (` stamps one)"
 text 28 198 { 150, 160, 178, 255 } "1:02:05  cell 3, 2100 µm"
 text 28 226 { 150, 160, 178, 255 } "1:01  moved"
 rect 12 252 776 1 { 48, 52, 62, 255 }
-rect 12 258 74 24 { 26, 30, 38, 255 } -> open: notes headstages [Port A]
+rect 12 258 74 24 { 26, 30, 38, 255 } -> control_view: notes headstages [Port A]
 text 21 262 { 225, 230, 240, 255 } "▾ Audio"
 text 140 262 { 150, 160, 178, 255 } "no audio output"
 rect 76 286 34 24 { 52, 96, 170, 255 }
@@ -580,7 +580,7 @@ rect 12 526 242 24 { 52, 96, 170, 255 } -> .{ .board = .{ .apply = void } }
 text 21 530 { 225, 230, 240, 255 } "Apply (restarts acquisition)"
 text 12 558 { 255, 190, 90, 255 } "cannot set 10 kHz"
 rect 12 584 776 1 { 48, 52, 62, 255 }
-rect 12 590 82 24 { 26, 30, 38, 255 } -> open: notes audio headstages []
+rect 12 590 82 24 { 26, 30, 38, 255 } -> control_view: notes audio headstages []
 text 21 594 { 225, 230, 240, 255 } "▾ Port A"
 text 140 594 { 150, 160, 178, 255 } "scroll   2.00 s   400 µV/row   raw"
 rect 722 590 58 24 { 38, 43, 54, 255 } -> panel 0 .{ .reset = void }
@@ -644,7 +644,7 @@ rect 12 74 66 24 { 38, 43, 54, 255 } -> .{ .record = true }
 text 21 78 { 225, 230, 240, 255 } "Record"
 text 84 78 { 150, 160, 178, 255 } "not recording"
 rect 12 104 776 1 { 48, 52, 62, 255 }
-rect 12 110 74 24 { 26, 30, 38, 255 } -> open: audio headstages [Port A, Port B]
+rect 12 110 74 24 { 26, 30, 38, 255 } -> control_view: audio headstages [Port A, Port B]
 text 21 114 { 225, 230, 240, 255 } "▾ Notes"
 text 140 114 { 150, 160, 178, 255 } "2 presets   last note 1:02:05  cell 3, 2100 µm"
 rect 76 138 98 24 { 38, 43, 54, 255 } -> .{ .note_preset = 1 }
@@ -655,7 +655,7 @@ text 268 142 { 150, 160, 178, 255 } "2 drafts (` stamps one)"
 text 28 170 { 150, 160, 178, 255 } "1:02:05  cell 3, 2100 µm"
 text 28 198 { 150, 160, 178, 255 } "1:01  moved"
 rect 12 224 776 1 { 48, 52, 62, 255 }
-rect 12 230 74 24 { 26, 30, 38, 255 } -> open: notes headstages [Port A, Port B]
+rect 12 230 74 24 { 26, 30, 38, 255 } -> control_view: notes headstages [Port A, Port B]
 text 21 234 { 225, 230, 240, 255 } "▾ Audio"
 text 140 234 { 150, 160, 178, 255 } "on   -6 dB   listening to nothing"
 rect 76 258 34 24 { 52, 96, 170, 255 }
@@ -690,7 +690,7 @@ rect 318 322 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = true } }
 text 327 326 { 225, 230, 240, 255 } "+"
 text 360 326 { 150, 160, 178, 255 } "below zero, where it follows the noise"
 rect 12 352 776 1 { 48, 52, 62, 255 }
-rect 12 358 114 24 { 26, 30, 38, 255 } -> open: notes audio [Port A, Port B]
+rect 12 358 114 24 { 26, 30, 38, 255 } -> control_view: notes audio [Port A, Port B]
 text 21 362 { 225, 230, 240, 255 } "▾ Headstages"
 text 140 362 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.17 Hz"
 text 12 390 { 150, 160, 178, 255 } "(these change what is recorded)"
@@ -730,7 +730,7 @@ text 325 474 { 225, 230, 240, 255 } "32 ch"
 rect 380 470 82 24 { 38, 43, 54, 255 } -> .{ .board = .{ .half = 0 } }
 text 389 474 { 225, 230, 240, 255 } "16 of 32"
 rect 12 500 776 1 { 48, 52, 62, 255 }
-rect 12 506 82 24 { 26, 30, 38, 255 } -> open: notes audio headstages [Port B]
+rect 12 506 82 24 { 26, 30, 38, 255 } -> control_view: notes audio headstages [Port B]
 text 21 510 { 225, 230, 240, 255 } "▾ Port A"
 text 140 510 { 150, 160, 178, 255 } "triggered   -1.0 / +2.0 ms   400 µV/row   band 300–6000 Hz   on spikes, row 5"
 rect 76 534 58 24 { 38, 43, 54, 255 } -> panel 0 .{ .reset = void }
@@ -939,7 +939,7 @@ text 543 818 { 225, 230, 240, 255 } "10 sweeps"
 rect 630 814 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .overlay = 11 }
 text 639 818 { 225, 230, 240, 255 } "+"
 rect 12 844 776 1 { 48, 52, 62, 255 }
-rect 12 850 82 24 { 26, 30, 38, 255 } -> open: notes audio headstages [Port A]
+rect 12 850 82 24 { 26, 30, 38, 255 } -> control_view: notes audio headstages [Port A]
 text 21 854 { 225, 230, 240, 255 } "▾ Port B"
 text 140 854 { 150, 160, 178, 255 } "sweep   500 ms   1.50 mV/row   band below 6000 Hz   CAR"
 rect 722 850 58 24 { 38, 43, 54, 255 } -> panel 1 .{ .reset = void }
@@ -1146,7 +1146,7 @@ rect 12 102 66 24 { 38, 43, 54, 255 } -> .{ .record = true }
 text 21 106 { 225, 230, 240, 255 } "Record"
 text 84 106 { 150, 160, 178, 255 } "not recording"
 rect 12 132 776 1 { 48, 52, 62, 255 }
-rect 12 138 74 24 { 26, 30, 38, 255 } -> open: audio headstages [Port A]
+rect 12 138 74 24 { 26, 30, 38, 255 } -> control_view: audio headstages [Port A]
 text 21 142 { 225, 230, 240, 255 } "▾ Notes"
 text 140 142 { 150, 160, 178, 255 } "2 presets   last note 1:02:05  cell 3, 2100 µm"
 rect 76 166 98 24 { 38, 43, 54, 255 } -> .{ .note_preset = 1 }
@@ -1157,7 +1157,7 @@ text 268 170 { 150, 160, 178, 255 } "2 drafts (` stamps one)"
 text 28 198 { 150, 160, 178, 255 } "1:02:05  cell 3, 2100 µm"
 text 28 226 { 150, 160, 178, 255 } "1:01  moved"
 rect 12 252 776 1 { 48, 52, 62, 255 }
-rect 12 258 74 24 { 26, 30, 38, 255 } -> open: notes headstages [Port A]
+rect 12 258 74 24 { 26, 30, 38, 255 } -> control_view: notes headstages [Port A]
 text 21 262 { 225, 230, 240, 255 } "▾ Audio"
 text 140 262 { 150, 160, 178, 255 } "on   -6 dB   listening to A1-5, B1-3   9 ms"
 rect 76 286 34 24 { 52, 96, 170, 255 }
@@ -1194,7 +1194,7 @@ rect 318 350 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = true } }
 text 327 354 { 225, 230, 240, 255 } "+"
 text 360 354 { 150, 160, 178, 255 } "below zero, where it follows the noise"
 rect 12 380 776 1 { 48, 52, 62, 255 }
-rect 12 386 114 24 { 26, 30, 38, 255 } -> open: notes audio [Port A]
+rect 12 386 114 24 { 26, 30, 38, 255 } -> control_view: notes audio [Port A]
 text 21 390 { 225, 230, 240, 255 } "▾ Headstages"
 text 140 390 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.17 Hz"
 text 12 418 { 150, 160, 178, 255 } "(these change what is recorded)"
@@ -1234,7 +1234,7 @@ text 325 502 { 225, 230, 240, 255 } "32 ch"
 rect 380 498 82 24 { 38, 43, 54, 255 } -> .{ .board = .{ .half = 0 } }
 text 389 502 { 225, 230, 240, 255 } "16 of 32"
 rect 12 528 776 1 { 48, 52, 62, 255 }
-rect 12 534 82 24 { 26, 30, 38, 255 } -> open: notes audio headstages []
+rect 12 534 82 24 { 26, 30, 38, 255 } -> control_view: notes audio headstages []
 text 21 538 { 225, 230, 240, 255 } "▾ Port A"
 text 140 538 { 150, 160, 178, 255 } "scroll   2.00 s   400 µV/row   raw"
 rect 722 534 58 24 { 38, 43, 54, 255 } -> panel 0 .{ .reset = void }
@@ -1296,7 +1296,7 @@ rect 12 68 776 1 { 48, 52, 62, 255 }
 text 12 78 { 150, 160, 178, 255 } "finishing the recording"
 text 204 78 { 255, 96, 96, 255 } "REC 0:00   0.00 GB   0.0 M samples"
 rect 12 104 776 1 { 48, 52, 62, 255 }
-rect 12 110 74 24 { 26, 30, 38, 255 } -> open: audio headstages [Port C, AUX, ADC, TTL]
+rect 12 110 74 24 { 26, 30, 38, 255 } -> control_view: audio headstages [Port C, AUX, ADC, TTL]
 text 21 114 { 225, 230, 240, 255 } "▾ Notes"
 text 140 114 { 150, 160, 178, 255 } "2 presets   last note 1:02:05  cell 3, 2100 µm"
 rect 76 138 98 24 { 38, 43, 54, 255 } -> .{ .note_preset = 1 }
@@ -1307,7 +1307,7 @@ text 268 142 { 150, 160, 178, 255 } "2 drafts (` stamps one)"
 text 28 170 { 150, 160, 178, 255 } "1:02:05  cell 3, 2100 µm"
 text 28 198 { 150, 160, 178, 255 } "1:01  moved"
 rect 12 224 776 1 { 48, 52, 62, 255 }
-rect 12 230 74 24 { 26, 30, 38, 255 } -> open: notes headstages [Port C, AUX, ADC, TTL]
+rect 12 230 74 24 { 26, 30, 38, 255 } -> control_view: notes headstages [Port C, AUX, ADC, TTL]
 text 21 234 { 225, 230, 240, 255 } "▾ Audio"
 text 140 234 { 150, 160, 178, 255 } "on   -6 dB   listening to nothing"
 rect 76 258 34 24 { 52, 96, 170, 255 }
@@ -1342,7 +1342,7 @@ rect 318 322 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = true } }
 text 327 326 { 225, 230, 240, 255 } "+"
 text 360 326 { 150, 160, 178, 255 } "below zero, where it follows the noise"
 rect 12 352 776 1 { 48, 52, 62, 255 }
-rect 12 358 114 24 { 26, 30, 38, 255 } -> open: notes audio [Port C, AUX, ADC, TTL]
+rect 12 358 114 24 { 26, 30, 38, 255 } -> control_view: notes audio [Port C, AUX, ADC, TTL]
 text 21 362 { 225, 230, 240, 255 } "▾ Headstages"
 text 140 362 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.17 Hz"
 text 12 390 { 150, 160, 178, 255 } "(these change what is recorded)"
@@ -1382,7 +1382,7 @@ text 325 474 { 225, 230, 240, 255 } "32 ch"
 rect 380 470 82 24 { 38, 43, 54, 255 } -> .{ .board = .{ .half = 0 } }
 text 389 474 { 225, 230, 240, 255 } "16 of 32"
 rect 12 500 776 1 { 48, 52, 62, 255 }
-rect 12 506 82 24 { 26, 30, 38, 255 } -> open: notes audio headstages [AUX, ADC, TTL]
+rect 12 506 82 24 { 26, 30, 38, 255 } -> control_view: notes audio headstages [AUX, ADC, TTL]
 text 21 510 { 225, 230, 240, 255 } "▾ Port C"
 text 140 510 { 150, 160, 178, 255 } "triggered   -10.0 / +40.0 ms   400 µV/row   raw   on spikes, row 1"
 rect 722 506 58 24 { 38, 43, 54, 255 } -> panel 0 .{ .reset = void }
@@ -1458,7 +1458,7 @@ text 543 706 { 225, 230, 240, 255 } "10 sweeps"
 rect 630 702 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .overlay = 11 }
 text 639 706 { 225, 230, 240, 255 } "+"
 rect 12 732 776 1 { 48, 52, 62, 255 }
-rect 12 738 58 24 { 26, 30, 38, 255 } -> open: notes audio headstages [Port C, ADC, TTL]
+rect 12 738 58 24 { 26, 30, 38, 255 } -> control_view: notes audio headstages [Port C, ADC, TTL]
 text 21 742 { 225, 230, 240, 255 } "▾ AUX"
 text 140 742 { 150, 160, 178, 255 } "scroll   2.00 s   1.00 V/row"
 rect 722 738 58 24 { 38, 43, 54, 255 } -> panel 1 .{ .reset = void }
@@ -1483,7 +1483,7 @@ text 171 798 { 225, 230, 240, 255 } "1.00 V/row"
 rect 272 794 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .scale = 1.25 }
 text 281 798 { 225, 230, 240, 255 } "+"
 rect 12 824 776 1 { 48, 52, 62, 255 }
-rect 12 830 58 24 { 26, 30, 38, 255 } -> open: notes audio headstages [Port C, AUX, TTL]
+rect 12 830 58 24 { 26, 30, 38, 255 } -> control_view: notes audio headstages [Port C, AUX, TTL]
 text 21 834 { 225, 230, 240, 255 } "▾ ADC"
 text 140 834 { 150, 160, 178, 255 } "scroll   2.00 s   250 mV/row"
 rect 722 830 58 24 { 38, 43, 54, 255 } -> panel 2 .{ .reset = void }
@@ -1508,7 +1508,7 @@ text 171 890 { 225, 230, 240, 255 } "250 mV/row"
 rect 272 886 26 24 { 38, 43, 54, 255 } -> panel 2 .{ .scale = 1.25 }
 text 281 890 { 225, 230, 240, 255 } "+"
 rect 12 916 776 1 { 48, 52, 62, 255 }
-rect 12 922 58 24 { 26, 30, 38, 255 } -> open: notes audio headstages [Port C, AUX, ADC]
+rect 12 922 58 24 { 26, 30, 38, 255 } -> control_view: notes audio headstages [Port C, AUX, ADC]
 text 21 926 { 225, 230, 240, 255 } "▾ TTL"
 text 140 926 { 150, 160, 178, 255 } "triggered   -10.0 / +40.0 ms   on TTL 2"
 rect 722 922 58 24 { 38, 43, 54, 255 } -> panel 3 .{ .reset = void }
@@ -1556,7 +1556,7 @@ rect 12 102 66 24 { 38, 43, 54, 255 } -> .{ .record = true }
 text 21 106 { 225, 230, 240, 255 } "Record"
 text 84 106 { 150, 160, 178, 255 } "not recording"
 rect 12 132 776 1 { 48, 52, 62, 255 }
-rect 12 138 74 24 { 26, 30, 38, 255 } -> open: []
+rect 12 138 74 24 { 26, 30, 38, 255 } -> control_view: []
 text 21 142 { 225, 230, 240, 255 } "▾ Notes"
 text 140 142 { 150, 160, 178, 255 } "2 presets   last note 1:02:05  cell 3, 2100 µm"
 rect 76 166 98 24 { 38, 43, 54, 255 } -> .{ .note_preset = 1 }
@@ -1567,7 +1567,7 @@ text 268 170 { 150, 160, 178, 255 } "2 drafts (` stamps one)"
 text 28 198 { 150, 160, 178, 255 } "1:02:05  cell 3, 2100 µm"
 text 28 226 { 150, 160, 178, 255 } "1:01  moved"
 rect 12 252 776 1 { 48, 52, 62, 255 }
-rect 12 258 74 24 { 26, 30, 38, 255 } -> open: notes audio []
+rect 12 258 74 24 { 26, 30, 38, 255 } -> control_view: notes audio []
 text 21 262 { 225, 230, 240, 255 } "▸ Audio"
 text 140 262 { 150, 160, 178, 255 } "on   -6 dB   listening to A1-5, B1-3   9 ms"
 rect 12 288 776 1 { 48, 52, 62, 255 }
@@ -1580,11 +1580,11 @@ rect 318 294 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = true } }
 text 327 298 { 225, 230, 240, 255 } "+"
 text 360 298 { 150, 160, 178, 255 } "below zero, where it follows the noise"
 rect 12 324 776 1 { 48, 52, 62, 255 }
-rect 12 330 114 24 { 26, 30, 38, 255 } -> open: notes headstages []
+rect 12 330 114 24 { 26, 30, 38, 255 } -> control_view: notes headstages []
 text 21 334 { 225, 230, 240, 255 } "▸ Headstages"
 text 140 334 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.17 Hz"
 rect 12 360 776 1 { 48, 52, 62, 255 }
-rect 12 366 82 24 { 26, 30, 38, 255 } -> open: notes [Port A]
+rect 12 366 82 24 { 26, 30, 38, 255 } -> control_view: notes [Port A]
 text 21 370 { 225, 230, 240, 255 } "▸ Port A"
 text 140 370 { 150, 160, 178, 255 } "scroll   2.00 s   400 µV/row   raw"
 rect 12 396 776 1 { 48, 52, 62, 255 }
@@ -1605,11 +1605,11 @@ rect 12 102 66 24 { 38, 43, 54, 255 } -> .{ .record = true }
 text 21 106 { 225, 230, 240, 255 } "Record"
 text 84 106 { 150, 160, 178, 255 } "not recording"
 rect 12 132 776 1 { 48, 52, 62, 255 }
-rect 12 138 74 24 { 26, 30, 38, 255 } -> open: notes audio []
+rect 12 138 74 24 { 26, 30, 38, 255 } -> control_view: notes audio []
 text 21 142 { 225, 230, 240, 255 } "▸ Notes"
 text 140 142 { 150, 160, 178, 255 } "2 presets   last note 1:02:05  cell 3, 2100 µm"
 rect 12 168 776 1 { 48, 52, 62, 255 }
-rect 12 174 74 24 { 26, 30, 38, 255 } -> open: []
+rect 12 174 74 24 { 26, 30, 38, 255 } -> control_view: []
 text 21 178 { 225, 230, 240, 255 } "▾ Audio"
 text 140 178 { 150, 160, 178, 255 } "on   -6 dB   listening to A1-5, B1-3   9 ms"
 rect 76 202 34 24 { 52, 96, 170, 255 }
@@ -1646,11 +1646,11 @@ rect 318 266 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = true } }
 text 327 270 { 225, 230, 240, 255 } "+"
 text 360 270 { 150, 160, 178, 255 } "below zero, where it follows the noise"
 rect 12 296 776 1 { 48, 52, 62, 255 }
-rect 12 302 114 24 { 26, 30, 38, 255 } -> open: audio headstages []
+rect 12 302 114 24 { 26, 30, 38, 255 } -> control_view: audio headstages []
 text 21 306 { 225, 230, 240, 255 } "▸ Headstages"
 text 140 306 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.17 Hz"
 rect 12 332 776 1 { 48, 52, 62, 255 }
-rect 12 338 82 24 { 26, 30, 38, 255 } -> open: audio [Port A]
+rect 12 338 82 24 { 26, 30, 38, 255 } -> control_view: audio [Port A]
 text 21 342 { 225, 230, 240, 255 } "▸ Port A"
 text 140 342 { 150, 160, 178, 255 } "scroll   2.00 s   400 µV/row   raw"
 rect 12 368 776 1 { 48, 52, 62, 255 }
@@ -1671,11 +1671,11 @@ rect 12 102 66 24 { 38, 43, 54, 255 } -> .{ .record = true }
 text 21 106 { 225, 230, 240, 255 } "Record"
 text 84 106 { 150, 160, 178, 255 } "not recording"
 rect 12 132 776 1 { 48, 52, 62, 255 }
-rect 12 138 74 24 { 26, 30, 38, 255 } -> open: notes headstages []
+rect 12 138 74 24 { 26, 30, 38, 255 } -> control_view: notes headstages []
 text 21 142 { 225, 230, 240, 255 } "▸ Notes"
 text 140 142 { 150, 160, 178, 255 } "2 presets   last note 1:02:05  cell 3, 2100 µm"
 rect 12 168 776 1 { 48, 52, 62, 255 }
-rect 12 174 74 24 { 26, 30, 38, 255 } -> open: audio headstages []
+rect 12 174 74 24 { 26, 30, 38, 255 } -> control_view: audio headstages []
 text 21 178 { 225, 230, 240, 255 } "▸ Audio"
 text 140 178 { 150, 160, 178, 255 } "on   -6 dB   listening to A1-5, B1-3   9 ms"
 rect 12 204 776 1 { 48, 52, 62, 255 }
@@ -1688,7 +1688,7 @@ rect 318 210 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = true } }
 text 327 214 { 225, 230, 240, 255 } "+"
 text 360 214 { 150, 160, 178, 255 } "below zero, where it follows the noise"
 rect 12 240 776 1 { 48, 52, 62, 255 }
-rect 12 246 114 24 { 26, 30, 38, 255 } -> open: []
+rect 12 246 114 24 { 26, 30, 38, 255 } -> control_view: []
 text 21 250 { 225, 230, 240, 255 } "▾ Headstages"
 text 140 250 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.17 Hz"
 text 12 278 { 150, 160, 178, 255 } "(these change what is recorded)"
@@ -1728,7 +1728,7 @@ text 325 362 { 225, 230, 240, 255 } "32 ch"
 rect 380 358 82 24 { 38, 43, 54, 255 } -> .{ .board = .{ .half = 0 } }
 text 389 362 { 225, 230, 240, 255 } "16 of 32"
 rect 12 388 776 1 { 48, 52, 62, 255 }
-rect 12 394 82 24 { 26, 30, 38, 255 } -> open: headstages [Port A]
+rect 12 394 82 24 { 26, 30, 38, 255 } -> control_view: headstages [Port A]
 text 21 398 { 225, 230, 240, 255 } "▸ Port A"
 text 140 398 { 150, 160, 178, 255 } "scroll   2.00 s   400 µV/row   raw"
 rect 12 424 776 1 { 48, 52, 62, 255 }
@@ -1748,11 +1748,11 @@ rect 12 74 66 24 { 38, 43, 54, 255 } -> .{ .record = true }
 text 21 78 { 225, 230, 240, 255 } "Record"
 text 84 78 { 150, 160, 178, 255 } "not recording"
 rect 12 104 776 1 { 48, 52, 62, 255 }
-rect 12 110 74 24 { 26, 30, 38, 255 } -> open: notes [Port B]
+rect 12 110 74 24 { 26, 30, 38, 255 } -> control_view: notes [Port B]
 text 21 114 { 225, 230, 240, 255 } "▸ Notes"
 text 140 114 { 150, 160, 178, 255 } "2 presets   last note 1:02:05  cell 3, 2100 µm"
 rect 12 140 776 1 { 48, 52, 62, 255 }
-rect 12 146 74 24 { 26, 30, 38, 255 } -> open: audio [Port B]
+rect 12 146 74 24 { 26, 30, 38, 255 } -> control_view: audio [Port B]
 text 21 150 { 225, 230, 240, 255 } "▸ Audio"
 text 140 150 { 150, 160, 178, 255 } "on   -6 dB   listening to nothing"
 rect 12 176 776 1 { 48, 52, 62, 255 }
@@ -1765,15 +1765,15 @@ rect 318 182 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = true } }
 text 327 186 { 225, 230, 240, 255 } "+"
 text 360 186 { 150, 160, 178, 255 } "below zero, where it follows the noise"
 rect 12 212 776 1 { 48, 52, 62, 255 }
-rect 12 218 114 24 { 26, 30, 38, 255 } -> open: headstages [Port B]
+rect 12 218 114 24 { 26, 30, 38, 255 } -> control_view: headstages [Port B]
 text 21 222 { 225, 230, 240, 255 } "▸ Headstages"
 text 140 222 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.17 Hz"
 rect 12 248 776 1 { 48, 52, 62, 255 }
-rect 12 254 82 24 { 26, 30, 38, 255 } -> open: [Port B, Port A]
+rect 12 254 82 24 { 26, 30, 38, 255 } -> control_view: [Port B, Port A]
 text 21 258 { 225, 230, 240, 255 } "▸ Port A"
 text 140 258 { 150, 160, 178, 255 } "triggered   -1.0 / +2.0 ms   400 µV/row   band 300–6000 Hz   on spikes, row 5"
 rect 12 284 776 1 { 48, 52, 62, 255 }
-rect 12 290 82 24 { 26, 30, 38, 255 } -> open: []
+rect 12 290 82 24 { 26, 30, 38, 255 } -> control_view: []
 text 21 294 { 225, 230, 240, 255 } "▾ Port B"
 text 140 294 { 150, 160, 178, 255 } "sweep   500 ms   1.50 mV/row   band below 6000 Hz   CAR"
 rect 722 290 58 24 { 38, 43, 54, 255 } -> panel 1 .{ .reset = void }
@@ -1977,11 +1977,11 @@ rect 12 102 66 24 { 38, 43, 54, 255 } -> .{ .record = true }
 text 21 106 { 225, 230, 240, 255 } "Record"
 text 84 106 { 150, 160, 178, 255 } "not recording"
 rect 12 132 776 1 { 48, 52, 62, 255 }
-rect 12 138 74 24 { 26, 30, 38, 255 } -> open: notes []
+rect 12 138 74 24 { 26, 30, 38, 255 } -> control_view: notes []
 text 21 142 { 225, 230, 240, 255 } "▸ Notes"
 text 140 142 { 150, 160, 178, 255 } "2 presets   last note 1:02:05  cell 3, 2100 µm"
 rect 12 168 776 1 { 48, 52, 62, 255 }
-rect 12 174 74 24 { 26, 30, 38, 255 } -> open: audio []
+rect 12 174 74 24 { 26, 30, 38, 255 } -> control_view: audio []
 text 21 178 { 225, 230, 240, 255 } "▸ Audio"
 text 140 178 { 150, 160, 178, 255 } "on   -6 dB   listening to A1-5, B1-3   9 ms"
 rect 12 204 776 1 { 48, 52, 62, 255 }
@@ -1994,11 +1994,11 @@ rect 318 210 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = true } }
 text 327 214 { 225, 230, 240, 255 } "+"
 text 360 214 { 150, 160, 178, 255 } "below zero, where it follows the noise"
 rect 12 240 776 1 { 48, 52, 62, 255 }
-rect 12 246 114 24 { 26, 30, 38, 255 } -> open: headstages []
+rect 12 246 114 24 { 26, 30, 38, 255 } -> control_view: headstages []
 text 21 250 { 225, 230, 240, 255 } "▸ Headstages"
 text 140 250 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.17 Hz"
 rect 12 276 776 1 { 48, 52, 62, 255 }
-rect 12 282 82 24 { 26, 30, 38, 255 } -> open: [Port A]
+rect 12 282 82 24 { 26, 30, 38, 255 } -> control_view: [Port A]
 text 21 286 { 225, 230, 240, 255 } "▸ Port A"
 text 140 286 { 150, 160, 178, 255 } "scroll   2.00 s   400 µV/row   raw"
 rect 12 312 776 1 { 48, 52, 62, 255 }
@@ -2024,11 +2024,11 @@ text 644 134 { 255, 190, 90, 255 } "1 gaps"
 text 12 162 { 150, 160, 178, 255 } "started at 12:00"
 text 12 190 { 150, 160, 178, 255 } "/data/2026-11-12_12-00-00"
 rect 12 216 776 1 { 48, 52, 62, 255 }
-rect 12 222 74 24 { 26, 30, 38, 255 } -> open: notes []
+rect 12 222 74 24 { 26, 30, 38, 255 } -> control_view: notes []
 text 21 226 { 225, 230, 240, 255 } "▸ Notes"
 text 140 226 { 150, 160, 178, 255 } "2 presets   last note 1:02:05  cell 3, 2100 µm"
 rect 12 252 776 1 { 48, 52, 62, 255 }
-rect 12 258 74 24 { 26, 30, 38, 255 } -> open: audio []
+rect 12 258 74 24 { 26, 30, 38, 255 } -> control_view: audio []
 text 21 262 { 225, 230, 240, 255 } "▸ Audio"
 text 140 262 { 150, 160, 178, 255 } "on   -6 dB   listening to A1-5, B1-3   9 ms"
 rect 12 288 776 1 { 48, 52, 62, 255 }
@@ -2086,7 +2086,7 @@ rect 12 498 138 24 { 38, 43, 54, 255 } -> .{ .board = .{ .save = void } }
 text 21 502 { 225, 230, 240, 255 } "Save as default"
 text 156 502 { 150, 160, 178, 255 } "these settings differ from the config file"
 rect 12 528 776 1 { 48, 52, 62, 255 }
-rect 12 534 82 24 { 26, 30, 38, 255 } -> open: [Port A]
+rect 12 534 82 24 { 26, 30, 38, 255 } -> control_view: [Port A]
 text 21 538 { 225, 230, 240, 255 } "▸ Port A"
 text 140 538 { 150, 160, 178, 255 } "scroll   2.00 s   400 µV/row   raw"
 rect 12 564 776 1 { 48, 52, 62, 255 }
@@ -2107,11 +2107,11 @@ rect 12 102 66 24 { 38, 43, 54, 255 } -> .{ .record = true }
 text 21 106 { 225, 230, 240, 255 } "Record"
 text 84 106 { 150, 160, 178, 255 } "not recording"
 rect 12 132 776 1 { 48, 52, 62, 255 }
-rect 12 138 74 24 { 26, 30, 38, 255 } -> open: notes []
+rect 12 138 74 24 { 26, 30, 38, 255 } -> control_view: notes []
 text 21 142 { 225, 230, 240, 255 } "▸ Notes"
 text 140 142 { 150, 160, 178, 255 } "2 presets   last note 1:02:05  cell 3, 2100 µm"
 rect 12 168 776 1 { 48, 52, 62, 255 }
-rect 12 174 74 24 { 26, 30, 38, 255 } -> open: audio []
+rect 12 174 74 24 { 26, 30, 38, 255 } -> control_view: audio []
 text 21 178 { 225, 230, 240, 255 } "▸ Audio"
 text 140 178 { 150, 160, 178, 255 } "no audio output"
 rect 12 204 776 1 { 48, 52, 62, 255 }
@@ -2168,7 +2168,7 @@ rect 12 386 242 24 { 52, 96, 170, 255 } -> .{ .board = .{ .apply = void } }
 text 21 390 { 225, 230, 240, 255 } "Apply (restarts acquisition)"
 text 12 418 { 255, 190, 90, 255 } "cannot set 10 kHz"
 rect 12 444 776 1 { 48, 52, 62, 255 }
-rect 12 450 82 24 { 26, 30, 38, 255 } -> open: [Port A]
+rect 12 450 82 24 { 26, 30, 38, 255 } -> control_view: [Port A]
 text 21 454 { 225, 230, 240, 255 } "▸ Port A"
 text 140 454 { 150, 160, 178, 255 } "scroll   2.00 s   400 µV/row   raw"
 rect 12 480 776 1 { 48, 52, 62, 255 }
@@ -2189,11 +2189,11 @@ rect 12 102 66 24 { 38, 43, 54, 255 } -> .{ .record = true }
 text 21 106 { 225, 230, 240, 255 } "Record"
 text 84 106 { 150, 160, 178, 255 } "not recording"
 rect 12 132 776 1 { 48, 52, 62, 255 }
-rect 12 138 74 24 { 26, 30, 38, 255 } -> open: notes []
+rect 12 138 74 24 { 26, 30, 38, 255 } -> control_view: notes []
 text 21 142 { 225, 230, 240, 255 } "▸ Notes"
 text 140 142 { 150, 160, 178, 255 } "2 presets   last note 1:02:05  cell 3, 2100 µm"
 rect 12 168 776 1 { 48, 52, 62, 255 }
-rect 12 174 74 24 { 26, 30, 38, 255 } -> open: audio []
+rect 12 174 74 24 { 26, 30, 38, 255 } -> control_view: audio []
 text 21 178 { 225, 230, 240, 255 } "▸ Audio"
 text 140 178 { 150, 160, 178, 255 } "on   -6 dB   listening to A1-5, B1-3   9 ms"
 rect 12 204 776 1 { 48, 52, 62, 255 }
@@ -2251,7 +2251,7 @@ text 21 390 { 225, 230, 240, 255 } "Save as default"
 text 156 390 { 150, 160, 178, 255 } "these settings differ from the config file"
 text 12 418 { 255, 190, 90, 255 } "view saved to /home/user/.config/oez/views.toml"
 rect 12 444 776 1 { 48, 52, 62, 255 }
-rect 12 450 82 24 { 26, 30, 38, 255 } -> open: [Port A]
+rect 12 450 82 24 { 26, 30, 38, 255 } -> control_view: [Port A]
 text 21 454 { 225, 230, 240, 255 } "▸ Port A"
 text 140 454 { 150, 160, 178, 255 } "scroll   2.00 s   400 µV/row   raw"
 rect 12 480 776 1 { 48, 52, 62, 255 }
@@ -2269,11 +2269,11 @@ rect 12 68 776 1 { 48, 52, 62, 255 }
 text 12 78 { 150, 160, 178, 255 } "finishing the recording"
 text 204 78 { 255, 96, 96, 255 } "REC 0:00   0.00 GB   0.0 M samples"
 rect 12 104 776 1 { 48, 52, 62, 255 }
-rect 12 110 74 24 { 26, 30, 38, 255 } -> open: notes [AUX]
+rect 12 110 74 24 { 26, 30, 38, 255 } -> control_view: notes [AUX]
 text 21 114 { 225, 230, 240, 255 } "▸ Notes"
 text 140 114 { 150, 160, 178, 255 } "2 presets   last note 1:02:05  cell 3, 2100 µm"
 rect 12 140 776 1 { 48, 52, 62, 255 }
-rect 12 146 74 24 { 26, 30, 38, 255 } -> open: audio [AUX]
+rect 12 146 74 24 { 26, 30, 38, 255 } -> control_view: audio [AUX]
 text 21 150 { 225, 230, 240, 255 } "▸ Audio"
 text 140 150 { 150, 160, 178, 255 } "on   -6 dB   listening to nothing"
 rect 12 176 776 1 { 48, 52, 62, 255 }
@@ -2286,15 +2286,15 @@ rect 318 182 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = true } }
 text 327 186 { 225, 230, 240, 255 } "+"
 text 360 186 { 150, 160, 178, 255 } "below zero, where it follows the noise"
 rect 12 212 776 1 { 48, 52, 62, 255 }
-rect 12 218 114 24 { 26, 30, 38, 255 } -> open: headstages [AUX]
+rect 12 218 114 24 { 26, 30, 38, 255 } -> control_view: headstages [AUX]
 text 21 222 { 225, 230, 240, 255 } "▸ Headstages"
 text 140 222 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.17 Hz"
 rect 12 248 776 1 { 48, 52, 62, 255 }
-rect 12 254 82 24 { 26, 30, 38, 255 } -> open: [AUX, Port C]
+rect 12 254 82 24 { 26, 30, 38, 255 } -> control_view: [AUX, Port C]
 text 21 258 { 225, 230, 240, 255 } "▸ Port C"
 text 140 258 { 150, 160, 178, 255 } "triggered   -10.0 / +40.0 ms   400 µV/row   raw   on spikes, row 1"
 rect 12 284 776 1 { 48, 52, 62, 255 }
-rect 12 290 58 24 { 26, 30, 38, 255 } -> open: []
+rect 12 290 58 24 { 26, 30, 38, 255 } -> control_view: []
 text 21 294 { 225, 230, 240, 255 } "▾ AUX"
 text 140 294 { 150, 160, 178, 255 } "scroll   2.00 s   1.00 V/row"
 rect 722 290 58 24 { 38, 43, 54, 255 } -> panel 1 .{ .reset = void }
@@ -2319,11 +2319,11 @@ text 171 350 { 225, 230, 240, 255 } "1.00 V/row"
 rect 272 346 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .scale = 1.25 }
 text 281 350 { 225, 230, 240, 255 } "+"
 rect 12 376 776 1 { 48, 52, 62, 255 }
-rect 12 382 58 24 { 26, 30, 38, 255 } -> open: [AUX, ADC]
+rect 12 382 58 24 { 26, 30, 38, 255 } -> control_view: [AUX, ADC]
 text 21 386 { 225, 230, 240, 255 } "▸ ADC"
 text 140 386 { 150, 160, 178, 255 } "scroll   2.00 s   250 mV/row"
 rect 12 412 776 1 { 48, 52, 62, 255 }
-rect 12 418 58 24 { 26, 30, 38, 255 } -> open: [AUX, TTL]
+rect 12 418 58 24 { 26, 30, 38, 255 } -> control_view: [AUX, TTL]
 text 21 422 { 225, 230, 240, 255 } "▸ TTL"
 text 140 422 { 150, 160, 178, 255 } "triggered   -10.0 / +40.0 ms   on TTL 2"
 rect 12 448 776 1 { 48, 52, 62, 255 }
@@ -2344,11 +2344,11 @@ rect 12 102 66 24 { 38, 43, 54, 255 } -> .{ .record = true }
 text 21 106 { 225, 230, 240, 255 } "Record"
 text 84 106 { 150, 160, 178, 255 } "not recording"
 rect 12 132 776 1 { 48, 52, 62, 255 }
-rect 12 138 74 24 { 26, 30, 38, 255 } -> open: notes []
+rect 12 138 74 24 { 26, 30, 38, 255 } -> control_view: notes []
 text 21 142 { 225, 230, 240, 255 } "▸ Notes"
 text 140 142 { 150, 160, 178, 255 } "1 preset   no notes yet"
 rect 12 168 776 1 { 48, 52, 62, 255 }
-rect 12 174 74 24 { 26, 30, 38, 255 } -> open: audio []
+rect 12 174 74 24 { 26, 30, 38, 255 } -> control_view: audio []
 text 21 178 { 225, 230, 240, 255 } "▸ Audio"
 text 140 178 { 150, 160, 178, 255 } "off, muted   -6 dB"
 rect 12 204 776 1 { 48, 52, 62, 255 }
@@ -2361,19 +2361,19 @@ rect 318 210 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = true } }
 text 327 214 { 225, 230, 240, 255 } "+"
 text 360 214 { 150, 160, 178, 255 } "below zero, where it follows the noise"
 rect 12 240 776 1 { 48, 52, 62, 255 }
-rect 12 246 114 24 { 26, 30, 38, 255 } -> open: headstages []
+rect 12 246 114 24 { 26, 30, 38, 255 } -> control_view: headstages []
 text 21 250 { 225, 230, 240, 255 } "▸ Headstages"
 text 140 250 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP off   A1 16 of 32"
 rect 12 276 776 1 { 48, 52, 62, 255 }
-rect 12 282 82 24 { 26, 30, 38, 255 } -> open: [Port A]
+rect 12 282 82 24 { 26, 30, 38, 255 } -> control_view: [Port A]
 text 21 286 { 225, 230, 240, 255 } "▸ Port A"
 text 140 286 { 150, 160, 178, 255 } "triggered   -1.0 / +2.0 ms   400 µV/row   band 300–6000 Hz   on spikes, row 5"
 rect 12 312 776 1 { 48, 52, 62, 255 }
-rect 12 318 82 24 { 26, 30, 38, 255 } -> open: [Port B]
+rect 12 318 82 24 { 26, 30, 38, 255 } -> control_view: [Port B]
 text 21 322 { 225, 230, 240, 255 } "▸ Port B"
 text 140 322 { 150, 160, 178, 255 } "scroll   2.00 s   400 µV/row   band below 6000 Hz   CAR"
 rect 12 348 776 1 { 48, 52, 62, 255 }
-rect 12 354 58 24 { 26, 30, 38, 255 } -> open: [TTL]
+rect 12 354 58 24 { 26, 30, 38, 255 } -> control_view: [TTL]
 text 21 358 { 225, 230, 240, 255 } "▸ TTL"
 text 140 358 { 150, 160, 178, 255 } "triggered   -10.0 / +40.0 ms   on TTL 3"
 rect 12 384 776 1 { 48, 52, 62, 255 }

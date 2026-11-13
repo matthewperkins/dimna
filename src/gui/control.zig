@@ -250,6 +250,8 @@ pub const Edit = union(enum) {
     acknowledge,
     /// Write the panels' settings to the view file.
     save_view,
+    /// Which sections of the control window are open now (saved with the view).
+    control_view: ControlView,
     quit_answer: QuitAnswer,
     quit,
 };
@@ -324,6 +326,9 @@ pub const Config = struct {
     font_buf: [128:0]u8 = @splat(0),
     font_px: u32 = 14,
     env: *const Env,
+    /// Which sections are open at start (from the view file); read once by the control
+    /// thread, which reports every change as `Edit.control_view`.
+    view: ControlView = .{},
 };
 
 pub fn spawn(cfg: *Config) ?std.Thread {
@@ -365,8 +370,8 @@ fn loop(cfg: *Config) !void {
     var last_x: f64 = -1;
     var last_y: f64 = -1;
     var tag: u64 = 0;
-    // Which sections are open: at start, none.
-    var view: ControlView = .{};
+    // Which sections are open: at start, as the view file says.
+    var view: ControlView = cfg.view;
     // For tests: "SECONDS:X,Y;..." clicks at those pixels of this window.
     var script: []const u8 = cfg.env.control_clicks;
     const t_start = nowSeconds();
@@ -432,9 +437,11 @@ fn nowSeconds() f64 {
 
 /// Describes the whole window for this frame and queues what was clicked. The order of the
 /// calls (and of the `ui.*` calls in each) is the layout. A click on a section's heading
-/// opens or closes it in `view`.
+/// opens or closes it in `view`, and the display thread is told (it saves `view`).
 fn build(ui: *ui_mod.Ui, cfg: *const Config, snap: *const Snapshot, shared: *Shared, view: *ControlView) void {
     _ = cfg;
+    const before = view.*;
+    defer if (!view.eql(&before)) shared.push(.{ .control_view = view.* });
     titleSection(ui, snap, shared);
     if (snap.quit_prompt.active) {
         // Quitting with board settings that differ from the config: nothing else is shown.
@@ -1065,15 +1072,21 @@ fn writeLayout(w: *std.Io.Writer, rig: *LayoutRig, name: []const u8, snap: *cons
             try w.print("rect {d} {d} {d} {d} {any}", .{ x, y, rw, rh, col });
             _ = rig.frame(snap, x + rw / 2, y + rh / 2, true);
             // A panel edit is written flat, so its action is not nested too deeply to print.
+            var queued_view: ?ControlView = null;
             while (rig.shared.pop()) |e| switch (e) {
                 .panel => |pe| try w.print(" -> panel {d} {any}", .{ pe.index, pe.action }),
+                .control_view => |cv| {
+                    queued_view = cv;
+                    try w.writeAll(" -> control_view:");
+                    try writeView(w, &cv);
+                },
                 else => try w.print(" -> {any}", .{e}),
             };
-            // A heading opens or closes its section.
-            if (!rig.view.eql(&rig.start_view)) {
-                try w.writeAll(" -> open:");
-                try writeView(w, &rig.view);
-            }
+            // A heading opens or closes its section, and the display thread is told what is
+            // open now; nothing else tells it.
+            if (rig.view.eql(&rig.start_view)) {
+                try testing.expect(queued_view == null);
+            } else try testing.expect(queued_view != null and queued_view.?.eql(&rig.view));
             try w.writeByte('\n');
             q += 1;
             continue;
@@ -1359,4 +1372,29 @@ test "the control window's layout is unchanged" {
         try file.writeStreamingAll(testing.io, got);
     }
     try testing.expectEqualStrings(@embedFile("testdata/control_layout.txt"), got);
+}
+
+test "which sections are open is saved with the view, and a change of it is something to save" {
+    const session = @import("session.zig");
+    const gpa = testing.allocator;
+    var set: panels.Set = .{};
+    set.items[0] = layoutPanel("Port A", .electrode, 6);
+    set.len = 1;
+    const tiles: oez.tile_view.TileView = .{};
+    const thresholds: oez.thresholds.Thresholds = .{};
+    const layout: oez.types.Layout = .{ .sample_rate = 30000, .hw_clock_hz = 50e6, .num_electrodes = 6 };
+    var open: ControlView = .{};
+    const view: session.ViewFile.View = .{ .set = &set, .tiles = &tiles, .thresholds = &thresholds, .layout = &layout, .control = &open };
+    var view_file = try session.ViewFile.init(gpa, view);
+    defer view_file.deinit(gpa);
+    try testing.expect(!view_file.unsaved(view));
+    open.setPanel("Port A", true);
+    open.audio = true;
+    try testing.expect(view_file.unsaved(view));
+    // `unsaved` rendered the view into `now`: the [control] table comes after the others.
+    const want = "\n[thresholds]\nsigmas = 4.5\nfixed_uv = [0, 0, 0, 0, 0, 0]\n" ++
+        "\n[control]\nnotes = false\naudio = true\nheadstages = false\npanels = \"Port A\"\n";
+    try testing.expect(std.mem.indexOf(u8, view_file.now, want) != null);
+    open = .{};
+    try testing.expect(!view_file.unsaved(view));
 }

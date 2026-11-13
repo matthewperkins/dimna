@@ -198,6 +198,10 @@ pub fn main(init: std.process.Init) !u8 {
     // The control window, on its own thread (see control.zig).
     var shared: control.Shared = .{};
     var control_cfg: control.Config = .{ .gpa = gpa, .shared = &shared, .display_gpu = &gpu, .font_px = args.font_px, .env = &env };
+    // Which of its sections are open: from the view file, then as the control window
+    // reports them; saved with the panels by "Save view".
+    var control_view = oez.control_view.ControlView.read(args.views_doc);
+    control_cfg.view = control_view;
     var control_thread: ?std.Thread = null;
     if (args.control) {
         const n = @min(args.font.len, control_cfg.font_buf.len);
@@ -220,7 +224,13 @@ pub fn main(init: std.process.Init) !u8 {
     var rec_published_ns: i128 = 0;
     // What "Save view" saves: the panels, the tile window's view and the thresholds.
     // (Pointers that stay valid; what they point to changes.)
-    const view: session.ViewFile.View = .{ .set = &display.set, .tiles = &tile_view, .thresholds = &display.thresholds, .layout = layout };
+    const view: session.ViewFile.View = .{
+        .set = &display.set,
+        .tiles = &tile_view,
+        .thresholds = &display.thresholds,
+        .layout = layout,
+        .control = &control_view,
+    };
     var view_file = try session.ViewFile.init(gpa, view);
     defer view_file.deinit(gpa);
     var review: session.ReviewSession = .{};
@@ -320,6 +330,7 @@ pub fn main(init: std.process.Init) !u8 {
                 },
                 .note_preset => |n| notes.stampPreset(n, note_stamp, recording.sessionPath()),
                 .acknowledge => display.acknowledged = true,
+                .control_view => |v| control_view = v,
                 .save_view => if (view_file.save(io, views_path, view)) |_| {
                     board_ctl.status.setNote("view saved to {s}", .{views_path});
                 } else |err| board_ctl.status.setNote("could not save {s}: {t}", .{ views_path, err }),
