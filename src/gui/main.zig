@@ -4,11 +4,6 @@
 //!       [--present auto|mailbox|immediate|fifo] [--margin-ms MS] [--script STEPS]
 //!       [--monitor DP-2] [--tearing] [--free MS]
 //!
-//! --direct DP-2 drives that monitor itself, with no compositor: frames are flipped by oez at
-//!   each refresh. It works only where nothing else drives the monitor: from a text console
-//!   (Ctrl+Alt+F3), with a DRM lease, or on a graphics card of its own. There is no window and
-//!   no input in this mode yet: it runs for --seconds (default 20) or until Ctrl+C, and
-//!   --script changes the panels. Margin 1.5 ms unless --margin-ms.
 //! --monitor makes the window fullscreen on that monitor (the neural display).
 //! --tearing asks the compositor to show each frame at once, mid-scan, instead of at the
 //!   refresh; implies --present immediate and --free 2. The lowest latency under a compositor:
@@ -138,7 +133,6 @@ const max_fills = display_mod.max_fills;
 const files = @import("files.zig");
 const renderViews = files.renderViews;
 const writeAtomic = files.writeAtomic;
-const runDirect = @import("direct.zig").runDirect;
 const session = @import("session.zig");
 const Pacer = @import("pacing.zig").Pacer;
 
@@ -172,7 +166,6 @@ pub fn main(init: std.process.Init) !u8 {
     const io = init.io;
     const gpa = init.gpa;
     const argv = try init.minimal.args.toSlice(init.arena.allocator());
-    if (argv.len == 2 and std.mem.eql(u8, argv[1], "--lease-probe")) return @import("lease_probe.zig").run();
     // The config file, if there is one.
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const config_path = if (init.environ_map.get("XDG_CONFIG_HOME")) |x|
@@ -238,8 +231,6 @@ pub fn main(init: std.process.Init) !u8 {
     var blk = try oez.types.Block.init(gpa, nch, bs);
     defer blk.deinit(gpa);
 
-    if (args.direct.len > 0) return runDirect(io, gpa, args, layout, &acq, &reader, &blk);
-
     // ---- window and renderer ----
     var win: Window = undefined;
     // OEZ_APP_ID gives test runs a window class of their own (so compositor rules for the
@@ -258,7 +249,7 @@ pub fn main(init: std.process.Init) !u8 {
     }
     _ = win.declareLowLatency();
     if (args.tearing and !win.preferTearing()) log.warn("the compositor has no tearing control; frames will wait for the refresh", .{});
-    var gpu = try Gpu.init(gpa, .{ .wayland = .{ .display = win.display, .surface = win.surface } }, args.present, null);
+    var gpu = try Gpu.init(gpa, .{ .display = win.display, .surface = win.surface }, args.present, null);
     defer gpu.deinit();
     var notes = notes_mod.Notes.init(args.doc);
     defer notes.deinit();

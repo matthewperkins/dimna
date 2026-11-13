@@ -493,9 +493,11 @@ Hyprland tears only when all of these hold (`hyprctl monitors` shows `activelyTe
   overlay or notification over it. So panels are laid out inside oEZ's one surface, and
   anything drawn on the neural display must be drawn by oEZ.
 
-Other routes tried are described at the top of `src/gui/main.zig`: Hyprland's direct scanout
-(3.5 ms but not dependable) and `--direct DP-2`, where oEZ drives the monitor with no
-compositor (1.45 ms at a 1 ms margin from a text console; it needs the monitor to itself).
+Other routes tried: Hyprland's direct scanout (3.5 ms but not dependable; described at the
+top of `src/gui/main.zig`), and driving the monitor with no compositor at all (`--direct`,
+1.45 ms at a 1 ms margin from a text console; it needs the monitor to itself). That second
+loop had none of the later features and was removed; the last commit that has it is
+`5112336` (`src/gui/direct.zig`, `lease_probe.zig`).
 
 ## Changing settings while acquiring
 

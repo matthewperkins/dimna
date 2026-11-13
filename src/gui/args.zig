@@ -17,7 +17,6 @@ pub const Args = struct {
     script: []const u8 = "",
     monitor: []const u8 = "",
     /// Connector of a monitor to drive directly, with no compositor.
-    direct: []const u8 = "",
     tearing: bool = false,
     /// Where recordings go: one session folder per recording beneath it.
     record_dir: []const u8 = "~/oez-recordings",
@@ -102,9 +101,6 @@ pub fn parseArgs(args: []const [:0]const u8, doc: oez.toml.Document) !Args {
         }.f;
         if (std.mem.eql(u8, arg, "--seconds")) {
             a.seconds = try std.fmt.parseFloat(f64, try next(args, &i, arg));
-        } else if (std.mem.eql(u8, arg, "--direct")) {
-            a.direct = try next(args, &i, arg);
-            if (a.seconds == 0) a.seconds = 20;
         } else if (std.mem.eql(u8, arg, "--monitor")) {
             a.monitor = try next(args, &i, arg);
         } else if (std.mem.eql(u8, arg, "--tearing")) {

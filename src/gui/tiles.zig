@@ -116,7 +116,7 @@ pub const Tiles = struct {
         const class = std.fmt.bufPrintSentinel(&class_buf, "{s}-tiles", .{if (std.c.getenv("OEZ_APP_ID")) |v| std.mem.span(v) else "oez"}, 0) catch "oez-tiles";
         try win.init("oEZ spikes", class);
         defer win.deinit();
-        var gpu = try gpu_mod.Gpu.init(gpa, .{ .wayland = .{ .display = win.display, .surface = win.surface } }, .fifo, self.display_gpu);
+        var gpu = try gpu_mod.Gpu.init(gpa, .{ .display = win.display, .surface = win.surface }, .fifo, self.display_gpu);
         defer gpu.deinit();
         var face = try font.Font.init(gpa, std.mem.sliceTo(&self.font_buf, 0), self.font_px);
         defer face.deinit(gpa);
