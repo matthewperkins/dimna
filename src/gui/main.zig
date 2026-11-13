@@ -343,10 +343,10 @@ pub fn main(init: std.process.Init) !u8 {
             notes.dirty = false;
             snap_dirty = true;
         }
-        // A click on a spike tile listens to its channel, as a click on a row does.
+        // What was asked for in the tile window: focus a channel, clear the focus, listen.
         while (tiles_shared.requests.pop()) |request| switch (request) {
-            .focus => |channel| display.focus = channel,
-            .unfocus => display.focus = null,
+            .focus => |channel| display.setFocus(channel),
+            .unfocus => display.setFocus(null),
             .listen => |l| display.listenClick(l.channel, l.add),
         };
         // What the tile window reports: the focused channel's threshold, and its view.

@@ -28,8 +28,8 @@ pub const label_backing: Colour = .{ 8, 10, 14, 200 };
 // The channels listened to.
 
 /// The amber of the thing being looked at. It marks the channel in focus (its tile's
-/// frame and its row's label) and a note (its text beside the marker line). Until the
-/// focus convention is in, it still marks the channels listened to.
+/// frame and its row's label) and a note (its text beside the marker line). Listening is
+/// not marked by colour but by a note sign before the name.
 pub const focus: Colour = .{ 255, 225, 120, 255 };
 /// A note's text beside its marker line.
 pub const note_text: Colour = focus;
@@ -65,7 +65,7 @@ pub const alarm_bar: Colour = .{ 190, 25, 25, 245 };
 pub const warning_bar: Colour = .{ 150, 100, 10, 235 };
 /// The text on the alarm and warning bars.
 pub const bar_text: Colour = .{ 255, 255, 255, 255 };
-/// "press a to acknowledge" on the alarm bar.
+/// "press Shift+a to acknowledge" on the alarm bar.
 pub const alarm_hint_text: Colour = .{ 255, 210, 210, 255 };
 /// The REVIEW badge's text.
 pub const review_badge_text: Colour = .{ 255, 240, 200, 255 };
