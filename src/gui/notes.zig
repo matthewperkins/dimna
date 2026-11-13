@@ -69,7 +69,8 @@ pub const Notes = struct {
     dirty: bool = false,
 
     /// Reads the presets from the config's [notes] table and opens the notes log.
-    pub fn init(doc: oez.toml.Document) Notes {
+    /// `home`, `state_home`: `Env.home` and `Env.state_home`, for where the notes log goes.
+    pub fn init(doc: oez.toml.Document, home: []const u8, state_home: []const u8) Notes {
         var self: Notes = .{};
         for (&self.presets, 1..) |*p, n| {
             var key_buf: [12]u8 = undefined;
@@ -77,10 +78,8 @@ pub const Notes = struct {
             if (doc.string("notes", 0, key)) |s| p.set(s);
         }
         var path_buf: [std.fs.max_path_bytes]u8 = undefined;
-        const state: []const u8 = if (std.c.getenv("XDG_STATE_HOME")) |x| std.mem.span(x) else "";
-        const home: []const u8 = if (std.c.getenv("HOME")) |h| std.mem.span(h) else ".";
-        const dir = (if (state.len > 0)
-            std.fmt.bufPrintSentinel(&path_buf, "{s}/oez", .{state}, 0)
+        const dir = (if (state_home.len > 0)
+            std.fmt.bufPrintSentinel(&path_buf, "{s}/oez", .{state_home}, 0)
         else
             std.fmt.bufPrintSentinel(&path_buf, "{s}/.local/state/oez", .{home}, 0)) catch return self;
         mkdirs(dir);

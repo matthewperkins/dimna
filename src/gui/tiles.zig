@@ -12,6 +12,7 @@
 //! and clicks go back through a small queue.
 
 const std = @import("std");
+const Env = @import("env.zig").Env;
 const oez = @import("oez");
 const spikes = oez.spikes;
 const Window = @import("window.zig").Window;
@@ -57,6 +58,7 @@ pub const Tiles = struct {
     display_gpu: *const gpu_mod.Gpu,
     font_buf: [128:0]u8 = @splat(0),
     font_px: u32 = 14,
+    env: *const Env,
     thread: ?std.Thread = null,
 
     /// Starts the tile window's thread. Null if it could not be started.
@@ -69,6 +71,7 @@ pub const Tiles = struct {
         display_gpu: *const gpu_mod.Gpu,
         font_name: []const u8,
         font_px: u32,
+        env: *const Env,
     ) ?*Tiles {
         const self = gpa.create(Tiles) catch return null;
         self.* = .{
@@ -79,6 +82,7 @@ pub const Tiles = struct {
             .block_samples = block_samples,
             .display_gpu = display_gpu,
             .font_px = font_px,
+            .env = env,
         };
         const n = @min(font_name.len, self.font_buf.len);
         @memcpy(self.font_buf[0..n], font_name[0..n]);
@@ -115,13 +119,8 @@ pub const Tiles = struct {
 
         var win: Window = undefined;
         var class_buf: [64]u8 = undefined;
-        const class = std.fmt.bufPrintSentinel(
-            &class_buf,
-            "{s}-tiles",
-            .{if (std.c.getenv("OEZ_APP_ID")) |v| std.mem.span(v) else "oez"},
-            0,
-        ) catch "oez-tiles";
-        try win.init("oEZ spikes", class);
+        const class = std.fmt.bufPrintSentinel(&class_buf, "{s}-tiles", .{self.env.app_id}, 0) catch "oez-tiles";
+        try win.init("oEZ spikes", class, self.env.key_debug);
         defer win.deinit();
         var gpu = try gpu_mod.Gpu.init(gpa, .{ .display = win.display, .surface = win.surface }, .fifo, self.display_gpu);
         defer gpu.deinit();
@@ -140,7 +139,7 @@ pub const Tiles = struct {
         var last_draw: i128 = 0;
         var tag: u64 = 0;
         var pointer: [2]f64 = .{ -1, -1 };
-        var script: []const u8 = if (std.c.getenv("OEZ_TILE_CLICKS")) |v| std.mem.span(v) else "";
+        var script: []const u8 = self.env.tile_clicks;
         const t_start = nowNs();
         while (!shared.stop.load(.acquire) and !win.closed) {
             try win.pump(4);

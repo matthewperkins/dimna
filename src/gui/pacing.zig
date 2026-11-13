@@ -107,15 +107,15 @@ pub const Pacer = struct {
     };
 
     /// `margin_ms` and `free_ms` as given by the user; negative for "not given".
-    pub fn init(margin_ms: f64, free_ms: f64, fullscreen: bool) Pacer {
-        const env = std.c.getenv("OEZ_FRAME_DEBUG");
+    /// `frame_debug`: `Env.frame_debug`.
+    pub fn init(margin_ms: f64, free_ms: f64, fullscreen: bool, frame_debug: u8) Pacer {
         return .{
             .fullscreen = fullscreen,
             .free_ms = free_ms,
             .margin_fixed = margin_ms >= 0,
             .margin_ms = if (margin_ms >= 0) margin_ms else 3.0,
-            .debug = env != null,
-            .trace = if (env) |v| v[0] == '2' else false,
+            .debug = frame_debug >= 1,
+            .trace = frame_debug >= 2,
         };
     }
 

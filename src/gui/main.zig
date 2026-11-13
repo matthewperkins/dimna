@@ -54,6 +54,7 @@ const renderViews = files.renderViews;
 const writeAtomic = files.writeAtomic;
 const session = @import("session.zig");
 const Pacer = @import("pacing.zig").Pacer;
+const Env = @import("env.zig").Env;
 
 pub const std_options: std.Options = .{ .log_level = .info };
 
@@ -63,9 +64,8 @@ const Panel = panels_mod.Panel;
 
 /// Blocks in the acquisition ring: 30 s of signal, which is how far the recorder may fall
 /// behind (a stalled disk) before samples are lost. The display holds nothing back.
-fn ringSlots(fs: f64, block_samples: usize) usize {
-    // OEZ_TEST_RING_SECONDS shortens it, for testing what happens when it fills.
-    const seconds: f64 = if (std.c.getenv("OEZ_TEST_RING_SECONDS")) |v| (std.fmt.parseFloat(f64, std.mem.span(v)) catch 30.0) else 30.0;
+/// `seconds` is `Env.ring_seconds`: 30 unless a test shortens it.
+fn ringSlots(fs: f64, block_samples: usize, seconds: f64) usize {
     return @intFromFloat(@ceil(seconds * fs / @as(f64, @floatFromInt(block_samples))));
 }
 
@@ -83,6 +83,8 @@ pub fn main(init: std.process.Init) !u8 {
     const io = init.io;
     const gpa = init.gpa;
     const argv = try init.minimal.args.toSlice(init.arena.allocator());
+    // Everything the environment can change, read once (see env.zig).
+    const env = Env.read();
     // The config file, if there is one.
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
     // Not a label: a path too long for the buffer is "", and the run starts without a
@@ -141,7 +143,7 @@ pub fn main(init: std.process.Init) !u8 {
     // ---- acquisition into the ring ----
     // 30 s of blocks: what the recorder may fall behind (a stalled disk) before samples are
     // lost. The display reads it without holding anything back.
-    var ring = try oez.ring.BlockRing.init(gpa, ringSlots(fs, bs), nch, bs);
+    var ring = try oez.ring.BlockRing.init(gpa, ringSlots(fs, bs, env.ring_seconds), nch, bs);
     defer ring.deinit(gpa);
     var health: oez.types.Health = .{};
     // What of the loss counters the user has acknowledged (the alarm shows the rest).
@@ -160,9 +162,9 @@ pub fn main(init: std.process.Init) !u8 {
 
     // ---- window and renderer ----
     var win: Window = undefined;
-    // OEZ_APP_ID gives test runs a window class of their own (so compositor rules for the
-    // real display do not apply to them).
-    try win.init("oEZ", if (std.c.getenv("OEZ_APP_ID")) |v| std.mem.span(v) else "oez");
+    var app_id_buf: [64:0]u8 = @splat(0);
+    const app_id = std.fmt.bufPrintSentinel(&app_id_buf, "{s}", .{env.app_id}, 0) catch "oez";
+    try win.init("oEZ", app_id, env.key_debug);
     defer win.deinit();
     const fullscreen = args.monitor.len > 0;
     if (fullscreen) {
@@ -178,7 +180,7 @@ pub fn main(init: std.process.Init) !u8 {
     if (args.tearing and !win.preferTearing()) log.warn("the compositor has no tearing control; frames will wait for the refresh", .{});
     var gpu = try Gpu.init(gpa, .{ .display = win.display, .surface = win.surface }, args.present, null);
     defer gpu.deinit();
-    var notes = notes_mod.Notes.init(args.doc);
+    var notes = notes_mod.Notes.init(args.doc, env.home, env.state_home);
     defer notes.deinit();
     var display = makeDisplay(args, &layout) orelse return 2;
     // The longest time base plus a margin, so new samples never overwrite what is drawn.
@@ -200,7 +202,7 @@ pub fn main(init: std.process.Init) !u8 {
 
     // The control window, on its own thread (see control.zig).
     var shared: control.Shared = .{};
-    var control_cfg: control.Config = .{ .gpa = gpa, .shared = &shared, .display_gpu = &gpu, .font_px = args.font_px };
+    var control_cfg: control.Config = .{ .gpa = gpa, .shared = &shared, .display_gpu = &gpu, .font_px = args.font_px, .env = &env };
     var control_thread: ?std.Thread = null;
     if (args.control) {
         const n = @min(args.font.len, control_cfg.font_buf.len);
@@ -216,7 +218,8 @@ pub fn main(init: std.process.Init) !u8 {
 
     // Recording: started and stopped from the control window.
     var recording: session.Recording = .{};
-    recording.setRoot(args.record_dir);
+    recording.setRoot(args.record_dir, env.home);
+    recording.fault = env.record_test;
     // However the loop ends, a recording in progress is closed properly.
     defer recording.deinit();
     var rec_published_ns: i128 = 0;
@@ -236,7 +239,7 @@ pub fn main(init: std.process.Init) !u8 {
     var tiles_shared: tiles_mod.Shared = .{};
     tiles_shared.publish(&display.tileConfig());
     var tiles_win: ?*tiles_mod.Tiles = if (args.tiles)
-        tiles_mod.Tiles.start(gpa, &tiles_shared, &ring, &layout, bs, &gpu, args.font, args.font_px)
+        tiles_mod.Tiles.start(gpa, &tiles_shared, &ring, &layout, bs, &gpu, args.font, args.font_px, &env)
     else
         null;
     defer if (tiles_win) |t| t.stop();
@@ -248,7 +251,7 @@ pub fn main(init: std.process.Init) !u8 {
     var newest: i64 = 0;
     var newest_acquired_ns: i128 = 0;
     // When to draw, and how the frames landed (see pacing.zig).
-    var pacer: Pacer = .init(args.margin_ms, args.free_ms, fullscreen);
+    var pacer: Pacer = .init(args.margin_ms, args.free_ms, fullscreen, env.frame_debug);
     // Diagnostics only: time the GPU per frame (it delays presenting, see gpu.zig).
     gpu.wait_render = pacer.debug;
     var script_pos: usize = 0;
@@ -435,7 +438,7 @@ pub fn main(init: std.process.Init) !u8 {
                 bs = source.settings().block_samples;
                 log.info("restarted: {d} channels ({d} electrode) at {d} Hz", .{ nch, layout.num_electrodes, fs });
                 // New first, then swap, so a failure leaves nothing half torn down.
-                const new_ring = try oez.ring.BlockRing.init(gpa, ringSlots(fs, bs), nch, bs);
+                const new_ring = try oez.ring.BlockRing.init(gpa, ringSlots(fs, bs, env.ring_seconds), nch, bs);
                 ring.deinit(gpa);
                 ring = new_ring;
                 const new_scratch = try oez.types.Block.init(gpa, nch, bs);
@@ -478,7 +481,8 @@ pub fn main(init: std.process.Init) !u8 {
                 display.listenToFirst();
                 audio_shared.publish(&display.audio);
                 if (args.audio) audio_dev = audio_out.AudioOut.start(gpa, &audio_shared, &ring, fs, nch, bs);
-                if (args.tiles) tiles_win = tiles_mod.Tiles.start(gpa, &tiles_shared, &ring, &layout, bs, &gpu, args.font, args.font_px);
+                if (args.tiles)
+                    tiles_win = tiles_mod.Tiles.start(gpa, &tiles_shared, &ring, &layout, bs, &gpu, args.font, args.font_px, &env);
             }
         }
         // The recorder has finished (asked to, or because writing failed).
@@ -591,7 +595,7 @@ pub fn main(init: std.process.Init) !u8 {
                 @as(f64, @floatFromInt(audio_shared.held_sigma_c.load(.monotonic))) / 100.0 * oez.types.electrode_uv_per_bit,
                 if (audio_shared.held_sigma_c.load(.monotonic) == 0) " (measuring)" else " held",
             });
-            if (std.c.getenv("OEZ_NO_TITLE") == null) {
+            if (!env.no_title) {
                 if (std.fmt.bufPrintSentinel(
                     &title_buf,
                     "oEZ   {s}: {d:.2} s  {d:.1} {s}/row   latency {d:.1} ms   {d} fps",

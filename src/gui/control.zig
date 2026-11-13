@@ -18,6 +18,7 @@ const gpu_mod = @import("gpu.zig");
 const font = @import("font.zig");
 const ui_mod = @import("ui.zig");
 const theme = @import("theme.zig");
+const Env = @import("env.zig").Env;
 const format = @import("format.zig");
 const Atomic = std.atomic.Value;
 const log = std.log.scoped(.control);
@@ -332,6 +333,7 @@ pub const Config = struct {
     display_gpu: *const gpu_mod.Gpu,
     font_buf: [128:0]u8 = @splat(0),
     font_px: u32 = 14,
+    env: *const Env,
 };
 
 pub fn spawn(cfg: *Config) ?std.Thread {
@@ -350,16 +352,10 @@ fn loop(cfg: *Config) !void {
     const gpa = cfg.gpa;
     const shared = cfg.shared;
     var win: Window = undefined;
-    // OEZ_APP_ID gives test runs a window class of their own (one too long for the buffer
-    // gives the usual class).
+    // A class too long for the buffer gives the usual one.
     var class_buf: [64]u8 = undefined;
-    const class = std.fmt.bufPrintSentinel(
-        &class_buf,
-        "{s}-control",
-        .{if (std.c.getenv("OEZ_APP_ID")) |v| std.mem.span(v) else "oez"},
-        0,
-    ) catch "oez-control";
-    try win.init("oEZ control", class);
+    const class = std.fmt.bufPrintSentinel(&class_buf, "{s}-control", .{cfg.env.app_id}, 0) catch "oez-control";
+    try win.init("oEZ control", class, cfg.env.key_debug);
     defer win.deinit();
     var gpu = try gpu_mod.Gpu.init(gpa, .{ .display = win.display, .surface = win.surface }, .fifo, cfg.display_gpu);
     defer gpu.deinit();
@@ -379,8 +375,8 @@ fn loop(cfg: *Config) !void {
     var last_x: f64 = -1;
     var last_y: f64 = -1;
     var tag: u64 = 0;
-    // For tests: OEZ_CONTROL_CLICKS="SECONDS:X,Y;..." clicks at those pixels of this window.
-    var script: []const u8 = if (std.c.getenv("OEZ_CONTROL_CLICKS")) |v| std.mem.span(v) else "";
+    // For tests: "SECONDS:X,Y;..." clicks at those pixels of this window.
+    var script: []const u8 = cfg.env.control_clicks;
     const t_start = nowSeconds();
     while (!shared.stop.load(.acquire) and !win.closed) {
         try win.pump(if (dirty or script.len > 0) 20 else 100);
@@ -1169,7 +1165,8 @@ test "the control window's layout is unchanged" {
     const rig = try gpa.create(LayoutRig);
     defer gpa.destroy(rig);
     rig.* = .{ .face = layoutFont(), .vertices = vertices };
-    rig.cfg = .{ .gpa = gpa, .shared = &rig.shared, .display_gpu = undefined };
+    const no_env: Env = .{};
+    rig.cfg = .{ .gpa = gpa, .shared = &rig.shared, .display_gpu = undefined, .env = &no_env };
     const snaps = try gpa.alloc(Snapshot, 8);
     defer gpa.free(snaps);
     const names = layoutSnapshots(snaps);

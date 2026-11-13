@@ -13,6 +13,7 @@ const display_mod = @import("display.zig");
 const ReviewView = display_mod.ReviewView;
 const notes_mod = @import("notes.zig");
 const audio_out = @import("audio_out.zig");
+const Env = @import("env.zig").Env;
 const panels_mod = oez.panels;
 const Io = std.Io;
 const log = std.log.scoped(.oez);
@@ -285,10 +286,11 @@ pub const Recording = struct {
     /// Where sessions go.
     root_buf: [std.fs.max_path_bytes]u8 = undefined,
     root_len: usize = 0,
+    /// Faults to make in each recorder started, for testing the alarms (`Env.record_test`).
+    fault: Env.RecordTest = .{},
 
-    /// Sets the folder sessions are made under ("~/" is the home folder).
-    pub fn setRoot(self: *Recording, dir: []const u8) void {
-        const home: []const u8 = if (std.c.getenv("HOME")) |h| std.mem.span(h) else ".";
+    /// Sets the folder sessions are made under ("~/" is the home folder, `home`).
+    pub fn setRoot(self: *Recording, dir: []const u8, home: []const u8) void {
         // A path, not a label: one too long for the buffer is left empty, never cut.
         const text: []const u8 = (if (std.mem.startsWith(u8, dir, "~/"))
             std.fmt.bufPrint(&self.root_buf, "{s}/{s}", .{ home, dir[2..] })
@@ -335,13 +337,9 @@ pub const Recording = struct {
         r.events_in = events;
         r.notes_in = &self.notes;
         // For testing the alarms: make the recorder fail or stall.
-        // A value that does not parse leaves that part off.
-        if (std.c.getenv("OEZ_TEST_RECORD_FAIL_AFTER")) |v| r.test_fail_after = std.fmt.parseInt(u64, std.mem.span(v), 10) catch null;
-        if (std.c.getenv("OEZ_TEST_RECORD_STALL")) |v| {
-            var it = std.mem.tokenizeScalar(u8, std.mem.span(v), ',');
-            r.test_stall_after = std.fmt.parseInt(u64, it.next() orelse "", 10) catch null;
-            r.test_stall_ms = std.fmt.parseInt(u32, it.next() orelse "", 10) catch 0;
-        }
+        r.test_fail_after = self.fault.fail_after;
+        r.test_stall_after = self.fault.stall_after;
+        r.test_stall_ms = self.fault.stall_ms;
         r.start() catch |err| {
             _ = r.finish();
             self.status.state = .failed;

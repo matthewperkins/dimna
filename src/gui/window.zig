@@ -180,11 +180,12 @@ pub const Window = struct {
 
     /// Connects and creates the window. `self` must stay at a fixed address.
     /// `app_id` is the window's class for the compositor's rules.
-    pub fn init(self: *Window, title: [:0]const u8, app_id: [:0]const u8) !void {
+    /// `key_debug`: log every key event.
+    pub fn init(self: *Window, title: [:0]const u8, app_id: [:0]const u8, key_debug: bool) !void {
         const display = try wl.Display.connect(null);
         errdefer display.disconnect();
         self.* = .{ .display = display, .registry = try display.getRegistry() };
-        self.key_debug = std.c.getenv("OEZ_KEY_DEBUG") != null;
+        self.key_debug = key_debug;
         for (&self.feedback) |*f| f.* = .{ .window = self };
         for (&self.outputs) |*o| o.* = .{ .window = self };
         self.registry.setListener(*Window, onRegistry, self);
