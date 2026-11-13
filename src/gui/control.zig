@@ -778,3 +778,259 @@ test "edits queue and snapshots cross between the two sides" {
     try testing.expectEqual(300, out.status.fps);
     try testing.expect(!shared.read(&out, &seen));
 }
+
+// ---- The layout, frozen ----
+//
+// `build` is immediate-mode: the order of its `ui.*` calls is the layout. This test runs
+// it for a set of snapshots with a hand-made font (no FreeType, no GPU) in which every
+// character is 8 pixels wide and is drawn as a 1x1 quad whose atlas position names the
+// character, so the batch holds every rectangle and every glyph in the order drawn. Each
+// is written out as text (glyphs merged into runs of text), with the edits that a click
+// in the middle of each rectangle queues, and compared with `testdata/control_layout.txt`.
+// Set OEZ_CONTROL_LAYOUT_OUT to a path to write what this run produced there.
+
+var layout_atlas: [1]u8 = .{0};
+
+fn layoutFont() font.Font {
+    var f: font.Font = .{ .atlas = &layout_atlas, .px = 14, .ascent = 12, .line_height = 16 };
+    for (&f.glyphs, 0..) |*g, k| g.* = .{ .x = @intCast(8 + k), .y = 8, .w = 1, .h = 1, .top = 12, .advance = 8 };
+    return f;
+}
+
+/// The code point of glyph `k` of `layoutFont` (as `font.Font.glyph` numbers them).
+fn layoutCodepoint(k: usize) u21 {
+    const extra = [_]u21{ 0x03C3, 0x2013, 0x2192, 0x266A };
+    return if (k < 224) @intCast(32 + k) else extra[k - 224];
+}
+
+const LayoutRig = struct {
+    face: font.Font,
+    vertices: []font.Vertex,
+    batch: font.Batch = undefined,
+    shared: Shared = .{},
+    cfg: Config = undefined,
+
+    fn frame(self: *LayoutRig, snap: *const Snapshot, mx: f32, my: f32, clicked: bool) ui_mod.Ui {
+        self.batch = .{ .font = &self.face, .vertices = self.vertices };
+        self.shared = .{};
+        var ui: ui_mod.Ui = .begin(&self.batch, 800, mx, my, clicked, 0);
+        build(&ui, &self.cfg, snap, &self.shared);
+        return ui;
+    }
+};
+
+fn writeLayout(w: *std.Io.Writer, rig: *LayoutRig, name: []const u8, snap: *const Snapshot) !void {
+    const ui = rig.frame(snap, -1, -1, false);
+    const quads = rig.batch.len / 6;
+    // A full batch drops quads silently: the comparison would then miss them.
+    try testing.expect(rig.batch.len + 6 <= rig.vertices.len);
+    // Copied, as the click frames below reuse the batch.
+    const verts = try testing.allocator.dupe(font.Vertex, rig.vertices[0..rig.batch.len]);
+    defer testing.allocator.free(verts);
+    try w.print("== {s}: {d} quads, ends at x {d} y {d}\n", .{ name, quads, ui.x, ui.y });
+    var q: usize = 0;
+    while (q < quads) {
+        const v = verts[q * 6 ..][0..6];
+        const x = v[0].pos[0];
+        const y = v[0].pos[1];
+        const col = v[0].colour;
+        const u = v[0].uv[0] * font.atlas_size;
+        if (u < 8) {
+            const rw = v[2].pos[0] - x;
+            const rh = v[2].pos[1] - y;
+            try w.print("rect {d} {d} {d} {d} {any}", .{ x, y, rw, rh, col });
+            _ = rig.frame(snap, x + rw / 2, y + rh / 2, true);
+            while (rig.shared.pop()) |e| try w.print(" -> {any}", .{e});
+            try w.writeByte('\n');
+            q += 1;
+            continue;
+        }
+        // A run of glyphs: same row and colour, 8 pixels apart.
+        try w.print("text {d} {d} {any} \"", .{ x, y, col });
+        var next_x = x;
+        while (q < quads) : (q += 1) {
+            const g = verts[q * 6 ..][0..6];
+            const gu = g[0].uv[0] * font.atlas_size;
+            if (gu < 8 or g[0].pos[0] != next_x or g[0].pos[1] != y or !std.mem.eql(u8, &g[0].colour, &col)) break;
+            var utf: [4]u8 = undefined;
+            const n = std.unicode.utf8Encode(layoutCodepoint(@intFromFloat(gu - 8)), &utf) catch unreachable;
+            try w.writeAll(utf[0..n]);
+            next_x += 8;
+        }
+        try w.writeAll("\"\n");
+    }
+}
+
+fn setText(buf: []u8, len: *usize, s: []const u8) void {
+    @memcpy(buf[0..s.len], s);
+    len.* = s.len;
+}
+
+fn layoutPanel(name: []const u8, kind: panels.Kind, rows: u32) panels.Panel {
+    var p: panels.Panel = .{ .x = 0, .y = 0, .w = 1, .h = 1, .kind = kind, .first_ch = 0, .rows = rows, .span_s = 2, .scale = panels.Panel.defaultScale(kind) };
+    setText(&p.name_buf, &p.name_len, name);
+    return p;
+}
+
+/// The snapshots the layout is frozen for, written into `out`; returns their names.
+fn layoutSnapshots(out: []Snapshot) []const []const u8 {
+    const names = &[_][]const u8{ "not recording", "recording", "review active", "quit prompt", "restart pending", "two panels: slope trigger, reference", "alarm", "other panels" };
+    // Not recording: a status line, notes, audio listening, a warning, one small panel.
+    var base: Snapshot = .{};
+    setText(&base.about_buf, &base.about_len, "Simulator   40 channels at 30000 Hz");
+    base.status = .{ .valid = true, .latency_ms = 4.25, .fps = 144, .lost = 3 };
+    setText(&base.status.warning_buf, &base.status.warning_len, "disk nearly full");
+    base.seconds = 125.4;
+    base.board.lower_actual = 0.58;
+    base.board.upper_actual = 7603.2;
+    base.board.dsp_actual = 1.17;
+    base.board.headstages[0] = .{ .slot = 0, .rhd2132 = true };
+    base.board.headstages[1] = .{ .slot = 2, .rhd2132 = false };
+    base.board.num_headstages = 2;
+    base.board.pending = base.board.settings;
+    base.audio.running = true;
+    setText(&base.audio.listen_buf, &base.audio.listen_len, "A1-5, B1-3");
+    base.audio.sigma_uv = 7.36;
+    base.audio.latency_ms = 9.4;
+    base.audio.underruns = 2;
+    setText(&base.notes.presets[0].buf, &base.notes.presets[0].len, "laser on");
+    setText(&base.notes.presets[3].buf, &base.notes.presets[3].len, "µ-stim");
+    base.notes.num_drafts = 2;
+    base.notes.recent[0] = .{ .seconds = 3725 };
+    setText(&base.notes.recent[0].buf, &base.notes.recent[0].len, "cell 3, 2100 µm");
+    base.notes.recent[1] = .{ .seconds = 61 };
+    setText(&base.notes.recent[1].buf, &base.notes.recent[1].len, "moved");
+    base.notes.num_recent = 2;
+    base.view_unsaved = true;
+    base.set.items[0] = layoutPanel("Port A", .electrode, 6);
+    base.set.len = 1;
+    out[0] = base;
+
+    // Recording, with the disk behind, gaps, a note, a path, the DSP on, a restart that
+    // has to wait, a ring overflow; audio measuring the noise; a note being typed.
+    var s = base;
+    s.rec = .{ .state = .recording, .seconds = 3661, .samples = 109_830_000, .bytes = 13_200_000_000, .behind_s = 2.5, .gaps = 1 };
+    s.rec.setNote("started at {s}", .{"12:00"});
+    setText(&s.rec.path_buf, &s.rec.path_len, "/data/2026-11-12_12-00-00");
+    s.ring_overflow = 7;
+    s.board.settings.dsp_enabled = true;
+    s.board.pending.sample_rate = 20000;
+    s.board.unsaved = true;
+    s.audio.sigma_uv = 0;
+    s.notes.editing = true;
+    out[1] = s;
+
+    // Review active, from the recording's file, loading; audio off, muted, plain; the
+    // last recording failed; no notes.
+    s = base;
+    s.review = .{ .active = true, .behind_s = 12.5, .at_s = 75, .from_file = true, .loading = true };
+    s.audio.settings.reference = true;
+    s.audio.settings.enabled = false;
+    s.audio.settings.mute = true;
+    s.rec.state = .failed;
+    s.rec.setNote("cannot create {s}", .{"/data"});
+    s.notes = .{};
+    out[2] = s;
+
+    // The quit prompt.
+    s = base;
+    s.quit_prompt.active = true;
+    for (0..3) |k| {
+        const line = std.fmt.bufPrint(&s.quit_prompt.lines[k], "setting {d} changed", .{k}) catch unreachable;
+        s.quit_prompt.lens[k] = line.len;
+    }
+    s.quit_prompt.count = 3;
+    setText(&s.quit_prompt.path_buf, &s.quit_prompt.path_len, "/home/user/.config/oez/oez.toml");
+    out[3] = s;
+
+    // A restart pending (half-channel mode), not recording; a board note; review of the
+    // last seconds; no audio device.
+    s = base;
+    s.board.pending.rhd2132_16ch[0] = true;
+    s.board.setNote("cannot set {s}", .{"10 kHz"});
+    s.review = .{ .active = true, .behind_s = 1.5, .at_s = 30 };
+    s.audio.running = false;
+    out[4] = s;
+
+    // Two electrode panels: one triggered on a slope with a fixed level, filtered, some
+    // rows raw and hidden; one with the reference on and a band with its low side off.
+    s = base;
+    s.status.warning_len = 0;
+    var a = layoutPanel("Port A", .electrode, 32);
+    a.mode = .triggered;
+    a.trig_source = .channel;
+    a.trig_row = 4;
+    a.trig_auto = false;
+    a.trig_level_uv = -62;
+    a.trig_holdoff_ms = 2;
+    a.pre_ms = 1;
+    a.post_ms = 2;
+    a.filtered = true;
+    a.raw_rows.set(3, true);
+    a.hidden.set(7, true);
+    s.set.items[0] = a;
+    var b = layoutPanel("Port B", .electrode, 16);
+    b.setCar(true);
+    b.car_ref.set(2, false);
+    b.filtered = true;
+    b.band_low_hz = 0;
+    b.scale = 1500;
+    b.span_s = 0.5;
+    b.mode = .sweep;
+    s.set.items[1] = b;
+    s.set.len = 2;
+    s.audio.listen_len = 0;
+    out[5] = s;
+
+    // An alarm (the warning is not shown with it).
+    s = base;
+    setText(&s.status.alarm_buf, &s.status.alarm_len, "RECORDING STOPPED: disk full");
+    out[6] = s;
+
+    // Other panels: a slope trigger whose level follows the noise, rising; AUX, ADC and a
+    // TTL panel triggered on TTL; the status not yet valid; the recording finishing.
+    s = base;
+    s.status = .{};
+    s.rec.state = .stopping;
+    var t = layoutPanel("TTL", .ttl, 8);
+    t.mode = .triggered;
+    var e = layoutPanel("Port C", .electrode, 4);
+    e.mode = .triggered;
+    e.trig_source = .channel;
+    e.trig_rising = true;
+    e.trig_level_now_uv = -48.4;
+    s.set.items[0] = e;
+    s.set.items[1] = layoutPanel("AUX", .aux, 3);
+    s.set.items[2] = layoutPanel("ADC", .adc, 8);
+    s.set.items[2].scale = 0.25;
+    s.set.items[3] = t;
+    s.set.len = 4;
+    s.audio.listen_len = 0;
+    s.board.settings.dsp_enabled = true;
+    out[7] = s;
+    return names;
+}
+
+test "the control window's layout is unchanged" {
+    const gpa = testing.allocator;
+    const vertices = try gpa.alloc(font.Vertex, 6 * 8192);
+    defer gpa.free(vertices);
+    const rig = try gpa.create(LayoutRig);
+    defer gpa.destroy(rig);
+    rig.* = .{ .face = layoutFont(), .vertices = vertices };
+    rig.cfg = .{ .gpa = gpa, .shared = &rig.shared, .display_gpu = undefined };
+    const snaps = try gpa.alloc(Snapshot, 8);
+    defer gpa.free(snaps);
+    const names = layoutSnapshots(snaps);
+
+    var out: std.Io.Writer.Allocating = .init(gpa);
+    defer out.deinit();
+    for (names, snaps) |name, *snap| try writeLayout(&out.writer, rig, name, snap);
+    const got = out.written();
+    if (std.c.getenv("OEZ_CONTROL_LAYOUT_OUT")) |path| {
+        const file = try std.Io.Dir.cwd().createFile(testing.io, std.mem.span(path), .{});
+        defer file.close(testing.io);
+        try file.writeStreamingAll(testing.io, got);
+    }
+    try testing.expectEqualStrings(@embedFile("testdata/control_layout.txt"), got);
+}
