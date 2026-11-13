@@ -35,6 +35,17 @@ threshold as a red line, and listened to), the ADC inputs below.*
 | ![The spike tiles](docs/images/tiles.png) | ![The control window](docs/images/control.png) |
 | *Spike tiles for port A: the last waveforms of each electrode, its threshold, noise and rate; A1-4 in focus (amber) and listened to (♪).* | *The control window: one summary line per section, Notes and Port A open.* |
 
+**Triggered on spikes.** A panel can draw sweeps around each crossing of one channel's
+threshold instead of scrolling. Here port A is triggered on row 4 at a fixed −85 µV
+(the dashed red line, which can be dragged), 3.5 ms before to 7 ms after, the last 20
+sweeps overlaid: the unit on row 4, and what the other electrodes see at the same moment
+(row 6). Beside it, the tiles at the same moment: thresholds that were set by hand show
+their value in red (A1-4 at −85 µV), the others follow the noise.
+
+| | |
+|---|---|
+| ![Port A triggered on spikes on row 4](docs/images/triggered.png) | ![The spike tiles with some thresholds fixed](docs/images/tiles-fixed.png) |
+
 ## Status
 
 Used on one rig (RHD2132 and RHD2216 headstages, 30 kHz). What has been checked and how
