@@ -23,16 +23,18 @@ Okay. I read all of it. The core is in good shape: `ring.zig`, `record.zig`, `fe
 with tests that read like a description of the feature. That is the hard part and it is
 done. The GUI grew by accretion and it shows in one place above all others.
 
-## Status (2026-11-12)
+## Status (2026-11-13)
 
-Done since this was written, each with its evidence in the commit: 1 (main() is 481
-lines; the restart block is still inline), 2 (the direct loop is deleted), 3, 4, 5, 6, 7,
-9, 10, 11, 12 (nine lines left long, each one string literal), 13, 16, 17 (header and
-usage; the README pass is not done), 20, 21 (except merging the threshold state machines
-of spikes.zig and slope.zig, and review.zig's `fill`, tried and left as it reads better
-in two branches). Not done: 8 (`Display.frame`), 14 (one test-input format), 15 (names),
-18 (environment variables read once), 19 (`Key` as a union). Line numbers below are from
-when it was written.
+Done since this was written, each with its evidence in the commit: 1 (main() is 461
+lines; start-up and restart share `pipeline.zig`), 2 (the direct loop is deleted), 3, 4,
+5, 6, 7, 8, 9, 10, 11, 12 (nine lines left long, each one string literal), 13, 15 (the
+`*Status` values are made beside their state, `Status` is the display's, the words row,
+column and slot are defined at the top of `feed.zig`; short local names in the remaining
+long functions were not gone through one by one), 16, 17 (header and usage; the README
+pass is not done), 18, 19, 20, 21 (except merging the threshold state machines of
+spikes.zig and slope.zig, and review.zig's `fill`, tried and left as it reads better in
+two branches). Not done, by the owner's choice: 14 (one test-input format). Line numbers
+below are from when it was written.
 
 ## 1. The big one: `main()` is 1,005 lines
 

@@ -39,6 +39,11 @@ seen, so it can be told apart from a guess. Remove an entry when it is fixed or 
 - **There is no cap on a recording session's RAM for review** beyond the ring; long
   sessions were not measured.
 
+- **A slope trigger on a hidden row draws no level line**, and **more sweeps than the
+  display can draw at once** are not covered by the stored display test.
+- **`Display.frame` never reads `Display.acknowledged`**: acknowledging works because the
+  alarm is taken out of `Status` (session.zig). Correct today, easy to break.
+
 ## Seen, not explained
 
 - **The latency read-out shows about 8 ms while in review** (2.2 ms live), on the board.
