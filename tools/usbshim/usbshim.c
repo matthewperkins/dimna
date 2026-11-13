@@ -1,17 +1,17 @@
 // LD_PRELOAD shim that logs the usbdevfs ioctls a program makes (what a user-space USB library
-// puts on the wire) to the file named by $OEZ_USBLOG. Used to learn the FT600 protocol from
+// puts on the wire) to the file named by $DIMNA_USBLOG. Used to learn the FT600 protocol from
 // FTDI's D3XX library; see ../../src/ft600.zig. It does not see programs that make raw
-// syscalls (oEZ's own transport does; use OEZ_USB_TRACE=1 for that).
+// syscalls (dimna's own transport does; use DIMNA_USB_TRACE=1 for that).
 //
 // What this is: an observer only. It wraps ioctl() and writes down the USB requests that
 // FTDI's closed-source D3XX library makes, then passes each call through unchanged. It was
-// run once, on the owner's own board, to learn the wire protocol so that oEZ could talk to
+// run once, on the owner's own board, to learn the wire protocol so that dimna could talk to
 // the FT600 without D3XX (for interoperability). It contains no FTDI code. What was learned
 // from it is unofficial: FTDI does not document or guarantee this protocol, and
 // src/ft600.zig sends only the requests that D3XX was seen to send.
 //
 //   gcc -shared -fPIC -O1 -o usbshim.so usbshim.c -ldl -lpthread
-//   OEZ_USBLOG=/tmp/usb.log LD_PRELOAD=./usbshim.so program ...
+//   DIMNA_USBLOG=/tmp/usb.log LD_PRELOAD=./usbshim.so program ...
 #define _GNU_SOURCE
 #include <dlfcn.h>
 #include <pthread.h>
@@ -38,7 +38,7 @@ static void init(void)
 {
     if (real_ioctl) return;
     real_ioctl = dlsym(RTLD_NEXT, "ioctl");
-    const char *p = getenv("OEZ_USBLOG");
+    const char *p = getenv("DIMNA_USBLOG");
     lg = p ? fopen(p, "w") : NULL;
     t0 = now();
 }

@@ -2,16 +2,16 @@
 # End-to-end check that display features never change what is recorded.
 #
 #   *** THIS OPENS WINDOWS (the display, the control window and the tile window) for about
-#   *** half a minute. DO NOT RUN IT DURING AN EXPERIMENT, or while another oez is open:
+#   *** half a minute. DO NOT RUN IT DURING AN EXPERIMENT, or while another dimna is open:
 #   *** its windows can land over yours and take clicks. It uses the simulator only
 #   *** (--sim), never the board, and plays no sound (--no-audio).
 #
-# It runs the GUI on the simulator twice, 12 s each, under OEZ_APP_ID=oez-test:
+# It runs the GUI on the simulator twice, 12 s each, under DIMNA_APP_ID=dimna-test:
 #   plain  two panels, nothing else (no tiles window);
 #   full   every display feature on: a band, raw_rows, hide, car_ref/car_subtract, a
 #          triggered panel with a slope trigger (trigger_channel), a TTL panel, a tint,
 #          and the spike tiles.
-# Each run clicks Record in the control window 2 s after start (OEZ_CONTROL_CLICKS) and
+# Each run clicks Record in the control window 2 s after start (DIMNA_CONTROL_CLICKS) and
 # records into its own scratch folder. Then the two recordings are compared over the
 # sample numbers they share: every sample of every channel, and the TTL edges.
 #
@@ -19,14 +19,14 @@
 # fixed seeds (src/sim.zig), one acquisition start, and nothing in either run changes a
 # board setting (a restart would carry the generator on and break the comparison).
 #
-#   tools/display-independence-test.sh          (from anywhere; needs zig-out/bin/oez)
+#   tools/display-independence-test.sh          (from anywhere; needs zig-out/bin/dimna)
 #   KEEP=1 tools/display-independence-test.sh   keeps the scratch folder afterwards
 #
 # Exit status 0 if the recordings agree, 1 if not, 2 if the test could not be run.
 set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BIN="$ROOT/zig-out/bin/oez"
+BIN="$ROOT/zig-out/bin/dimna"
 TOOLS="$ROOT/tools"
 SECONDS_RUN=12
 
@@ -38,22 +38,23 @@ if [ -z "${WAYLAND_DISPLAY:-}" ]; then
     echo "no Wayland session: this needs the desktop (it opens windows)"
     exit 2
 fi
-if pgrep -x oez > /dev/null || pgrep -x oez-headless > /dev/null; then
-    echo "oez is running: not starting test windows beside it (it may be recording)."
+# Both names of both programs: oers (now kalila) and oez (now dimna).
+if pgrep -x 'oers|kalila|oez|oez-headless|dimna|dimna-headless' > /dev/null; then
+    echo "oers, kalila, oez or dimna is running: not starting test windows beside it (it may be recording)."
     exit 2
 fi
 
-S="$(mktemp -d "/tmp/oez-display-independence-$$-XXXX")"
+S="$(mktemp -d "/tmp/dimna-display-independence-$$-XXXX")"
 cleanup() {
     if [ "${KEEP:-0}" = 1 ]; then echo "scratch kept: $S"; else rm -rf "$S"; fi
 }
 trap cleanup EXIT
 
-mkdir -p "$S/plain/cfg/oez" "$S/full/cfg/oez" "$S/plain/rec" "$S/full/rec" "$S/plain/state" "$S/full/state"
+mkdir -p "$S/plain/cfg/dimna" "$S/full/cfg/dimna" "$S/plain/rec" "$S/full/rec" "$S/plain/state" "$S/full/state"
 
 # --sim 32,16: the simulator puts its headstages in slots A1, A2, ...: A1 has 32 channels
 # (0..31), A2 16 (32..47).
-cat > "$S/plain/cfg/oez/config.toml" <<EOF
+cat > "$S/plain/cfg/dimna/config.toml" <<EOF
 record_dir = "$S/plain/rec"
 tiles = false
 
@@ -66,7 +67,7 @@ source = "A2"
 rect = [0.5, 0.0, 0.5, 1.0]
 EOF
 
-cat > "$S/full/cfg/oez/config.toml" <<EOF
+cat > "$S/full/cfg/dimna/config.toml" <<EOF
 record_dir = "$S/full/rec"
 
 [ttl]
@@ -103,15 +104,15 @@ EOF
 run() {
     local name="$1"
     echo "run '$name': $SECONDS_RUN s, windows open..."
-    OEZ_APP_ID=oez-test \
+    DIMNA_APP_ID=dimna-test \
     XDG_CONFIG_HOME="$S/$name/cfg" \
     XDG_STATE_HOME="$S/$name/state" \
-    OEZ_CONTROL_CLICKS="2:45,94" \
-        "$BIN" --sim 32,16 --no-audio --seconds "$SECONDS_RUN" > "$S/$name/oez.log" 2>&1
+    DIMNA_CONTROL_CLICKS="2:45,94" \
+        "$BIN" --sim 32,16 --no-audio --seconds "$SECONDS_RUN" > "$S/$name/dimna.log" 2>&1
     local rc=$?
     if [ $rc -ne 0 ]; then
-        echo "run '$name' exited with $rc; log: $S/$name/oez.log"
-        tail -5 "$S/$name/oez.log"
+        echo "run '$name' exited with $rc; log: $S/$name/dimna.log"
+        tail -5 "$S/$name/dimna.log"
         return 1
     fi
 }
@@ -127,8 +128,8 @@ find_rec() {
     done
     return 1
 }
-A="$(find_rec "$S/plain/rec")" || { echo "run 'plain' made no recording (did the Record click at 45,94 miss? see $S/plain/oez.log)"; KEEP=1; exit 2; }
-B="$(find_rec "$S/full/rec")" || { echo "run 'full' made no recording (did the Record click at 45,94 miss? see $S/full/oez.log)"; KEEP=1; exit 2; }
+A="$(find_rec "$S/plain/rec")" || { echo "run 'plain' made no recording (did the Record click at 45,94 miss? see $S/plain/dimna.log)"; KEEP=1; exit 2; }
+B="$(find_rec "$S/full/rec")" || { echo "run 'full' made no recording (did the Record click at 45,94 miss? see $S/full/dimna.log)"; KEEP=1; exit 2; }
 echo "plain: $A"
 echo "full:  $B"
 
@@ -136,7 +137,7 @@ python3 -I - "$TOOLS" "$A" "$B" <<'EOF'
 import sys
 sys.path.insert(0, sys.argv[1])
 import numpy as np
-from oez_read import Recording
+from dimna_read import Recording
 
 a, b = Recording(sys.argv[2]), Recording(sys.argv[3])
 bad = []
