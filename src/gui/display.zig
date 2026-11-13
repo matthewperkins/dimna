@@ -113,9 +113,13 @@ pub const ReviewView = struct {
     end: i64,
     /// Drawn from the review history (the recording's file) instead of the live one.
     from_file: bool,
-    /// The stretch needed is there to draw.
+    /// The stretch needed is there to draw (for the panels drawn from samples).
     ready: bool,
     behind_s: f64,
+    /// Panels (bit i: panel i) whose stretch is so long that it is drawn from the
+    /// overview's pixel columns (`Gpu.rev_cols`), and those of them that are there to draw.
+    columns: u32 = 0,
+    columns_ready: u32 = 0,
 };
 
 /// What triggers a panel's sweeps: "TTL2", or "row 5 falling -62 µV" (the trigger channel's
@@ -986,7 +990,7 @@ pub const Display = struct {
     fn drawPanel(self: *const Display, o: *Output, scene: *const Scene, p: *const Panel, i: usize) void {
         const fs = scene.layout.sample_rate;
         const r = p.pixelRect(scene.surface.width, scene.surface.height);
-        const t = panelTime(p, scene.newest, scene.review, fs);
+        const t = panelTime(p, i, scene.newest, scene.review, fs);
         const params = traceParams(p, i, r, t, scene.surface);
         setRowGains(scene.surface.row_gains, p, i);
         const rect: gpu_mod.PixelRect = .{ .x = r.x, .y = r.y, .w = r.w, .h = r.h };
@@ -1212,6 +1216,8 @@ const PanelTime = struct {
     in_review: bool,
     /// In review from the recording's file: drawn from the review history.
     from_file: bool,
+    /// And the stretch is long: drawn from the overview's pixel columns.
+    from_columns: bool = false,
     /// In review, and the stretch is not there to draw yet.
     waiting: bool,
     /// Sweep mode, live: the cursor runs across the panel.
@@ -1230,7 +1236,7 @@ const PanelTime = struct {
 
 /// What time panel `p` shows: live or the review stretch, the sweep's pass and phase, the
 /// window around a trigger.
-fn panelTime(p: *const Panel, newest: i64, review: ?ReviewView, fs: f64) PanelTime {
+fn panelTime(p: *const Panel, i: usize, newest: i64, review: ?ReviewView, fs: f64) PanelTime {
     // Sweep: a whole number of samples per pass, so the picture stands still.
     const span: f64 = if (p.mode == .sweep) @max(1, @round(p.span_s * fs)) else p.span_s * fs;
     // In review a panel shows a fixed stretch that ends at the review position
@@ -1245,12 +1251,15 @@ fn panelTime(p: *const Panel, newest: i64, review: ?ReviewView, fs: f64) PanelTi
         const post: i64 = @max(1, @as(i64, @intFromFloat(@round(p.trigger.post_ms * 1e-3 * fs))));
         trig = .{ .pre = pre, .post = post, .window = @floatFromInt(pre + post) };
     }
+    const bit = @as(u32, 1) << @intCast(i);
+    const from_columns = in_review and review.?.from_file and review.?.columns & bit != 0;
     return .{
         .span = span,
         .t_end = t_end,
         .in_review = in_review,
         .from_file = in_review and review.?.from_file,
-        .waiting = in_review and !review.?.ready,
+        .from_columns = from_columns,
+        .waiting = in_review and if (from_columns) review.?.columns_ready & bit == 0 else !review.?.ready,
         .sweeping = sweeping,
         .phase = phase,
         .trig = trig,
@@ -1265,8 +1274,9 @@ fn traceParams(p: *const Panel, i: usize, r: panels_mod.Rect, t: PanelTime, surf
     return .{
         .nch = @intCast(surface.nch),
         .cap_mask = @intCast(cap - 1),
-        .dec_mask = if (t.from_file or surface.dec_cap == 0) 0 else @intCast(surface.dec_cap - 1),
-        .newest = @truncate(@as(u64, @bitCast(t.t_end))),
+        .dec_mask = if (t.from_columns) gpu_mod.from_columns else if (t.from_file or surface.dec_cap == 0) 0 else @intCast(surface.dec_cap - 1),
+        // Its pixel columns start at the panel's region; else the sample at the right edge.
+        .newest = if (t.from_columns) @intCast(i * gpu_mod.column_region) else @truncate(@as(u64, @bitCast(t.t_end))),
         .first_ch = p.drawColumn(),
         .cols = r.w,
         .rows = p.shownRows(),
@@ -2342,7 +2352,7 @@ fn shaderPixelY(p: *const Panel, r: panels_mod.Rect, row: usize, value: f64) f32
     var gains: [gpu_mod.max_rows]f32 = @splat(1);
     setRowGains(&gains, p, 0);
     const surface: Surface = .{ .width = 1000, .height = 700, .nch = frame_nch, .hist_cap = 1 << 20, .dec_cap = 1 << 17, .row_gains = &gains };
-    const params = traceParams(p, 0, r, panelTime(p, frame_newest, null, frame_fs), surface);
+    const params = traceParams(p, 0, r, panelTime(p, 0, frame_newest, null, frame_fs), surface);
     const k: f32 = @floatFromInt(p.shownIndex(row).?);
     const lsb: f32 = @floatCast(value / p.unitsPerLsb());
     const row_h = 2.0 / @as(f32, @floatFromInt(params.rows));

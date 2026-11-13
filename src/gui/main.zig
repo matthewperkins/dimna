@@ -63,6 +63,9 @@ pub const std_options: std.Options = .{ .log_level = .info };
 const Input = @import("window.zig").Input;
 const panels_mod = dimna.panels;
 const Panel = panels_mod.Panel;
+/// RAM for the overview of a recording: about 2.3 hours at 72 history columns in full
+/// detail; beyond that the finest levels' oldest parts are let go.
+const overview_budget = 1_500_000_000;
 
 const nowNs = dimna.clock.nowNs;
 
@@ -236,6 +239,13 @@ pub fn main(init: std.process.Init) !u8 {
     defer view_file.deinit(gpa);
     var review: session.ReviewSession = .{};
     defer review.deinit();
+    // The min/max pyramids of the recording in progress (overview.zig): what review draws
+    // long stretches from. Filled from the rows the display makes, and from the file.
+    var overview = try dimna.overview.Overview.init(gpa, io, layout, overview_budget);
+    defer overview.deinit();
+    var overview_turn_ns: i128 = 0;
+    var overview_first: i64 = 0;
+    var overview_end: i64 = 0;
     var tiles_published_ns: i128 = 0;
 
     // Board settings as the control window changes them, and the question on quitting.
@@ -248,6 +258,7 @@ pub fn main(init: std.process.Init) !u8 {
     // Diagnostics only: time the GPU per frame (it delays presenting, see gpu.zig).
     gpu.wait_render = pacer.debug;
     var script_pos: usize = 0;
+    var test_record_at = env.record_at;
     const t_start = nowNs();
     var next_report: i128 = t_start + std.time.ns_per_s;
     var title_buf: [160]u8 = undefined;
@@ -260,7 +271,9 @@ pub fn main(init: std.process.Init) !u8 {
         // New samples into the GPU's history.
         while (reader.next(blk)) {
             if (blk.len == 0) continue;
-            gpu.writeSamples(blk.first_sample, try feed.rows(blk.first_sample, blk.samples(), blk.ttl[0..blk.len]));
+            const rows = try feed.rows(blk.first_sample, blk.samples(), blk.ttl[0..blk.len]);
+            gpu.writeSamples(blk.first_sample, rows);
+            overview.add(blk.first_sample, rows, blk.ttl[0..blk.len]);
             display.feedBlock(blk.first_sample, blk.samples(), pl.nch, pl.fs, blk.ttl[0..blk.len]);
             newest = blk.first_sample + @as(i64, @intCast(blk.len));
             newest_acquired_ns = blk.acquired_ns;
@@ -289,6 +302,13 @@ pub fn main(init: std.process.Init) !u8 {
         var quit = display.applyInput(input);
         win.setCursor(display.cursor);
         var quit_answer: ?control.QuitAnswer = null;
+        // A test run's recording (DIMNA_TEST_RECORD_AT), as if Record had been clicked.
+        if (test_record_at) |at| {
+            if (!args.control and @as(f64, @floatFromInt(nowNs() - t_start)) / 1e9 >= at) {
+                test_record_at = null;
+                shared.push(.{ .record = true });
+            }
+        }
         // What was clicked in the control window.
         while (shared.pop()) |e| {
             snap_dirty = true;
@@ -328,6 +348,28 @@ pub fn main(init: std.process.Init) !u8 {
                 .quit => quit = true,
             }
         }
+        // The overview follows the recording: begun with it, kept while its review is open.
+        if (nowNs() - overview_turn_ns > 20 * std.time.ns_per_ms) {
+            overview_turn_ns = nowNs();
+            if (recording.recorder) |r| {
+                const first = r.first_sample_shared.load(.acquire);
+                if (first != std.math.minInt(i64)) {
+                    if (!overview.active() or overview_first != first) {
+                        overview_first = first;
+                        overview.begin(r.path, first, &display.set, feed.width) catch |err| log.warn("no overview of this recording ({t}): review is limited to short stretches", .{err});
+                    }
+                    overview_end = first + @as(i64, @intCast(r.stats.samples.load(.monotonic)));
+                }
+            } else if (overview.active() and !(review.active and review.from_file)) overview.end();
+            if (overview.active()) overview.turn(&display.set, feed.width, overview_end, review.wanted(&display.set, pl.fs), (recording.behind(pl.bs, pl.fs) orelse 0) > 0.5);
+            // In review of the recording the time base may be as long as the recording
+            // (two hours at most); back in the live view it returns to what it was.
+            const limit: f64 = if (review.active and review.from_file and overview.active())
+                @min(Panel.review_span_max, @as(f64, @floatFromInt(overview_end - overview_first)) / pl.fs)
+            else
+                Panel.span_max;
+            for (display.set.slice()) |*p| p.setSpanLimit(limit);
+        }
         if (review.step(.{
             .gpa = gpa,
             .gpu = &gpu,
@@ -336,6 +378,9 @@ pub fn main(init: std.process.Init) !u8 {
             .target = display.target,
             .newest = newest,
             .rec = recording.recorder,
+            .overview = &overview,
+            .width = gpu.extent.width,
+            .height = gpu.extent.height,
         })) snap_dirty = true;
         // Notes saved this turn go into the recording, if there is one.
         for (notes.fresh[0..notes.num_fresh]) |*note| {
@@ -418,11 +463,15 @@ pub fn main(init: std.process.Init) !u8 {
             } else {
                 // Review looks into a history that is about to be replaced.
                 review.drop();
+                overview.end();
                 // The tile window starts again: with the view it had.
                 tiles_shared.initial_view = tile_view;
                 if (try pl.restart(board_ctl.pending)) |refused| {
                     board_ctl.status.setNote("the board refused the new settings: {t}", .{refused});
                 }
+                // The overview is for the new shape of the data.
+                overview.deinit();
+                overview = try dimna.overview.Overview.init(gpa, io, layout, overview_budget);
                 board_ctl.pending = acq.requested;
                 newest = 0;
                 newest_acquired_ns = 0;

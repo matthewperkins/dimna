@@ -13,6 +13,8 @@
 //!   DIMNA_TILE_CLICKS       scripted input in the tile window, "SECONDS:X,Y[,ACTION];..." (tiles.zig): clicks, wheel, keys, drags.
 //!   DIMNA_TEST_RING_SECONDS the acquisition ring's length in seconds instead of 30, for
 //!                           testing what happens when it fills.
+//!   DIMNA_TEST_RECORD_AT    start a recording this many seconds after launch, for test runs
+//!                           without a control window (use with --no-control).
 //!   DIMNA_TEST_RECORD_FAIL_AFTER   make the recorder fail after this many samples.
 //!   DIMNA_TEST_RECORD_STALL        "SAMPLES,MS": make it stall once, for testing the alarms.
 //!   HOME, XDG_STATE_HOME    where "~/" in record_dir points, and where notes.log goes
@@ -36,6 +38,7 @@ pub const Env = struct {
     control_clicks: []const u8 = "",
     tile_clicks: []const u8 = "",
     ring_seconds: f64 = 30,
+    record_at: ?f64 = null,
     record_test: RecordTest = .{},
     home: []const u8 = ".",
     /// "" when not set.
@@ -58,6 +61,7 @@ pub const Env = struct {
         if (get("DIMNA_CONTROL_CLICKS")) |v| e.control_clicks = v;
         if (get("DIMNA_TILE_CLICKS")) |v| e.tile_clicks = v;
         if (get("DIMNA_TEST_RING_SECONDS")) |v| e.ring_seconds = std.fmt.parseFloat(f64, v) catch 30.0;
+        if (get("DIMNA_TEST_RECORD_AT")) |v| e.record_at = std.fmt.parseFloat(f64, v) catch null;
         if (get("DIMNA_TEST_RECORD_FAIL_AFTER")) |v| e.record_test.fail_after = std.fmt.parseInt(u64, v, 10) catch null;
         if (get("DIMNA_TEST_RECORD_STALL")) |v| {
             var it = std.mem.tokenizeScalar(u8, v, ',');

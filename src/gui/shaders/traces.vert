@@ -29,7 +29,8 @@ layout(push_constant) uniform Params {
                        // triggered sweep still filling); those columns are not drawn
     float gain;        // brightness (older overlaid sweeps are dimmer)
     uint gain_base;    // where the panel's row factors start in `gains`
-    uint dec_mask;     // buckets in `dec` - 1; 0: draw from samples whatever the time base
+    uint dec_mask;     // buckets in `dec` - 1; 0: draw from samples whatever the time base;
+                       // all ones: `dec` holds one word per pixel column, from `newest` on
 } p;
 
 // Pixel columns that hold this many samples or more are drawn from buckets: 4 to some
@@ -78,7 +79,14 @@ void main() {
     float fb = fa + per_col;
     float mn;
     float mx;
-    if (p.dec_mask != 0u && per_col >= bucket_cols) {
+    if (p.dec_mask == 0xFFFFFFFFu) {
+        // Review of a long stretch: the minimum and maximum of every pixel column were
+        // worked out on the CPU (from the overview) and are in `dec`, from column
+        // `newest` on.
+        uint v = dec.w[(p.newest + col) * p.nch + ch];
+        mn = float(s16(v & 0xFFFFu));
+        mx = float(s16(v >> 16));
+    } else if (p.dec_mask != 0u && per_col >= bucket_cols) {
         // Every bucket that holds one of the column's samples; the neighbouring columns
         // share its end buckets, so the trace stays connected. Sample numbers and bucket
         // numbers are taken modulo 2^32 and 2^28.

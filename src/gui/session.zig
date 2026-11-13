@@ -39,6 +39,19 @@ pub const ReviewSession = struct {
     /// For each of `cmds` that is `.scroll`: by how many samples (negative: back).
     scroll_by: [16]i64 = undefined,
     num_cmds: usize = 0,
+    /// Panels drawn from the overview's pixel columns, and those of them that are there
+    /// (bit i: panel i). See `ReviewView`.
+    columns: u32 = 0,
+    columns_ready: u32 = 0,
+    /// What each panel's pixel columns were last made for, and when: made again when the
+    /// stretch changes, and a few times a second anyway (the overview fills in).
+    made: [panels_mod.max_panels]Made = @splat(.{}),
+    pairs: []dimna.pyramid.Pair = &.{},
+    pairs_gpa: ?std.mem.Allocator = null,
+
+    const Made = struct { lo: i64 = 0, hi: i64 = 0, cols: u32 = 0, at_ns: i128 = 0, ok: bool = false };
+    /// A pixel column of this many samples or more is drawn from the overview.
+    const overview_samples_per_column = dimna.pyramid.bucket;
 
     pub const Context = struct {
         gpa: std.mem.Allocator,
@@ -49,11 +62,64 @@ pub const ReviewSession = struct {
         target: usize,
         newest: i64,
         rec: ?*dimna.record.Recorder,
+        /// The min/max pyramids of the recording, for stretches too long to read.
+        overview: ?*const dimna.overview.Overview = null,
+        /// The display's size in pixels (a panel's width decides how it is drawn).
+        width: u32 = 0,
+        height: u32 = 0,
     };
 
     pub fn deinit(self: *ReviewSession) void {
         if (self.reader) |*r| r.deinit();
         self.reader = null;
+        if (self.pairs_gpa) |gpa| gpa.free(self.pairs);
+        self.pairs = &.{};
+        self.pairs_gpa = null;
+        self.made = @splat(.{});
+    }
+
+    /// Makes panel `i`'s pixel columns for the stretch of `span` samples that ends at
+    /// `end`, from the overview, into the GPU's review columns. False if the overview
+    /// cannot give them (not filled in yet, or that detail has been let go).
+    fn makeColumns(self: *ReviewSession, ctx: Context, p: *const panels_mod.Panel, i: usize, cols: u32, span: i64, end: i64) bool {
+        const nch = ctx.gpu.nch;
+        const rows = p.shownRows();
+        if (cols == 0 or cols > gpu_mod.column_region or rows == 0 or rows > gpu_mod.max_rows) return false;
+        if (ctx.gpu.rev_cols.len < (i + 1) * gpu_mod.column_region * nch) return false;
+        // A stretch that begins before the recording does: the columns before it stay flat.
+        const lo_wanted = end - span;
+        const skip: u32 = if (lo_wanted >= self.first) 0 else @intCast(@min(
+            @as(i64, cols),
+            @divFloor((self.first - lo_wanted) * @as(i64, cols) + span - 1, span),
+        ));
+        const lo = lo_wanted + @divFloor(@as(i64, skip) * span, @as(i64, cols));
+        const n = cols - skip;
+        const m = &self.made[i];
+        const now = dimna.clock.nowNs();
+        if (m.lo == lo and m.hi == end and m.cols == cols and now - m.at_ns < 100 * std.time.ns_per_ms) return m.ok;
+        m.* = .{ .lo = lo, .hi = end, .cols = cols, .at_ns = now, .ok = false };
+        if (n == 0) return false;
+        if (self.pairs.len < @as(usize, cols) * rows) {
+            const bigger = ctx.gpa.alloc(dimna.pyramid.Pair, @as(usize, gpu_mod.column_region) * gpu_mod.max_rows) catch return false;
+            if (self.pairs_gpa) |gpa| gpa.free(self.pairs);
+            self.pairs = bigger;
+            self.pairs_gpa = ctx.gpa;
+        }
+        var history_columns: [gpu_mod.max_rows]usize = undefined;
+        for (history_columns[0..rows], 0..) |*h, k| h.* = p.drawColumn() + k;
+        if (history_columns[rows - 1] >= nch) return false;
+        const pairs = self.pairs[0 .. @as(usize, n) * rows];
+        if (!ctx.overview.?.columns(lo, end, n, history_columns[0..rows], pairs)) return false;
+        const region = ctx.gpu.rev_cols[i * gpu_mod.column_region * nch ..];
+        for (0..cols) |c| {
+            const out = region[c * nch ..][0..nch];
+            for (history_columns[0..rows], 0..) |h, k| {
+                const v: dimna.pyramid.Pair = if (c < skip) .{ 0, 0 } else pairs[(c - skip) * rows + k];
+                out[h] = @as(u32, @as(u16, @bitCast(v[0]))) | @as(u32, @as(u16, @bitCast(v[1]))) << 16;
+            }
+        }
+        m.ok = true;
+        return true;
     }
 
     pub fn queue(self: *ReviewSession, cmd: control.ReviewAction) void {
@@ -124,22 +190,45 @@ pub const ReviewSession = struct {
             // The file grows while the recording runs.
             if (ctx.rec) |live_rec| self.file_end = self.first + @as(i64, @intCast(live_rec.stats.samples.load(.monotonic)));
             self.view_end = std.math.clamp(self.view_end, @min(self.first + longest, self.file_end), self.file_end);
+            // Long stretches come from the overview: a pixel column each. The others, and
+            // any the overview cannot give but the review history can hold, from samples.
+            const rev_reach: i64 = @as(i64, @intCast(ctx.gpu.rev_cap)) - 2;
+            var by_columns: u32 = 0;
+            var samples_longest: i64 = 0;
+            for (ctx.set.items[0..ctx.set.len], 0..) |*p, i| {
+                if (p.mode == .triggered) continue;
+                const span: i64 = @intFromFloat(@ceil(p.span_s * fs));
+                const cols = p.pixelRect(ctx.width, ctx.height).w;
+                const long = ctx.overview != null and ctx.overview.?.active() and span >= overview_samples_per_column * @as(i64, cols);
+                if (long and (span + 2 > rev_reach or self.makeColumns(ctx, p, i, cols, span, self.view_end))) {
+                    by_columns |= @as(u32, 1) << @intCast(i);
+                } else samples_longest = @max(samples_longest, span + 2);
+            }
             var ok = true;
             r.follow(ctx.set) catch |err| {
                 log.warn("review stopped: {t}", .{err});
                 ok = false;
             };
             // A bounded amount per turn of the loop: a long jump fills over a few frames.
-            const covered = if (ok) r.fill(self.view_end - longest, self.view_end, self.file_end, 30000) catch |err| blk: {
+            const covered = if (!ok) false else if (samples_longest == 0) true else r.fill(self.view_end - samples_longest, self.view_end, self.file_end, 30000) catch |err| blk: {
                 log.warn("review stopped: {t}", .{err});
                 ok = false;
                 break :blk false;
-            } else false;
+            };
             if (!ok) {
                 self.active = false;
             } else {
                 if (covered) self.shown_end = self.view_end;
-                self.ready = r.holds(self.shown_end - longest, self.shown_end, self.file_end);
+                self.ready = samples_longest == 0 or r.holds(self.shown_end - samples_longest, self.shown_end, self.file_end);
+            }
+            // The columns for where the display is shown to be (the samples may lag).
+            self.columns = by_columns;
+            self.columns_ready = 0;
+            for (ctx.set.items[0..ctx.set.len], 0..) |*p, i| {
+                const bit = @as(u32, 1) << @intCast(i);
+                if (by_columns & bit == 0) continue;
+                const span: i64 = @intFromFloat(@ceil(p.span_s * fs));
+                if (self.makeColumns(ctx, p, i, p.pixelRect(ctx.width, ctx.height).w, span, self.shown_end)) self.columns_ready |= bit;
             }
         } else if (self.active) {
             // The live history: a freeze, for as long as the samples are still there.
@@ -202,6 +291,17 @@ pub const ReviewSession = struct {
         self.from_file = true;
     }
 
+    /// The stretch of the recording that review is showing, if it is (the overview fills
+    /// that in first).
+    pub fn wanted(self: *const ReviewSession, set: *const panels_mod.Set, fs: f64) ?dimna.pyramid.Range {
+        if (!self.active or !self.from_file) return null;
+        var longest: f64 = 0;
+        for (set.items[0..set.len]) |*p| {
+            if (p.mode != .triggered) longest = @max(longest, p.span_s);
+        }
+        return .{ .lo = @max(self.first, self.view_end - @as(i64, @intFromFloat(longest * fs))), .hi = self.view_end };
+    }
+
     /// What the display draws from, or null when live.
     pub fn view(self: *const ReviewSession, newest: i64, fs: f64) ?ReviewView {
         if (!self.active) return null;
@@ -210,6 +310,8 @@ pub const ReviewSession = struct {
             .from_file = self.from_file,
             .ready = self.ready,
             .behind_s = @as(f64, @floatFromInt(newest - self.shown_end)) / fs,
+            .columns = if (self.from_file) self.columns else 0,
+            .columns_ready = self.columns_ready,
         };
     }
 

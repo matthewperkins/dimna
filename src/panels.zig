@@ -149,6 +149,10 @@ pub const Panel = struct {
     rows: u32,
     /// Time across the panel, s.
     span_s: f64,
+    /// The longest `span_s` may be now (`setSpanLimit`), and the time base to go back to
+    /// when that shrinks below it. Not settings: never saved.
+    span_limit: f64 = span_max,
+    live_span_s: f64 = 2.0,
     /// Units per row: µV for electrodes, V for aux and adc.
     scale: f64,
     mode: Mode = .scroll,
@@ -335,6 +339,9 @@ pub const Panel = struct {
     /// two spans old; time bases this long are drawn from the history's buckets
     /// (`decimate.zig`), which reach back twice `span_max` and more.
     pub const span_max = 30.0;
+    /// The longest time base in review of a recording, where long stretches are drawn from
+    /// the overview (`overview.zig`): two hours.
+    pub const review_span_max = 7200.0;
 
     pub fn scaleLimits(self: *const Panel) [2]f64 {
         return switch (self.kind) {
@@ -355,9 +362,18 @@ pub const Panel = struct {
         };
     }
 
+    /// The longest time base there is to show changed (`span_max` live; in review of a
+    /// recording up to its length). A time base longer than the new limit goes back to the
+    /// one the panel had before it went beyond the live limit.
+    pub fn setSpanLimit(self: *Panel, limit: f64) void {
+        if (self.span_s <= span_max) self.live_span_s = self.span_s;
+        self.span_limit = @max(limit, span_max);
+        if (self.span_s > self.span_limit) self.span_s = if (self.span_limit <= span_max) self.live_span_s else self.span_limit;
+    }
+
     pub fn clamp(self: *Panel) void {
         const lim = self.scaleLimits();
-        self.span_s = std.math.clamp(self.span_s, span_min, span_max);
+        self.span_s = std.math.clamp(self.span_s, span_min, self.span_limit);
         self.scale = std.math.clamp(self.scale, lim[0], lim[1]);
         self.trigger.pre_ms = std.math.clamp(self.trigger.pre_ms, 0, 1000);
         self.trigger.post_ms = std.math.clamp(self.trigger.post_ms, 0.2, 2000);

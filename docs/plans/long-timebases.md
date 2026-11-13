@@ -90,3 +90,12 @@ Screenshots of DP-2 looked at: 30 s scroll after 37 s (full width drawn); 30 s s
 65 s (cursor a sixth across, the earlier pass whole); 30 s sweep with panel 1's filter
 switched off at 62 s (both passes redrawn unfiltered; the frame that did it took 0.81 s).
 No blocks lost. Not done: the review buffer's place (needs a recording), 80 channels.
+
+### Review from the overview, first run (2026-11-13)
+
+Board, recording into `~/oez-test/recs` from 3 s (`DIMNA_TEST_RECORD_AT`), review entered
+at 50 s, panel 1's time base lengthened with Alt+wheel: it stopped at 56.95 s, the length
+of the recording then, and was drawn whole from the overview's pixel columns (screenshot
+looked at) while panel 2 beside it stayed at 5 s from samples. Latency 2.4 to 2.6 ms
+throughout, 0 gaps in the recording. The review history is 151.0 MB in host memory (the
+phase 0 question). This was with the stand-in `overview.zig` (live rows only, no backfill).

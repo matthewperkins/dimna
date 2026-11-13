@@ -46,6 +46,11 @@ pub const TraceParams = extern struct {
     dec_mask: u32 = 0,
 };
 
+/// Pixel columns per panel in `Gpu.rev_cols`: no panel is wider.
+pub const column_region = 4096;
+/// `TraceParams.dec_mask` of a panel drawn from `Gpu.rev_cols`.
+pub const from_columns = 0xFFFF_FFFF;
+
 /// Row factors per panel in `Gpu.row_gains` (matches the shader's limit).
 pub const max_rows = 256;
 pub const max_gain_panels = 16;
@@ -146,6 +151,13 @@ pub const Gpu = struct {
     /// Samples the review history holds (the time bases' need; the live sample ring may be
     /// shorter when the card's memory is short).
     rev_cap: usize = 0,
+    /// Review of long stretches: for each panel `column_region` pixel columns of `nch`
+    /// words (a minimum and maximum as in the buckets), which the review session fills
+    /// from the overview. Panel `i`'s pixel column `c`, history column `h`:
+    /// `rev_cols[(i * column_region + c) * nch + h]`. Made with the review history.
+    revc_buf: vk.Buffer = .null,
+    revc_mem: vk.DeviceMemory = .null,
+    rev_cols: []u32 = &.{},
 
     /// With `wait_render`, `draw` waits for the GPU to finish the frame before presenting it,
     /// and records how long that took. For diagnostics only: under a compositor it costs
@@ -852,15 +864,24 @@ pub const Gpu = struct {
         if (self.rev_buf != .null or self.hist_cap == 0) return;
         const bytes: vk.DeviceSize = std.mem.alignForward(u64, self.rev_cap * self.nch * 2, 4);
         const h = try self.createHistoryBuffer(bytes, self.rev_cap * self.nch, .anywhere);
+        errdefer {
+            self.dev.unmapMemory(h.mem);
+            self.dev.destroyBuffer(h.buf, null);
+            self.dev.freeMemory(h.mem, null);
+        }
+        // In place of the buckets, review has the pixel columns of long stretches.
+        const words = max_gain_panels * column_region * self.nch;
+        const c = try self.createHistoryBuffer(words * 4, words * 2, .anywhere);
         self.rev = h.samples;
         self.rev_buf = h.buf;
         self.rev_mem = h.mem;
-        // Review is drawn from samples only (`dec_mask` 0), but the binding must hold
-        // something: the live buckets.
+        self.revc_buf = c.buf;
+        self.revc_mem = c.mem;
+        self.rev_cols = @as([*]u32, @ptrCast(@alignCast(c.samples.ptr)))[0..words];
         self.dev.updateDescriptorSets(&[_]vk.WriteDescriptorSet{
             storageWrite(self.rev_set, 0, &.{ .buffer = h.buf, .offset = 0, .range = vk.WHOLE_SIZE }),
             storageWrite(self.rev_set, 1, &.{ .buffer = self.gain_buf, .offset = 0, .range = vk.WHOLE_SIZE }),
-            storageWrite(self.rev_set, 2, &.{ .buffer = self.dec_buf, .offset = 0, .range = vk.WHOLE_SIZE }),
+            storageWrite(self.rev_set, 2, &.{ .buffer = c.buf, .offset = 0, .range = vk.WHOLE_SIZE }),
         }, null);
         log.info("review history: {d:.1} MB, {s}", .{ @as(f64, @floatFromInt(bytes)) / 1e6, if (h.device_local) "on the card" else "host memory" });
     }
@@ -921,6 +942,11 @@ pub const Gpu = struct {
         self.dev.freeMemory(self.rev_mem, null);
         self.rev_buf = .null;
         self.rev = &.{};
+        self.dev.unmapMemory(self.revc_mem);
+        self.dev.destroyBuffer(self.revc_buf, null);
+        self.dev.freeMemory(self.revc_mem, null);
+        self.revc_buf = .null;
+        self.rev_cols = &.{};
     }
 
     /// Writes `count` samples (interleaved, `nch` each) at absolute sample number `first`,
