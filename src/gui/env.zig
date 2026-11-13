@@ -22,7 +22,8 @@
 //! config file's place (main.zig, from the process's environment map); OEZ_USB_TRACE and
 //! OEZ_USB_PACE in the board driver (src/ft600.zig, src/oni_usb.zig), which the headless
 //! tool uses too; WAYLAND_DISPLAY and the rest that the libraries read themselves.
-//! OEZ_CONTROL_LAYOUT_OUT is read only by a test.
+//! OEZ_CONTROL_LAYOUT_OUT, OEZ_DISPLAY_FRAME_OUT and OEZ_TILES_DRAW_OUT are read only by
+//! tests (each writes that test's present output to the path, for regenerating its stored file).
 
 const std = @import("std");
 
