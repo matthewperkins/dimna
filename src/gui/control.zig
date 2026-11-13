@@ -456,9 +456,7 @@ fn build(ui: *ui_mod.Ui, cfg: *const Config, snap: *const Snapshot, shared: *Sha
     thresholdSection(ui, &snap.thresholds, shared);
     boardSection(ui, &snap.board, snap.rec.state, shared, &view.headstages);
     for (snap.set.items[0..snap.set.len], 0..) |*p, i| panelSection(ui, p, i, snap, shared, view);
-    ui.text("On the display: wheel = scale, Ctrl+wheel = one row, Shift+wheel = time,", theme.text_dim);
-    ui.newline();
-    ui.text("keys  - =  [ ]  m  t  f  , .  ; '  r  q", theme.text_dim);
+    ui.text("Press ? on the display for its keys and mouse actions, and the tile window's.", theme.text_dim);
 }
 
 /// Multiplies the scale or the time base, one stepper click.

@@ -128,8 +128,10 @@ rect = [0.0, 0.75, 1.0, 0.25]
 ```
 
 Without `[[panel]]` tables there is one panel per headstage, side by side. Wheel (Y scale),
-Shift+wheel or pinch (time base) and the keys `- = [ ] r` act on the panel under the pointer,
-marked by a bar along its top; `q` quits.
+Alt+wheel or pinch (time base) and the keys `- = [ ] r` act on the panel under the pointer,
+marked by a bar along its top; `q` quits. **`?` shows every key and mouse action** of the
+display and of the tile window in a panel over the display (Esc or `?` closes it);
+`oez --help` prints the display's.
 Ctrl+wheel scales only the row under the pointer; that row's label then shows its own
 scale in amber. The plain wheel still moves every row, keeping such a row's ratio, and `r`
 clears it. (Per-row scales are not saved in the config.)
@@ -150,7 +152,7 @@ panel under the pointer) shows the signal around each rising edge of a TTL input
 10 ms before to 40 ms after by default, the last 10 sweeps overlaid with the newest
 brightest. The newest sweep is drawn as it fills in. A line marks the trigger and a tint
 marks while the trigger line was high (the laser, for opto-tagging). `1`-`8` pick the
-line; `[` `]`, Shift+wheel and pinch zoom the window; the panel's display filter applies
+line; `[` `]`, Alt+wheel and pinch zoom the window; the panel's display filter applies
 as usual. Edges are found on the display thread from the digital words of each block
 (`src/sweeps.zig`). Sweeps older than the GPU's sample history (about 30 s) are dropped, so
 with slow triggers fewer are overlaid. After a filter corner change, only the recent past
@@ -204,6 +206,15 @@ display owns the thresholds and tells the tile window; "Save view" keeps them, i
 `[thresholds]` table of `views.toml` (`sigmas = 4.5`, `fixed_uv = [...]` per electrode,
 0 = follows the noise).
 
+A threshold is set by hand where it is drawn. On the display: the pointer becomes a hand
+within 4 px of a threshold line (the focused row's, or a triggered panel's dashed one),
+and dragging the line sets that channel's threshold to the µV under the pointer; across
+the row's centre it changes sign. In the tile window: drag a tile's red line the same way,
+or Ctrl+Shift+wheel over a tile for 5 % a click; a tile with a fixed threshold shows its
+value beside sigma. In both windows `n` switches the channel under the pointer between
+following the noise and fixed at its present value. A dragged threshold stops at ±5 µV
+(0 means "follows the noise") and at ±5 mV.
+
 Detection (`src/spikes.zig`) is the slope trigger's, for every electrode at once: 300 Hz
 to 6 kHz, each channel's threshold with sigma from a running median (spikes hardly move
 it), each crossing aligned on the extreme that follows, 1 ms dead time. It takes the
@@ -256,10 +267,11 @@ pointer over the row to listen to), the TTL / spikes buttons in the control wind
 `trigger_channel = 5` in the config. Clicking another row moves the trigger there.
 
 - The channel is band-passed 300 Hz to 6 kHz for the detection, whatever the panel shows.
-- The level and slope are the channel's threshold (above), and a channel a triggered panel
-  triggers on always has a fixed one: when the panel starts triggering on a channel whose
-  threshold follows the noise, it is fixed where it is at that moment (as the tile window
-  reports it, or without one after the trigger's first second of signal). In the control
+- The level and slope are the channel's threshold (above). When a panel starts triggering
+  on a channel whose threshold follows the noise, the threshold is fixed where it is at
+  that moment (as the tile window reports it, or without one after the trigger's first
+  second of signal), once: `n` puts it back to following the noise, and the trigger then
+  follows it too, until triggering is started on a channel anew. In the control
   window the level's − / + scales it by 15 % and falling / rising flips its sign. A dashed
   line shows it on the trigger's row, in that row's scale; it sits on the trace when the
   panel shows a band near 300-6000 Hz. (`level_uv`, `level_auto` and `slope` are no longer
@@ -379,6 +391,14 @@ trigger window, scale, filter and its corners, trigger line and number of overla
 reset; and Quit. The wheel over a stepper steps it. `--no-control` or `control = false`
 leaves it out.
 
+It opens small: the status line, Record, and one summary line each for Notes, Audio,
+Spikes (the threshold's sigmas, with its − / +), Headstages and every panel. A click on a
+heading (▸) opens that section's controls below it, another closes it. Headstages stays
+open by itself while a restart is pending or the settings differ from the config file, so
+Apply and "Save as default" cannot be hidden when they matter. Which sections are open is
+saved by "Save view" (a `[control]` table of `views.toml`), but opening one is not by
+itself a change that quitting asks about.
+
 It runs on its own thread with its own Wayland connection (`src/gui/control.zig`), and
 shares no lock with the display: the display publishes a snapshot of its panels, the
 control window queues edits, and the display applies them between frames as it does key
@@ -404,15 +424,16 @@ properly first.
 recording and the sound carry on, and the live display's own history keeps filling, so
 going back to live is instant.
 
-| key | |
+| | |
 |---|---|
+| Shift+wheel, sideways scroll | back and forth in time, a tenth of the window per click; back from live enters review, forward to the live edge leaves it |
 | Space | freeze where the display is (again: back to live) |
 | Left / Right | back and forth by a tenth of the window |
 | PgUp / PgDn | by a whole window |
 | Home | the start of the recording |
-| End | back to live |
+| `l`, End | back to live |
 
-The control window's Review row has the same as buttons. While in review an amber badge
+While in review an amber badge
 across the top says so, how far behind live the view is, and where in the run it is;
 each panel's title says "review" too. Triggered panels stay live.
 

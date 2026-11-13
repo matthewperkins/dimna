@@ -1,4 +1,4 @@
-== not recording, all open: 1001 quads, ends at x 332 y 738
+== not recording, all open: 967 quads, ends at x 636 y 710
 text 12 14 { 225, 230, 240, 255 } "oEZ"
 text 44 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
 text 12 42 { 255, 190, 90, 255 } "disk nearly full"
@@ -149,9 +149,8 @@ text 85 678 { 225, 230, 240, 255 } "off"
 rect 124 674 34 24 { 38, 43, 54, 255 } -> panel 0 .{ .car = true }
 text 133 678 { 225, 230, 240, 255 } "on"
 rect 12 704 776 1 { 48, 52, 62, 255 }
-text 12 714 { 150, 160, 178, 255 } "On the display: wheel = scale, Ctrl+wheel = one row, Shift+wheel = time,"
-text 12 742 { 150, 160, 178, 255 } "keys  - =  [ ]  m  t  f  , .  ; '  r  q"
-== recording, all open: 1290 quads, ends at x 332 y 878
+text 12 714 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
+== recording, all open: 1256 quads, ends at x 636 y 850
 text 12 14 { 225, 230, 240, 255 } "oEZ"
 text 44 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
 text 12 42 { 255, 190, 90, 255 } "disk nearly full"
@@ -313,9 +312,8 @@ text 85 818 { 225, 230, 240, 255 } "off"
 rect 124 814 34 24 { 38, 43, 54, 255 } -> panel 0 .{ .car = true }
 text 133 818 { 225, 230, 240, 255 } "on"
 rect 12 844 776 1 { 48, 52, 62, 255 }
-text 12 854 { 150, 160, 178, 255 } "On the display: wheel = scale, Ctrl+wheel = one row, Shift+wheel = time,"
-text 12 882 { 150, 160, 178, 255 } "keys  - =  [ ]  m  t  f  , .  ; '  r  q"
-== review active, all open: 883 quads, ends at x 332 y 710
+text 12 854 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
+== review active, all open: 849 quads, ends at x 636 y 682
 text 12 14 { 225, 230, 240, 255 } "oEZ"
 text 44 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
 text 12 42 { 255, 190, 90, 255 } "disk nearly full"
@@ -458,8 +456,7 @@ text 85 650 { 225, 230, 240, 255 } "off"
 rect 124 646 34 24 { 38, 43, 54, 255 } -> panel 0 .{ .car = true }
 text 133 650 { 225, 230, 240, 255 } "on"
 rect 12 676 776 1 { 48, 52, 62, 255 }
-text 12 686 { 150, 160, 178, 255 } "On the display: wheel = scale, Ctrl+wheel = one row, Shift+wheel = time,"
-text 12 714 { 150, 160, 178, 255 } "keys  - =  [ ]  m  t  f  , .  ; '  r  q"
+text 12 686 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
 == quit prompt, all open: 233 quads, ends at x 476 y 214
 text 12 14 { 225, 230, 240, 255 } "oEZ"
 text 44 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
@@ -476,7 +473,7 @@ rect 228 214 170 24 { 38, 43, 54, 255 } -> .{ .quit_answer = .discard }
 text 237 218 { 225, 230, 240, 255 } "Quit without saving"
 rect 404 214 66 24 { 38, 43, 54, 255 } -> .{ .quit_answer = .cancel }
 text 413 218 { 225, 230, 240, 255 } "Cancel"
-== restart pending, all open: 987 quads, ends at x 332 y 794
+== restart pending, all open: 953 quads, ends at x 636 y 766
 text 12 14 { 225, 230, 240, 255 } "oEZ"
 text 44 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
 text 12 42 { 255, 190, 90, 255 } "disk nearly full"
@@ -628,9 +625,8 @@ text 85 734 { 225, 230, 240, 255 } "off"
 rect 124 730 34 24 { 38, 43, 54, 255 } -> panel 0 .{ .car = true }
 text 133 734 { 225, 230, 240, 255 } "on"
 rect 12 760 776 1 { 48, 52, 62, 255 }
-text 12 770 { 150, 160, 178, 255 } "On the display: wheel = scale, Ctrl+wheel = one row, Shift+wheel = time,"
-text 12 798 { 150, 160, 178, 255 } "keys  - =  [ ]  m  t  f  , .  ; '  r  q"
-== two panels: slope trigger, reference; all open: 1718 quads, ends at x 332 y 1138
+text 12 770 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
+== two panels: slope trigger, reference; all open: 1684 quads, ends at x 636 y 1110
 text 12 14 { 225, 230, 240, 255 } "oEZ"
 text 44 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
 text 12 42 { 150, 160, 178, 255 } "display 4.3 ms   144 fps   running 125 s"
@@ -1126,9 +1122,8 @@ text 703 1078 { 225, 230, 240, 255 } "15"
 rect 729 1074 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 15 }
 text 736 1078 { 225, 230, 240, 255 } "16"
 rect 12 1104 776 1 { 48, 52, 62, 255 }
-text 12 1114 { 150, 160, 178, 255 } "On the display: wheel = scale, Ctrl+wheel = one row, Shift+wheel = time,"
-text 12 1142 { 150, 160, 178, 255 } "keys  - =  [ ]  m  t  f  , .  ; '  r  q"
-== alarm, all open: 1026 quads, ends at x 332 y 738
+text 12 1114 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
+== alarm, all open: 992 quads, ends at x 636 y 710
 text 12 14 { 225, 230, 240, 255 } "oEZ"
 text 44 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
 rect 0 36 800 30 { 190, 25, 25, 245 }
@@ -1282,9 +1277,8 @@ text 85 678 { 225, 230, 240, 255 } "off"
 rect 124 674 34 24 { 38, 43, 54, 255 } -> panel 0 .{ .car = true }
 text 133 678 { 225, 230, 240, 255 } "on"
 rect 12 704 776 1 { 48, 52, 62, 255 }
-text 12 714 { 150, 160, 178, 255 } "On the display: wheel = scale, Ctrl+wheel = one row, Shift+wheel = time,"
-text 12 742 { 150, 160, 178, 255 } "keys  - =  [ ]  m  t  f  , .  ; '  r  q"
-== other panels, all open: 1436 quads, ends at x 332 y 1042
+text 12 714 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
+== other panels, all open: 1402 quads, ends at x 636 y 1014
 text 12 14 { 225, 230, 240, 255 } "oEZ"
 text 44 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
 text 12 42 { 150, 160, 178, 255 } "starting"
@@ -1539,9 +1533,8 @@ text 329 982 { 225, 230, 240, 255 } "10 sweeps"
 rect 416 978 26 24 { 38, 43, 54, 255 } -> panel 3 .{ .overlay = 11 }
 text 425 982 { 225, 230, 240, 255 } "+"
 rect 12 1008 776 1 { 48, 52, 62, 255 }
-text 12 1018 { 150, 160, 178, 255 } "On the display: wheel = scale, Ctrl+wheel = one row, Shift+wheel = time,"
-text 12 1046 { 150, 160, 178, 255 } "keys  - =  [ ]  m  t  f  , .  ; '  r  q"
-== notes open: 617 quads, ends at x 332 y 430
+text 12 1018 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
+== notes open: 583 quads, ends at x 636 y 402
 text 12 14 { 225, 230, 240, 255 } "oEZ"
 text 44 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
 text 12 42 { 255, 190, 90, 255 } "disk nearly full"
@@ -1588,9 +1581,8 @@ rect 12 366 82 24 { 26, 30, 38, 255 } -> control_view: notes [Port A]
 text 21 370 { 225, 230, 240, 255 } "▸ Port A"
 text 140 370 { 150, 160, 178, 255 } "scroll   2.00 s   400 µV/row   raw"
 rect 12 396 776 1 { 48, 52, 62, 255 }
-text 12 406 { 150, 160, 178, 255 } "On the display: wheel = scale, Ctrl+wheel = one row, Shift+wheel = time,"
-text 12 434 { 150, 160, 178, 255 } "keys  - =  [ ]  m  t  f  , .  ; '  r  q"
-== audio open: 659 quads, ends at x 332 y 402
+text 12 406 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
+== audio open: 625 quads, ends at x 636 y 374
 text 12 14 { 225, 230, 240, 255 } "oEZ"
 text 44 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
 text 12 42 { 255, 190, 90, 255 } "disk nearly full"
@@ -1654,9 +1646,8 @@ rect 12 338 82 24 { 26, 30, 38, 255 } -> control_view: audio [Port A]
 text 21 342 { 225, 230, 240, 255 } "▸ Port A"
 text 140 342 { 150, 160, 178, 255 } "scroll   2.00 s   400 µV/row   raw"
 rect 12 368 776 1 { 48, 52, 62, 255 }
-text 12 378 { 150, 160, 178, 255 } "On the display: wheel = scale, Ctrl+wheel = one row, Shift+wheel = time,"
-text 12 406 { 150, 160, 178, 255 } "keys  - =  [ ]  m  t  f  , .  ; '  r  q"
-== headstages open: 690 quads, ends at x 332 y 458
+text 12 378 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
+== headstages open: 656 quads, ends at x 636 y 430
 text 12 14 { 225, 230, 240, 255 } "oEZ"
 text 44 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
 text 12 42 { 255, 190, 90, 255 } "disk nearly full"
@@ -1732,9 +1723,8 @@ rect 12 394 82 24 { 26, 30, 38, 255 } -> control_view: headstages [Port A]
 text 21 398 { 225, 230, 240, 255 } "▸ Port A"
 text 140 398 { 150, 160, 178, 255 } "scroll   2.00 s   400 µV/row   raw"
 rect 12 424 776 1 { 48, 52, 62, 255 }
-text 12 434 { 150, 160, 178, 255 } "On the display: wheel = scale, Ctrl+wheel = one row, Shift+wheel = time,"
-text 12 462 { 150, 160, 178, 255 } "keys  - =  [ ]  m  t  f  , .  ; '  r  q"
-== Port B open of two panels: 952 quads, ends at x 332 y 578
+text 12 434 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
+== Port B open of two panels: 918 quads, ends at x 636 y 550
 text 12 14 { 225, 230, 240, 255 } "oEZ"
 text 44 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
 text 12 42 { 150, 160, 178, 255 } "display 4.3 ms   144 fps   running 125 s"
@@ -1960,9 +1950,8 @@ text 703 518 { 225, 230, 240, 255 } "15"
 rect 729 514 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 15 }
 text 736 518 { 225, 230, 240, 255 } "16"
 rect 12 544 776 1 { 48, 52, 62, 255 }
-text 12 554 { 150, 160, 178, 255 } "On the display: wheel = scale, Ctrl+wheel = one row, Shift+wheel = time,"
-text 12 582 { 150, 160, 178, 255 } "keys  - =  [ ]  m  t  f  , .  ; '  r  q"
-== all closed: 539 quads, ends at x 332 y 346
+text 12 554 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
+== all closed: 505 quads, ends at x 636 y 318
 text 12 14 { 225, 230, 240, 255 } "oEZ"
 text 44 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
 text 12 42 { 255, 190, 90, 255 } "disk nearly full"
@@ -2002,9 +1991,8 @@ rect 12 282 82 24 { 26, 30, 38, 255 } -> control_view: [Port A]
 text 21 286 { 225, 230, 240, 255 } "▸ Port A"
 text 140 286 { 150, 160, 178, 255 } "scroll   2.00 s   400 µV/row   raw"
 rect 12 312 776 1 { 48, 52, 62, 255 }
-text 12 322 { 150, 160, 178, 255 } "On the display: wheel = scale, Ctrl+wheel = one row, Shift+wheel = time,"
-text 12 350 { 150, 160, 178, 255 } "keys  - =  [ ]  m  t  f  , .  ; '  r  q"
-== all closed, recording: Headstages open by itself: 959 quads, ends at x 332 y 598
+text 12 322 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
+== all closed, recording: Headstages open by itself: 925 quads, ends at x 636 y 570
 text 12 14 { 225, 230, 240, 255 } "oEZ"
 text 44 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
 text 12 42 { 255, 190, 90, 255 } "disk nearly full"
@@ -2090,9 +2078,8 @@ rect 12 534 82 24 { 26, 30, 38, 255 } -> control_view: [Port A]
 text 21 538 { 225, 230, 240, 255 } "▸ Port A"
 text 140 538 { 150, 160, 178, 255 } "scroll   2.00 s   400 µV/row   raw"
 rect 12 564 776 1 { 48, 52, 62, 255 }
-text 12 574 { 150, 160, 178, 255 } "On the display: wheel = scale, Ctrl+wheel = one row, Shift+wheel = time,"
-text 12 602 { 150, 160, 178, 255 } "keys  - =  [ ]  m  t  f  , .  ; '  r  q"
-== all closed, Headstages open by itself: restart pending: 725 quads, ends at x 332 y 514
+text 12 574 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
+== all closed, Headstages open by itself: restart pending: 691 quads, ends at x 636 y 486
 text 12 14 { 225, 230, 240, 255 } "oEZ"
 text 44 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
 text 12 42 { 255, 190, 90, 255 } "disk nearly full"
@@ -2172,9 +2159,8 @@ rect 12 450 82 24 { 26, 30, 38, 255 } -> control_view: [Port A]
 text 21 454 { 225, 230, 240, 255 } "▸ Port A"
 text 140 454 { 150, 160, 178, 255 } "scroll   2.00 s   400 µV/row   raw"
 rect 12 480 776 1 { 48, 52, 62, 255 }
-text 12 490 { 150, 160, 178, 255 } "On the display: wheel = scale, Ctrl+wheel = one row, Shift+wheel = time,"
-text 12 518 { 150, 160, 178, 255 } "keys  - =  [ ]  m  t  f  , .  ; '  r  q"
-== all closed, Headstages open by itself: settings not the config file's: 817 quads, ends at x 332 y 514
+text 12 490 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
+== all closed, Headstages open by itself: settings not the config file's: 783 quads, ends at x 636 y 486
 text 12 14 { 225, 230, 240, 255 } "oEZ"
 text 44 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
 text 12 42 { 255, 190, 90, 255 } "disk nearly full"
@@ -2255,9 +2241,8 @@ rect 12 450 82 24 { 26, 30, 38, 255 } -> control_view: [Port A]
 text 21 454 { 225, 230, 240, 255 } "▸ Port A"
 text 140 454 { 150, 160, 178, 255 } "scroll   2.00 s   400 µV/row   raw"
 rect 12 480 776 1 { 48, 52, 62, 255 }
-text 12 490 { 150, 160, 178, 255 } "On the display: wheel = scale, Ctrl+wheel = one row, Shift+wheel = time,"
-text 12 518 { 150, 160, 178, 255 } "keys  - =  [ ]  m  t  f  , .  ; '  r  q"
-== AUX open of four panels: 708 quads, ends at x 332 y 482
+text 12 490 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
+== AUX open of four panels: 674 quads, ends at x 636 y 454
 text 12 14 { 225, 230, 240, 255 } "oEZ"
 text 44 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
 text 12 42 { 150, 160, 178, 255 } "starting"
@@ -2327,9 +2312,8 @@ rect 12 418 58 24 { 26, 30, 38, 255 } -> control_view: [AUX, TTL]
 text 21 422 { 225, 230, 240, 255 } "▸ TTL"
 text 140 422 { 150, 160, 178, 255 } "triggered   -10.0 / +40.0 ms   on TTL 2"
 rect 12 448 776 1 { 48, 52, 62, 255 }
-text 12 458 { 150, 160, 178, 255 } "On the display: wheel = scale, Ctrl+wheel = one row, Shift+wheel = time,"
-text 12 486 { 150, 160, 178, 255 } "keys  - =  [ ]  m  t  f  , .  ; '  r  q"
-== panel summaries: triggered, filtered, TTL: 651 quads, ends at x 332 y 418
+text 12 458 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
+== panel summaries: triggered, filtered, TTL: 617 quads, ends at x 636 y 390
 text 12 14 { 225, 230, 240, 255 } "oEZ"
 text 44 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
 text 12 42 { 255, 190, 90, 255 } "disk nearly full"
@@ -2377,5 +2361,4 @@ rect 12 354 58 24 { 26, 30, 38, 255 } -> control_view: [TTL]
 text 21 358 { 225, 230, 240, 255 } "▸ TTL"
 text 140 358 { 150, 160, 178, 255 } "triggered   -10.0 / +40.0 ms   on TTL 3"
 rect 12 384 776 1 { 48, 52, 62, 255 }
-text 12 394 { 150, 160, 178, 255 } "On the display: wheel = scale, Ctrl+wheel = one row, Shift+wheel = time,"
-text 12 422 { 150, 160, 178, 255 } "keys  - =  [ ]  m  t  f  , .  ; '  r  q"
+text 12 394 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."

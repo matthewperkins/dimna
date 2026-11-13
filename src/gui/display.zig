@@ -1481,7 +1481,7 @@ fn reviewBadge(o: *Output, v: ReviewView, width: u32, fs: f64) void {
     var clock_buf: [16]u8 = undefined;
     const text = std.fmt.bufPrint(
         &buf,
-        "REVIEW   {d:.1} s behind live   at {s}{s}   End = live",
+        "REVIEW   {d:.1} s behind live   at {s}{s}   l = live",
         .{
             v.behind_s,
             control.fmtClock(&clock_buf, @as(f64, @floatFromInt(v.end)) / fs),
