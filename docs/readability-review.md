@@ -1,5 +1,7 @@
 # A readability review of oEZ
 
+The program was called oEZ when this was written; it is dimna now.
+
 > **Andrew Kelley did not write, review or endorse this document, and has never seen
 > this project.** It was written by Claude, the AI assistant that wrote most of this
 > code, at the owner's request, as an exercise: re-read the code base and list what

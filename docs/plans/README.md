@@ -1,12 +1,14 @@
 # Work plans
 
+The program was called oEZ when this was written; it is dimna now.
+
 One file per piece of work that is handed to someone who has not been in the conversations
 that produced this code: another agent, or a person. Each plan says what to do, what not
 to touch, and what counts as done. This file holds what all of them need to know.
 
 ## The project in one paragraph
 
-oEZ acquires and records electrophysiology from an Open Ephys acquisition board, in Zig.
+dimna acquires and records electrophysiology from an Open Ephys acquisition board, in Zig.
 The core (`src/*.zig`, module root `src/root.zig`) is the board driver, an acquisition
 thread writing into a lock-free multi-reader ring (`ring.zig`), a recorder (`record.zig`,
 format described in the README under "Recording format (v1)"), a simulator (`sim.zig`), and
@@ -16,7 +18,7 @@ priority is that recordings are complete and correct.
 
 ## Building and testing
 
-    zig build --release=safe     # zig-out/bin/oez-headless and zig-out/bin/oez
+    zig build --release=safe     # zig-out/bin/dimna-headless and zig-out/bin/dimna
     zig build test               # unit tests of the core (everything reachable from src/root.zig)
 
 `zig build test` caches its run: when nothing changed it prints no test count. To see the
@@ -40,11 +42,11 @@ folder, raw syscalls), `src/feed.zig` and `src/ring.zig` (the ring, threads).
 
 ## Rules that are not negotiable
 
-1. **Never touch the acquisition board.** Do not run `zig-out/bin/oez` without `--sim`.
-   Do not run `oez-headless` without `--sim`. Do not pass `--driver`. The owner may be
+1. **Never touch the acquisition board.** Do not run `zig-out/bin/dimna` without `--sim`.
+   Do not run `dimna-headless` without `--sim`. Do not pass `--driver`. The owner may be
    recording from an animal on this machine while you work.
-2. **Do not open windows.** The plans here need none. Do not run `zig-out/bin/oez` (the
-   GUI) at all unless your plan says you may. `oez-headless --sim ...` is fine.
+2. **Do not open windows.** The plans here need none. Do not run `zig-out/bin/dimna` (the
+   GUI) at all unless your plan says you may. `dimna-headless --sim ...` is fine.
 3. **Temporary files** go under a new folder in `/tmp` whose name contains your process
    id, and are removed afterwards. Never write under the owner's home except inside your
    working copy.

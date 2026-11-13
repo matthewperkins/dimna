@@ -6,7 +6,7 @@ seen, so it can be told apart from a guess. Remove an entry when it is fixed or 
 
 ## Known faults, not fixed
 
-- **`oez-headless --record /proc/...` hangs** at 100 % CPU inside `Recorder.create`, with
+- **`dimna-headless --record /proc/...` hangs** at 100 % CPU inside `Recorder.create`, with
   no message (probably `createDirPath` under `/proc`). An ordinary bad path
   (`--record <file>/x`) fails cleanly with `NotDir`. Seen by the agent that split
   `headless.zig`, on the simulator, before and after its change.
@@ -19,8 +19,8 @@ seen, so it can be told apart from a guess. Remove an entry when it is fixed or 
 - **Keys and text within one frame lose their order** (`notes.zig` `handle`): "/a" in one
   frame opens the note but the "a" goes through as a shortcut; Backspaces are applied
   before the frame's text. Needs input faster than a frame. Seen with a probe test.
-- **`oez-headless --seconds 0`** prints a rate of `-nan` or `inf` (0/0 or n/0).
-- **`oez-headless --live-test` without `--record` always exits 1**: "ADC off" comes back
+- **`dimna-headless --seconds 0`** prints a rate of `-nan` or `inf` (0/0 or n/0).
+- **`dimna-headless --live-test` without `--record` always exits 1**: "ADC off" comes back
   `NeedsRestart`, and only `RecordingActive` is treated as expected. The doc comment says
   to use it with `--record`.
 - **View-file error messages say "panel N"** where N counts `[[view]]` tables.
@@ -94,6 +94,6 @@ seen, so it can be told apart from a guess. Remove an entry when it is fixed or 
   goes in above the compositor's seat.
 - The audio by ear, by the author of the code.
 - CAR and the spike tiles on real spikes (the owner has looked; no measurement).
-- Cameras and triggers running beside a recording made with oEZ.
+- Cameras and triggers running beside a recording made with dimna.
 - DAC and TTL outputs: not ported.
 - Power loss or a full disk during a recording (the crash test kills the process only).

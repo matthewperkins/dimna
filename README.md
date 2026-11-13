@@ -1,13 +1,13 @@
-# oEZ
+# dimna
 
 Acquisition for the Open Ephys acquisition board (ECP5 gateware, FT600 USB 3, ONI), in Zig.
-Linux only. Successor to oers (Rust, `../oers`), whose driver it ports.
+Linux only. Successor to oers (now kalila; Rust, `../oers`), whose driver it ports.
 
 ## Build
 
 Zig 0.17.1 (pinned in `build.zig.zon`).
 
-    zig build --release=safe     # zig-out/bin/oez-headless (safety checks stay on)
+    zig build --release=safe     # zig-out/bin/dimna-headless (safety checks stay on)
     zig build test               # unit tests: the core (src/root.zig) and the GUI (src/gui/tests.zig)
 
 The GUI's tests cover its pure logic only (typed notes, the tile grid, the widget layout, the
@@ -24,8 +24,8 @@ program (`oni_register_builtin_driver`).
 
 ## Two ways to reach the FT600
 
-    oez-headless ...                  # --driver usb, the default: no FTDI code in the process
-    oez-headless --driver d3xx ...    # fallback: liboni's ft600 driver on FTDI's closed D3XX
+    dimna-headless ...                # --driver usb, the default: no FTDI code in the process
+    dimna-headless --driver d3xx ...  # fallback: liboni's ft600 driver on FTDI's closed D3XX
 
 **`usb`** needs nothing installed beyond read/write access to the device node (the Open Ephys
 udev rule). Three layers, all in this repo:
@@ -38,7 +38,7 @@ udev rule). Three layers, all in this repo:
   ever read.
 - `src/oni_usb.zig`: a port of liboni's `drivers/ft600/onidriver_ft600.c` onto that.
 
-`OEZ_USB_TRACE=1` logs every command and control-channel transfer to stderr.
+`DIMNA_USB_TRACE=1` logs every command and control-channel transfer to stderr.
 
 Measured on the rig against `d3xx` (46 channels, 30 kHz):
 
@@ -55,7 +55,7 @@ ADC within 0.03 mV. Two things make the difference:
   as possible (as D3XX does) fetches each block in dozens of one-sample pieces: about 12,400
   transfers a second, each with its announcement. liboni needs the whole block before it hands
   anything on, so after a read that emptied the FIFO the driver sleeps until the rest of the
-  block should have been produced and fetches it in one transfer. `OEZ_USB_PACE=0` turns that
+  block should have been produced and fetches it in one transfer. `DIMNA_USB_PACE=0` turns that
   off.
 - **No idle waits.** D3XX waits 200 ms on every pipe abort; that is skipped when no transfer
   is announced (the chip then has nothing it may send).
@@ -71,7 +71,7 @@ Nothing reaches the pipeline before a block is complete, so it sets the delivery
 | 2048 | 0.23 / 2.10 ms | 1.37 s | 8,263 |
 
 (Delivery delay: how much later than the quickest block of the same second a block's newest
-sample reached the ring; `oez-headless` prints it.) The FT600's stream mode was also tried and
+sample reached the ring; `dimna-headless` prints it.) The FT600's stream mode was also tried and
 is not used: see the notes at the top of `src/ft600.zig`.
 
 **`d3xx`** needs `libonidriver_ft600.so`, built by `../oers/scripts/build-ft600-driver.sh`
@@ -80,7 +80,7 @@ executable, `../lib`, `~/.local/lib` or `/usr/local/lib`.
 
 ## Run
 
-    oez-headless --seconds 600 --16ch A1 --aux --adc --record ~/oez-test
+    dimna-headless --seconds 600 --16ch A1 --aux --adc --record ~/oez-test
 
 `--16ch A1` is needed on the rig (16-channel headstage on an RHD2132). Prints one status line
 per second and `CLEAN` at the end if nothing was lost (exit status 0). Record to disk, not
@@ -90,16 +90,16 @@ The acquisition thread runs SCHED_FIFO (needs rtprio, e.g. the `realtime` group)
 memory. It never waits on readers: the recorder and other readers take blocks from a
 preallocated ring (30 s when recording).
 
-## The display (`oez`)
+## The display (`dimna`)
 
-    oez --sim 32,16                               # simulated signals in a window
-    oez --16ch A1 --adc                           # the board (config file decides the rest)
+    dimna --sim 32,16                             # simulated signals in a window
+    dimna --16ch A1 --adc                         # the board (config file decides the rest)
 
 Wayland directly (zig-wayland) and Vulkan (vulkan-zig); traces are drawn on the GPU from a
 ring of sample history that only new samples are written to. The display reads the
 acquisition ring with a lossy reader, so it can never hold acquisition back.
 
-Config: `~/.config/oez/config.toml` (command-line options win).
+Config: `~/.config/dimna/config.toml` (command-line options win).
 
 ```toml
 monitor = "DP-2"      # fullscreen on this monitor: the neural display
@@ -131,7 +131,7 @@ Without `[[panel]]` tables there is one panel per headstage, side by side. Wheel
 Alt+wheel or pinch (time base) and the keys `- = [ ] r` act on the panel under the pointer,
 marked by a bar along its top; `q` quits. **`?` shows every key and mouse action** of the
 display and of the tile window in a panel over the display (Esc or `?` closes it);
-`oez --help` prints the display's.
+`dimna --help` prints the display's.
 Ctrl+wheel scales only the row under the pointer; that row's label then shows its own
 scale in amber. The plain wheel still moves every row, keeping such a row's ratio, and `r`
 clears it. (Per-row scales are not saved in the config.)
@@ -143,8 +143,8 @@ converter's limits (a saturated amplifier or ADC, whatever the display's scale) 
 red.
 
 Keys go by what they are labelled in your keyboard layout (so on Dvorak, `r` is the key
-marked r), and reach oEZ while its window has the keyboard focus (with Hyprland's
-`follow_mouse = 1`, while the pointer is over it). `OEZ_KEY_DEBUG=1` logs focus changes and
+marked r), and reach dimna while its window has the keyboard focus (with Hyprland's
+`follow_mouse = 1`, while the pointer is over it). `DIMNA_KEY_DEBUG=1` logs focus changes and
 every key received.
 
 **Triggered sweeps.** A panel in triggered mode (`mode = "triggered"`, or `t` on the
@@ -158,7 +158,7 @@ as usual. Edges are found on the display thread from the digital words of each b
 with slow triggers fewer are overlaid. After a filter corner change, only the recent past
 is refiltered, so older overlaid sweeps keep the old corners until they are replaced.
 
-**Spike tiles.** A third window (class `oez-tiles`) with one tile per electrode: the
+**Spike tiles.** A third window (class `dimna-tiles`) with one tile per electrode: the
 channel's last spike waveforms on top of each other (the newest brightest), its threshold
 as a red line, its noise sigma in µV and its firing rate.
 
@@ -224,10 +224,10 @@ thread of its own with its own reader on the acquisition ring (`src/gui/tiles.zi
 it never holds the display or acquisition back. `--no-tiles` or `tiles = false` leaves it
 out. A Hyprland rule keeps it off the neural display's monitor:
 
-    hl.window_rule({ name = "oez-tiles", match = { class = "^oez-tiles$" },
+    hl.window_rule({ name = "dimna-tiles", match = { class = "^dimna-tiles$" },
                      workspace = "1", float = true, move = "966 624", size = "938 560" })
 
-**Spike audio.** oEZ plays the channels you choose through the default sound device.
+**Spike audio.** dimna plays the channels you choose through the default sound device.
 Right-click an electrode row on the display, or a spike tile, to listen to it; Ctrl+right
 click adds or removes a channel (up to 8, spread across the stereo field). The channels
 listened to have a note (♪) before their label. The control window's Audio section has on / off, mute, volume, shaped / plain,
@@ -252,7 +252,7 @@ where spikes are, the resampler flat to 10 kHz.
 
 Sound runs on two threads of its own (`src/gui/audio_out.zig`) with their own reader on
 the acquisition ring, so it does not depend on the display. On the board: about 16 ms as
-reported, of which about 5 ms waits in oEZ's queue and about 10 ms is what the device
+reported, of which about 5 ms waits in dimna's queue and about 10 ms is what the device
 (PipeWire at a 128-frame quantum, and the sound card) says is still to be played; a few
 gaps in the first seconds while the clock servo settles, then about one in 10 s.
 The queue's margin adapts: a gap raises it by 1 ms, 30 s without one lowers it by 0.5 ms,
@@ -380,11 +380,11 @@ Each panel is titled with its name, time base and scale per row, and its rows ar
 (the electrode's number on its headstage, AUXn, ADCn; thinned when rows are shorter than a
 line of text). The bottom right corner shows the latency and frame rate of the last second,
 and in amber how many blocks the display skipped, if any (the recording never depends on
-the display). Text is drawn by oEZ itself (`src/gui/font.zig`: FreeType into one atlas,
+the display). Text is drawn by dimna itself (`src/gui/font.zig`: FreeType into one atlas,
 quads in the same render pass), since nothing else may be on the monitor while tearing; it
 made no measurable difference to the latency (2.6 ms with and without, same session).
 
-**Control window.** A second, ordinary window (class `oez-control`) shows the run's
+**Control window.** A second, ordinary window (class `dimna-control`) shows the run's
 status (display latency, frame rate, blocks the display skipped, ring overflow) and, for
 every panel, buttons for what the keys do: view (scroll / sweep / triggered), time base or
 trigger window, scale, filter and its corners, trigger line and number of overlaid sweeps,
@@ -407,13 +407,13 @@ display running. Both windows use one Vulkan instance (with two, NVIDIA's driver
 at exit). The control window must not open on the neural display's monitor, or tearing
 stops; a Hyprland rule places it:
 
-    hl.window_rule({ name = "oez-control", match = { class = "^oez-control$" },
+    hl.window_rule({ name = "dimna-control", match = { class = "^dimna-control$" },
                      workspace = "1", float = true, move = "966 51", size = "938 561" })
 
 With it open on the board (tearing on DP-2): 2.4 to 2.5 ms, as without.
 
 **Recording.** Record / Stop recording in the control window. Acquisition and the display
-carry on throughout; each press of Record makes a new session (no restart of oEZ). While
+carry on throughout; each press of Record makes a new session (no restart of dimna). While
 recording, the control window shows the time, size, how far the disk is behind and any
 gaps, and the neural display shows "REC" with the time beside its latency read-out. A
 recording that fails (disk full, say) is shown as failed; acquisition is not affected and
@@ -468,7 +468,7 @@ The stamp is the newest sample acquired plus the time since it was acquired (so 
 display's latency is not in it; keys are read once per frame, so it can be a few ms
 late). A saved note goes into the recording's `events.tsv` as kind `note`, if one is
 running; into a log of every note, recorded or not
-(`~/.local/state/oez/notes.log`: local time, sample, session folder, text); and onto the
+(`~/.local/state/dimna/notes.log`: local time, sample, session folder, text); and onto the
 traces as a line with the text beside it. The control window shows the last three, the
 presets as buttons, and how many drafts wait. Notes are limited to 200 bytes; the display
 font covers Latin-1, so other characters are stored as typed but drawn as "?".
@@ -476,7 +476,7 @@ font covers Latin-1, so other characters are stored as typed but drawn as "?".
 Digits that have a preset no longer pick a triggered panel's TTL line (the control
 window's stepper does that).
 
-**Saving the view.** `config.toml` is the rig's setup, written by hand, and oEZ never
+**Saving the view.** `config.toml` is the rig's setup, written by hand, and dimna never
 rewrites its panels. What you set in the control window or with keys and wheel (scale,
 time base, mode, filter and corners, rows raw or hidden, per-row scales, CAR and its
 rows, trigger settings, tint; the tiles' view and the detection thresholds) is kept in a
@@ -530,12 +530,12 @@ when the monitor is muted or off:
 - the recording has gaps.
 
 An amber bar warns earlier, while the disk is more than 5 s behind, and goes when it has
-caught up. `OEZ_TEST_RECORD_FAIL_AFTER=<samples>`, `OEZ_TEST_RECORD_STALL=<samples>,<ms>`
-and `OEZ_TEST_RING_SECONDS=<s>` make these happen on purpose, for testing.
+caught up. `DIMNA_TEST_RECORD_FAIL_AFTER=<samples>`, `DIMNA_TEST_RECORD_STALL=<samples>,<ms>`
+and `DIMNA_TEST_RING_SECONDS=<s>` make these happen on purpose, for testing.
 
-Sessions go under `record_dir` (config; default `~/oez-recordings`):
+Sessions go under `record_dir` (config; default `~/dimna-recordings`):
 
-    ~/oez-recordings/
+    ~/dimna-recordings/
       2026-11-12_14-03-22/        one session = one press of Record
         ephys/                    the recording (format below)
         video/                    by convention: what the camera recorder writes
@@ -544,9 +544,9 @@ Sessions go under `record_dir` (config; default `~/oez-recordings`):
 `current` is repointed (atomically) whenever a recording starts, so other programs can
 write beside the ephys data without being told the folder's name:
 
-    ./record.sh --out-root "$(realpath ~/oez-recordings/current)/video"
+    ./record.sh --out-root "$(realpath ~/dimna-recordings/current)/video"
 
-Start the oEZ recording first, so every camera trigger edge is in its TTL files.
+Start the dimna recording first, so every camera trigger edge is in its TTL files.
 
 **Latency** (sample arriving to its frame on screen, Hyprland 0.57.2, NVIDIA, 60 Hz):
 
@@ -562,8 +562,8 @@ Hyprland tears only when all of these hold (`hyprctl monitors` shows `activelyTe
 - `general.allow_tearing = true`
 - `cursor.no_hardware_cursors = 1` (no tearing while a hardware cursor is visible)
 - the window is fullscreen and the only thing on that monitor: no popup, floating window,
-  overlay or notification over it. So panels are laid out inside oEZ's one surface, and
-  anything drawn on the neural display must be drawn by oEZ.
+  overlay or notification over it. So panels are laid out inside dimna's one surface, and
+  anything drawn on the neural display must be drawn by dimna.
 
 Other routes tried: Hyprland's direct scanout (3.5 ms but not dependable; described at the
 top of `src/gui/main.zig`), and driving the monitor with no compositor at all (`--direct`,
@@ -587,7 +587,7 @@ loop had none of the later features and was removed; the last commit that has it
 
 Each applied change goes into the recording's `events.tsv`, stamped with the estimated
 sample at which it reached the board. The estimate is a lower bound: the effect shows in the
-data within about 10 ms after it. `oez-headless --live-test --record DIR` runs a scheduled test
+data within about 10 ms after it. `dimna-headless --live-test --record DIR` runs a scheduled test
 (refused restart, LEDs on/off, 300 Hz high-pass on/off, 1 kHz low-pass on/off).
 
 ## Recording format (v1)
@@ -604,17 +604,21 @@ append-only; `meta.toml` describes everything and is replaced atomically.
 | `events.tsv` | `sample<TAB>kind<TAB>text` |
 | `meta.toml` | channels, scales, headstages, board, settings; `[final]` only after a clean stop |
 
+`meta.toml` names the format `format = "dimna-recording"`, `format_version = 1`. Recordings
+made before the program was renamed from oEZ say `oez-recording`, in the same version 1;
+`tools/dimna_read.py` reads both.
+
 Crash safety: once a second `samples.i16` is synced, then the index records for it are written
 and synced, so every index record points at data already on disk. After a crash the indexed
 data is CRC-verifiable and any tail beyond it is kept but unverified.
 
-`tools/oez_compare.py A B` compares two recordings of the same headstages (layout, noise
+`tools/dimna_compare.py A B` compares two recordings of the same headstages (layout, noise
 profile, AUX and ADC levels). `tools/usbshim/usbshim.c` is the LD_PRELOAD logger used to learn
 the FT600 protocol from D3XX.
 
-`tools/oez_read.py` is a reference reader (numpy + standard library) and verifier:
+`tools/dimna_read.py` is a reference reader (numpy + standard library) and verifier:
 
-    python3 tools/oez_read.py ~/oez-test/2026-11-11_11-53-24
+    python3 tools/dimna_read.py ~/oez-test/2026-11-11_11-53-24
 
 Use explicit little-endian dtypes (`'<i2'`, `'<i8'`, `'<u2'`) in other readers.
 
@@ -632,7 +636,7 @@ checked (every sample, every TTL change, index offsets, CRCs and gap flags, `eve
 `[final]`). It covers a whole stream, attaching to a running stream, stopping while the
 producer carries on (and the ring being let go), lost blocks, an injected write failure, and
 events from both queues. `tools/crash-test.sh [SECONDS]` records from the simulator, kills
-`oez-headless` with `kill -9` after that many seconds, and checks with `oez_read.py` that the
+`dimna-headless` with `kill -9` after that many seconds, and checks with `dimna_read.py` that the
 indexed part verifies, that the recording is marked interrupted, and that the unverified tail
 is under 1.5 s. Neither touches the board. The crash test kills the process only (the page
 cache survives), so it says nothing about power loss or a full disk.
