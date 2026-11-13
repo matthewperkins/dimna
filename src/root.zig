@@ -24,6 +24,7 @@ pub const board_config = @import("board_config.zig");
 pub const usbfs = @import("usbfs.zig");
 pub const ft600 = @import("ft600.zig");
 pub const oni_usb = @import("oni_usb.zig");
+pub const independence_test = @import("independence_test.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());
