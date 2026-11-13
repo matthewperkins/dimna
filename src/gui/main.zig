@@ -318,7 +318,6 @@ pub fn main(init: std.process.Init) !u8 {
                         }, &acq.events, nowNs())) alarms.recording_failed = true;
                     } else if (!on) recording.requestStop();
                 },
-                .review => |r| review.queue(r),
                 .note_preset => |n| notes.stampPreset(n, note_stamp, recording.sessionPath()),
                 .acknowledge => display.acknowledged = true,
                 .save_view => if (view_file.save(io, views_path, view)) |_| {

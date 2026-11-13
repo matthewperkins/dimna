@@ -13,8 +13,9 @@ const log = std.log.scoped(.font);
 pub const atlas_size = 512;
 const first_cp = 32;
 const last_cp = 255;
-/// A few characters beyond Latin-1 that labels use: sigma, en dash, right arrow, a note.
-const extra_cps = [_]u21{ 0x03C3, 0x2013, 0x2192, 0x266A };
+/// A few characters beyond Latin-1 that labels use: sigma, en dash, right arrow, a note,
+/// and the small triangles before a heading that opens (closed) or closes (open).
+const extra_cps = [_]u21{ 0x03C3, 0x2013, 0x2192, 0x266A, 0x25B8, 0x25BE };
 const white_block = 4;
 
 pub const Vertex = extern struct {
