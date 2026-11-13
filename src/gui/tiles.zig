@@ -14,12 +14,23 @@
 //!   r                        the tiles shown to their common range
 //!   a                        the tiles shown to their own auto range, as fixed numbers
 //!   the chips at the bottom  show one port's electrodes, or all
+//!   drag the red line        fix that channel's threshold at the µV under the pointer
+//!                            (`Request.threshold`); over the line the pointer is a hand.
+//!                            Below zero it is crossed falling, above zero rising
+//!   Ctrl+Shift+wheel         the threshold of the tile under the pointer, 5 % per click:
+//!                            larger the way the plain wheel makes waveforms larger
+//!                            (negative axis values: usually the wheel turned away)
+//!   n                        the threshold of the tile under the pointer: back to
+//!                            following the noise if fixed, else fixed where it is now
 //!
-//! The tile window never changes focus or listening itself: it asks the display, and
-//! draws what the display publishes in `Config`. The tile whose channel is in focus has an
-//! amber frame (`theme.focus`, and nothing else here is amber); a channel listened to has
-//! "♪ " before its name. Each tile's range (µV from zero to its edge) comes from the scale
-//! model; a tile with no fixed range scales itself to its waveforms ("auto"). The strip at
+//! The tile window never changes focus, listening or a threshold itself: it asks the
+//! display, and draws what the display publishes in `Config`; only while the red line is
+//! being dragged is it drawn at the pointer, not where `Config` has it. The tile whose
+//! channel is in focus has an amber frame (`theme.focus`, and nothing else here is amber);
+//! a channel listened to has "♪ " before its name. Each tile's range (µV from zero to its
+//! edge) comes from the scale model; a tile with no fixed range scales itself to its
+//! waveforms ("auto"). A fixed threshold's value ("-52 µV", "+80 µV") is shown beside
+//! sigma where there is room; one that follows the noise shows nothing more. The strip at
 //! the bottom shows the ports' chips and the range of the tiles shown ("±150 µV", "auto"
 //! or "mixed").
 //!
@@ -60,6 +71,15 @@ const max_vertices = 300 * 1024;
 /// A threshold that follows the noise moves with it: the thresholds are reported at most
 /// this often.
 const threshold_report_ns = 100 * std.time.ns_per_ms;
+/// At most 20 pictures a second: the tiles are for looking at, not for timing. A drag
+/// sends at most one threshold per picture.
+const picture_ms = 50;
+/// How near the red line (in pixels, above or below it) a press takes hold of it.
+const line_grab_px = 4;
+/// A threshold just asked for is taken as the channel's for this long (or until `Config`
+/// says so), so wheel clicks and `n` presses quicker than the display's answer add up.
+const asked_hold_ms = 250;
+const uv_per_bit = oez.types.electrode_uv_per_bit;
 
 pub const Tiles = struct {
     gpa: std.mem.Allocator,
@@ -180,10 +200,10 @@ pub const Tiles = struct {
                 .max_waves = wavesShown(max_vertices, view.num_shown, det.len),
             };
             if (view.apply(&in, scene, &shared.requests, msOf(now))) dirty = true;
+            win.setCursor(view.cursor(scene, in.pointer_x, in.pointer_y));
             _ = view.scale.tick(msOf(now));
             view.publish(&shared.report, &det, now);
-            // At most 20 pictures a second: the tiles are for looking at, not for timing.
-            if (!dirty or !win.frame_ready or now - last_draw < 50 * std.time.ns_per_ms) continue;
+            if (!dirty or !win.frame_ready or now - last_draw < picture_ms * std.time.ns_per_ms) continue;
             if (win.resized or gpu.swapchain == .null) {
                 try gpu.resize(win.width, win.height);
                 win.resized = false;
@@ -251,6 +271,26 @@ const View = struct {
     reported: link.Report = .{},
     reported_ns: i128 = 0,
     ever_reported: bool = false,
+    /// The red line being dragged, if it is.
+    drag: ?Drag = null,
+    /// The threshold last asked for, while it is held (`asked_hold_ms`).
+    asked: ?Asked = null,
+
+    const Drag = struct {
+        ch: u32,
+        /// The tile's auto range when the drag began, sample units: an auto tile keeps it
+        /// until the drag ends, so the line stays under the pointer and means one value.
+        auto_range: f64,
+        /// The threshold under the pointer, µV (never 0, which would mean the noise).
+        uv: f32,
+        press_y: f64,
+        /// The pointer has moved since the press: only then is anything sent.
+        moved: bool = false,
+        sent_uv: ?f32 = null,
+        sent_ms: i64 = 0,
+    };
+
+    const Asked = struct { ch: u32, uv: f32, ms: i64 };
 
     /// From the view the window starts with (a range of 0 is auto; a port without a
     /// headstage is all).
@@ -298,20 +338,27 @@ const View = struct {
     }
 
     /// Applies what the user did: clicks become requests to the display, the wheel and the
-    /// keys change the scales, a chip the port. True if what is drawn changed.
+    /// keys change the scales, a chip the port; the red line is dragged and the threshold
+    /// keys and wheel ask the display. True if what is drawn changed.
     fn apply(self: *View, in: *const Input, scene: Scene, requests: *Requests, now_ms: i64) bool {
         var changed = false;
         const grid = tileGrid(self.num_shown, scene.face, scene.width, scene.height);
-        if (in.clicks > 0) {
-            // A chip's click is the chip's.
+        // A press while a drag goes on (its release was missed) is the drag's.
+        if (in.clicks > 0 and self.drag == null) {
+            // A chip's click is the chip's; a press on the red line starts a drag, and
+            // does not focus.
             var scratch: [64 * 6]font.Vertex = undefined;
             var b: font.Batch = .{ .font = scene.face, .vertices = &scratch };
             var ui = stripUi(&b, scene, @floatCast(in.pointer_x), @floatCast(in.pointer_y), true);
             if (strip(&ui, self)) |chosen| {
                 self.setPort(scene.layout, chosen.port);
                 changed = true;
+            } else if (lineAt(scene, grid, @floatCast(in.pointer_x), @floatCast(in.pointer_y))) |i| {
+                self.startDrag(scene, self.shown[i], in.pointer_y);
+                changed = true;
             } else if (self.channelAt(grid, in.pointer_x, in.pointer_y)) |ch| _ = requests.push(.{ .focus = ch });
         }
+        if (self.drag != null) changed = self.dragStep(in, scene, grid, requests, now_ms) or changed;
         if (in.right_clicks > 0) {
             if (self.channelAt(grid, in.pointer_x, in.pointer_y)) |ch| _ = requests.push(.{
                 .listen = .{ .channel = ch, .add = in.ctrl },
@@ -321,7 +368,15 @@ const View = struct {
         var auto: [max_tiles]f32 = undefined;
         const n = self.scale.n;
         if (in.scroll_y != 0 or in.num_keys > 0) autoRanges(scene.det, scene.max_waves, auto[0..n]);
-        if (in.scroll_y != 0) {
+        if (in.scroll_y != 0 and in.ctrl and in.shift) {
+            // The threshold, not the scale; not while the line is being dragged.
+            if (self.drag == null) {
+                if (self.channelAt(grid, in.pointer_x, in.pointer_y)) |ch| {
+                    const now = self.present(scene, ch, now_ms);
+                    _ = self.ask(requests, ch, now.uv * tile_scale.Scale.factor(-in.scroll_y), now_ms);
+                }
+            }
+        } else if (in.scroll_y != 0) {
             if (in.ctrl) {
                 if (self.channelAt(grid, in.pointer_x, in.pointer_y)) |ch| {
                     if (ch < n) self.scale.wheelOne(ch, auto[ch], in.scroll_y, now_ms);
@@ -342,10 +397,83 @@ const View = struct {
                     self.scale.fixAuto(self.sel(), auto[0..n]);
                     changed = true;
                 },
+                'n' => if (self.drag == null) {
+                    if (self.channelAt(grid, in.pointer_x, in.pointer_y)) |ch| {
+                        const now = self.present(scene, ch, now_ms);
+                        _ = self.ask(requests, ch, if (now.fixed) 0 else now.uv, now_ms);
+                    }
+                },
                 else => {},
             },
         };
         return changed;
+    }
+
+    /// The threshold of channel `ch` now: what `Config` says, or what was just asked for
+    /// it (the display may not have answered yet). µV.
+    fn present(self: *const View, scene: Scene, ch: u32, now_ms: i64) struct { fixed: bool, uv: f64 } {
+        var t = scene.cfg.thresholds;
+        if (self.asked) |a| {
+            if (a.ch == ch and now_ms - a.ms < asked_hold_ms) t.fixed_uv[ch] = a.uv;
+        }
+        return .{ .fixed = t.isFixed(ch), .uv = t.levelUv(ch, scene.det.units[ch].sigma() * uv_per_bit) };
+    }
+
+    /// Asks the display to fix channel `ch`'s threshold at `uv` (kept within the span the
+    /// display keeps it in), or with 0 to let it follow the noise. False if the queue to
+    /// the display was full.
+    fn ask(self: *View, requests: *Requests, ch: u32, uv: f64, now_ms: i64) bool {
+        var t: link.Thresholds = .{};
+        t.set(ch, uv);
+        if (!requests.push(.{ .threshold = .{ .channel = ch, .uv = t.fixed_uv[ch] } })) return false;
+        self.asked = .{ .ch = ch, .uv = t.fixed_uv[ch], .ms = now_ms };
+        return true;
+    }
+
+    /// A press on tile `ch`'s red line, at height `y`.
+    fn startDrag(self: *View, scene: Scene, ch: u32, y: f64) void {
+        self.drag = .{
+            .ch = ch,
+            .auto_range = autoRange(scene.det, &scene.det.units[ch], scene.max_waves),
+            .uv = @floatCast(scene.det.threshold(ch) * uv_per_bit),
+            .press_y = y,
+        };
+    }
+
+    /// The drag, one pass on: the threshold follows the pointer, and is sent at most once
+    /// per picture and at the release (if it moved). True if what is drawn changed.
+    fn dragStep(self: *View, in: *const Input, scene: Scene, grid: Grid, requests: *Requests, now_ms: i64) bool {
+        const d = &self.drag.?;
+        const i = std.mem.indexOfScalar(u32, self.sel(), d.ch);
+        const plot = if (i) |k| tilePlot(scene, grid, k) else null;
+        if (plot == null) {
+            // The tile is gone or too small to draw a line on: the drag ends, unsent.
+            self.drag = null;
+            return true;
+        }
+        if (in.pointer_y != d.press_y) d.moved = true;
+        const before = d.uv;
+        if (d.moved) d.uv = dragValue(plot.?.valueAt(@floatCast(in.pointer_y)) * uv_per_bit, d.uv);
+        const release = !in.left_down;
+        const due = release or d.sent_uv == null or now_ms - d.sent_ms >= picture_ms;
+        if (d.moved and due and (d.sent_uv == null or d.sent_uv.? != d.uv)) {
+            if (self.ask(requests, d.ch, d.uv, now_ms)) {
+                d.sent_uv = d.uv;
+                d.sent_ms = now_ms;
+            }
+        }
+        if (release) {
+            self.drag = null;
+            return true;
+        }
+        return d.uv != before;
+    }
+
+    /// The pointer's shape: a hand over a red line, a closed one while dragging it.
+    fn cursor(self: *const View, scene: Scene, x: f64, y: f64) window_mod.Cursor {
+        if (self.drag != null) return .grabbing;
+        const grid = tileGrid(self.num_shown, scene.face, scene.width, scene.height);
+        return if (lineAt(scene, grid, @floatCast(x), @floatCast(y)) != null) .grab else .default;
     }
 
     /// What the display is told: every electrode's threshold in use, and the view.
@@ -507,6 +635,93 @@ const Grid = struct {
     }
 };
 
+/// Where a tile draws values: zero at two fifths of the height of the waveforms' area (so
+/// troughs have the room), `range` (sample units) at three fifths below or above it. The
+/// pair `yOf` and `valueAt` draw the red line and read the pointer on it, so a dragged line
+/// stays under the pointer.
+const Plot = struct {
+    top: f32,
+    bottom: f32,
+    zero: f32,
+    per_unit: f32,
+
+    /// For the tile at `r` (x, y, width, height); null if it is too small to draw in.
+    fn of(r: [4]f32, line_h: f32, range: f64) ?Plot {
+        const top = r[1] + line_h + 6;
+        const bottom = r[1] + r[3] - 4;
+        if (bottom - top < 12) return null;
+        return .{
+            .top = top,
+            .bottom = bottom,
+            .zero = top + 0.4 * (bottom - top),
+            .per_unit = @floatCast(0.6 * (bottom - top) / range),
+        };
+    }
+
+    /// The height of value `v`, sample units (kept within the area).
+    fn yOf(self: Plot, v: f64) f32 {
+        return std.math.clamp(self.zero - @as(f32, @floatCast(v)) * self.per_unit, self.top, self.bottom);
+    }
+
+    /// The value at height `y`, sample units (a height beyond the area is taken at its edge).
+    fn valueAt(self: Plot, y: f32) f64 {
+        return (self.zero - std.math.clamp(y, self.top, self.bottom)) / self.per_unit;
+    }
+};
+
+/// The range channel `ch`'s tile is drawn in, sample units: its fixed range, or its auto
+/// range (held while its line is dragged).
+fn tileRange(scene: Scene, ch: u32) f64 {
+    const view = scene.view;
+    const fixed = if (ch < view.scale.n) view.scale.ranges[ch] else 0;
+    if (fixed > 0) return fixed / uv_per_bit;
+    if (view.drag) |d| {
+        if (d.ch == ch) return d.auto_range;
+    }
+    return autoRange(scene.det, &scene.det.units[ch], scene.max_waves);
+}
+
+/// Where the red line is drawn, sample units: under the pointer while it is dragged, else
+/// the threshold `Config` gave the detector.
+fn shownThreshold(scene: Scene, ch: u32) f64 {
+    if (scene.view.drag) |d| {
+        if (d.ch == ch) return d.uv / uv_per_bit;
+    }
+    return scene.det.threshold(ch);
+}
+
+/// Tile `i`'s plot, or null if it is too small for one.
+fn tilePlot(scene: Scene, grid: Grid, i: usize) ?Plot {
+    return Plot.of(grid.rect(i), @round(scene.face.line_height), tileRange(scene, scene.view.shown[i]));
+}
+
+/// The tile whose red line is within `line_grab_px` of a point inside the tile (and
+/// within the line's length), if any.
+fn lineAt(scene: Scene, grid: Grid, x: f32, y: f32) ?usize {
+    const i = grid.at(x, y) orelse return null;
+    const r = grid.rect(i);
+    if (x < r[0] + 3 or x >= r[0] + r[2] - 3 or y < r[1] or y >= r[1] + r[3]) return null;
+    const plot = tilePlot(scene, grid, i) orelse return null;
+    // The line is one pixel high, from `line_y`.
+    const line_y = @round(plot.yOf(shownThreshold(scene, scene.view.shown[i])));
+    const off = if (y < line_y) line_y - y else @max(y - (line_y + 1), 0);
+    return if (off <= line_grab_px) i else null;
+}
+
+/// The threshold a drag to `uv` µV sets: within the span the display keeps a fixed one in,
+/// and never 0 (that would be "follow the noise"): at zero, the sign it had (`was`).
+fn dragValue(uv: f64, was: f32) f32 {
+    const sign: f64 = if (uv < 0 or (uv == 0 and was < 0)) -1 else 1;
+    return @floatCast(sign * std.math.clamp(@abs(uv), oez.thresholds.min_uv, oez.thresholds.max_uv));
+}
+
+/// A fixed threshold: "-52 µV", "+80 µV", "-1.20 mV".
+fn thresholdText(buf: []u8, uv: f32) []const u8 {
+    var scale_buf: [24]u8 = undefined;
+    const sign: []const u8 = if (uv < 0) "-" else "+";
+    return format.fmt(buf, "{s}{s}", .{ sign, format.fmtScale(&scale_buf, .electrode, @abs(uv)) });
+}
+
 fn draw(batch: *font.Batch, scene: Scene) void {
     const view = scene.view;
     const grid = tileGrid(view.num_shown, batch.font, scene.width, scene.height);
@@ -521,7 +736,6 @@ fn drawTile(batch: *font.Batch, scene: Scene, r: [4]f32, ch: u32, hovered: bool)
     const cfg = scene.cfg;
     const u = &det.units[ch];
     const line_h = @round(batch.font.line_height);
-    const uv = oez.types.electrode_uv_per_bit;
     const x = r[0];
     const y = r[1];
     const w = r[2];
@@ -546,24 +760,11 @@ fn drawTile(batch: *font.Batch, scene: Scene, r: [4]f32, ch: u32, hovered: bool)
         _ = batch.text(x + w - batch.font.width(rate) - 5, y + 3, rate, theme.text_dim);
     }
 
-    // The waveforms: zero at two fifths of the height, so troughs have the room.
-    const top = y + line_h + 6;
-    const bottom = y + h - 4;
-    if (bottom - top < 12) return;
-    const fixed = if (ch < scene.view.scale.n) scene.view.scale.ranges[ch] else 0;
-    const range: f64 = if (fixed > 0) fixed / uv else autoRange(det, u, scene.max_waves);
+    const plot = Plot.of(r, line_h, tileRange(scene, ch)) orelse return;
     const shown = wavesOf(u, scene.max_waves);
-    const zero = top + 0.4 * (bottom - top);
-    const per_unit: f32 = @floatCast(0.6 * (bottom - top) / range);
     const x_step = (w - 10) / @as(f32, @floatFromInt(det.len - 1));
-    const yOf = struct {
-        fn f(z: f32, scale: f32, lo: f32, hi: f32, v: f64) f32 {
-            return std.math.clamp(z - @as(f32, @floatCast(v)) * scale, lo, hi);
-        }
-    }.f;
-    // The threshold, and the trough's place in time.
-    const thr_y = yOf(zero, per_unit, top, bottom, det.threshold(ch));
-    batch.rect(x + 3, @round(thr_y), w - 6, 1, theme.tile_threshold);
+    // The threshold (under the pointer while it is dragged).
+    batch.rect(x + 3, @round(plot.yOf(shownThreshold(scene, ch))), w - 6, 1, theme.tile_threshold);
     // Oldest first, so the newest is on top and brightest.
     var k = shown;
     while (k > 0) {
@@ -574,24 +775,44 @@ fn drawTile(batch: *font.Batch, scene: Scene, r: [4]f32, ch: u32, hovered: bool)
         for (1..det.len) |s| {
             batch.line(
                 x + 5 + @as(f32, @floatFromInt(s - 1)) * x_step,
-                yOf(zero, per_unit, top, bottom, wave[s - 1]),
+                plot.yOf(wave[s - 1]),
                 x + 5 + @as(f32, @floatFromInt(s)) * x_step,
-                yOf(zero, per_unit, top, bottom, wave[s]),
+                plot.yOf(wave[s]),
                 1.2,
                 colour,
             );
         }
     }
-    // The noise, bottom right; a fixed range, bottom left, where there is room for it.
-    if (h > 3 * line_h and w > 80) {
-        const sigma = format.fmt(&buf, "\u{03C3} {d:.1}", .{u.sigma() * uv});
-        const sigma_x = x + w - batch.font.width(sigma) - 5;
-        _ = batch.text(sigma_x, y + h - line_h - 2, sigma, theme.text_dim);
-        if (fixed > 0) {
-            var range_buf: [32]u8 = undefined;
-            const text = rangeText(&range_buf, fixed);
-            if (x + 5 + batch.font.width(text) + 10 <= sigma_x) _ = batch.text(x + 5, y + h - line_h - 2, text, theme.tile_range_text);
+    if (h > 3 * line_h and w > 80) drawReadouts(batch, scene, r, ch);
+}
+
+/// Along a tile's bottom: the noise at the right; left of it a fixed threshold (or the
+/// one being dragged); a fixed range at the left, where there is room for each, in that
+/// order of priority.
+fn drawReadouts(batch: *font.Batch, scene: Scene, r: [4]f32, ch: u32) void {
+    const x = r[0];
+    const text_y = r[1] + r[3] - @round(batch.font.line_height) - 2;
+    var buf: [32]u8 = undefined;
+    const sigma = format.fmt(&buf, "\u{03C3} {d:.1}", .{scene.det.units[ch].sigma() * uv_per_bit});
+    var left_of = x + r[2] - batch.font.width(sigma) - 5;
+    _ = batch.text(left_of, text_y, sigma, theme.text_dim);
+    const fixed_uv: ?f32 = if (scene.view.drag != null and scene.view.drag.?.ch == ch)
+        scene.view.drag.?.uv
+    else if (scene.cfg.thresholds.isFixed(ch)) scene.cfg.thresholds.fixed_uv[ch] else null;
+    if (fixed_uv) |t| {
+        var thr_buf: [32]u8 = undefined;
+        const text = thresholdText(&thr_buf, t);
+        const thr_x = left_of - batch.font.width(text) - 8;
+        if (thr_x >= x + 5) {
+            _ = batch.text(thr_x, text_y, text, theme.tile_threshold_text);
+            left_of = thr_x;
         }
+    }
+    const range = if (ch < scene.view.scale.n) scene.view.scale.ranges[ch] else 0;
+    if (range > 0) {
+        var range_buf: [32]u8 = undefined;
+        const text = rangeText(&range_buf, range);
+        if (x + 5 + batch.font.width(text) + 10 <= left_of) _ = batch.text(x + 5, text_y, text, theme.tile_range_text);
     }
 }
 
@@ -602,53 +823,82 @@ fn drawTile(batch: *font.Batch, scene: Scene, r: [4]f32, ch: u32, hovered: bool)
 ///   (none)  a left click          r   a right click         m   a middle click
 ///   wN      the wheel, N axis units (15 = one click; negative the other way)
 ///   WN      Ctrl+wheel, N axis units
+///   XN      Ctrl+Shift+wheel, N axis units (a tile's threshold)
 ///   kC      the key C             KC  Shift+C (KC with C = u: redo)
+///   p       press the left button and hold it (a drag starts if on a red line)
+///   v       move the pointer (with the button still held after a p)
+///   l       release the left button
 ///
-/// C is one character, and cannot be ';'. One step is taken per pass of the loop.
+/// C is one character, and cannot be ';'. One step is taken per pass of the loop. From a
+/// p to its l, every pass has the left button held and the pointer where the script last
+/// put it (the real pointer is elsewhere); outside that, the real pointer is left alone.
 const Script = struct {
     rest: []const u8,
+    /// Where the pointer is while a scripted press is held.
+    held: ?[2]f64 = null,
 
-    /// Puts the next step into `in` if its time has come.
+    /// Puts the next step into `in` if its time has come, and a held press.
     fn next(self: *Script, seconds: f64, in: *Input) void {
+        self.step(seconds, in);
+        if (self.held) |p| {
+            in.left_down = true;
+            in.pointer_x = p[0];
+            in.pointer_y = p[1];
+        }
+    }
+
+    fn step(self: *Script, seconds: f64, in: *Input) void {
         if (self.rest.len == 0) return;
         const end = std.mem.indexOfScalar(u8, self.rest, ';') orelse self.rest.len;
-        const step = self.rest[0..end];
-        const colon = std.mem.indexOfScalar(u8, step, ':') orelse step.len;
-        const at = std.fmt.parseFloat(f64, step[0..colon]) catch 0;
+        const s = self.rest[0..end];
+        const colon = std.mem.indexOfScalar(u8, s, ':') orelse s.len;
+        const at = std.fmt.parseFloat(f64, s[0..colon]) catch 0;
         if (seconds < at) return;
-        applyStep(step[@min(colon + 1, step.len)..], in);
+        self.apply(s[@min(colon + 1, s.len)..], in);
         self.rest = self.rest[@min(end + 1, self.rest.len)..];
     }
-};
 
-/// "X,Y[,ACTION]" into `in`.
-fn applyStep(step: []const u8, in: *Input) void {
-    var it = std.mem.splitScalar(u8, step, ',');
-    const px = std.fmt.parseFloat(f64, it.next() orelse "0") catch 0;
-    in.pointer_x = @abs(px);
-    in.pointer_y = std.fmt.parseFloat(f64, it.next() orelse "0") catch 0;
-    in.ctrl = px < 0;
-    const action = it.rest();
-    if (action.len == 0) {
-        in.clicks += 1;
-        return;
+    /// "X,Y[,ACTION]" into `in`.
+    fn apply(self: *Script, s: []const u8, in: *Input) void {
+        var it = std.mem.splitScalar(u8, s, ',');
+        const px = std.fmt.parseFloat(f64, it.next() orelse "0") catch 0;
+        in.pointer_x = @abs(px);
+        in.pointer_y = std.fmt.parseFloat(f64, it.next() orelse "0") catch 0;
+        in.ctrl = px < 0;
+        const action = it.rest();
+        if (action.len == 0) {
+            in.clicks += 1;
+            return;
+        }
+        const arg = action[1..];
+        switch (action[0]) {
+            'r' => in.right_clicks += 1,
+            'm' => in.middle_clicks += 1,
+            'w', 'W', 'X' => {
+                in.scroll_y += std.fmt.parseFloat(f64, arg) catch 0;
+                if (action[0] != 'w') in.ctrl = true;
+                if (action[0] == 'X') in.shift = true;
+            },
+            'k', 'K' => if (arg.len == 1 and in.num_keys < in.keys.len) {
+                in.keys[in.num_keys] = .{ .char = arg[0] };
+                in.num_keys += 1;
+                if (action[0] == 'K') in.shift = true;
+            },
+            'p' => {
+                in.clicks += 1;
+                self.held = .{ in.pointer_x, in.pointer_y };
+            },
+            'v' => if (self.held != null) {
+                self.held = .{ in.pointer_x, in.pointer_y };
+            },
+            'l' => {
+                in.left_down = false;
+                self.held = null;
+            },
+            else => log.warn("OEZ_TILE_CLICKS: unknown action \"{s}\"", .{action}),
+        }
     }
-    const arg = action[1..];
-    switch (action[0]) {
-        'r' => in.right_clicks += 1,
-        'm' => in.middle_clicks += 1,
-        'w', 'W' => {
-            in.scroll_y += std.fmt.parseFloat(f64, arg) catch 0;
-            if (action[0] == 'W') in.ctrl = true;
-        },
-        'k', 'K' => if (arg.len == 1 and in.num_keys < in.keys.len) {
-            in.keys[in.num_keys] = .{ .char = arg[0] };
-            in.num_keys += 1;
-            if (action[0] == 'K') in.shift = true;
-        },
-        else => log.warn("OEZ_TILE_CLICKS: unknown action \"{s}\"", .{action}),
-    }
-}
+};
 
 const nowNs = oez.clock.nowNs;
 
@@ -849,6 +1099,69 @@ test "scripted input: the old form clicks, the fourth field does the rest" {
     try testing.expect(in.clicks == 0 and in.right_clicks == 0 and in.middle_clicks == 0 and in.num_keys == 0 and in.scroll_y == 0);
 }
 
+test "scripted input: press, move, release hold the button between steps; X is Ctrl+Shift+wheel" {
+    var s: Script = .{ .rest = "1:5,6,X-15;2:-7,8,X30;3:100,200,p;4:110,230,v;5:120,240,v;6:130,250,l;7:1,2,v" };
+    var in: Input = .{};
+    s.next(1, &in);
+    try testing.expect(in.scroll_y == -15 and in.ctrl and in.shift and in.clicks == 0 and !in.left_down);
+    in = .{};
+    s.next(2, &in);
+    try testing.expect(in.scroll_y == 30 and in.ctrl and in.shift and in.pointer_x == 7);
+    // The press: a click, the button held, and nothing else.
+    in = .{};
+    s.next(3, &in);
+    try testing.expect(in.clicks == 1 and in.left_down and in.pointer_x == 100 and in.pointer_y == 200);
+    try testing.expect(in.scroll_y == 0 and !in.ctrl and !in.shift);
+    // Between steps: still held, the pointer where the script put it (not the real one).
+    in = .{ .pointer_x = 900, .pointer_y = 900 };
+    s.next(3.5, &in);
+    try testing.expect(in.clicks == 0 and in.left_down and in.pointer_x == 100 and in.pointer_y == 200);
+    in = .{};
+    s.next(4, &in);
+    try testing.expect(in.clicks == 0 and in.left_down and in.pointer_x == 110 and in.pointer_y == 230);
+    in = .{};
+    s.next(4.5, &in);
+    try testing.expect(in.left_down and in.pointer_y == 230);
+    in = .{};
+    s.next(5, &in);
+    try testing.expect(in.left_down and in.pointer_y == 240);
+    // The release, at its own place; then the button is up and the real pointer is left alone.
+    in = .{ .left_down = true };
+    s.next(6, &in);
+    try testing.expect(in.clicks == 0 and !in.left_down and in.pointer_x == 130 and in.pointer_y == 250);
+    in = .{ .pointer_x = 900, .pointer_y = 901 };
+    s.next(6.5, &in);
+    try testing.expect(!in.left_down and in.pointer_x == 900 and in.pointer_y == 901);
+    // A move without a press only moves.
+    in = .{};
+    s.next(7, &in);
+    try testing.expect(!in.left_down and in.clicks == 0 and in.pointer_x == 1 and in.pointer_y == 2);
+    try testing.expectEqual(0, s.rest.len);
+}
+
+test "scripted input drives a drag through the view as a pointer would" {
+    const t = try testing.allocator.create(InputTest);
+    defer testing.allocator.destroy(t);
+    try t.init(&two_ports, .{});
+    defer t.deinit();
+    const ly = t.lineY(9);
+    var buf: [128]u8 = undefined;
+    const text = format.fmt(&buf, "0:180,{d};1:180,{d},p;2:180,{d},v;3:180,{d},l", .{ ly - 30, ly, ly + 10, ly + 12 });
+    var s: Script = .{ .rest = text };
+    var got: [16]link.Request = undefined;
+    for (0..8) |k| {
+        var in: Input = .{};
+        s.next(@as(f64, @floatFromInt(k)) * 0.5, &in);
+        _ = t.apply(in, @intCast(k * 500));
+    }
+    // The first step was a plain click above the line: focus. The drag: no focus, two values.
+    try testing.expectEqual(link.Request{ .focus = 9 }, t.requests.pop().?);
+    const sent = try t.thresholdRequests(&got);
+    try testing.expectEqual(2, sent.len);
+    try testing.expectEqual(@as(f32, @floatCast(t.plot(9).valueAt(ly + 12) * 0.195)), sent[1].threshold.uv);
+    try testing.expectEqual(null, t.view.drag);
+}
+
 /// A view and what it acts in, for the tests of input.
 const InputTest = struct {
     layout: oez.types.Layout,
@@ -868,9 +1181,9 @@ const InputTest = struct {
         self.det.deinit();
     }
 
-    /// Applies `in` at `now_ms` in a 1000 x 700 window.
-    fn apply(self: *InputTest, in: Input, now_ms: i64) bool {
-        const scene: Scene = .{
+    /// A 1000 x 700 window.
+    fn scene(self: *InputTest) Scene {
+        return .{
             .det = &self.det,
             .layout = &self.layout,
             .cfg = &self.cfg,
@@ -880,9 +1193,263 @@ const InputTest = struct {
             .height = 700,
             .max_waves = spikes.max_waves,
         };
-        return self.view.apply(&in, scene, &self.requests, now_ms);
+    }
+
+    /// Applies `in` at `now_ms` in a 1000 x 700 window.
+    fn apply(self: *InputTest, in: Input, now_ms: i64) bool {
+        return self.view.apply(&in, self.scene(), &self.requests, now_ms);
+    }
+
+    fn grid(self: *InputTest) Grid {
+        return tileGrid(self.view.num_shown, &self.face, 1000, 700);
+    }
+
+    /// Tile `i`'s plot.
+    fn plot(self: *InputTest, i: usize) Plot {
+        return tilePlot(self.scene(), self.grid(), i).?;
+    }
+
+    /// The top of tile `i`'s red line as drawn (`draw` puts it at the rounded height).
+    fn lineY(self: *InputTest, i: usize) f32 {
+        return @round(self.plot(i).yOf(shownThreshold(self.scene(), self.view.shown[i])));
+    }
+
+    /// As the display does it: the threshold set, and the detector given the new ones.
+    fn answer(self: *InputTest, ch: u32, uv: f32) void {
+        self.cfg.thresholds.set(ch, uv);
+        self.det.thresholds = self.cfg.thresholds;
+    }
+
+    /// The threshold requests waiting, in order (and nothing else may be waiting).
+    fn thresholdRequests(self: *InputTest, out: []link.Request) ![]link.Request {
+        var n: usize = 0;
+        while (self.requests.pop()) |r| {
+            try testing.expect(r == .threshold);
+            out[n] = r;
+            n += 1;
+        }
+        return out[0..n];
     }
 };
+
+test "the red line's height and the µV under the pointer are one mapping, both ways, auto and fixed" {
+    const t = try testing.allocator.create(InputTest);
+    defer testing.allocator.destroy(t);
+    var start: link.TileView = .{};
+    start.range_uv[1] = 200;
+    try t.init(&two_ports, start);
+    defer t.deinit();
+    // 48 tiles of 125 x 112: tile 0 at (3, 3, 119, 106), its waveforms from y 25 to 105.
+    for ([_]usize{ 0, 1, 4 }) |i| {
+        const p = t.plot(i);
+        const r = t.grid().rect(i);
+        try testing.expectEqual(r[1] + 22, p.top);
+        try testing.expectEqual(r[1] + r[3] - 4, p.bottom);
+        try testing.expectApproxEqAbs(p.top + 0.4 * (p.bottom - p.top), p.zero, 1e-4);
+        // The range (a fixed 200 µV, or the tile's auto range) is at the bottom, below
+        // zero (0.6 of the area's height); the top is two thirds of it above zero.
+        const range: f64 = if (i == 1) 200.0 / 0.195 else autoRange(&t.det, &t.det.units[i], spikes.max_waves);
+        try testing.expectApproxEqRel(-range, p.valueAt(p.bottom), 1e-5);
+        try testing.expectApproxEqRel(range * 2.0 / 3.0, p.valueAt(p.top), 1e-5);
+        try testing.expectEqual(0, p.valueAt(p.zero));
+        var y = p.top;
+        while (y <= p.bottom) : (y += 0.37) try testing.expectApproxEqAbs(y, p.yOf(p.valueAt(y)), 1e-3);
+        // Values: inside the area they come back; beyond it, the edge.
+        for ([_]f64{ -1, -0.6, -0.25, 0, 0.1, 0.6 }) |f| {
+            try testing.expectApproxEqAbs(f * range, p.valueAt(p.yOf(f * range)), range * 1e-5);
+        }
+        try testing.expectEqual(p.top, p.yOf(10 * range));
+        try testing.expectEqual(p.bottom, p.yOf(-10 * range));
+        try testing.expectEqual(p.valueAt(p.top), p.valueAt(p.top - 50));
+    }
+}
+
+test "the red line is taken within 4 px of it, inside its tile, and nowhere else" {
+    const t = try testing.allocator.create(InputTest);
+    defer testing.allocator.destroy(t);
+    try t.init(&two_ports, .{});
+    defer t.deinit();
+    const s = t.scene();
+    const g = t.grid();
+    // Tile 9: column 1, row 1, at (128, 115, 119, 106). Its line (following the noise,
+    // so below zero) is one pixel high from `ly`.
+    const ly = t.lineY(9);
+    try testing.expect(ly > t.plot(9).zero and ly <= t.plot(9).bottom);
+    for ([_]f32{ -4, -2, 0, 0.5, 1, 3, 5 }) |dy| try testing.expectEqual(9, lineAt(s, g, 180, ly + dy).?);
+    try testing.expectEqual(null, lineAt(s, g, 180, ly - 4.5));
+    try testing.expectEqual(null, lineAt(s, g, 180, ly + 5.5));
+    // Along the line's length only (x 131 to 244), and inside the tile.
+    try testing.expectEqual(9, lineAt(s, g, 131, ly).?);
+    try testing.expectEqual(null, lineAt(s, g, 130.5, ly));
+    try testing.expectEqual(9, lineAt(s, g, 243.9, ly).?);
+    try testing.expectEqual(null, lineAt(s, g, 244, ly));
+    try testing.expectEqual(null, lineAt(s, g, 126, ly)); // the gap between tiles
+    // The strip with the chips is no tile's.
+    for ([_]f32{ 674, 680, 690 }) |y| {
+        for ([_]f32{ 15, 50, 80, 500 }) |x| try testing.expectEqual(null, lineAt(s, g, x, y));
+    }
+    // The pointer's shape.
+    try testing.expectEqual(.grab, t.view.cursor(s, 180, ly + 2));
+    try testing.expectEqual(.default, t.view.cursor(s, 180, ly + 20));
+    _ = t.apply(.{ .clicks = 1, .left_down = true, .pointer_x = 180, .pointer_y = ly }, 0);
+    try testing.expectEqual(.grabbing, t.view.cursor(t.scene(), 900, 690));
+    // A tile too small for waveforms has no line.
+    const tiny: Grid = .of(48, 400, 150);
+    try testing.expectEqual(null, tilePlot(s, tiny, 0));
+    try testing.expectEqual(null, lineAt(s, tiny, 10, 20));
+}
+
+test "a drag sends the µV under the pointer, at most once per picture and at the release; no focus" {
+    const t = try testing.allocator.create(InputTest);
+    defer testing.allocator.destroy(t);
+    try t.init(&two_ports, .{});
+    defer t.deinit();
+    var got: [16]link.Request = undefined;
+    const ly = t.lineY(9);
+    const p = t.plot(9);
+    // The press: a drag, no focus, nothing sent yet; the auto range is held from here.
+    try testing.expect(t.apply(.{ .clicks = 1, .left_down = true, .pointer_x = 180, .pointer_y = ly + 2 }, 1000));
+    try testing.expectEqual(0, (try t.thresholdRequests(&got)).len);
+    try testing.expectEqual(9, t.view.drag.?.ch);
+    // The tile's auto range changes under the drag (its noise triples): the drag keeps
+    // the range it began with, so the pointer still means what it did at the press.
+    const mad = t.det.units[9].mad;
+    t.det.units[9].mad *= 3;
+    const before = t.det.threshold(9);
+    // Held still: nothing.
+    _ = t.apply(.{ .left_down = true, .pointer_x = 180, .pointer_y = ly + 2 }, 1010);
+    try testing.expectEqual(0, (try t.thresholdRequests(&got)).len);
+    // Moves: the first is sent at once, then one per 50 ms, each the newest.
+    const uvAt = struct {
+        fn f(pl: Plot, y: f32) f32 {
+            return @floatCast(pl.valueAt(y) * 0.195);
+        }
+    }.f;
+    _ = t.apply(.{ .left_down = true, .pointer_x = 180, .pointer_y = ly + 10 }, 1020);
+    _ = t.apply(.{ .left_down = true, .pointer_x = 190, .pointer_y = ly + 14 }, 1030);
+    _ = t.apply(.{ .left_down = true, .pointer_x = 190, .pointer_y = ly + 18 }, 1069);
+    var sent = try t.thresholdRequests(&got);
+    try testing.expectEqual(1, sent.len);
+    try testing.expectEqual(link.Request{ .threshold = .{ .channel = 9, .uv = uvAt(p, ly + 10) } }, sent[0]);
+    // The line is drawn at the pointer meanwhile, not where `Config` has it; the
+    // detector's threshold is untouched.
+    try testing.expectEqual(before, t.det.threshold(9));
+    try testing.expectEqual(ly + 18, t.lineY(9));
+    _ = t.apply(.{ .left_down = true, .pointer_x = 190, .pointer_y = ly + 20 }, 1070);
+    sent = try t.thresholdRequests(&got);
+    try testing.expectEqual(1, sent.len);
+    try testing.expectEqual(uvAt(p, ly + 20), sent[0].threshold.uv);
+    // The release, 10 ms later: sent at once, where it was released.
+    _ = t.apply(.{ .left_down = false, .pointer_x = 190, .pointer_y = ly + 25 }, 1080);
+    sent = try t.thresholdRequests(&got);
+    try testing.expectEqual(1, sent.len);
+    try testing.expectEqual(uvAt(p, ly + 25), sent[0].threshold.uv);
+    try testing.expectEqual(null, t.view.drag);
+    // Then the tile scales itself again, and the line is `Config`'s (the display has not
+    // answered here).
+    try testing.expect(t.plot(9).per_unit < p.per_unit * 0.9);
+    t.det.units[9].mad = mad;
+    try testing.expectEqual(ly, t.lineY(9));
+    try testing.expectEqual(.grab, t.view.cursor(t.scene(), 180, ly));
+}
+
+test "a drag across zero changes the slope; a press on the line without a move sends nothing" {
+    const t = try testing.allocator.create(InputTest);
+    defer testing.allocator.destroy(t);
+    try t.init(&two_ports, .{});
+    defer t.deinit();
+    var got: [16]link.Request = undefined;
+    const ly = t.lineY(9);
+    const p = t.plot(9);
+    // Press and release on the line in one pass, and in two: nothing at all.
+    _ = t.apply(.{ .clicks = 1, .pointer_x = 180, .pointer_y = ly }, 0);
+    try testing.expectEqual(null, t.view.drag);
+    _ = t.apply(.{ .clicks = 1, .left_down = true, .pointer_x = 180, .pointer_y = ly }, 100);
+    _ = t.apply(.{ .pointer_x = 180, .pointer_y = ly }, 200);
+    try testing.expectEqual(0, (try t.thresholdRequests(&got)).len);
+    // Up past zero: rising.
+    _ = t.apply(.{ .clicks = 1, .left_down = true, .pointer_x = 180, .pointer_y = ly }, 1000);
+    _ = t.apply(.{ .left_down = true, .pointer_x = 180, .pointer_y = p.zero - 20 }, 1100);
+    var sent = try t.thresholdRequests(&got);
+    try testing.expectEqual(1, sent.len);
+    try testing.expect(sent[0].threshold.uv > 5);
+    try testing.expectApproxEqRel(p.valueAt(p.zero - 20) * 0.195, sent[0].threshold.uv, 1e-5);
+    // At zero itself: the smallest threshold of the sign it had, not 0 (the noise).
+    _ = t.apply(.{ .left_down = true, .pointer_x = 180, .pointer_y = p.zero }, 1200);
+    sent = try t.thresholdRequests(&got);
+    try testing.expectEqual(5, sent[0].threshold.uv);
+    _ = t.apply(.{ .left_down = true, .pointer_x = 180, .pointer_y = p.zero + 30 }, 1300);
+    _ = t.apply(.{ .left_down = false, .pointer_x = 180, .pointer_y = p.zero + 30 }, 1301);
+    sent = try t.thresholdRequests(&got);
+    // The release where the last move was sent: not sent again.
+    try testing.expectEqual(1, sent.len);
+    try testing.expect(sent[0].threshold.uv < -5);
+}
+
+test "Ctrl+Shift+wheel: the threshold under the pointer 5 % per click, larger the way waveforms grow" {
+    const t = try testing.allocator.create(InputTest);
+    defer testing.allocator.destroy(t);
+    try t.init(&two_ports, .{});
+    defer t.deinit();
+    var got: [16]link.Request = undefined;
+    t.answer(9, -50);
+    // Tile 9 at (128, 115): one click the way the plain wheel makes waveforms larger.
+    try testing.expect(!t.apply(.{ .scroll_y = -15, .ctrl = true, .shift = true, .pointer_x = 180, .pointer_y = 130 }, 0));
+    var sent = try t.thresholdRequests(&got);
+    try testing.expectEqual(1, sent.len);
+    try testing.expectEqual(9, sent[0].threshold.channel);
+    try testing.expectApproxEqRel(-52.5, sent[0].threshold.uv, 1e-6);
+    // The scales are untouched.
+    try testing.expect(!t.view.scale.pending and t.view.scale.ranges[9] == 0);
+    // A second click before the display answers starts from the first.
+    _ = t.apply(.{ .scroll_y = -15, .ctrl = true, .shift = true, .pointer_x = 180, .pointer_y = 130 }, 30);
+    sent = try t.thresholdRequests(&got);
+    try testing.expectApproxEqRel(-50 * 1.05 * 1.05, sent[0].threshold.uv, 1e-6);
+    // The display answers; the other way, two clicks at once.
+    t.answer(9, sent[0].threshold.uv);
+    _ = t.apply(.{ .scroll_y = 30, .ctrl = true, .shift = true, .pointer_x = 180, .pointer_y = 130 }, 1000);
+    sent = try t.thresholdRequests(&got);
+    try testing.expectApproxEqRel(-50, sent[0].threshold.uv, 1e-5);
+    // A channel following the noise is taken at its present value first: tile 1.
+    const now: f32 = @floatCast(t.det.threshold(1) * 0.195);
+    _ = t.apply(.{ .scroll_y = -15, .ctrl = true, .shift = true, .pointer_x = 130, .pointer_y = 10 }, 2000);
+    sent = try t.thresholdRequests(&got);
+    try testing.expectEqual(1, sent[0].threshold.channel);
+    try testing.expectApproxEqRel(now * 1.05, sent[0].threshold.uv, 1e-5);
+    // Off the tiles: nothing.
+    _ = t.apply(.{ .scroll_y = -15, .ctrl = true, .shift = true, .pointer_x = 500, .pointer_y = 690 }, 3000);
+    try testing.expectEqual(0, (try t.thresholdRequests(&got)).len);
+}
+
+test "n: a fixed threshold back to the noise, one following the noise fixed where it is" {
+    const t = try testing.allocator.create(InputTest);
+    defer testing.allocator.destroy(t);
+    try t.init(&two_ports, .{});
+    defer t.deinit();
+    var got: [16]link.Request = undefined;
+    t.answer(9, 80);
+    var in = keyInput('n', false);
+    in.pointer_x = 180;
+    in.pointer_y = 130;
+    try testing.expect(!t.apply(in, 0));
+    var sent = try t.thresholdRequests(&got);
+    try testing.expectEqual(1, sent.len);
+    try testing.expectEqual(link.Request{ .threshold = .{ .channel = 9, .uv = 0 } }, sent[0]);
+    // Pressed again before the display answers: fixed where the noise puts it.
+    const by_noise: f32 = @floatCast(@as(f64, t.cfg.thresholds.sigmas) * -t.det.units[9].sigma() * 0.195);
+    _ = t.apply(in, 20);
+    sent = try t.thresholdRequests(&got);
+    try testing.expectApproxEqRel(by_noise, sent[0].threshold.uv, 1e-5);
+    // Once the display has answered (and the hold is over), from what `Config` says.
+    t.answer(9, sent[0].threshold.uv);
+    _ = t.apply(in, 1000);
+    sent = try t.thresholdRequests(&got);
+    try testing.expectEqual(0, sent[0].threshold.uv);
+    t.answer(9, 0);
+    _ = t.apply(in, 2000);
+    sent = try t.thresholdRequests(&got);
+    try testing.expectApproxEqRel(by_noise, sent[0].threshold.uv, 1e-5);
+}
 
 test "clicks ask the display: left focuses, right listens, middle unfocuses; a chip is the chip's" {
     const t = try testing.allocator.create(InputTest);
@@ -1068,6 +1635,8 @@ const draw_states = [_][]const u8{
     "three headstages on two ports, port A",
     "a small window, port B: no room for the range or the rate",
     "64 + 16 electrodes",
+    "fixed thresholds: A1-5 at -52 µV (range 400 µV), A1-10 at +80 µV, a wide window",
+    "a drag on A1-10, 20 px below its line; A1-5 fixed at -52 µV, no room for its range",
 };
 
 const DrawState = struct {
@@ -1102,6 +1671,7 @@ fn drawState(st: *DrawState, k: usize) void {
             start.range_uv[4] = 250;
             start.range_uv[70] = 1500;
         },
+        7, 8 => start.range_uv[4] = 400,
         else => {},
     }
     st.view.init(&st.layout, &start);
@@ -1122,6 +1692,34 @@ fn drawState(st: *DrawState, k: usize) void {
         st.height = 900;
         st.cfg.focus = 70;
     }
+    if (k == 7 or k == 8) st.cfg.thresholds.set(4, -52);
+    if (k == 7) {
+        st.cfg.thresholds.set(9, 80);
+        st.width = 1600;
+        st.height = 900;
+    }
+}
+
+/// State 8's drag: a press on A1-10's red line and a move 20 px down, as `View.apply`
+/// takes them (the pointer stays there, over the tile).
+fn dragForState(st: *DrawState, det: *const spikes.Detector) void {
+    const face = testFont();
+    const scene: Scene = .{
+        .det = det,
+        .layout = &st.layout,
+        .cfg = &st.cfg,
+        .view = &st.view,
+        .face = &face,
+        .width = st.width,
+        .height = st.height,
+        .max_waves = wavesShown(max_vertices, st.view.num_shown, det.len),
+    };
+    const grid = tileGrid(st.view.num_shown, &face, st.width, st.height);
+    const y = @round(tilePlot(scene, grid, 9).?.yOf(det.threshold(9)));
+    var requests: Requests = .{};
+    _ = st.view.apply(&.{ .clicks = 1, .left_down = true, .pointer_x = 180, .pointer_y = y }, scene, &requests, 0);
+    _ = st.view.apply(&.{ .left_down = true, .pointer_x = 180, .pointer_y = y + 20 }, scene, &requests, 100);
+    st.mouse = .{ 180, y + 20 };
 }
 
 fn writePoint(w: *std.Io.Writer, x: f32, y: f32) !void {
@@ -1230,6 +1828,9 @@ test "what the tile window draws is unchanged" {
             else => 0,
         };
         if (dets[which] == null) dets[which] = try testDetector(&st.layout, 2.5);
+        // As `takeConfig` does: the detector's thresholds are `Config`'s.
+        dets[which].?.thresholds = st.cfg.thresholds;
+        if (k == 8) dragForState(st, &dets[which].?);
         try writeState(&out.writer, name, st, &dets[which].?, vertices);
     }
     const got = out.written();
