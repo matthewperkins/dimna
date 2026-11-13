@@ -2522,6 +2522,24 @@ test "script steps: swheel, awheel and l" {
     try testing.expect(d.help and in.num_keys == 0);
 }
 
+test "the trigger's dashed line is on the pixel row where the shader draws its level" {
+    const st = try testing.allocator.create(FrameState);
+    defer testing.allocator.destroy(st);
+    // The slope state: Port A's level fixed at -62 µV on row 4; Port B's latched from the
+    // noise on row 2 (where the dashes used to be put one pixel row low, at 114).
+    frameState(st, 3);
+    for ([_][3]f32{ .{ 0, 4, 81 }, .{ 1, 2, 113 } }) |c| {
+        const p = &st.display.set.items[@intFromFloat(c[0])];
+        const row: usize = @intFromFloat(c[1]);
+        const r = p.pixelRect(st.width, st.height);
+        const uv = st.display.thresholds.fixed_uv[p.first_ch + row];
+        const lines = st.display.panelLines(p, r);
+        try testing.expect(lines.len == 1 and lines.items[0].dashed and lines.items[0].y == c[2]);
+        try testing.expectEqual(c[2], levelPixelY(p, r, row, uv).?);
+        try testing.expect(@abs(c[2] + 0.5 - shaderPixelY(p, r, row, uv)) <= 0.5 + 1e-3);
+    }
+}
+
 test "a dragged line is drawn where the shader draws a sample of the value it set" {
     const st = try testing.allocator.create(FrameState);
     defer testing.allocator.destroy(st);
