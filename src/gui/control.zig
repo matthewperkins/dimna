@@ -69,8 +69,7 @@ pub const RecStatus = struct {
         return self.note_buf[0..self.note_len];
     }
     pub fn setNote(self: *RecStatus, comptime fmt: []const u8, args: anytype) void {
-        const text: []const u8 = std.fmt.bufPrint(&self.note_buf, fmt, args) catch "";
-        self.note_len = text.len;
+        self.note_len = format.fmt(&self.note_buf, fmt, args).len;
     }
 };
 
@@ -160,8 +159,7 @@ pub const BoardStatus = struct {
     }
 
     pub fn setNote(self: *BoardStatus, comptime fmt: []const u8, args: anytype) void {
-        const text: []const u8 = std.fmt.bufPrint(&self.note_buf, fmt, args) catch "";
-        self.note_len = text.len;
+        self.note_len = format.fmt(&self.note_buf, fmt, args).len;
     }
 };
 
@@ -197,13 +195,13 @@ pub const QuitPrompt = struct {
 
 /// "0.58 Hz", "300 Hz", "7.60 kHz".
 pub fn fmtHz(buf: []u8, hz: f64) []const u8 {
-    return (if (hz >= 1000) std.fmt.bufPrint(buf, "{d:.2} kHz", .{hz / 1000}) else if (hz >= 100) std.fmt.bufPrint(buf, "{d:.0} Hz", .{hz}) else std.fmt.bufPrint(buf, "{d:.2} Hz", .{hz})) catch "";
+    return if (hz >= 1000) format.fmt(buf, "{d:.2} kHz", .{hz / 1000}) else if (hz >= 100) format.fmt(buf, "{d:.0} Hz", .{hz}) else format.fmt(buf, "{d:.2} Hz", .{hz});
 }
 
 /// "1:05" or "1:02:03".
 pub fn fmtClock(buf: []u8, seconds: f64) []const u8 {
     const s: u64 = @intFromFloat(@max(0, seconds));
-    return (if (s >= 3600) std.fmt.bufPrint(buf, "{d}:{d:0>2}:{d:0>2}", .{ s / 3600, s / 60 % 60, s % 60 }) else std.fmt.bufPrint(buf, "{d}:{d:0>2}", .{ s / 60, s % 60 })) catch "";
+    return if (s >= 3600) format.fmt(buf, "{d}:{d:0>2}:{d:0>2}", .{ s / 3600, s / 60 % 60, s % 60 }) else format.fmt(buf, "{d}:{d:0>2}", .{ s / 60, s % 60 });
 }
 
 /// A change to one panel, asked for by the control window.
@@ -339,7 +337,8 @@ fn loop(cfg: *Config) !void {
     const gpa = cfg.gpa;
     const shared = cfg.shared;
     var win: Window = undefined;
-    // OEZ_APP_ID gives test runs a window class of their own.
+    // OEZ_APP_ID gives test runs a window class of their own (one too long for the buffer
+    // gives the usual class).
     var class_buf: [64]u8 = undefined;
     const class = std.fmt.bufPrintSentinel(&class_buf, "{s}-control", .{if (std.c.getenv("OEZ_APP_ID")) |v| std.mem.span(v) else "oez"}, 0) catch "oez-control";
     try win.init("oEZ control", class);
@@ -369,6 +368,7 @@ fn loop(cfg: *Config) !void {
         try win.pump(if (dirty or script.len > 0) 20 else 100);
         var in = win.takeInput();
         if (script.len > 0) {
+            // A number that does not parse reads as 0 (a test script's mistake).
             const end = std.mem.indexOfScalar(u8, script, ';') orelse script.len;
             var it = std.mem.tokenizeAny(u8, script[0..end], ":,");
             const at = std.fmt.parseFloat(f64, it.next() orelse "0") catch 0;
@@ -417,12 +417,33 @@ fn nowSeconds() f64 {
     return @as(f64, @floatFromInt(oez.clock.nowNs())) / 1e9;
 }
 
-/// Describes the whole window for this frame and queues what was clicked.
+/// Describes the whole window for this frame and queues what was clicked. The order of the
+/// calls (and of the `ui.*` calls in each) is the layout.
 fn build(ui: *ui_mod.Ui, cfg: *const Config, snap: *const Snapshot, shared: *Shared) void {
-    var buf: [160]u8 = undefined;
-    const step_up = 1.25;
     _ = cfg;
+    titleSection(ui, snap, shared);
+    if (snap.quit_prompt.active) {
+        // Quitting with board settings that differ from the config: nothing else is shown.
+        quitPrompt(ui, &snap.quit_prompt, shared);
+        return;
+    }
+    statusSection(ui, snap, shared);
+    recordSection(ui, &snap.rec, shared);
+    reviewSection(ui, &snap.review, shared);
+    notesSection(ui, &snap.notes, shared);
+    audioSection(ui, &snap.audio, shared);
+    boardSection(ui, &snap.board, snap.rec.state, shared);
+    for (snap.set.items[0..snap.set.len], 0..) |*p, i| panelSection(ui, p, i, shared);
+    ui.text("On the display: wheel = scale, Ctrl+wheel = one row, Shift+wheel = time,", ui_mod.text_dim);
+    ui.newline();
+    ui.text("keys  - =  [ ]  m  t  f  , .  ; '  r  q", ui_mod.text_dim);
+}
 
+/// Multiplies the scale or the time base, one stepper click.
+const step_up = 1.25;
+
+/// The name, the source, and the alarm (or a warning).
+fn titleSection(ui: *ui_mod.Ui, snap: *const Snapshot, shared: *Shared) void {
     ui.text("oEZ", ui_mod.text_bright);
     ui.text(snap.about_buf[0..snap.about_len], ui_mod.text_dim);
     ui.newline();
@@ -437,41 +458,45 @@ fn build(ui: *ui_mod.Ui, cfg: *const Config, snap: *const Snapshot, shared: *Sha
         ui.text(snap.status.warning(), ui_mod.text_warn);
         ui.newline();
     }
+}
 
-    if (snap.quit_prompt.active) {
-        // Quitting with board settings that differ from the config: nothing else is shown.
-        const q = &snap.quit_prompt;
-        ui.separator();
-        ui.text("Settings changed since they were last saved:", ui_mod.text_bright);
+/// Shown instead of everything below the title when quitting with changed board settings.
+fn quitPrompt(ui: *ui_mod.Ui, q: *const QuitPrompt, shared: *Shared) void {
+    ui.separator();
+    ui.text("Settings changed since they were last saved:", ui_mod.text_bright);
+    ui.newline();
+    for (q.lines[0..q.count], q.lens[0..q.count]) |*line, len| {
+        ui.space(16);
+        ui.text(line[0..len], ui_mod.text_warn);
         ui.newline();
-        for (q.lines[0..q.count], q.lens[0..q.count]) |*line, len| {
-            ui.space(16);
-            ui.text(line[0..len], ui_mod.text_warn);
-            ui.newline();
-        }
-        ui.text(q.path_buf[0..q.path_len], ui_mod.text_dim);
-        ui.newline();
-        if (ui.button("Save as default and quit", true)) shared.push(.{ .action = .{ .quit_answer = .save } });
-        if (ui.button("Quit without saving", false)) shared.push(.{ .action = .{ .quit_answer = .discard } });
-        if (ui.button("Cancel", false)) shared.push(.{ .action = .{ .quit_answer = .cancel } });
-        return;
     }
+    ui.text(q.path_buf[0..q.path_len], ui_mod.text_dim);
+    ui.newline();
+    if (ui.button("Save as default and quit", true)) shared.push(.{ .action = .{ .quit_answer = .save } });
+    if (ui.button("Quit without saving", false)) shared.push(.{ .action = .{ .quit_answer = .discard } });
+    if (ui.button("Cancel", false)) shared.push(.{ .action = .{ .quit_answer = .cancel } });
+}
 
+/// The display's latency and losses, and Save view / Quit.
+fn statusSection(ui: *ui_mod.Ui, snap: *const Snapshot, shared: *Shared) void {
+    var buf: [160]u8 = undefined;
     const st = snap.status;
     if (st.valid) {
-        ui.text(std.fmt.bufPrint(&buf, "display {d:.1} ms   {d} fps   running {d:.0} s", .{ st.latency_ms, st.fps, snap.seconds }) catch "", ui_mod.text_dim);
+        ui.text(format.fmt(&buf, "display {d:.1} ms   {d} fps   running {d:.0} s", .{ st.latency_ms, st.fps, snap.seconds }), ui_mod.text_dim);
     } else ui.text("starting", ui_mod.text_dim);
-    if (st.lost > 0) ui.text(std.fmt.bufPrint(&buf, "display skipped {d} blocks", .{st.lost}) catch "", ui_mod.text_warn);
-    if (snap.ring_overflow > 0) ui.text(std.fmt.bufPrint(&buf, "ACQUISITION RING OVERFLOW {d}", .{snap.ring_overflow}) catch "", ui_mod.text_warn);
+    if (st.lost > 0) ui.text(format.fmt(&buf, "display skipped {d} blocks", .{st.lost}), ui_mod.text_warn);
+    if (snap.ring_overflow > 0) ui.text(format.fmt(&buf, "ACQUISITION RING OVERFLOW {d}", .{snap.ring_overflow}), ui_mod.text_warn);
     ui.x = @max(ui.x, ui.width - 170);
     // Lit while the panels' settings differ from what is saved.
     if (ui.button("Save view", snap.view_unsaved)) shared.push(.{ .action = .save_view });
     if (ui.button("Quit", false)) shared.push(.{ .action = .quit });
     ui.newline();
     ui.separator();
+}
 
-    // Recording.
-    const rec = &snap.rec;
+/// Recording.
+fn recordSection(ui: *ui_mod.Ui, rec: *const RecStatus, shared: *Shared) void {
+    var buf: [160]u8 = undefined;
     switch (rec.state) {
         .idle, .failed => if (ui.button("Record", false)) shared.push(.{ .action = .{ .record = true } }),
         .recording => if (ui.button("Stop recording", true)) shared.push(.{ .action = .{ .record = false } }),
@@ -479,9 +504,9 @@ fn build(ui: *ui_mod.Ui, cfg: *const Config, snap: *const Snapshot, shared: *Sha
     }
     if (rec.state == .recording or rec.state == .stopping) {
         var clock_buf: [16]u8 = undefined;
-        ui.text(std.fmt.bufPrint(&buf, "REC {s}   {d:.2} GB   {d:.1} M samples", .{ fmtClock(&clock_buf, rec.seconds), @as(f64, @floatFromInt(rec.bytes)) / 1e9, @as(f64, @floatFromInt(rec.samples)) / 1e6 }) catch "", ui_mod.text_rec);
-        if (rec.behind_s > 1.0) ui.text(std.fmt.bufPrint(&buf, "disk is {d:.1} s behind", .{rec.behind_s}) catch "", ui_mod.text_warn);
-        if (rec.gaps > 0) ui.text(std.fmt.bufPrint(&buf, "{d} gaps", .{rec.gaps}) catch "", ui_mod.text_warn);
+        ui.text(format.fmt(&buf, "REC {s}   {d:.2} GB   {d:.1} M samples", .{ fmtClock(&clock_buf, rec.seconds), @as(f64, @floatFromInt(rec.bytes)) / 1e9, @as(f64, @floatFromInt(rec.samples)) / 1e6 }), ui_mod.text_rec);
+        if (rec.behind_s > 1.0) ui.text(format.fmt(&buf, "disk is {d:.1} s behind", .{rec.behind_s}), ui_mod.text_warn);
+        if (rec.gaps > 0) ui.text(format.fmt(&buf, "{d} gaps", .{rec.gaps}), ui_mod.text_warn);
     } else if (rec.state == .failed) {
         ui.text("RECORDING FAILED", ui_mod.text_warn);
     } else ui.text("not recording", ui_mod.text_dim);
@@ -495,9 +520,11 @@ fn build(ui: *ui_mod.Ui, cfg: *const Config, snap: *const Snapshot, shared: *Sha
         ui.newline();
     }
     ui.separator();
+}
 
-    // Scroll-back review.
-    const rv = &snap.review;
+/// Scroll-back review.
+fn reviewSection(ui: *ui_mod.Ui, rv: *const ReviewStatus, shared: *Shared) void {
+    var buf: [160]u8 = undefined;
     ui.text("Review", ui_mod.text_bright);
     ui.column(64);
     if (ui.button("start", false)) shared.push(.{ .action = .{ .review = .start } });
@@ -509,41 +536,45 @@ fn build(ui: *ui_mod.Ui, cfg: *const Config, snap: *const Snapshot, shared: *Sha
     if (ui.button("LIVE", !rv.active) and rv.active) shared.push(.{ .action = .{ .review = .live } });
     if (rv.active) {
         var c1: [16]u8 = undefined;
-        ui.text(std.fmt.bufPrint(&buf, "{d:.1} s behind, at {s}{s}{s}", .{ rv.behind_s, fmtClock(&c1, rv.at_s), if (rv.from_file) "" else " (last seconds only: not recording)", if (rv.loading) " ..." else "" }) catch "", ui_mod.text_warn);
+        ui.text(format.fmt(&buf, "{d:.1} s behind, at {s}{s}{s}", .{ rv.behind_s, fmtClock(&c1, rv.at_s), if (rv.from_file) "" else " (last seconds only: not recording)", if (rv.loading) " ..." else "" }), ui_mod.text_warn);
     }
     ui.newline();
     ui.separator();
+}
 
-    // Notes.
-    const nt = &snap.notes;
+/// Notes: the presets as buttons, and the newest notes.
+fn notesSection(ui: *ui_mod.Ui, nt: *const NotesStatus, shared: *Shared) void {
+    var buf: [160]u8 = undefined;
     ui.text("Notes", ui_mod.text_bright);
     ui.column(64);
     var any_preset = false;
     for (&nt.presets, 1..) |*pr, n| {
         if (pr.len == 0) continue;
         any_preset = true;
-        if (ui.button(std.fmt.bufPrint(&buf, "{d} {s}", .{ n, pr.buf[0..pr.len] }) catch "", false)) shared.push(.{ .action = .{ .note_preset = @intCast(n) } });
+        if (ui.button(format.fmt(&buf, "{d} {s}", .{ n, pr.buf[0..pr.len] }), false)) shared.push(.{ .action = .{ .note_preset = @intCast(n) } });
     }
     if (!any_preset) ui.text("on the display: / types a note, Enter saves it", ui_mod.text_dim);
     if (nt.editing) ui.text("typing a note", ui_mod.text_warn);
-    if (nt.num_drafts > 0) ui.text(std.fmt.bufPrint(&buf, "{d} drafts (` stamps one)", .{nt.num_drafts}) catch "", ui_mod.text_dim);
+    if (nt.num_drafts > 0) ui.text(format.fmt(&buf, "{d} drafts (` stamps one)", .{nt.num_drafts}), ui_mod.text_dim);
     ui.newline();
     for (nt.recent[0..nt.num_recent]) |*line| {
         var clock_buf: [16]u8 = undefined;
         ui.space(16);
-        ui.text(std.fmt.bufPrint(&buf, "{s}  {s}", .{ fmtClock(&clock_buf, line.seconds), line.buf[0..line.len] }) catch "", ui_mod.text_dim);
+        ui.text(format.fmt(&buf, "{s}  {s}", .{ fmtClock(&clock_buf, line.seconds), line.buf[0..line.len] }), ui_mod.text_dim);
         ui.newline();
     }
     ui.separator();
+}
 
-    // The audio monitor.
-    const au = &snap.audio;
+/// The audio monitor.
+fn audioSection(ui: *ui_mod.Ui, au: *const AudioStatus, shared: *Shared) void {
+    var buf: [160]u8 = undefined;
     ui.text("Audio", ui_mod.text_bright);
     ui.column(64);
     if (ui.button("on", au.settings.enabled) and !au.settings.enabled) shared.push(.{ .action = .{ .audio = .{ .enabled = true } } });
     if (ui.button("off", !au.settings.enabled) and au.settings.enabled) shared.push(.{ .action = .{ .audio = .{ .enabled = false } } });
     if (ui.button("mute", au.settings.mute)) shared.push(.{ .action = .{ .audio = .{ .mute = !au.settings.mute } } });
-    const dvol = ui.stepper("volume", std.fmt.bufPrint(&buf, "{d:.0} dB", .{au.settings.volume_db}) catch "", 60);
+    const dvol = ui.stepper("volume", format.fmt(&buf, "{d:.0} dB", .{au.settings.volume_db}), 60);
     if (dvol != 0) shared.push(.{ .action = .{ .audio = .{ .volume = dvol > 0 } } });
     // "plain" is the linear reference chain, for comparing by ear.
     if (ui.button("shaped", !au.settings.reference) and au.settings.reference) shared.push(.{ .action = .{ .audio = .{ .reference = false } } });
@@ -554,21 +585,25 @@ fn build(ui: *ui_mod.Ui, cfg: *const Config, snap: *const Snapshot, shared: *Sha
     if (!au.running) {
         ui.text("no audio output", ui_mod.text_dim);
     } else if (au.settings.enabled) {
-        ui.text(std.fmt.bufPrint(&buf, "listening to {s}", .{if (au.listen_len > 0) au.listen_buf[0..au.listen_len] else "nothing (click a row on the display)"}) catch "", ui_mod.text_dim);
+        ui.text(format.fmt(&buf, "listening to {s}", .{if (au.listen_len > 0) au.listen_buf[0..au.listen_len] else "nothing (click a row on the display)"}), ui_mod.text_dim);
         if (au.listen_len > 0) {
             if (au.sigma_uv > 0)
-                ui.text(std.fmt.bufPrint(&buf, "noise {d:.1} µV, held", .{au.sigma_uv}) catch "", ui_mod.text_dim)
+                ui.text(format.fmt(&buf, "noise {d:.1} µV, held", .{au.sigma_uv}), ui_mod.text_dim)
             else
                 ui.text("measuring the noise (3 s)", ui_mod.text_warn);
-            ui.text(std.fmt.bufPrint(&buf, "{d:.0} ms", .{au.latency_ms}) catch "", ui_mod.text_dim);
+            ui.text(format.fmt(&buf, "{d:.0} ms", .{au.latency_ms}), ui_mod.text_dim);
         }
-        if (au.underruns > 0) ui.text(std.fmt.bufPrint(&buf, "{d} gaps in the sound", .{au.underruns}) catch "", ui_mod.text_dim);
+        if (au.underruns > 0) ui.text(format.fmt(&buf, "{d} gaps in the sound", .{au.underruns}), ui_mod.text_dim);
     } else ui.text("off", ui_mod.text_dim);
     ui.newline();
     ui.separator();
+}
 
-    // The headstage chips: these change what is recorded. Both apply without a gap.
-    const bd = &snap.board;
+/// The headstage chips: these change what is recorded. The amplifier band and the DSP
+/// apply without a gap; the sample rate and half-channel mode need a restart, which waits
+/// while `rec` records.
+fn boardSection(ui: *ui_mod.Ui, bd: *const BoardStatus, rec: RecStatus.State, shared: *Shared) void {
+    var buf: [160]u8 = undefined;
     var hz_buf: [24]u8 = undefined;
     ui.text("Headstages", ui_mod.text_bright);
     ui.text("(these change what is recorded)", ui_mod.text_dim);
@@ -594,7 +629,7 @@ fn build(ui: *ui_mod.Ui, cfg: *const Config, snap: *const Snapshot, shared: *Sha
     // applied together by restarting acquisition (not while recording).
     ui.text("sample rate", ui_mod.text_dim);
     ui.column(120);
-    const dr = ui.stepper("", std.fmt.bufPrint(&buf, "{d} Hz", .{bd.pending.sample_rate}) catch "", 80);
+    const dr = ui.stepper("", format.fmt(&buf, "{d} Hz", .{bd.pending.sample_rate}), 80);
     if (dr != 0) shared.push(.{ .action = .{ .board = .{ .rate = dr > 0 } } });
     for (bd.headstages[0..bd.num_headstages]) |h| {
         if (!h.rhd2132) continue;
@@ -606,7 +641,7 @@ fn build(ui: *ui_mod.Ui, cfg: *const Config, snap: *const Snapshot, shared: *Sha
     }
     ui.newline();
     if (bd.restartPending()) {
-        if (rec.state == .idle or rec.state == .failed) {
+        if (rec == .idle or rec == .failed) {
             if (ui.button("Apply (restarts acquisition)", true)) shared.push(.{ .action = .{ .board = .apply } });
         } else ui.text("sample rate and channels can change once the recording is stopped", ui_mod.text_warn);
         ui.newline();
@@ -621,134 +656,153 @@ fn build(ui: *ui_mod.Ui, cfg: *const Config, snap: *const Snapshot, shared: *Sha
         ui.newline();
     }
     ui.separator();
+}
 
-    for (snap.set.items[0..snap.set.len], 0..) |*p, i| {
-        // Name, and what the panel shows.
-        ui.text(p.name(), ui_mod.text_bright);
-        ui.text(std.fmt.bufPrint(&buf, "{d} {s} channels", .{ p.rows, switch (p.kind) {
-            .electrode => "electrode",
-            .aux => "AUX",
-            .adc => "ADC",
-            .ttl => "TTL",
-        } }) catch "", ui_mod.text_dim);
-        ui.x = @max(ui.x, ui.width - 78);
-        if (ui.button("reset", false)) shared.push(.{ .panel = i, .action = .reset });
-        ui.newline();
-
-        ui.text("view", ui_mod.text_dim);
-        ui.column(64);
-        inline for (.{ panels.Mode.scroll, panels.Mode.sweep, panels.Mode.triggered }) |m| {
-            if (ui.button(@tagName(m), p.mode == m) and p.mode != m) shared.push(.{ .panel = i, .action = .{ .mode = m } });
-        }
-        ui.space(14);
-        var value_buf: [48]u8 = undefined;
-        const time_text = if (p.mode == .triggered)
-            std.fmt.bufPrint(&value_buf, "-{d:.1} / +{d:.1} ms", .{ p.pre_ms, p.post_ms }) catch ""
-        else
-            format.fmtSpan(&value_buf, p.span_s);
-        const dt = ui.stepper(if (p.mode == .triggered) "window" else "time", time_text, 130);
-        if (dt != 0) shared.push(.{ .panel = i, .action = .{ .zoom = if (dt > 0) step_up else 1.0 / step_up } });
-        if (p.kind != .ttl) {
-            var scale_buf: [32]u8 = undefined;
-            const ds = ui.stepper("scale", std.fmt.bufPrint(&buf, "{s}/row", .{format.fmtScale(&scale_buf, p)}) catch "", 110);
-            if (ds != 0) shared.push(.{ .panel = i, .action = .{ .scale = if (ds > 0) step_up else 1.0 / step_up } });
-        }
-        ui.newline();
-
-        if (p.kind == .electrode) {
-            ui.text("filter", ui_mod.text_dim);
-            ui.column(64);
-            if (ui.button("raw", !p.filtered) and p.filtered) shared.push(.{ .panel = i, .action = .{ .filter = false } });
-            if (ui.button("band", p.filtered) and !p.filtered) shared.push(.{ .panel = i, .action = .{ .filter = true } });
-            if (p.filtered) {
-                ui.space(14);
-                const lo = ui.stepper("from", if (p.band_low_hz > 0) std.fmt.bufPrint(&value_buf, "{d} Hz", .{p.band_low_hz}) catch "" else "off", 80);
-                if (lo != 0) shared.push(.{ .panel = i, .action = .{ .corner = .{ .high = false, .up = lo > 0 } } });
-                const hi = ui.stepper("to", if (p.band_high_hz > 0) std.fmt.bufPrint(&value_buf, "{d} Hz", .{p.band_high_hz}) catch "" else "off", 80);
-                if (hi != 0) shared.push(.{ .panel = i, .action = .{ .corner = .{ .high = true, .up = hi > 0 } } });
-            }
-            ui.newline();
-            // Row by row: which are shown, and (filter on) which go through the filter.
-            inline for (.{ "rows shown", "filtered" }, .{ true, false }) |label, is_shown| {
-                if (is_shown or p.filtered) {
-                    ui.text(label, ui_mod.text_dim);
-                    ui.column(104);
-                    const saved_indent = ui.indent;
-                    ui.indent = 104;
-                    for (0..@min(p.rows, panels.max_rows)) |r| {
-                        var nb: [8]u8 = undefined;
-                        const on = if (is_shown) !p.hidden.has(r) else !p.raw_rows.has(r);
-                        if (ui.chip(std.fmt.bufPrint(&nb, "{d}", .{r + 1}) catch "", on)) shared.push(.{ .panel = i, .action = if (is_shown) .{ .row_hidden = r } else .{ .row_raw = r } });
-                    }
-                    ui.indent = saved_indent;
-                    ui.newline();
-                }
-            }
-            // Common average reference: which rows are averaged, which lose the average.
-            ui.text("CAR", ui_mod.text_dim);
-            ui.column(64);
-            if (ui.button("off", !p.car) and p.car) shared.push(.{ .panel = i, .action = .{ .car = false } });
-            if (ui.button("on", p.car) and !p.car) shared.push(.{ .panel = i, .action = .{ .car = true } });
-            if (p.car) {
-                ui.newline();
-                inline for (.{ "average of", "subtract from" }, .{ true, false }) |label, is_ref| {
-                    const rows = if (is_ref) &p.car_ref else &p.car_sub;
-                    ui.text(label, ui_mod.text_dim);
-                    ui.column(104);
-                    const saved_indent = ui.indent;
-                    ui.indent = 104;
-                    if (ui.button("all", false)) shared.push(.{ .panel = i, .action = if (is_ref) .{ .car_ref_all = true } else .{ .car_sub_all = true } });
-                    if (ui.button("none", false)) shared.push(.{ .panel = i, .action = if (is_ref) .{ .car_ref_all = false } else .{ .car_sub_all = false } });
-                    ui.space(6);
-                    for (0..@min(p.rows, panels.max_rows)) |r| {
-                        var nb: [8]u8 = undefined;
-                        if (ui.chip(std.fmt.bufPrint(&nb, "{d}", .{r + 1}) catch "", rows.has(r))) shared.push(.{ .panel = i, .action = if (is_ref) .{ .car_ref_row = r } else .{ .car_sub_row = r } });
-                    }
-                    ui.indent = saved_indent;
-                    ui.newline();
-                }
-            } else ui.newline();
-        }
-        if (p.mode == .triggered) {
-            ui.text("trigger", ui_mod.text_dim);
-            ui.column(64);
-            if (p.kind == .electrode) {
-                if (ui.button("TTL", p.trig_source == .ttl) and p.trig_source != .ttl) shared.push(.{ .panel = i, .action = .{ .trig_source = .ttl } });
-                if (ui.button("spikes", p.trig_source == .channel) and p.trig_source != .channel) shared.push(.{ .panel = i, .action = .{ .trig_source = .channel } });
-                ui.space(8);
-            }
-            if (p.trig_source == .ttl) {
-                const dl = ui.stepper("", std.fmt.bufPrint(&value_buf, "TTL {d}", .{p.trig_line}) catch "", 60);
-                if (dl != 0) shared.push(.{ .panel = i, .action = .{ .trig_line = @intCast(std.math.clamp(@as(i32, p.trig_line) + dl, 1, 8)) } });
-            } else {
-                const dw = ui.stepper("", std.fmt.bufPrint(&value_buf, "row {d}", .{p.trig_row + 1}) catch "", 60);
-                if (dw != 0) shared.push(.{ .panel = i, .action = .{ .trig_row = dw } });
-                if (ui.button("falling", !p.trig_rising) and p.trig_rising) shared.push(.{ .panel = i, .action = .{ .trig_rising = false } });
-                if (ui.button("rising", p.trig_rising) and !p.trig_rising) shared.push(.{ .panel = i, .action = .{ .trig_rising = true } });
-                ui.newline();
-                ui.text("level", ui_mod.text_dim);
-                ui.column(64);
-                if (ui.button("follows noise", p.trig_auto) and !p.trig_auto) shared.push(.{ .panel = i, .action = .{ .trig_auto = true } });
-                if (ui.button("fixed", !p.trig_auto) and p.trig_auto) shared.push(.{ .panel = i, .action = .{ .trig_auto = false } });
-                if (p.trig_auto) {
-                    ui.text(std.fmt.bufPrint(&value_buf, "{d:.0} µV", .{p.trig_level_now_uv}) catch "", ui_mod.text_bright);
-                } else {
-                    // "+" makes the level larger in size, whichever its sign.
-                    const dv = ui.stepper("", std.fmt.bufPrint(&value_buf, "{d:.0} µV", .{p.trig_level_uv}) catch "", 70);
-                    if (dv != 0) shared.push(.{ .panel = i, .action = .{ .trig_level = if (dv > 0) 1.15 else 1.0 / 1.15 } });
-                }
-                const dh = ui.stepper("holdoff", std.fmt.bufPrint(&value_buf, "{d} ms", .{p.trig_holdoff_ms}) catch "", 60);
-                if (dh != 0) shared.push(.{ .panel = i, .action = .{ .trig_holdoff = dh > 0 } });
-            }
-            const dn = ui.stepper("overlaid", std.fmt.bufPrint(&value_buf, "{d} sweeps", .{p.overlay}) catch "", 90);
-            if (dn != 0) shared.push(.{ .panel = i, .action = .{ .overlay = @intCast(std.math.clamp(@as(i32, @intCast(p.overlay)) + dn, 1, oez.sweeps.max_sweeps)) } });
-            ui.newline();
-        }
-        ui.separator();
+/// One panel `i` of the display: what it shows and every setting of it.
+fn panelSection(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Shared) void {
+    panelView(ui, p, i, shared);
+    if (p.kind == .electrode) {
+        panelFilter(ui, p, i, shared);
+        panelCar(ui, p, i, shared);
     }
-    ui.text("On the display: wheel = scale, Ctrl+wheel = one row, Shift+wheel = time,", ui_mod.text_dim);
+    if (p.mode == .triggered) panelTrigger(ui, p, i, shared);
+    ui.separator();
+}
+
+/// The panel's name and what it shows, reset; its mode, time base and scale.
+fn panelView(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Shared) void {
+    var buf: [160]u8 = undefined;
+    // Name, and what the panel shows.
+    ui.text(p.name(), ui_mod.text_bright);
+    ui.text(format.fmt(&buf, "{d} {s} channels", .{ p.rows, switch (p.kind) {
+        .electrode => "electrode",
+        .aux => "AUX",
+        .adc => "ADC",
+        .ttl => "TTL",
+    } }), ui_mod.text_dim);
+    ui.x = @max(ui.x, ui.width - 78);
+    if (ui.button("reset", false)) shared.push(.{ .panel = i, .action = .reset });
     ui.newline();
-    ui.text("keys  - =  [ ]  m  t  f  , .  ; '  r  q", ui_mod.text_dim);
+
+    ui.text("view", ui_mod.text_dim);
+    ui.column(64);
+    inline for (.{ panels.Mode.scroll, panels.Mode.sweep, panels.Mode.triggered }) |m| {
+        if (ui.button(@tagName(m), p.mode == m) and p.mode != m) shared.push(.{ .panel = i, .action = .{ .mode = m } });
+    }
+    ui.space(14);
+    var value_buf: [48]u8 = undefined;
+    const time_text = if (p.mode == .triggered)
+        format.fmt(&value_buf, "-{d:.1} / +{d:.1} ms", .{ p.pre_ms, p.post_ms })
+    else
+        format.fmtSpan(&value_buf, p.span_s);
+    const dt = ui.stepper(if (p.mode == .triggered) "window" else "time", time_text, 130);
+    if (dt != 0) shared.push(.{ .panel = i, .action = .{ .zoom = if (dt > 0) step_up else 1.0 / step_up } });
+    if (p.kind != .ttl) {
+        var scale_buf: [32]u8 = undefined;
+        const ds = ui.stepper("scale", format.fmt(&buf, "{s}/row", .{format.fmtScale(&scale_buf, p)}), 110);
+        if (ds != 0) shared.push(.{ .panel = i, .action = .{ .scale = if (ds > 0) step_up else 1.0 / step_up } });
+    }
+    ui.newline();
+}
+
+/// An electrode panel's display filter: raw or band, its corners, and row by row which
+/// rows are shown and (filter on) which go through the filter.
+fn panelFilter(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Shared) void {
+    var value_buf: [48]u8 = undefined;
+    ui.text("filter", ui_mod.text_dim);
+    ui.column(64);
+    if (ui.button("raw", !p.filtered) and p.filtered) shared.push(.{ .panel = i, .action = .{ .filter = false } });
+    if (ui.button("band", p.filtered) and !p.filtered) shared.push(.{ .panel = i, .action = .{ .filter = true } });
+    if (p.filtered) {
+        ui.space(14);
+        const lo = ui.stepper("from", if (p.band_low_hz > 0) format.fmt(&value_buf, "{d} Hz", .{p.band_low_hz}) else "off", 80);
+        if (lo != 0) shared.push(.{ .panel = i, .action = .{ .corner = .{ .high = false, .up = lo > 0 } } });
+        const hi = ui.stepper("to", if (p.band_high_hz > 0) format.fmt(&value_buf, "{d} Hz", .{p.band_high_hz}) else "off", 80);
+        if (hi != 0) shared.push(.{ .panel = i, .action = .{ .corner = .{ .high = true, .up = hi > 0 } } });
+    }
+    ui.newline();
+    // Row by row: which are shown, and (filter on) which go through the filter.
+    inline for (.{ "rows shown", "filtered" }, .{ true, false }) |label, is_shown| {
+        if (is_shown or p.filtered) {
+            ui.text(label, ui_mod.text_dim);
+            ui.column(104);
+            const saved_indent = ui.indent;
+            ui.indent = 104;
+            for (0..@min(p.rows, panels.max_rows)) |r| {
+                var nb: [8]u8 = undefined;
+                const on = if (is_shown) !p.hidden.has(r) else !p.raw_rows.has(r);
+                if (ui.chip(format.fmt(&nb, "{d}", .{r + 1}), on)) shared.push(.{ .panel = i, .action = if (is_shown) .{ .row_hidden = r } else .{ .row_raw = r } });
+            }
+            ui.indent = saved_indent;
+            ui.newline();
+        }
+    }
+}
+
+/// An electrode panel's common average reference: which rows are averaged, which lose
+/// the average.
+fn panelCar(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Shared) void {
+    ui.text("CAR", ui_mod.text_dim);
+    ui.column(64);
+    if (ui.button("off", !p.car) and p.car) shared.push(.{ .panel = i, .action = .{ .car = false } });
+    if (ui.button("on", p.car) and !p.car) shared.push(.{ .panel = i, .action = .{ .car = true } });
+    if (p.car) {
+        ui.newline();
+        inline for (.{ "average of", "subtract from" }, .{ true, false }) |label, is_ref| {
+            const rows = if (is_ref) &p.car_ref else &p.car_sub;
+            ui.text(label, ui_mod.text_dim);
+            ui.column(104);
+            const saved_indent = ui.indent;
+            ui.indent = 104;
+            if (ui.button("all", false)) shared.push(.{ .panel = i, .action = if (is_ref) .{ .car_ref_all = true } else .{ .car_sub_all = true } });
+            if (ui.button("none", false)) shared.push(.{ .panel = i, .action = if (is_ref) .{ .car_ref_all = false } else .{ .car_sub_all = false } });
+            ui.space(6);
+            for (0..@min(p.rows, panels.max_rows)) |r| {
+                var nb: [8]u8 = undefined;
+                if (ui.chip(format.fmt(&nb, "{d}", .{r + 1}), rows.has(r))) shared.push(.{ .panel = i, .action = if (is_ref) .{ .car_ref_row = r } else .{ .car_sub_row = r } });
+            }
+            ui.indent = saved_indent;
+            ui.newline();
+        }
+    } else ui.newline();
+}
+
+/// A triggered panel's trigger: a TTL line, or (electrodes) a level crossing on a row.
+fn panelTrigger(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Shared) void {
+    var value_buf: [48]u8 = undefined;
+    ui.text("trigger", ui_mod.text_dim);
+    ui.column(64);
+    if (p.kind == .electrode) {
+        if (ui.button("TTL", p.trig_source == .ttl) and p.trig_source != .ttl) shared.push(.{ .panel = i, .action = .{ .trig_source = .ttl } });
+        if (ui.button("spikes", p.trig_source == .channel) and p.trig_source != .channel) shared.push(.{ .panel = i, .action = .{ .trig_source = .channel } });
+        ui.space(8);
+    }
+    if (p.trig_source == .ttl) {
+        const dl = ui.stepper("", format.fmt(&value_buf, "TTL {d}", .{p.trig_line}), 60);
+        if (dl != 0) shared.push(.{ .panel = i, .action = .{ .trig_line = @intCast(std.math.clamp(@as(i32, p.trig_line) + dl, 1, 8)) } });
+    } else {
+        const dw = ui.stepper("", format.fmt(&value_buf, "row {d}", .{p.trig_row + 1}), 60);
+        if (dw != 0) shared.push(.{ .panel = i, .action = .{ .trig_row = dw } });
+        if (ui.button("falling", !p.trig_rising) and p.trig_rising) shared.push(.{ .panel = i, .action = .{ .trig_rising = false } });
+        if (ui.button("rising", p.trig_rising) and !p.trig_rising) shared.push(.{ .panel = i, .action = .{ .trig_rising = true } });
+        ui.newline();
+        ui.text("level", ui_mod.text_dim);
+        ui.column(64);
+        if (ui.button("follows noise", p.trig_auto) and !p.trig_auto) shared.push(.{ .panel = i, .action = .{ .trig_auto = true } });
+        if (ui.button("fixed", !p.trig_auto) and p.trig_auto) shared.push(.{ .panel = i, .action = .{ .trig_auto = false } });
+        if (p.trig_auto) {
+            ui.text(format.fmt(&value_buf, "{d:.0} µV", .{p.trig_level_now_uv}), ui_mod.text_bright);
+        } else {
+            // "+" makes the level larger in size, whichever its sign.
+            const dv = ui.stepper("", format.fmt(&value_buf, "{d:.0} µV", .{p.trig_level_uv}), 70);
+            if (dv != 0) shared.push(.{ .panel = i, .action = .{ .trig_level = if (dv > 0) 1.15 else 1.0 / 1.15 } });
+        }
+        const dh = ui.stepper("holdoff", format.fmt(&value_buf, "{d} ms", .{p.trig_holdoff_ms}), 60);
+        if (dh != 0) shared.push(.{ .panel = i, .action = .{ .trig_holdoff = dh > 0 } });
+    }
+    const dn = ui.stepper("overlaid", format.fmt(&value_buf, "{d} sweeps", .{p.overlay}), 90);
+    if (dn != 0) shared.push(.{ .panel = i, .action = .{ .overlay = @intCast(std.math.clamp(@as(i32, @intCast(p.overlay)) + dn, 1, oez.sweeps.max_sweeps)) } });
+    ui.newline();
 }
 
 const testing = std.testing;
@@ -875,6 +929,13 @@ fn layoutPanel(name: []const u8, kind: panels.Kind, rows: u32) panels.Panel {
 /// The snapshots the layout is frozen for, written into `out`; returns their names.
 fn layoutSnapshots(out: []Snapshot) []const []const u8 {
     const names = &[_][]const u8{ "not recording", "recording", "review active", "quit prompt", "restart pending", "two panels: slope trigger, reference", "alarm", "other panels" };
+    out[0] = layoutBase();
+    stateSnapshots(out, &out[0]);
+    panelSnapshots(out, &out[0]);
+    return names;
+}
+
+fn layoutBase() Snapshot {
     // Not recording: a status line, notes, audio listening, a warning, one small panel.
     var base: Snapshot = .{};
     setText(&base.about_buf, &base.about_len, "Simulator   40 channels at 30000 Hz");
@@ -904,11 +965,14 @@ fn layoutSnapshots(out: []Snapshot) []const []const u8 {
     base.view_unsaved = true;
     base.set.items[0] = layoutPanel("Port A", .electrode, 6);
     base.set.len = 1;
-    out[0] = base;
+    return base;
+}
 
+/// Snapshots 1 to 4 and 6: the states of the sections above the panels.
+fn stateSnapshots(out: []Snapshot, base: *const Snapshot) void {
     // Recording, with the disk behind, gaps, a note, a path, the DSP on, a restart that
     // has to wait, a ring overflow; audio measuring the noise; a note being typed.
-    var s = base;
+    var s = base.*;
     s.rec = .{ .state = .recording, .seconds = 3661, .samples = 109_830_000, .bytes = 13_200_000_000, .behind_s = 2.5, .gaps = 1 };
     s.rec.setNote("started at {s}", .{"12:00"});
     setText(&s.rec.path_buf, &s.rec.path_len, "/data/2026-11-12_12-00-00");
@@ -922,7 +986,7 @@ fn layoutSnapshots(out: []Snapshot) []const []const u8 {
 
     // Review active, from the recording's file, loading; audio off, muted, plain; the
     // last recording failed; no notes.
-    s = base;
+    s = base.*;
     s.review = .{ .active = true, .behind_s = 12.5, .at_s = 75, .from_file = true, .loading = true };
     s.audio.settings.reference = true;
     s.audio.settings.enabled = false;
@@ -933,7 +997,7 @@ fn layoutSnapshots(out: []Snapshot) []const []const u8 {
     out[2] = s;
 
     // The quit prompt.
-    s = base;
+    s = base.*;
     s.quit_prompt.active = true;
     for (0..3) |k| {
         const line = std.fmt.bufPrint(&s.quit_prompt.lines[k], "setting {d} changed", .{k}) catch unreachable;
@@ -945,16 +1009,24 @@ fn layoutSnapshots(out: []Snapshot) []const []const u8 {
 
     // A restart pending (half-channel mode), not recording; a board note; review of the
     // last seconds; no audio device.
-    s = base;
+    s = base.*;
     s.board.pending.rhd2132_16ch[0] = true;
     s.board.setNote("cannot set {s}", .{"10 kHz"});
     s.review = .{ .active = true, .behind_s = 1.5, .at_s = 30 };
     s.audio.running = false;
     out[4] = s;
 
+    // An alarm (the warning is not shown with it).
+    s = base.*;
+    setText(&s.status.alarm_buf, &s.status.alarm_len, "RECORDING STOPPED: disk full");
+    out[6] = s;
+}
+
+/// Snapshots 5 and 7: panels of every kind and setting.
+fn panelSnapshots(out: []Snapshot, base: *const Snapshot) void {
     // Two electrode panels: one triggered on a slope with a fixed level, filtered, some
     // rows raw and hidden; one with the reference on and a band with its low side off.
-    s = base;
+    var s = base.*;
     s.status.warning_len = 0;
     var a = layoutPanel("Port A", .electrode, 32);
     a.mode = .triggered;
@@ -982,14 +1054,9 @@ fn layoutSnapshots(out: []Snapshot) []const []const u8 {
     s.audio.listen_len = 0;
     out[5] = s;
 
-    // An alarm (the warning is not shown with it).
-    s = base;
-    setText(&s.status.alarm_buf, &s.status.alarm_len, "RECORDING STOPPED: disk full");
-    out[6] = s;
-
     // Other panels: a slope trigger whose level follows the noise, rising; AUX, ADC and a
     // TTL panel triggered on TTL; the status not yet valid; the recording finishing.
-    s = base;
+    s = base.*;
     s.status = .{};
     s.rec.state = .stopping;
     var t = layoutPanel("TTL", .ttl, 8);
@@ -1008,7 +1075,6 @@ fn layoutSnapshots(out: []Snapshot) []const []const u8 {
     s.audio.listen_len = 0;
     s.board.settings.dsp_enabled = true;
     out[7] = s;
-    return names;
 }
 
 test "the control window's layout is unchanged" {
