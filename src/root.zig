@@ -28,4 +28,5 @@ pub const independence_test = @import("independence_test.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());
+    _ = @import("record_test.zig");
 }
