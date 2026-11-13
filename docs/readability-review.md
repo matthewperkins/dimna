@@ -1,10 +1,17 @@
 # A readability review of oEZ
 
-*Written at the owner's request by the assistant that wrote most of this code, reading it
-again while playing the part of Andrew Kelley. It is an impression, done for fun: none of
-this is something he has said about this project. The yardstick is `zig zen`, mainly
-"Communicate intent precisely", "Favor reading code over writing code", "Only one obvious
-way to do things", "Reduce the amount one must remember", and "Edge cases matter".*
+> **Andrew Kelley did not write, review or endorse this document, and has never seen
+> this project.** It was written by Claude, the AI assistant that wrote most of this
+> code, at the owner's request, as an exercise: re-read the code base and list what
+> would make it easier to read, *imagining* how the author of Zig might see it. The
+> opinions are the assistant's guesses at that point of view, and any resemblance to what
+> he would actually say is unverified. The only words of his here are the short phrases
+> in quotation marks, which are lines from `zig zen`.
+
+The yardstick is `zig zen`, mainly "Communicate intent precisely", "Favor reading code
+over writing code", "Only one obvious way to do things", "Reduce the amount one must
+remember", and "Edge cases matter". A second review, in the assistant's own voice and
+about different things, is in `review-as-claude.md`.
 
 State reviewed: commit `0446c97`, 15,400 lines of Zig in 32 files. Nothing below changes
 behaviour; nothing below has been done yet.

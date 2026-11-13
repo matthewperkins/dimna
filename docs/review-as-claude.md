@@ -212,10 +212,10 @@ and that it is unofficial, so that nobody mistakes it for a vendor-documented in
   model. A lab deciding whether to trust it with recordings deserves to know that, and
   to know which parts have been through real experiments. The commit trailers say it
   line by line; the README should say it once.
-- `docs/readability-review.md` is written in the voice of a named, living person. It is
-  labelled as an impression. In a private repository that is a joke between two people;
-  in a public one it is his name on words he did not write. I would retitle it and
-  remove the name before publishing.
+- `docs/readability-review.md` is written in the voice of a named, living person. It now
+  opens with a plain statement that he did not write, review or endorse it. In a private
+  repository that is enough; before publishing, the owner should decide whether the
+  name stays at all.
 
 ### B7. What I did on the owner's machine
 
