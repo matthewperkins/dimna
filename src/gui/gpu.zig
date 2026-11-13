@@ -84,7 +84,11 @@ pub const Gpu = struct {
     cmd_pool: vk.CommandPool = .null,
     cmd: vk.CommandBuffer = undefined,
     image_available: vk.Semaphore = .null,
-    render_done: vk.Semaphore = .null,
+    /// Signalled when a frame's commands are done; the present waits for it. One per
+    /// swapchain image: a present may still hold the semaphore of the image it showed after
+    /// the next frame, into another image, is submitted (see the Vulkan guide,
+    /// "swapchain semaphore reuse").
+    render_done: []vk.Semaphore = &.{},
     in_flight: vk.Fence = .null,
 
     set_layout: vk.DescriptorSetLayout = .null,
@@ -336,7 +340,6 @@ pub const Gpu = struct {
     fn createSyncObjects(self: *Gpu) !void {
         const dev = self.dev;
         self.image_available = try dev.createSemaphore(&.{}, null);
-        self.render_done = try dev.createSemaphore(&.{}, null);
         self.in_flight = try dev.createFence(&.{ .flags = .{ .signaled = true } }, null);
     }
 
@@ -374,7 +377,6 @@ pub const Gpu = struct {
         dev.destroyDescriptorPool(self.desc_pool, null);
         dev.destroyDescriptorSetLayout(self.set_layout, null);
         dev.destroyFence(self.in_flight, null);
-        dev.destroySemaphore(self.render_done, null);
         dev.destroySemaphore(self.image_available, null);
         dev.destroyCommandPool(self.cmd_pool, null);
         dev.destroyRenderPass(self.render_pass, null);
@@ -886,6 +888,9 @@ pub const Gpu = struct {
     fn destroySwapchainViews(self: *Gpu) void {
         for (self.framebuffers) |f| self.dev.destroyFramebuffer(f, null);
         for (self.views) |v| self.dev.destroyImageView(v, null);
+        for (self.render_done) |sem| self.dev.destroySemaphore(sem, null);
+        self.gpa.free(self.render_done);
+        self.render_done = &.{};
         self.gpa.free(self.framebuffers);
         self.gpa.free(self.views);
         self.gpa.free(self.images);
@@ -927,6 +932,9 @@ pub const Gpu = struct {
         self.images = try dev.getSwapchainImagesAllocKHR(self.swapchain, self.gpa);
         self.views = try self.gpa.alloc(vk.ImageView, self.images.len);
         self.framebuffers = try self.gpa.alloc(vk.Framebuffer, self.images.len);
+        self.render_done = try self.gpa.alloc(vk.Semaphore, self.images.len);
+        @memset(self.render_done, .null);
+        for (self.render_done) |*sem| sem.* = try dev.createSemaphore(&.{}, null);
         for (self.images, 0..) |img, i| {
             self.views[i] = try dev.createImageView(&.{
                 .image = img,
@@ -1074,7 +1082,7 @@ pub const Gpu = struct {
             .command_buffer_count = 1,
             .p_command_buffers = &[_]vk.CommandBuffer{cmd},
             .signal_semaphore_count = 1,
-            .p_signal_semaphores = &[_]vk.Semaphore{self.render_done},
+            .p_signal_semaphores = &[_]vk.Semaphore{self.render_done[acquired.image_index]},
         }}, self.in_flight);
 
         if (self.wait_render) {
@@ -1088,7 +1096,7 @@ pub const Gpu = struct {
         before_present(context);
         const result = dev.queuePresentKHR(self.queue, &.{
             .wait_semaphore_count = 1,
-            .p_wait_semaphores = &[_]vk.Semaphore{self.render_done},
+            .p_wait_semaphores = &[_]vk.Semaphore{self.render_done[acquired.image_index]},
             .swapchain_count = 1,
             .p_swapchains = &[_]vk.SwapchainKHR{self.swapchain},
             .p_image_indices = &[_]u32{acquired.image_index},
