@@ -642,7 +642,7 @@ pub const Display = struct {
                 px + 5,
                 y,
                 rowLabel(&label_buf, p, row, layout, &self.set),
-                if (heard) theme.heard else theme.text_dim,
+                if (heard) theme.focus else theme.text_dim,
             );
             // In a filtered panel, the rows shown as they are say so.
             if (p.filter.on and p.kind == .electrode and !p.rowFiltered(row)) after = batch.label(after + 4, y, "raw", theme.text_dim);
@@ -797,7 +797,7 @@ fn noteMarks(o: *Output, r: panels_mod.Rect, t: PanelTime, notes: *const notes_m
         const x = px + @as(f32, @floatCast(w * @as(f64, @floatFromInt(at - from)) / span));
         batch.rect(@round(x), py, 1, @floatFromInt(r.h), theme.note_line);
         if (line_h > 0 and x + 60 < px + @as(f32, @floatCast(w)))
-            _ = batch.label(x + 5, py + line_h + 12, notes_mod.prefix(note.text(), 40), theme.heard);
+            _ = batch.label(x + 5, py + line_h + 12, notes_mod.prefix(note.text(), 40), theme.note_text);
     }
 }
 

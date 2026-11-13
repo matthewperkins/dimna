@@ -27,17 +27,20 @@ pub const label_backing: Colour = .{ 8, 10, 14, 200 };
 
 // The channels listened to.
 
-/// A row listened to: its label on the display, and its spike tile's frame, name and
-/// waveforms.
-pub const heard: Colour = .{ 255, 225, 120, 255 };
+/// The amber of the thing being looked at. It marks the channel in focus (its tile's
+/// frame and its row's label) and a note (its text beside the marker line). Until the
+/// focus convention is in, it still marks the channels listened to.
+pub const focus: Colour = .{ 255, 225, 120, 255 };
+/// A note's text beside its marker line.
+pub const note_text: Colour = focus;
 
 // Display: overlays on the traces.
 
 /// A row with a scale of its own: the scale beside its label.
 pub const row_scale_text: Colour = .{ 255, 205, 120, 255 };
-/// A note: the line where it was stamped (the colour of `heard`, let through a little so
-/// the traces show behind it). The note's text beside the line is `heard` itself.
-pub const note_line: Colour = .{ heard[0], heard[1], heard[2], 190 };
+/// A note: the line where it was stamped (the colour of `focus`, let through a little so
+/// the traces show behind it). The note's text beside the line is `note_text`.
+pub const note_line: Colour = .{ focus[0], focus[1], focus[2], 190 };
 /// The note being typed, bottom left.
 pub const note_draft_text: Colour = .{ 255, 235, 170, 255 };
 /// A TTL line was high: the wash over a scrolling or sweep panel while its tint line was

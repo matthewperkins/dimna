@@ -261,16 +261,16 @@ fn draw(
         batch.rect(x, y, w, h, if (hover == i) theme.tile_bg_hover else theme.tile_bg);
         if (listened) {
             // A frame in the colour of the rows listened to on the display.
-            batch.rect(x, y, w, 1, theme.heard);
-            batch.rect(x, y + h - 1, w, 1, theme.heard);
-            batch.rect(x, y, 1, h, theme.heard);
-            batch.rect(x + w - 1, y, 1, h, theme.heard);
+            batch.rect(x, y, w, 1, theme.focus);
+            batch.rect(x, y + h - 1, w, 1, theme.focus);
+            batch.rect(x, y, 1, h, theme.focus);
+            batch.rect(x + w - 1, y, 1, h, theme.focus);
         }
         // Name and firing rate along the top.
         var buf: [32]u8 = undefined;
         var name_buf: [16]u8 = undefined;
         const name = layout.channelName(&name_buf, i);
-        _ = batch.text(x + 5, y + 3, name, if (listened) theme.heard else theme.text_dim);
+        _ = batch.text(x + 5, y + 3, name, if (listened) theme.focus else theme.text_dim);
         if (w > 110) {
             const rate = format.fmt(&buf, "{d:.1} Hz", .{u.rate});
             _ = batch.text(x + w - batch.font.width(rate) - 5, y + 3, rate, theme.text_dim);
@@ -302,7 +302,7 @@ fn draw(
         while (k > 0) {
             k -= 1;
             const wave = u.wave(k).?;
-            var colour = if (listened) theme.heard else theme.tile_wave;
+            var colour = if (listened) theme.focus else theme.tile_wave;
             colour[3] = @intFromFloat(70.0 + 170.0 * (1.0 - @as(f32, @floatFromInt(k)) / @as(f32, @floatFromInt(@max(shown, 1)))));
             for (1..det.len) |s| {
                 batch.line(
