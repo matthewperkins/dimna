@@ -1,6 +1,17 @@
 //! Scripted input for tests: steps that are fed into the display's input as if the user
 //! had made them. It goes in above the compositor's seat, so it tests what the program does
 //! with input, not whether real input arrives.
+//!
+//! `--script "SECONDS:STEP;SECONDS:STEP;..."`, where STEP is one of
+//!   wheel=N, hwheel=N, cwheel=N     wheel, sideways, Ctrl+wheel (axis units, 15 = one click)
+//!   pinch=F                         a pinch by that scale factor
+//!   pointer=FX,FY, panel=N          put the pointer there (fractions of the display), or on
+//!                                   panel N (1-based)
+//!   click, cclick                   a click, a Ctrl+click
+//!   type=TEXT                       typed text
+//!   enter, esc, tab, backspace, space, left, right, pgup, pgdn, home, end
+//!   or keys such as "]]==" (any of [ ] - = r m f t s a / ` 1-9 , . ' q). ';' separates
+//!   steps, so the ';' key itself cannot be scripted.
 
 const std = @import("std");
 const Input = @import("window.zig").Input;

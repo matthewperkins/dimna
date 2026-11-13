@@ -16,7 +16,6 @@ pub const Args = struct {
     margin_ms: f64 = -1,
     script: []const u8 = "",
     monitor: []const u8 = "",
-    /// Connector of a monitor to drive directly, with no compositor.
     tearing: bool = false,
     /// Where recordings go: one session folder per recording beneath it.
     record_dir: []const u8 = "~/oez-recordings",
@@ -40,6 +39,58 @@ pub const Args = struct {
     /// The parsed config file (panels are read from it once the channel layout is known).
     doc: oez.toml.Document = .{ .entries = &.{} },
 };
+
+/// What `oez --help` prints. Every option `parseArgs` accepts is listed here (a test checks).
+pub const usage =
+    \\oez: the oEZ display. Without --sim it opens the acquisition board.
+    \\
+    \\  --sim 32,16         simulate headstages of these channel counts instead of the board
+    \\  --16ch A1,B1        these RHD2132 headstages carry 16 electrodes (half-channel mode)
+    \\  --aux, --adc        also acquire the auxiliary inputs, the board's ADC inputs
+    \\  --driver usb|d3xx   how to reach the FT600: our own USB code (default) or FTDI's D3XX
+    \\  --monitor DP-2      fullscreen on that monitor (the neural display)
+    \\  --tearing           show each frame at once, mid-scan (lowest latency; implies
+    \\                      --present immediate and --free 2; see docs/latency.md)
+    \\  --free MS           draw whenever new samples have arrived, at most every MS ms
+    \\  --margin-ms MS      draw this long before each refresh (default: 3, adapted)
+    \\  --present auto|mailbox|immediate|fifo    the Vulkan present mode
+    \\  --sweep             all panels as a sweep (traces stand still, a cursor moves across)
+    \\  --no-control        no control window
+    \\  --no-tiles          no spike-tile window
+    \\  --no-audio          no spike audio
+    \\  --seconds S         quit after S seconds
+    \\  --script STEPS      synthetic input for tests (see src/gui/script.zig)
+    \\  --help
+    \\
+    \\Config file: $XDG_CONFIG_HOME/oez/config.toml (default ~/.config/oez); options above
+    \\win. See the README for its keys and the [[panel]] tables.
+    \\
+    \\On the display:
+    \\  wheel / two-finger scroll      Y scale (µV per row)
+    \\  Ctrl+wheel                     Y scale of the row under the pointer alone
+    \\  Shift+wheel, sideways scroll   time base
+    \\  touchpad pinch                 time base
+    \\  - =   [ ]                      Y scale, time base by keys;  r resets;  q or Esc quits
+    \\  m                              scroll <-> sweep (traces stand still, a cursor moves across)
+    \\  t                              triggered sweeps on/off: the signal around each rising edge of
+    \\                                 a TTL input line, the last few overlaid; 1-8 pick the line;
+    \\                                 s switches to spikes on the row under the pointer (a slope
+    \\                                 trigger; click another row to move it) and back,
+    \\                                 [ ] and Shift+wheel zoom the window around the trigger
+    \\  Space                          freeze: look at what just went by. Then, or at once:
+    \\  Left / Right, PgUp / PgDn      go back and forth (a tenth of the window, a whole window)
+    \\  Home / End                     the start of the recording / back to live
+    \\                                 (scroll-back review: from the recording's file while
+    \\                                 recording, else the last half minute)
+    \\  /                              type a note (Enter saves, Esc drops, Tab keeps it as a draft);
+    \\                                 ` stamps a draft; 1-9 stamp the config's preset notes
+    \\  a                              acknowledge an alarm (the red bar: samples lost, or the
+    \\                                 recording failed)
+    \\  click a row                    listen to that channel (Ctrl+click adds or removes one)
+    \\  f                              display filter on/off (electrode panels): raw <-> band-pass
+    \\  , .   ; '                      the band's low corner, high corner: down, up
+    \\
+;
 
 /// Applies the config file's top-level keys to `a`. (`[[panel]]` tables are read later.)
 pub fn applyConfig(a: *Args, doc: oez.toml.Document) void {
@@ -99,7 +150,10 @@ pub fn parseArgs(args: []const [:0]const u8, doc: oez.toml.Document) !Args {
                 return list[idx.*];
             }
         }.f;
-        if (std.mem.eql(u8, arg, "--seconds")) {
+        if (std.mem.eql(u8, arg, "--help")) {
+            std.debug.print("{s}", .{usage});
+            return error.Help;
+        } else if (std.mem.eql(u8, arg, "--seconds")) {
             a.seconds = try std.fmt.parseFloat(f64, try next(args, &i, arg));
         } else if (std.mem.eql(u8, arg, "--monitor")) {
             a.monitor = try next(args, &i, arg);
@@ -159,11 +213,29 @@ pub fn parseArgs(args: []const [:0]const u8, doc: oez.toml.Document) !Args {
                 a.settings.rhd2132_16ch[slot] = true;
             }
         } else {
-            log.err("unknown argument '{s}'", .{arg});
+            log.err("unknown argument '{s}' (oez --help lists them)", .{arg});
             return error.BadArgs;
         }
     }
     // Tearing shows frames as they are presented, so draw as samples arrive.
     if (a.tearing and a.free_ms < 0) a.free_ms = 2;
     return a;
+}
+
+test "the usage text lists every option the parser accepts" {
+    const source = @embedFile("args.zig");
+    var rest: []const u8 = source;
+    var found: usize = 0;
+    while (std.mem.indexOf(u8, rest, "eql(u8, arg, \"--")) |at| {
+        const name_start = at + "eql(u8, arg, \"".len;
+        const name_end = std.mem.indexOfScalarPos(u8, rest, name_start, '"').?;
+        const name = rest[name_start..name_end];
+        if (std.mem.indexOf(u8, usage, name) == null) {
+            std.debug.print("{s} is accepted but not in the usage text\n", .{name});
+            return error.TestUnexpectedResult;
+        }
+        found += 1;
+        rest = rest[name_end..];
+    }
+    try std.testing.expect(found >= 15);
 }

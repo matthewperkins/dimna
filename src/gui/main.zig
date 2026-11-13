@@ -1,105 +1,24 @@
-//! oez: the GUI. One window of live traces for now.
+//! oez: the GUI's main thread. It owns the neural display (a Wayland window drawn with
+//! Vulkan, fullscreen on its own monitor in normal use) and runs the one loop that moves
+//! samples from the acquisition ring into the GPU's history, takes input, and draws.
 //!
-//!   oez [--sim 32,16] [--16ch A1,B1] [--aux] [--adc] [--driver usb|d3xx] [--seconds S]
-//!       [--present auto|mailbox|immediate|fifo] [--margin-ms MS] [--script STEPS]
-//!       [--monitor DP-2] [--tearing] [--free MS]
+//! Other threads, each started here and each fed by a lock-free snapshot or queue:
+//!   acquisition (acquisition.zig)   board or simulator -> ring
+//!   recorder (record.zig)           ring -> files; started and stopped from the control window
+//!   control window (control.zig)    status and settings with buttons
+//!   spike tiles (tiles.zig)         a third window
+//!   audio (audio_out.zig)           the spike monitor
+//! The display reads the ring with a lossy reader, so it can never hold acquisition or the
+//! recorder back.
 //!
-//! --monitor makes the window fullscreen on that monitor (the neural display).
-//! --tearing asks the compositor to show each frame at once, mid-scan, instead of at the
-//!   refresh; implies --present immediate and --free 2. The lowest latency under a compositor:
-//!   1.6 ms from a sample's arrival to the flip (measured, Hyprland 0.57.2), and since a new
-//!   frame is flipped every 3 ms, every scan line shows data at most a few ms old (with
-//!   refresh-locked frames the bottom of the screen is a whole refresh staler than the top).
-//!   Hyprland tears only when all of these hold:
-//!     general.allow_tearing = true                     (config)
-//!     the window is fullscreen                          (--monitor)
-//!     the window asks for it (done here) or has a window rule `immediate = true`
-//!     cursor.no_hardware_cursors = 1                    (config: no tearing while a hardware
-//!                                                        cursor is visible on that monitor)
-//!   `hyprctl monitors` shows activelyTearing and tearingBlockedBy. ("next frame is not torn"
-//!   is listed whenever a frame is not being torn at that instant; it is not a blocker.)
-//! --free MS draws whenever new samples have arrived, at most every MS milliseconds, instead
-//!   of once per refresh just before it.
+//! What the loop does each turn is in `main` below, in order; the state each part keeps
+//! between turns is in session.zig (recording, review, alarms, view file, board settings),
+//! pacing.zig (when to draw, latency figures) and display.zig (panels, input, drawing).
 //!
-//! --script feeds synthetic input for tests, as "SECONDS:STEP;SECONDS:STEP;...", where STEP is
-//! wheel=N, hwheel=N, cwheel=N (Ctrl+wheel; axis units, 15 = one click), pointer=FX,FY, click, cclick, type=TEXT, enter, esc, tab, backspace, space, left, right, pgup, pgdn, home, end, pinch=F (scale factor), or keys such as
-//! "]]==" (any of [ ] - = r m f t 1-8 , . ' q; ';' separates steps, so the high corner can only be
-//! stepped up by script). It goes through the same path as real input.
-//!
-//! Without --sim it opens the board. Controls:
-//!   wheel / two-finger scroll      Y scale (µV per row)
-//!   Ctrl+wheel                     Y scale of the row under the pointer alone
-//!   Shift+wheel, sideways scroll   time base
-//!   touchpad pinch                 time base
-//!   - =   [ ]                      Y scale, time base by keys;  r resets;  q or Esc quits
-//!   m                              scroll <-> sweep (traces stand still, a cursor moves across)
-//!   t                              triggered sweeps on/off: the signal around each rising edge of
-//!                                  a TTL input line, the last few overlaid; 1-8 pick the line;
-//!                                  s switches to spikes on the row under the pointer (a slope
-//!                                  trigger; click another row to move it) and back,
-//!                                  [ ] and Shift+wheel zoom the window around the trigger
-//!   Space                          freeze: look at what just went by. Then, or at once:
-//!   Left / Right, PgUp / PgDn      go back and forth (a tenth of the window, a whole window)
-//!   Home / End                     the start of the recording / back to live
-//!                                  (scroll-back review: from the recording's file while
-//!                                  recording, else the last half minute)
-//!   /                              type a note (Enter saves, Esc drops, Tab keeps it as a draft);
-//!                                  ` stamps a draft; 1-9 stamp the config's preset notes
-//!   a                              acknowledge an alarm (the red bar: samples lost, or the
-//!                                  recording failed)
-//!   click a row                    listen to that channel (Ctrl+click adds or removes one)
-//!   f                              display filter on/off (electrode panels): raw <-> band-pass
-//!   , .   ; '                      the band's low corner, high corner: down, up
-//!
-//! The display reads the acquisition ring with a lossy reader, so it can never hold
-//! acquisition back. Once a second it logs the frame rate and the sample-to-screen latency:
-//! the time from a sample's block reaching the ring to the frame showing it being presented
-//! (from Wayland presentation feedback).
-//!
-//! Frame timing (measured on Hyprland 0.57, NVIDIA, 60 Hz). Each frame is drawn `margin`
-//! before the next refresh, predicted from the presentation timestamps:
-//!
-//!   composited window        the compositor shows, one refresh later, what was committed
-//!                            before a refresh: 20.2 ms (32.7 ms if drawn right after the
-//!                            frame callback instead)
-//!   fullscreen, direct scanout   the buffer goes to the screen at that refresh: 3.5 ms
-//!
-//! Direct scanout has two stable states. While the output is idle when a commit arrives,
-//! Hyprland flips it at once and it is on screen at the refresh aimed at. After a disturbance
-//! (a flip still pending when the commit arrives), every commit waits for the previous flip
-//! and is shown a refresh later, indefinitely. Leaving one refresh out lets the output go idle
-//! again, so (fullscreen only) after 8 frames in a row a refresh late, one frame is skipped;
-//! the wait before the next skip doubles each time (250 ms to 8 s) and resets after 2 s of
-//! frames on time. The losses that remain come from the compositor's side (unverified guess:
-//! it is busy drawing the other monitor when the commit arrives; only owning the display
-//! would remove them).
-//!
-//! The margin is 3 ms. It widens only while frames keep landing late (judged against the
-//! best latency of the last seconds, so it works in either regime) and then returns;
-//! --margin-ms fixes it. Direct scanout needs Hyprland's render.direct_scanout = 1, or = 2
-//! (only surfaces declared as game content, which oez does) and a fullscreen window
-//! (--monitor, or `monitor` in the config file). Free-running (--free) without tearing
-//! queues frames under direct scanout (33.6 ms).
-//!
-//! A second window, the control window (class "oez-control"), shows the run's status and
-//! every panel's settings with buttons; see control.zig. --no-control or control = false in
-//! the config leaves it out.
-//!
-//! Config file: $XDG_CONFIG_HOME/oez/config.toml (default ~/.config/oez); command-line options
-//! win. Top-level keys: monitor = "DP-2", tearing = true, free_ms = 2, margin_ms = 3,
-//! font = "sans-serif" (a fontconfig name), font_px = 14, record_dir = "~/oez-recordings"
-//! (a session folder per recording beneath it; Record is in the control window). Panels:
-//! one [[panel]] table each (see src/panels.zig), for example
-//!
-//!   [[panel]]
-//!   name = "Port B"
-//!   source = "B1"                 # a headstage, "electrodes", "aux" or "adc"
-//!   rect = [0.0, 0.0, 0.5, 1.0]   # x, y, width, height as fractions of the display
-//!   span_s = 2.0
-//!   scale = 400                   # µV per row (V per row for aux and adc)
-//!
-//! Without any, there is one panel per headstage, side by side. Wheel, pinch and keys act on
-//! the panel under the pointer (marked by a bar along its top).
+//! Options: args.zig (`oez --help`). Keys and the mouse: README, "The display". The config
+//! file ($XDG_CONFIG_HOME/oez/config.toml; command-line options win) and `[[panel]]`
+//! tables: args.zig and src/panels.zig. How frames are paced and what latency was
+//! measured: docs/latency.md. Scripted input for tests (--script): script.zig.
 
 const std = @import("std");
 const oez = @import("oez");
@@ -178,7 +97,7 @@ pub fn main(init: std.process.Init) !u8 {
         log.err("{s}: syntax error on line {d}", .{ config_path, oez.toml.error_line });
         return 2;
     };
-    var args = parseArgs(argv, doc) catch return 2;
+    var args = parseArgs(argv, doc) catch |e| return if (e == error.Help) 0 else 2;
     // The view file sits beside the config.
     var views_path_buf: [std.fs.max_path_bytes]u8 = undefined;
     const views_path = std.fmt.bufPrint(&views_path_buf, "{s}/views.toml", .{std.fs.path.dirname(config_path) orelse "."}) catch "";
