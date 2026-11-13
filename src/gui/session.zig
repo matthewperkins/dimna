@@ -147,6 +147,7 @@ pub const ReviewSession = struct {
                 log.warn("no memory for the review history ({t}); review is limited to the last seconds", .{err});
                 return;
             };
+            // No memory for the reader: review stays on the last seconds (not logged).
             self.reader = oez.review.Review.init(ctx.gpa, ctx.layout, ctx.set, ctx.gpu.rev, ctx.gpu.hist_cap) catch return;
         }
         if (!self.reader.?.isOpen() or !std.mem.eql(u8, self.dir_buf[0..self.dir_len], r.path)) {
@@ -204,6 +205,7 @@ pub const Alarms = struct {
             self.seen = now;
             self.recording_failed = false;
         }
+        // Here and below: a text too long for its buffer is cut (the writer keeps what fit).
         var w: Io.Writer = .fixed(&status.alarm_buf);
         const sep = "   |   ";
         if (self.recording_failed) w.writeAll("RECORDING FAILED: nothing is being recorded") catch {};
@@ -273,6 +275,7 @@ pub const Recording = struct {
     /// Sets the folder sessions are made under ("~/" is the home folder).
     pub fn setRoot(self: *Recording, dir: []const u8) void {
         const home: []const u8 = if (std.c.getenv("HOME")) |h| std.mem.span(h) else ".";
+        // A path, not a label: one too long for the buffer is left empty, never cut.
         const text: []const u8 = (if (std.mem.startsWith(u8, dir, "~/"))
             std.fmt.bufPrint(&self.root_buf, "{s}/{s}", .{ home, dir[2..] })
         else
@@ -310,6 +313,7 @@ pub const Recording = struct {
         r.events_in = events;
         r.notes_in = &self.notes;
         // For testing the alarms: make the recorder fail or stall.
+        // A value that does not parse leaves that part off.
         if (std.c.getenv("OEZ_TEST_RECORD_FAIL_AFTER")) |v| r.test_fail_after = std.fmt.parseInt(u64, std.mem.span(v), 10) catch null;
         if (std.c.getenv("OEZ_TEST_RECORD_STALL")) |v| {
             var it = std.mem.tokenizeScalar(u8, std.mem.span(v), ',');
@@ -544,6 +548,7 @@ pub fn audioStatus(display: *const display_mod.Display, shared: *const audio_out
     var w: Io.Writer = .fixed(&st.listen_buf);
     for (display.audio.channelSlice(), 0..) |ch, k| {
         var name_buf: [16]u8 = undefined;
+        // The list is cut where the buffer ends (the writer keeps what fit).
         w.print("{s}{s}", .{ if (k > 0) ", " else "", display_mod.channelName(&name_buf, layout, ch) }) catch break;
     }
     st.listen_len = w.buffered().len;
