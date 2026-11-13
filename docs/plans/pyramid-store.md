@@ -43,8 +43,9 @@ A new file `src/pyramid.zig`, exported from `src/root.zig`, with tests in the fi
      generation number that `put` checks).
    - `columns(lo: i64, hi: i64, cols: usize, history_columns: []const usize, out: [][2]i16) bool`:
      for each of `cols` pixel columns over samples [lo, hi) and each requested history
-     column, the min and max, from the finest level that has at least 1 bucket per pixel
-     column... choose the level so each pixel column reads between 1 and 4 buckets.
+     column, the min and max, from the coarsest level that still gives every pixel column
+     at least one whole bucket (so a pixel column reads 1 to 4 buckets, plus the two it
+     shares with its neighbours).
      Returns false (and writes nothing useful) if any part of [lo, hi) is not covered or
      its level has been released, or if the span is shorter than 64 samples per pixel
      column (the caller reads samples then). A second function for the TTL words.
@@ -91,4 +92,4 @@ export line), `src/review.zig` (read accessors only), `docs/plans/pyramid-store.
     close, and why not exact if it is not), for a band-passed panel with a reference.
 - Report as the README asks, including RAM per hour at 72 history columns as measured,
   and the time `add` takes per second of 30 kHz x 72 columns (it runs on the display
-  thread; say if it is more than about 0.2 ms per 1 ms of... more than 1% of real time).
+  thread; say so plainly if it is more than 1% of real time).
