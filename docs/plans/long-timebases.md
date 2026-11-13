@@ -56,4 +56,37 @@ heap (adds a GPU copy per frame and does not reduce what the shader reads).
 
 ## Measurements
 
-(filled in as they are made)
+### Before (2026-11-13, commit 0c2ec9e)
+
+Board, 16 + 16 electrodes + 8 ADC (72 history columns, 151 MB, on the card), DP-2
+1920x1080 fullscreen with tearing, no audio, no control or tile window, all three panels
+at the same time base, `DIMNA_FRAME_DEBUG=1`, last three seconds of each run:
+
+| time base | mode | GPU ms per frame | latency ms (avg) | fps |
+|---|---|---|---|---|
+| 2 s | scroll | 0.9 | 2.7 | 290 |
+| 2 s | sweep | 0.9 | 2.7 | 305 |
+| 10 s | scroll | 2.4 | 4.0 | 371 |
+| 10 s | sweep | 2.4 | 4.0 | 368 |
+| 20 s | scroll | 6.75 | 8.5 | 140 |
+
+So the latency already grows with the time base: the frame's GPU time is added to it.
+No blocks lost in any run. (A top-level `span_s` in the config is ignored without a
+warning; the runs set it per panel.)
+
+### After phase 1 (2026-11-13)
+
+Same conditions; 151.0 MB of samples and 37.7 MB of buckets, both on the card.
+
+| time base | mode | GPU ms per frame | latency ms (avg) | fps |
+|---|---|---|---|---|
+| 2 s | scroll | 1.05 | 2.5 | 275 |
+| 10 s | scroll | 0.97 | 2.4 | 280 |
+| 20 s | scroll | 0.95 | 2.6 | 280 |
+| 30 s | scroll | 1.1 | 2.4 | 280 |
+| 30 s | sweep | 0.7 | 2.4 | 290 |
+
+Screenshots of DP-2 looked at: 30 s scroll after 37 s (full width drawn); 30 s sweep after
+65 s (cursor a sixth across, the earlier pass whole); 30 s sweep with panel 1's filter
+switched off at 62 s (both passes redrawn unfiltered; the frame that did it took 0.81 s).
+No blocks lost. Not done: the review buffer's place (needs a recording), 80 channels.

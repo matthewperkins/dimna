@@ -331,10 +331,10 @@ pub const Panel = struct {
     }
 
     pub const span_min = 0.05;
-    pub const span_max = 20.0;
-    /// In sweep mode a column can be up to two spans old, and the sample history on the
-    /// GPU holds `span_max` + 2 s at least.
-    pub const sweep_span_max = 10.0;
+    /// The longest time base, in scroll and in sweep. In sweep mode a column can be up to
+    /// two spans old; time bases this long are drawn from the history's buckets
+    /// (`decimate.zig`), which reach back twice `span_max` and more.
+    pub const span_max = 30.0;
 
     pub fn scaleLimits(self: *const Panel) [2]f64 {
         return switch (self.kind) {
@@ -357,8 +357,7 @@ pub const Panel = struct {
 
     pub fn clamp(self: *Panel) void {
         const lim = self.scaleLimits();
-        const longest: f64 = if (self.mode == .sweep) sweep_span_max else span_max;
-        self.span_s = std.math.clamp(self.span_s, span_min, longest);
+        self.span_s = std.math.clamp(self.span_s, span_min, span_max);
         self.scale = std.math.clamp(self.scale, lim[0], lim[1]);
         self.trigger.pre_ms = std.math.clamp(self.trigger.pre_ms, 0, 1000);
         self.trigger.post_ms = std.math.clamp(self.trigger.post_ms, 0.2, 2000);
@@ -1024,7 +1023,7 @@ test "a row list naming a row the panel does not have is explained" {
     }
 }
 
-test "sweep mode: per panel or for all, with a shorter longest time base" {
+test "sweep mode: per panel or for all, with the same longest time base" {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const a = arena_state.allocator();
@@ -1043,7 +1042,7 @@ test "sweep mode: per panel or for all, with a shorter longest time base" {
         \\span_s = 18
     , null), &l, &diag);
     try testing.expectEqual(Mode.sweep, set.items[0].mode);
-    try testing.expectEqual(Panel.sweep_span_max, set.items[0].span_s);
+    try testing.expectEqual(18, set.items[0].span_s);
     try testing.expectEqual(Mode.scroll, set.items[1].mode);
     try testing.expectEqual(18, set.items[1].span_s);
     set = try fromConfig(try toml.parse(a, "mode = \"sweep\"", null), &l, &diag);

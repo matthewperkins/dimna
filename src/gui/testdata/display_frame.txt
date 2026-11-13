@@ -1,9 +1,9 @@
 == scrolling: filter, raw, hidden, row scale, reference; AUX, ADC, TTL lanes: 5 draws, 6 fills, 49 text runs, 49 rects
-draw 0 0 500 385 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=500 rows=30 span=60000 lsb_per_row=2051.282 half_px=0.003896104 phase=-1 future=0 gain=1 gain_base=0
-draw 500 0 500 385 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=39 cols=500 rows=16 span=15000 lsb_per_row=2051.282 half_px=0.003896104 phase=-1 future=0 gain=1 gain_base=256
-draw 0 385 300 140 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=48 cols=300 rows=6 span=60000 lsb_per_row=26737.969 half_px=0.010714286 phase=-1 future=0 gain=1 gain_base=512
-draw 300 385 700 140 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=54 cols=700 rows=8 span=60000 lsb_per_row=16384 half_px=0.010714286 phase=-1 future=0 gain=1 gain_base=768
-draw 0 525 1000 175 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=1000 rows=5 span=60000 lsb_per_row=3333.3333 half_px=0.008571428 phase=-1 future=0 gain=1 gain_base=1024
+draw 0 0 500 385 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=500 rows=30 span=60000 lsb_per_row=2051.282 half_px=0.003896104 phase=-1 future=0 gain=1 gain_base=0 dec_mask=131071
+draw 500 0 500 385 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=39 cols=500 rows=16 span=15000 lsb_per_row=2051.282 half_px=0.003896104 phase=-1 future=0 gain=1 gain_base=256 dec_mask=131071
+draw 0 385 300 140 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=48 cols=300 rows=6 span=60000 lsb_per_row=26737.969 half_px=0.010714286 phase=-1 future=0 gain=1 gain_base=512 dec_mask=131071
+draw 300 385 700 140 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=54 cols=700 rows=8 span=60000 lsb_per_row=16384 half_px=0.010714286 phase=-1 future=0 gain=1 gain_base=768 dec_mask=131071
+draw 0 525 1000 175 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=1000 rows=5 span=60000 lsb_per_row=3333.3333 half_px=0.008571428 phase=-1 future=0 gain=1 gain_base=1024 dec_mask=131071
 gain 0 row 6: 2
 gain 0 row 8: 0.5
 fill 500 0 1 385 0.22 0.24 0.28 1
@@ -111,9 +111,9 @@ text 5 640 { 150, 160, 178, 255 } "camera trigger"
 rect 2 674 38 18 { 8, 10, 14, 200 }
 text 5 675 { 150, 160, 178, 255 } "TTL8"
 == sweep: cursor, tint line high across it: 3 draws, 8 fills, 32 text runs, 40 rects
-draw 0 0 1000 420 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=1000 rows=32 span=30000 lsb_per_row=2051.282 half_px=0.0035714286 phase=12345 future=0 gain=1 gain_base=0
-draw 0 420 500 280 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=54 cols=500 rows=8 span=60000 lsb_per_row=32768 half_px=0.005357143 phase=-1 future=0 gain=1 gain_base=256
-draw 500 420 500 280 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=500 rows=8 span=30000 lsb_per_row=3333.3333 half_px=0.005357143 phase=12345 future=0 gain=1 gain_base=512
+draw 0 0 1000 420 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=1000 rows=32 span=30000 lsb_per_row=2051.282 half_px=0.0035714286 phase=12345 future=0 gain=1 gain_base=0 dec_mask=131071
+draw 0 420 500 280 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=54 cols=500 rows=8 span=60000 lsb_per_row=32768 half_px=0.005357143 phase=-1 future=0 gain=1 gain_base=256 dec_mask=131071
+draw 500 420 500 280 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=500 rows=8 span=30000 lsb_per_row=3333.3333 half_px=0.005357143 phase=12345 future=0 gain=1 gain_base=512 dec_mask=131071
 fill 411 0 10 420 0.04 0.045 0.055 1
 fill 411 0 1 420 0.45 0.48 0.55 1
 fill 0 420 500 1 0.22 0.24 0.28 1
@@ -195,16 +195,16 @@ text 505 640 { 150, 160, 178, 255 } "TTL7"
 rect 502 674 38 18 { 8, 10, 14, 200 }
 text 505 675 { 150, 160, 178, 255 } "TTL8"
 == triggered on TTL: sweeps, the newest part-filled, pulse shading: 10 draws, 3 fills, 35 text runs, 40 rects
-draw 0 0 600 490 review=false nch=62 cap_mask=65535 newest=2983045 first_ch=7 cols=600 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.0030612245 phase=-1 future=0 gain=0.44000003 gain_base=0
-draw 0 0 600 490 review=false nch=62 cap_mask=65535 newest=2989045 first_ch=7 cols=600 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.0030612245 phase=-1 future=0 gain=0.48000002 gain_base=0
-draw 0 0 600 490 review=false nch=62 cap_mask=65535 newest=2995045 first_ch=7 cols=600 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.0030612245 phase=-1 future=0 gain=0.52000004 gain_base=0
-draw 0 0 600 490 review=false nch=62 cap_mask=65535 newest=3001045 first_ch=7 cols=600 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.0030612245 phase=-1 future=0 gain=0.56 gain_base=0
-draw 0 0 600 490 review=false nch=62 cap_mask=65535 newest=3007045 first_ch=7 cols=600 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.0030612245 phase=-1 future=0 gain=0.6 gain_base=0
-draw 0 0 600 490 review=false nch=62 cap_mask=65535 newest=3013045 first_ch=7 cols=600 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.0030612245 phase=-1 future=700 gain=1 gain_base=0
-draw 600 0 400 490 review=false nch=62 cap_mask=65535 newest=2984585 first_ch=54 cols=400 rows=8 span=300 lsb_per_row=32768 half_px=0.0030612245 phase=-1 future=0 gain=0.5 gain_base=256
-draw 600 0 400 490 review=false nch=62 cap_mask=65535 newest=2993585 first_ch=54 cols=400 rows=8 span=300 lsb_per_row=32768 half_px=0.0030612245 phase=-1 future=0 gain=0.55 gain_base=256
-draw 600 0 400 490 review=false nch=62 cap_mask=65535 newest=3002585 first_ch=54 cols=400 rows=8 span=300 lsb_per_row=32768 half_px=0.0030612245 phase=-1 future=0 gain=0.6 gain_base=256
-draw 600 0 400 490 review=false nch=62 cap_mask=65535 newest=3011585 first_ch=54 cols=400 rows=8 span=300 lsb_per_row=32768 half_px=0.0030612245 phase=-1 future=0 gain=1 gain_base=256
+draw 0 0 600 490 review=false nch=62 cap_mask=65535 newest=2983045 first_ch=7 cols=600 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.0030612245 phase=-1 future=0 gain=0.44000003 gain_base=0 dec_mask=131071
+draw 0 0 600 490 review=false nch=62 cap_mask=65535 newest=2989045 first_ch=7 cols=600 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.0030612245 phase=-1 future=0 gain=0.48000002 gain_base=0 dec_mask=131071
+draw 0 0 600 490 review=false nch=62 cap_mask=65535 newest=2995045 first_ch=7 cols=600 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.0030612245 phase=-1 future=0 gain=0.52000004 gain_base=0 dec_mask=131071
+draw 0 0 600 490 review=false nch=62 cap_mask=65535 newest=3001045 first_ch=7 cols=600 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.0030612245 phase=-1 future=0 gain=0.56 gain_base=0 dec_mask=131071
+draw 0 0 600 490 review=false nch=62 cap_mask=65535 newest=3007045 first_ch=7 cols=600 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.0030612245 phase=-1 future=0 gain=0.6 gain_base=0 dec_mask=131071
+draw 0 0 600 490 review=false nch=62 cap_mask=65535 newest=3013045 first_ch=7 cols=600 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.0030612245 phase=-1 future=700 gain=1 gain_base=0 dec_mask=131071
+draw 600 0 400 490 review=false nch=62 cap_mask=65535 newest=2984585 first_ch=54 cols=400 rows=8 span=300 lsb_per_row=32768 half_px=0.0030612245 phase=-1 future=0 gain=0.5 gain_base=256 dec_mask=131071
+draw 600 0 400 490 review=false nch=62 cap_mask=65535 newest=2993585 first_ch=54 cols=400 rows=8 span=300 lsb_per_row=32768 half_px=0.0030612245 phase=-1 future=0 gain=0.55 gain_base=256 dec_mask=131071
+draw 600 0 400 490 review=false nch=62 cap_mask=65535 newest=3002585 first_ch=54 cols=400 rows=8 span=300 lsb_per_row=32768 half_px=0.0030612245 phase=-1 future=0 gain=0.6 gain_base=256 dec_mask=131071
+draw 600 0 400 490 review=false nch=62 cap_mask=65535 newest=3011585 first_ch=54 cols=400 rows=8 span=300 lsb_per_row=32768 half_px=0.0030612245 phase=-1 future=0 gain=1 gain_base=256 dec_mask=131071
 fill 600 0 1 490 0.22 0.24 0.28 1
 fill 0 490 1000 1 0.22 0.24 0.28 1
 fill 0 0 600 3 0.3 0.55 0.95 1
@@ -284,21 +284,21 @@ text 5 587 { 150, 160, 178, 255 } "laser"
 rect 2 656 38 18 { 8, 10, 14, 200 }
 text 5 657 { 150, 160, 178, 255 } "TTL3"
 == triggered on a slope: a fixed level, and one latched from following the noise: 15 draws, 2 fills, 54 text runs, 140 rects
-draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=2992545 first_ch=7 cols=500 rows=31 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.20000002 gain_base=0
-draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=2994548 first_ch=7 cols=500 rows=31 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.25000003 gain_base=0
-draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=2996551 first_ch=7 cols=500 rows=31 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.3 gain_base=0
-draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=2998554 first_ch=7 cols=500 rows=31 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.35000002 gain_base=0
-draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=3000557 first_ch=7 cols=500 rows=31 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.40000004 gain_base=0
-draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=3002560 first_ch=7 cols=500 rows=31 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.45000002 gain_base=0
-draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=3004563 first_ch=7 cols=500 rows=31 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.5 gain_base=0
-draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=3006566 first_ch=7 cols=500 rows=31 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.55 gain_base=0
-draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=3008569 first_ch=7 cols=500 rows=31 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.6 gain_base=0
-draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=3010572 first_ch=7 cols=500 rows=31 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=0
-draw 500 0 500 700 review=false nch=62 cap_mask=1048575 newest=3002567 first_ch=39 cols=500 rows=16 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.20000002 gain_base=256
-draw 500 0 500 700 review=false nch=62 cap_mask=1048575 newest=3004567 first_ch=39 cols=500 rows=16 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.33333334 gain_base=256
-draw 500 0 500 700 review=false nch=62 cap_mask=1048575 newest=3006566 first_ch=39 cols=500 rows=16 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.4666667 gain_base=256
-draw 500 0 500 700 review=false nch=62 cap_mask=1048575 newest=3008565 first_ch=39 cols=500 rows=16 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.6 gain_base=256
-draw 500 0 500 700 review=false nch=62 cap_mask=1048575 newest=3010564 first_ch=39 cols=500 rows=16 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=256
+draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=2992545 first_ch=7 cols=500 rows=31 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.20000002 gain_base=0 dec_mask=131071
+draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=2994548 first_ch=7 cols=500 rows=31 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.25000003 gain_base=0 dec_mask=131071
+draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=2996551 first_ch=7 cols=500 rows=31 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.3 gain_base=0 dec_mask=131071
+draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=2998554 first_ch=7 cols=500 rows=31 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.35000002 gain_base=0 dec_mask=131071
+draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=3000557 first_ch=7 cols=500 rows=31 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.40000004 gain_base=0 dec_mask=131071
+draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=3002560 first_ch=7 cols=500 rows=31 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.45000002 gain_base=0 dec_mask=131071
+draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=3004563 first_ch=7 cols=500 rows=31 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.5 gain_base=0 dec_mask=131071
+draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=3006566 first_ch=7 cols=500 rows=31 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.55 gain_base=0 dec_mask=131071
+draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=3008569 first_ch=7 cols=500 rows=31 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.6 gain_base=0 dec_mask=131071
+draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=3010572 first_ch=7 cols=500 rows=31 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=0 dec_mask=131071
+draw 500 0 500 700 review=false nch=62 cap_mask=1048575 newest=3002567 first_ch=39 cols=500 rows=16 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.20000002 gain_base=256 dec_mask=131071
+draw 500 0 500 700 review=false nch=62 cap_mask=1048575 newest=3004567 first_ch=39 cols=500 rows=16 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.33333334 gain_base=256 dec_mask=131071
+draw 500 0 500 700 review=false nch=62 cap_mask=1048575 newest=3006566 first_ch=39 cols=500 rows=16 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.4666667 gain_base=256 dec_mask=131071
+draw 500 0 500 700 review=false nch=62 cap_mask=1048575 newest=3008565 first_ch=39 cols=500 rows=16 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.6 gain_base=256 dec_mask=131071
+draw 500 0 500 700 review=false nch=62 cap_mask=1048575 newest=3010564 first_ch=39 cols=500 rows=16 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=256 dec_mask=131071
 gain 0 row 3: 1.5
 fill 500 0 1 700 0.22 0.24 0.28 1
 fill 0 0 500 3 0.3 0.55 0.95 1
@@ -497,8 +497,8 @@ text 505 626 { 150, 160, 178, 255 } "15"
 rect 502 669 22 18 { 8, 10, 14, 200 }
 text 505 670 { 150, 160, 178, 255 } "16"
 == notes: this pass, the previous pass, one being typed: 2 draws, 4 fills, 37 text runs, 44 rects
-draw 0 0 1000 350 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=1000 rows=32 span=30000 lsb_per_row=2051.282 half_px=0.004285714 phase=12345 future=0 gain=1 gain_base=0
-draw 0 350 1000 350 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=39 cols=1000 rows=16 span=60000 lsb_per_row=2051.282 half_px=0.004285714 phase=-1 future=0 gain=1 gain_base=256
+draw 0 0 1000 350 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=1000 rows=32 span=30000 lsb_per_row=2051.282 half_px=0.004285714 phase=12345 future=0 gain=1 gain_base=0 dec_mask=131071
+draw 0 350 1000 350 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=39 cols=1000 rows=16 span=60000 lsb_per_row=2051.282 half_px=0.004285714 phase=-1 future=0 gain=1 gain_base=256 dec_mask=131071
 fill 411 0 10 350 0.04 0.045 0.055 1
 fill 411 0 1 350 0.45 0.48 0.55 1
 fill 0 350 1000 1 0.22 0.24 0.28 1
@@ -585,19 +585,19 @@ text 5 681 { 150, 160, 178, 255 } "16"
 rect 7 653 238 18 { 8, 10, 14, 200 }
 text 10 654 { 255, 235, 170, 255 } "note at 1:40:  spike at 2 µm_"
 == review from the file: 13 draws, 5 fills, 55 text runs, 65 rects
-draw 0 0 500 420 review=true nch=62 cap_mask=1048575 newest=2637345 first_ch=7 cols=500 rows=32 span=150000 lsb_per_row=2051.282 half_px=0.0035714286 phase=-1 future=0 gain=1 gain_base=0
-draw 500 0 500 420 review=true nch=62 cap_mask=1048575 newest=2637345 first_ch=39 cols=500 rows=16 span=30000 lsb_per_row=2051.282 half_px=0.0035714286 phase=-1 future=0 gain=1 gain_base=256
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2959045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.20000002 gain_base=512
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2965045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.25000003 gain_base=512
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2971045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.3 gain_base=512
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2977045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.35000002 gain_base=512
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2983045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.40000004 gain_base=512
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2989045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.45000002 gain_base=512
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2995045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.5 gain_base=512
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=3001045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.55 gain_base=512
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=3007045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.6 gain_base=512
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=3013045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=700 gain=1 gain_base=512
-draw 700 420 300 280 review=true nch=62 cap_mask=1048575 newest=2637345 first_ch=7 cols=300 rows=8 span=60000 lsb_per_row=3333.3333 half_px=0.005357143 phase=-1 future=0 gain=1 gain_base=768
+draw 0 0 500 420 review=true nch=62 cap_mask=1048575 newest=2637345 first_ch=7 cols=500 rows=32 span=150000 lsb_per_row=2051.282 half_px=0.0035714286 phase=-1 future=0 gain=1 gain_base=0 dec_mask=0
+draw 500 0 500 420 review=true nch=62 cap_mask=1048575 newest=2637345 first_ch=39 cols=500 rows=16 span=30000 lsb_per_row=2051.282 half_px=0.0035714286 phase=-1 future=0 gain=1 gain_base=256 dec_mask=0
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2959045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.20000002 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2965045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.25000003 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2971045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.3 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2977045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.35000002 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2983045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.40000004 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2989045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.45000002 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2995045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.5 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=3001045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.55 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=3007045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.6 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=3013045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=700 gain=1 gain_base=512 dec_mask=131071
+draw 700 420 300 280 review=true nch=62 cap_mask=1048575 newest=2637345 first_ch=7 cols=300 rows=8 span=60000 lsb_per_row=3333.3333 half_px=0.005357143 phase=-1 future=0 gain=1 gain_base=768 dec_mask=0
 fill 500 0 1 420 0.22 0.24 0.28 1
 fill 0 420 700 1 0.22 0.24 0.28 1
 fill 700 420 1 280 0.22 0.24 0.28 1
@@ -724,16 +724,16 @@ text 705 675 { 150, 160, 178, 255 } "TTL8"
 rect 298 4 404 26 { 150, 100, 10, 235 }
 text 308 9 { 255, 240, 200, 255 } "REVIEW   12.5 s behind live   at 1:27   l = live"
 == review from the file, still reading: 10 draws, 5 fills, 55 text runs, 65 rects
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2959045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.20000002 gain_base=512
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2965045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.25000003 gain_base=512
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2971045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.3 gain_base=512
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2977045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.35000002 gain_base=512
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2983045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.40000004 gain_base=512
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2989045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.45000002 gain_base=512
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2995045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.5 gain_base=512
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=3001045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.55 gain_base=512
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=3007045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.6 gain_base=512
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=3013045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=700 gain=1 gain_base=512
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2959045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.20000002 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2965045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.25000003 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2971045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.3 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2977045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.35000002 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2983045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.40000004 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2989045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.45000002 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2995045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.5 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=3001045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.55 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=3007045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.6 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=3013045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=700 gain=1 gain_base=512 dec_mask=131071
 fill 500 0 1 420 0.22 0.24 0.28 1
 fill 0 420 700 1 0.22 0.24 0.28 1
 fill 700 420 1 280 0.22 0.24 0.28 1
@@ -860,19 +860,19 @@ text 705 675 { 150, 160, 178, 255 } "TTL8"
 rect 250 4 500 26 { 150, 100, 10, 235 }
 text 260 9 { 255, 240, 200, 255 } "REVIEW   12.5 s behind live   at 1:27   (reading)   l = live"
 == review frozen, without a file; warning bar: 13 draws, 5 fills, 56 text runs, 66 rects
-draw 0 0 500 420 review=false nch=62 cap_mask=1048575 newest=2637345 first_ch=7 cols=500 rows=32 span=150000 lsb_per_row=2051.282 half_px=0.0035714286 phase=-1 future=0 gain=1 gain_base=0
-draw 500 0 500 420 review=false nch=62 cap_mask=1048575 newest=2637345 first_ch=39 cols=500 rows=16 span=30000 lsb_per_row=2051.282 half_px=0.0035714286 phase=-1 future=0 gain=1 gain_base=256
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2959045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.20000002 gain_base=512
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2965045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.25000003 gain_base=512
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2971045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.3 gain_base=512
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2977045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.35000002 gain_base=512
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2983045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.40000004 gain_base=512
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2989045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.45000002 gain_base=512
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2995045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.5 gain_base=512
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=3001045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.55 gain_base=512
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=3007045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.6 gain_base=512
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=3013045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=700 gain=1 gain_base=512
-draw 700 420 300 280 review=false nch=62 cap_mask=1048575 newest=2637345 first_ch=7 cols=300 rows=8 span=60000 lsb_per_row=3333.3333 half_px=0.005357143 phase=-1 future=0 gain=1 gain_base=768
+draw 0 0 500 420 review=false nch=62 cap_mask=1048575 newest=2637345 first_ch=7 cols=500 rows=32 span=150000 lsb_per_row=2051.282 half_px=0.0035714286 phase=-1 future=0 gain=1 gain_base=0 dec_mask=131071
+draw 500 0 500 420 review=false nch=62 cap_mask=1048575 newest=2637345 first_ch=39 cols=500 rows=16 span=30000 lsb_per_row=2051.282 half_px=0.0035714286 phase=-1 future=0 gain=1 gain_base=256 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2959045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.20000002 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2965045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.25000003 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2971045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.3 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2977045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.35000002 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2983045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.40000004 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2989045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.45000002 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2995045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.5 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=3001045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.55 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=3007045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.6 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=3013045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=700 gain=1 gain_base=512 dec_mask=131071
+draw 700 420 300 280 review=false nch=62 cap_mask=1048575 newest=2637345 first_ch=7 cols=300 rows=8 span=60000 lsb_per_row=3333.3333 half_px=0.005357143 phase=-1 future=0 gain=1 gain_base=768 dec_mask=131071
 fill 500 0 1 420 0.22 0.24 0.28 1
 fill 0 420 700 1 0.22 0.24 0.28 1
 fill 700 420 1 280 0.22 0.24 0.28 1
@@ -1001,8 +1001,8 @@ text 396 39 { 255, 255, 255, 255 } "the disk is falling behind"
 rect 298 4 404 26 { 150, 100, 10, 235 }
 text 308 9 { 255, 240, 200, 255 } "REVIEW   12.5 s behind live   at 1:27   l = live"
 == alarm, not acknowledged: 2 draws, 2 fills, 50 text runs, 49 rects
-draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=500 rows=32 span=60000 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=0
-draw 500 0 500 700 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=39 cols=500 rows=16 span=60000 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=256
+draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=500 rows=32 span=60000 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=0 dec_mask=131071
+draw 500 0 500 700 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=39 cols=500 rows=16 span=60000 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=256 dec_mask=131071
 fill 500 0 1 700 0.22 0.24 0.28 1
 fill 0 0 500 3 0.3 0.55 0.95 1
 rect 5 5 230 18 { 8, 10, 14, 200 }
@@ -1105,8 +1105,8 @@ text 388 23 { 255, 210, 210, 255 } "press Shift+a to acknowledge"
 rect 861 677 134 18 { 8, 10, 14, 200 }
 text 864 678 { 150, 160, 178, 255 } "4.3 ms   144 fps"
 == alarm acknowledged: 2 draws, 2 fills, 48 text runs, 48 rects
-draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=500 rows=32 span=60000 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=0
-draw 500 0 500 700 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=39 cols=500 rows=16 span=60000 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=256
+draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=500 rows=32 span=60000 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=0 dec_mask=131071
+draw 500 0 500 700 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=39 cols=500 rows=16 span=60000 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=256 dec_mask=131071
 fill 500 0 1 700 0.22 0.24 0.28 1
 fill 0 0 500 3 0.3 0.55 0.95 1
 rect 5 5 230 18 { 8, 10, 14, 200 }
@@ -1206,8 +1206,8 @@ text 505 670 { 150, 160, 178, 255 } "16"
 rect 861 677 134 18 { 8, 10, 14, 200 }
 text 864 678 { 150, 160, 178, 255 } "4.3 ms   144 fps"
 == warning: 2 draws, 2 fills, 49 text runs, 49 rects
-draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=500 rows=32 span=60000 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=0
-draw 500 0 500 700 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=39 cols=500 rows=16 span=60000 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=256
+draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=500 rows=32 span=60000 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=0 dec_mask=131071
+draw 500 0 500 700 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=39 cols=500 rows=16 span=60000 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=256 dec_mask=131071
 fill 500 0 1 700 0.22 0.24 0.28 1
 fill 0 0 500 3 0.3 0.55 0.95 1
 rect 5 5 230 18 { 8, 10, 14, 200 }
@@ -1309,9 +1309,9 @@ text 396 5 { 255, 255, 255, 255 } "the disk is falling behind"
 rect 861 677 134 18 { 8, 10, 14, 200 }
 text 864 678 { 150, 160, 178, 255 } "4.3 ms   144 fps"
 == heard rows, target bar, latency: 3 draws, 6 fills, 46 text runs, 46 rects
-draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=500 rows=32 span=60000 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=0
-draw 500 0 500 350 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=35 cols=500 rows=8 span=60000 lsb_per_row=2051.282 half_px=0.004285714 phase=-1 future=0 gain=1 gain_base=256
-draw 500 350 500 350 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=48 cols=500 rows=6 span=60000 lsb_per_row=26737.969 half_px=0.004285714 phase=12345 future=0 gain=1 gain_base=512
+draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=500 rows=32 span=60000 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=0 dec_mask=131071
+draw 500 0 500 350 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=35 cols=500 rows=8 span=60000 lsb_per_row=2051.282 half_px=0.004285714 phase=-1 future=0 gain=1 gain_base=256 dec_mask=131071
+draw 500 350 500 350 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=48 cols=500 rows=6 span=60000 lsb_per_row=26737.969 half_px=0.004285714 phase=12345 future=0 gain=1 gain_base=512 dec_mask=131071
 fill 500 0 1 350 0.22 0.24 0.28 1
 fill 602 350 10 350 0.04 0.045 0.055 1
 fill 602 350 1 350 0.45 0.48 0.55 1
@@ -1411,9 +1411,9 @@ text 505 663 { 150, 160, 178, 255 } "AUX6"
 rect 861 677 134 18 { 8, 10, 14, 200 }
 text 864 678 { 150, 160, 178, 255 } "4.3 ms   144 fps"
 == lost blocks, recording: 3 draws, 6 fills, 47 text runs, 47 rects
-draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=500 rows=32 span=60000 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=0
-draw 500 0 500 350 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=35 cols=500 rows=8 span=60000 lsb_per_row=2051.282 half_px=0.004285714 phase=-1 future=0 gain=1 gain_base=256
-draw 500 350 500 350 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=48 cols=500 rows=6 span=60000 lsb_per_row=26737.969 half_px=0.004285714 phase=12345 future=0 gain=1 gain_base=512
+draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=500 rows=32 span=60000 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=0 dec_mask=131071
+draw 500 0 500 350 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=35 cols=500 rows=8 span=60000 lsb_per_row=2051.282 half_px=0.004285714 phase=-1 future=0 gain=1 gain_base=256 dec_mask=131071
+draw 500 350 500 350 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=48 cols=500 rows=6 span=60000 lsb_per_row=26737.969 half_px=0.004285714 phase=12345 future=0 gain=1 gain_base=512 dec_mask=131071
 fill 500 0 1 350 0.22 0.24 0.28 1
 fill 602 350 10 350 0.04 0.045 0.055 1
 fill 602 350 1 350 0.45 0.48 0.55 1
@@ -1515,18 +1515,18 @@ text 648 678 { 255, 190, 90, 255 } "4.3 ms   144 fps   display skipped 7 blocks"
 rect 543 677 94 18 { 8, 10, 14, 200 }
 text 546 678 { 255, 96, 96, 255 } "REC 1:02:05"
 == small window: 12 draws, 4 fills, 17 text runs, 19 rects
-draw 0 0 160 180 review=false nch=62 cap_mask=1048575 newest=2959045 first_ch=7 cols=160 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.008333334 phase=-1 future=0 gain=0.20000002 gain_base=0
-draw 0 0 160 180 review=false nch=62 cap_mask=1048575 newest=2965045 first_ch=7 cols=160 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.008333334 phase=-1 future=0 gain=0.25000003 gain_base=0
-draw 0 0 160 180 review=false nch=62 cap_mask=1048575 newest=2971045 first_ch=7 cols=160 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.008333334 phase=-1 future=0 gain=0.3 gain_base=0
-draw 0 0 160 180 review=false nch=62 cap_mask=1048575 newest=2977045 first_ch=7 cols=160 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.008333334 phase=-1 future=0 gain=0.35000002 gain_base=0
-draw 0 0 160 180 review=false nch=62 cap_mask=1048575 newest=2983045 first_ch=7 cols=160 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.008333334 phase=-1 future=0 gain=0.40000004 gain_base=0
-draw 0 0 160 180 review=false nch=62 cap_mask=1048575 newest=2989045 first_ch=7 cols=160 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.008333334 phase=-1 future=0 gain=0.45000002 gain_base=0
-draw 0 0 160 180 review=false nch=62 cap_mask=1048575 newest=2995045 first_ch=7 cols=160 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.008333334 phase=-1 future=0 gain=0.5 gain_base=0
-draw 0 0 160 180 review=false nch=62 cap_mask=1048575 newest=3001045 first_ch=7 cols=160 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.008333334 phase=-1 future=0 gain=0.55 gain_base=0
-draw 0 0 160 180 review=false nch=62 cap_mask=1048575 newest=3007045 first_ch=7 cols=160 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.008333334 phase=-1 future=0 gain=0.6 gain_base=0
-draw 0 0 160 180 review=false nch=62 cap_mask=1048575 newest=3013045 first_ch=7 cols=160 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.008333334 phase=-1 future=700 gain=1 gain_base=0
-draw 160 0 160 90 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=39 cols=160 rows=16 span=60000 lsb_per_row=2051.282 half_px=0.016666668 phase=-1 future=0 gain=1 gain_base=256
-draw 160 90 160 90 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=54 cols=160 rows=8 span=60000 lsb_per_row=32768 half_px=0.016666668 phase=-1 future=0 gain=1 gain_base=512
+draw 0 0 160 180 review=false nch=62 cap_mask=1048575 newest=2959045 first_ch=7 cols=160 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.008333334 phase=-1 future=0 gain=0.20000002 gain_base=0 dec_mask=131071
+draw 0 0 160 180 review=false nch=62 cap_mask=1048575 newest=2965045 first_ch=7 cols=160 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.008333334 phase=-1 future=0 gain=0.25000003 gain_base=0 dec_mask=131071
+draw 0 0 160 180 review=false nch=62 cap_mask=1048575 newest=2971045 first_ch=7 cols=160 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.008333334 phase=-1 future=0 gain=0.3 gain_base=0 dec_mask=131071
+draw 0 0 160 180 review=false nch=62 cap_mask=1048575 newest=2977045 first_ch=7 cols=160 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.008333334 phase=-1 future=0 gain=0.35000002 gain_base=0 dec_mask=131071
+draw 0 0 160 180 review=false nch=62 cap_mask=1048575 newest=2983045 first_ch=7 cols=160 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.008333334 phase=-1 future=0 gain=0.40000004 gain_base=0 dec_mask=131071
+draw 0 0 160 180 review=false nch=62 cap_mask=1048575 newest=2989045 first_ch=7 cols=160 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.008333334 phase=-1 future=0 gain=0.45000002 gain_base=0 dec_mask=131071
+draw 0 0 160 180 review=false nch=62 cap_mask=1048575 newest=2995045 first_ch=7 cols=160 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.008333334 phase=-1 future=0 gain=0.5 gain_base=0 dec_mask=131071
+draw 0 0 160 180 review=false nch=62 cap_mask=1048575 newest=3001045 first_ch=7 cols=160 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.008333334 phase=-1 future=0 gain=0.55 gain_base=0 dec_mask=131071
+draw 0 0 160 180 review=false nch=62 cap_mask=1048575 newest=3007045 first_ch=7 cols=160 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.008333334 phase=-1 future=0 gain=0.6 gain_base=0 dec_mask=131071
+draw 0 0 160 180 review=false nch=62 cap_mask=1048575 newest=3013045 first_ch=7 cols=160 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.008333334 phase=-1 future=700 gain=1 gain_base=0 dec_mask=131071
+draw 160 0 160 90 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=39 cols=160 rows=16 span=60000 lsb_per_row=2051.282 half_px=0.016666668 phase=-1 future=0 gain=1 gain_base=256 dec_mask=131071
+draw 160 90 160 90 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=54 cols=160 rows=8 span=60000 lsb_per_row=32768 half_px=0.016666668 phase=-1 future=0 gain=1 gain_base=512 dec_mask=131071
 fill 160 0 1 90 0.22 0.24 0.28 1
 fill 160 90 1 90 0.22 0.24 0.28 1
 fill 160 90 160 1 0.22 0.24 0.28 1
@@ -1568,16 +1568,16 @@ text 184 158 { 150, 160, 178, 255 } "12.5 ms   60 fps"
 rect 103 157 70 18 { 8, 10, 14, 200 }
 text 106 158 { 255, 96, 96, 255 } "REC 1:01"
 == no font: 10 draws, 3 fills, 0 text runs, 5 rects
-draw 0 0 600 490 review=false nch=62 cap_mask=65535 newest=2983045 first_ch=7 cols=600 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.0030612245 phase=-1 future=0 gain=0.44000003 gain_base=0
-draw 0 0 600 490 review=false nch=62 cap_mask=65535 newest=2989045 first_ch=7 cols=600 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.0030612245 phase=-1 future=0 gain=0.48000002 gain_base=0
-draw 0 0 600 490 review=false nch=62 cap_mask=65535 newest=2995045 first_ch=7 cols=600 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.0030612245 phase=-1 future=0 gain=0.52000004 gain_base=0
-draw 0 0 600 490 review=false nch=62 cap_mask=65535 newest=3001045 first_ch=7 cols=600 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.0030612245 phase=-1 future=0 gain=0.56 gain_base=0
-draw 0 0 600 490 review=false nch=62 cap_mask=65535 newest=3007045 first_ch=7 cols=600 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.0030612245 phase=-1 future=0 gain=0.6 gain_base=0
-draw 0 0 600 490 review=false nch=62 cap_mask=65535 newest=3013045 first_ch=7 cols=600 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.0030612245 phase=-1 future=700 gain=1 gain_base=0
-draw 600 0 400 490 review=false nch=62 cap_mask=65535 newest=2984585 first_ch=54 cols=400 rows=8 span=300 lsb_per_row=32768 half_px=0.0030612245 phase=-1 future=0 gain=0.5 gain_base=256
-draw 600 0 400 490 review=false nch=62 cap_mask=65535 newest=2993585 first_ch=54 cols=400 rows=8 span=300 lsb_per_row=32768 half_px=0.0030612245 phase=-1 future=0 gain=0.55 gain_base=256
-draw 600 0 400 490 review=false nch=62 cap_mask=65535 newest=3002585 first_ch=54 cols=400 rows=8 span=300 lsb_per_row=32768 half_px=0.0030612245 phase=-1 future=0 gain=0.6 gain_base=256
-draw 600 0 400 490 review=false nch=62 cap_mask=65535 newest=3011585 first_ch=54 cols=400 rows=8 span=300 lsb_per_row=32768 half_px=0.0030612245 phase=-1 future=0 gain=1 gain_base=256
+draw 0 0 600 490 review=false nch=62 cap_mask=65535 newest=2983045 first_ch=7 cols=600 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.0030612245 phase=-1 future=0 gain=0.44000003 gain_base=0 dec_mask=131071
+draw 0 0 600 490 review=false nch=62 cap_mask=65535 newest=2989045 first_ch=7 cols=600 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.0030612245 phase=-1 future=0 gain=0.48000002 gain_base=0 dec_mask=131071
+draw 0 0 600 490 review=false nch=62 cap_mask=65535 newest=2995045 first_ch=7 cols=600 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.0030612245 phase=-1 future=0 gain=0.52000004 gain_base=0 dec_mask=131071
+draw 0 0 600 490 review=false nch=62 cap_mask=65535 newest=3001045 first_ch=7 cols=600 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.0030612245 phase=-1 future=0 gain=0.56 gain_base=0 dec_mask=131071
+draw 0 0 600 490 review=false nch=62 cap_mask=65535 newest=3007045 first_ch=7 cols=600 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.0030612245 phase=-1 future=0 gain=0.6 gain_base=0 dec_mask=131071
+draw 0 0 600 490 review=false nch=62 cap_mask=65535 newest=3013045 first_ch=7 cols=600 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.0030612245 phase=-1 future=700 gain=1 gain_base=0 dec_mask=131071
+draw 600 0 400 490 review=false nch=62 cap_mask=65535 newest=2984585 first_ch=54 cols=400 rows=8 span=300 lsb_per_row=32768 half_px=0.0030612245 phase=-1 future=0 gain=0.5 gain_base=256 dec_mask=131071
+draw 600 0 400 490 review=false nch=62 cap_mask=65535 newest=2993585 first_ch=54 cols=400 rows=8 span=300 lsb_per_row=32768 half_px=0.0030612245 phase=-1 future=0 gain=0.55 gain_base=256 dec_mask=131071
+draw 600 0 400 490 review=false nch=62 cap_mask=65535 newest=3002585 first_ch=54 cols=400 rows=8 span=300 lsb_per_row=32768 half_px=0.0030612245 phase=-1 future=0 gain=0.6 gain_base=256 dec_mask=131071
+draw 600 0 400 490 review=false nch=62 cap_mask=65535 newest=3011585 first_ch=54 cols=400 rows=8 span=300 lsb_per_row=32768 half_px=0.0030612245 phase=-1 future=0 gain=1 gain_base=256 dec_mask=131071
 fill 600 0 1 490 0.22 0.24 0.28 1
 fill 0 490 1000 1 0.22 0.24 0.28 1
 fill 0 0 600 3 0.3 0.55 0.95 1
@@ -1587,7 +1587,7 @@ rect 680 0 133.33331 490 { 90, 150, 255, 30 }
 rect 680 0 1 490 { 200, 210, 230, 150 }
 rect 200 490 1 210 { 200, 210, 230, 150 }
 == focus on a filtered row with a threshold: the line: 1 draws, 0 fills, 32 text runs, 33 rects
-draw 0 0 1000 700 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=1000 rows=31 span=60000 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=0
+draw 0 0 1000 700 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=1000 rows=31 span=60000 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=0 dec_mask=131071
 gain 0 row 4: 2
 rect 0 103 1000 1 { 225, 80, 75, 210 }
 rect 5 5 342 18 { 8, 10, 14, 200 }
@@ -1655,8 +1655,8 @@ text 5 658 { 150, 160, 178, 255 } "31"
 rect 2 680 22 18 { 8, 10, 14, 200 }
 text 5 681 { 150, 160, 178, 255 } "32"
 == focus on a raw row, and on a 10 Hz high-pass: tags, no line: 2 draws, 2 fills, 65 text runs, 65 rects
-draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=500 rows=32 span=60000 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=0
-draw 500 0 500 700 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=500 rows=32 span=60000 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=256
+draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=500 rows=32 span=60000 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=0 dec_mask=131071
+draw 500 0 500 700 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=500 rows=32 span=60000 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=256 dec_mask=131071
 fill 500 0 1 700 0.22 0.24 0.28 1
 fill 0 0 500 3 0.3 0.55 0.95 1
 rect 5 5 342 18 { 8, 10, 14, 200 }
@@ -1790,7 +1790,7 @@ text 505 659 { 150, 160, 178, 255 } "31"
 rect 502 680 22 18 { 8, 10, 14, 200 }
 text 505 681 { 150, 160, 178, 255 } "32"
 == focus, no threshold reported: 1 draws, 0 fills, 32 text runs, 32 rects
-draw 0 0 1000 700 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=1000 rows=31 span=60000 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=0
+draw 0 0 1000 700 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=1000 rows=31 span=60000 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=0 dec_mask=131071
 gain 0 row 4: 2
 rect 5 5 342 18 { 8, 10, 14, 200 }
 text 8 6 { 225, 230, 240, 255 } "Port A   2.00 s   400 µV/row   300-6000 Hz"
@@ -1857,7 +1857,7 @@ text 5 658 { 150, 160, 178, 255 } "31"
 rect 2 680 22 18 { 8, 10, 14, 200 }
 text 5 681 { 150, 160, 178, 255 } "32"
 == focus and listening on the same channel: 1 draws, 0 fills, 31 text runs, 32 rects
-draw 0 0 1000 700 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=1000 rows=32 span=60000 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=0
+draw 0 0 1000 700 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=1000 rows=32 span=60000 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=0 dec_mask=131071
 rect 0 123 1000 1 { 225, 80, 75, 210 }
 rect 5 5 342 18 { 8, 10, 14, 200 }
 text 8 6 { 225, 230, 240, 255 } "Port A   2.00 s   400 µV/row   300-6000 Hz"
@@ -1922,7 +1922,7 @@ text 5 659 { 150, 160, 178, 255 } "31"
 rect 2 680 22 18 { 8, 10, 14, 200 }
 text 5 681 { 150, 160, 178, 255 } "32"
 == focus and listening on different channels: 1 draws, 0 fills, 31 text runs, 32 rects
-draw 0 0 1000 700 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=1000 rows=32 span=60000 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=0
+draw 0 0 1000 700 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=1000 rows=32 span=60000 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=0 dec_mask=131071
 rect 0 123 1000 1 { 225, 80, 75, 210 }
 rect 5 5 342 18 { 8, 10, 14, 200 }
 text 8 6 { 225, 230, 240, 255 } "Port A   2.00 s   400 µV/row   300-6000 Hz"
@@ -1987,8 +1987,8 @@ text 5 659 { 150, 160, 178, 255 } "31"
 rect 2 680 22 18 { 8, 10, 14, 200 }
 text 5 681 { 150, 160, 178, 255 } "32"
 == the focused channel in two panels: 2 draws, 2 fills, 24 text runs, 26 rects
-draw 0 0 1000 350 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=1000 rows=32 span=60000 lsb_per_row=2051.282 half_px=0.004285714 phase=-1 future=0 gain=1 gain_base=0
-draw 0 350 1000 350 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=35 cols=1000 rows=8 span=60000 lsb_per_row=2051.282 half_px=0.004285714 phase=-1 future=0 gain=1 gain_base=256
+draw 0 0 1000 350 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=1000 rows=32 span=60000 lsb_per_row=2051.282 half_px=0.004285714 phase=-1 future=0 gain=1 gain_base=0 dec_mask=131071
+draw 0 350 1000 350 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=35 cols=1000 rows=8 span=60000 lsb_per_row=2051.282 half_px=0.004285714 phase=-1 future=0 gain=1 gain_base=256 dec_mask=131071
 gain 1 row 2: 0.5
 fill 0 350 1000 1 0.22 0.24 0.28 1
 fill 0 0 1000 3 0.3 0.55 0.95 1
@@ -2043,7 +2043,7 @@ text 5 626 { 150, 160, 178, 255 } "B1-3"
 rect 2 669 38 18 { 8, 10, 14, 200 }
 text 5 670 { 150, 160, 178, 255 } "B1-4"
 == the focused row hidden: 1 draws, 0 fills, 31 text runs, 31 rects
-draw 0 0 1000 700 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=1000 rows=31 span=60000 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=0
+draw 0 0 1000 700 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=1000 rows=31 span=60000 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=0 dec_mask=131071
 rect 5 5 342 18 { 8, 10, 14, 200 }
 text 8 6 { 225, 230, 240, 255 } "Port A   2.00 s   400 µV/row   300-6000 Hz"
 rect 2 25 14 18 { 8, 10, 14, 200 }
@@ -2107,17 +2107,17 @@ text 5 658 { 150, 160, 178, 255 } "31"
 rect 2 680 22 18 { 8, 10, 14, 200 }
 text 5 681 { 150, 160, 178, 255 } "32"
 == focus in a triggered panel and a sweep panel: 11 draws, 4 fills, 64 text runs, 68 rects
-draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=2959045 first_ch=7 cols=500 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.20000002 gain_base=0
-draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=2965045 first_ch=7 cols=500 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.25000003 gain_base=0
-draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=2971045 first_ch=7 cols=500 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.3 gain_base=0
-draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=2977045 first_ch=7 cols=500 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.35000002 gain_base=0
-draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=2983045 first_ch=7 cols=500 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.40000004 gain_base=0
-draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=2989045 first_ch=7 cols=500 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.45000002 gain_base=0
-draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=2995045 first_ch=7 cols=500 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.5 gain_base=0
-draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=3001045 first_ch=7 cols=500 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.55 gain_base=0
-draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=3007045 first_ch=7 cols=500 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.6 gain_base=0
-draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=3013045 first_ch=7 cols=500 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=700 gain=1 gain_base=0
-draw 500 0 500 700 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=500 rows=32 span=30000 lsb_per_row=2051.282 half_px=0.002142857 phase=12345 future=0 gain=1 gain_base=256
+draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=2959045 first_ch=7 cols=500 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.20000002 gain_base=0 dec_mask=131071
+draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=2965045 first_ch=7 cols=500 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.25000003 gain_base=0 dec_mask=131071
+draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=2971045 first_ch=7 cols=500 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.3 gain_base=0 dec_mask=131071
+draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=2977045 first_ch=7 cols=500 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.35000002 gain_base=0 dec_mask=131071
+draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=2983045 first_ch=7 cols=500 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.40000004 gain_base=0 dec_mask=131071
+draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=2989045 first_ch=7 cols=500 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.45000002 gain_base=0 dec_mask=131071
+draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=2995045 first_ch=7 cols=500 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.5 gain_base=0 dec_mask=131071
+draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=3001045 first_ch=7 cols=500 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.55 gain_base=0 dec_mask=131071
+draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=3007045 first_ch=7 cols=500 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.6 gain_base=0 dec_mask=131071
+draw 0 0 500 700 review=false nch=62 cap_mask=1048575 newest=3013045 first_ch=7 cols=500 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=700 gain=1 gain_base=0 dec_mask=131071
+draw 500 0 500 700 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=500 rows=32 span=30000 lsb_per_row=2051.282 half_px=0.002142857 phase=12345 future=0 gain=1 gain_base=256 dec_mask=131071
 fill 705 0 10 700 0.04 0.045 0.055 1
 fill 705 0 1 700 0.45 0.48 0.55 1
 fill 500 0 1 700 0.22 0.24 0.28 1
@@ -2255,7 +2255,7 @@ text 505 659 { 150, 160, 178, 255 } "31"
 rect 502 680 22 18 { 8, 10, 14, 200 }
 text 505 681 { 150, 160, 178, 255 } "32"
 == focus: a threshold beyond the row's extent, clamped: 1 draws, 0 fills, 31 text runs, 32 rects
-draw 0 0 1000 700 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=1000 rows=32 span=60000 lsb_per_row=256.41025 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=0
+draw 0 0 1000 700 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=1000 rows=32 span=60000 lsb_per_row=256.41025 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=0 dec_mask=131071
 rect 0 153 1000 1 { 225, 80, 75, 210 }
 rect 5 5 334 18 { 8, 10, 14, 200 }
 text 8 6 { 225, 230, 240, 255 } "Port A   2.00 s   50 µV/row   300-6000 Hz"
@@ -2320,7 +2320,7 @@ text 5 659 { 150, 160, 178, 255 } "31"
 rect 2 680 22 18 { 8, 10, 14, 200 }
 text 5 681 { 150, 160, 178, 255 } "32"
 == thinned labels: the focused row and the rows listened to are labelled all the same: 1 draws, 0 fills, 10 text runs, 10 rects
-draw 0 0 600 300 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=600 rows=32 span=60000 lsb_per_row=2051.282 half_px=0.005 phase=-1 future=0 gain=1 gain_base=0
+draw 0 0 600 300 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=600 rows=32 span=60000 lsb_per_row=2051.282 half_px=0.005 phase=-1 future=0 gain=1 gain_base=0 dec_mask=131071
 rect 5 5 230 18 { 8, 10, 14, 200 }
 text 8 6 { 225, 230, 240, 255 } "Port A   2.00 s   400 µV/row"
 rect 2 52 14 18 { 8, 10, 14, 200 }
@@ -2342,7 +2342,7 @@ text 5 250 { 150, 160, 178, 255 } "28"
 rect 2 277 22 18 { 8, 10, 14, 200 }
 text 5 278 { 150, 160, 178, 255 } "31"
 == dragging the focused row's line: drawn at the value dragged to: 1 draws, 0 fills, 32 text runs, 33 rects
-draw 0 0 1000 700 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=1000 rows=31 span=60000 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=0
+draw 0 0 1000 700 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=1000 rows=31 span=60000 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=0 dec_mask=131071
 gain 0 row 4: 2
 rect 0 130 1000 1 { 225, 80, 75, 210 }
 rect 5 5 342 18 { 8, 10, 14, 200 }
@@ -2410,16 +2410,16 @@ text 5 658 { 150, 160, 178, 255 } "31"
 rect 2 680 22 18 { 8, 10, 14, 200 }
 text 5 681 { 150, 160, 178, 255 } "32"
 == the trigger row in focus: one line, dashed, in the threshold's colour: 10 draws, 0 fills, 34 text runs, 119 rects
-draw 0 0 1000 700 review=false nch=62 cap_mask=1048575 newest=3000557 first_ch=7 cols=1000 rows=32 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.20000002 gain_base=0
-draw 0 0 1000 700 review=false nch=62 cap_mask=1048575 newest=3002560 first_ch=7 cols=1000 rows=32 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.25000003 gain_base=0
-draw 0 0 1000 700 review=false nch=62 cap_mask=1048575 newest=3002598 first_ch=7 cols=1000 rows=32 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.3 gain_base=0
-draw 0 0 1000 700 review=false nch=62 cap_mask=1048575 newest=3004563 first_ch=7 cols=1000 rows=32 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.35000002 gain_base=0
-draw 0 0 1000 700 review=false nch=62 cap_mask=1048575 newest=3004596 first_ch=7 cols=1000 rows=32 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.40000004 gain_base=0
-draw 0 0 1000 700 review=false nch=62 cap_mask=1048575 newest=3006566 first_ch=7 cols=1000 rows=32 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.45000002 gain_base=0
-draw 0 0 1000 700 review=false nch=62 cap_mask=1048575 newest=3006602 first_ch=7 cols=1000 rows=32 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.5 gain_base=0
-draw 0 0 1000 700 review=false nch=62 cap_mask=1048575 newest=3008569 first_ch=7 cols=1000 rows=32 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.55 gain_base=0
-draw 0 0 1000 700 review=false nch=62 cap_mask=1048575 newest=3008606 first_ch=7 cols=1000 rows=32 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.6 gain_base=0
-draw 0 0 1000 700 review=false nch=62 cap_mask=1048575 newest=3010572 first_ch=7 cols=1000 rows=32 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=0
+draw 0 0 1000 700 review=false nch=62 cap_mask=1048575 newest=3000557 first_ch=7 cols=1000 rows=32 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.20000002 gain_base=0 dec_mask=131071
+draw 0 0 1000 700 review=false nch=62 cap_mask=1048575 newest=3002560 first_ch=7 cols=1000 rows=32 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.25000003 gain_base=0 dec_mask=131071
+draw 0 0 1000 700 review=false nch=62 cap_mask=1048575 newest=3002598 first_ch=7 cols=1000 rows=32 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.3 gain_base=0 dec_mask=131071
+draw 0 0 1000 700 review=false nch=62 cap_mask=1048575 newest=3004563 first_ch=7 cols=1000 rows=32 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.35000002 gain_base=0 dec_mask=131071
+draw 0 0 1000 700 review=false nch=62 cap_mask=1048575 newest=3004596 first_ch=7 cols=1000 rows=32 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.40000004 gain_base=0 dec_mask=131071
+draw 0 0 1000 700 review=false nch=62 cap_mask=1048575 newest=3006566 first_ch=7 cols=1000 rows=32 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.45000002 gain_base=0 dec_mask=131071
+draw 0 0 1000 700 review=false nch=62 cap_mask=1048575 newest=3006602 first_ch=7 cols=1000 rows=32 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.5 gain_base=0 dec_mask=131071
+draw 0 0 1000 700 review=false nch=62 cap_mask=1048575 newest=3008569 first_ch=7 cols=1000 rows=32 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.55 gain_base=0 dec_mask=131071
+draw 0 0 1000 700 review=false nch=62 cap_mask=1048575 newest=3008606 first_ch=7 cols=1000 rows=32 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=0.6 gain_base=0 dec_mask=131071
+draw 0 0 1000 700 review=false nch=62 cap_mask=1048575 newest=3010572 first_ch=7 cols=1000 rows=32 span=90 lsb_per_row=2051.282 half_px=0.002142857 phase=-1 future=0 gain=1 gain_base=0 dec_mask=131071
 rect 0 101 6 1 { 225, 80, 75, 210 }
 rect 12 101 6 1 { 225, 80, 75, 210 }
 rect 24 101 6 1 { 225, 80, 75, 210 }
@@ -2574,19 +2574,19 @@ text 5 659 { 150, 160, 178, 255 } "31"
 rect 2 680 22 18 { 8, 10, 14, 200 }
 text 5 681 { 150, 160, 178, 255 } "32"
 == review entered by Shift+wheel: three clicks back over Port A (5 s): 1.5 s behind: 13 draws, 5 fills, 54 text runs, 61 rects
-draw 0 0 500 420 review=false nch=62 cap_mask=1048575 newest=2967345 first_ch=7 cols=500 rows=32 span=150000 lsb_per_row=2051.282 half_px=0.0035714286 phase=-1 future=0 gain=1 gain_base=0
-draw 500 0 500 420 review=false nch=62 cap_mask=1048575 newest=2967345 first_ch=39 cols=500 rows=16 span=30000 lsb_per_row=2051.282 half_px=0.0035714286 phase=-1 future=0 gain=1 gain_base=256
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2959045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.20000002 gain_base=512
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2965045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.25000003 gain_base=512
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2971045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.3 gain_base=512
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2977045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.35000002 gain_base=512
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2983045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.40000004 gain_base=512
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2989045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.45000002 gain_base=512
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2995045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.5 gain_base=512
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=3001045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.55 gain_base=512
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=3007045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.6 gain_base=512
-draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=3013045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=700 gain=1 gain_base=512
-draw 700 420 300 280 review=false nch=62 cap_mask=1048575 newest=2967345 first_ch=7 cols=300 rows=8 span=60000 lsb_per_row=3333.3333 half_px=0.005357143 phase=-1 future=0 gain=1 gain_base=768
+draw 0 0 500 420 review=false nch=62 cap_mask=1048575 newest=2967345 first_ch=7 cols=500 rows=32 span=150000 lsb_per_row=2051.282 half_px=0.0035714286 phase=-1 future=0 gain=1 gain_base=0 dec_mask=131071
+draw 500 0 500 420 review=false nch=62 cap_mask=1048575 newest=2967345 first_ch=39 cols=500 rows=16 span=30000 lsb_per_row=2051.282 half_px=0.0035714286 phase=-1 future=0 gain=1 gain_base=256 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2959045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.20000002 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2965045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.25000003 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2971045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.3 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2977045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.35000002 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2983045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.40000004 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2989045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.45000002 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2995045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.5 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=3001045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.55 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=3007045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.6 gain_base=512 dec_mask=131071
+draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=3013045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=700 gain=1 gain_base=512 dec_mask=131071
+draw 700 420 300 280 review=false nch=62 cap_mask=1048575 newest=2967345 first_ch=7 cols=300 rows=8 span=60000 lsb_per_row=3333.3333 half_px=0.005357143 phase=-1 future=0 gain=1 gain_base=768 dec_mask=131071
 fill 500 0 1 420 0.22 0.24 0.28 1
 fill 0 420 700 1 0.22 0.24 0.28 1
 fill 700 420 1 280 0.22 0.24 0.28 1
@@ -2708,8 +2708,8 @@ text 705 675 { 150, 160, 178, 255 } "TTL8"
 rect 302 4 396 26 { 150, 100, 10, 235 }
 text 312 9 { 255, 240, 200, 255 } "REVIEW   1.5 s behind live   at 1:38   l = live"
 == the key summary (?), in the fixed-width font: 2 draws, 2 fills, 145 text runs, 49 rects
-draw 0 0 640 800 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=640 rows=32 span=60000 lsb_per_row=2051.282 half_px=0.001875 phase=-1 future=0 gain=1 gain_base=0
-draw 640 0 640 800 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=39 cols=640 rows=16 span=60000 lsb_per_row=2051.282 half_px=0.001875 phase=-1 future=0 gain=1 gain_base=256
+draw 0 0 640 800 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=640 rows=32 span=60000 lsb_per_row=2051.282 half_px=0.001875 phase=-1 future=0 gain=1 gain_base=0 dec_mask=131071
+draw 640 0 640 800 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=39 cols=640 rows=16 span=60000 lsb_per_row=2051.282 half_px=0.001875 phase=-1 future=0 gain=1 gain_base=256 dec_mask=131071
 fill 640 0 1 800 0.22 0.24 0.28 1
 fill 0 0 640 3 0.3 0.55 0.95 1
 rect 5 5 230 18 { 8, 10, 14, 200 }
@@ -2907,8 +2907,8 @@ mono 875 352 { 175, 184, 200, 255 } "its threshold, fixed (uV)"
 mono 685 368 { 150, 200, 255, 255 } "the chips"
 mono 875 368 { 175, 184, 200, 255 } "one port's tiles, or all"
 == the key summary (?), without a fixed-width font: 2 draws, 2 fills, 145 text runs, 49 rects
-draw 0 0 640 800 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=640 rows=32 span=60000 lsb_per_row=2051.282 half_px=0.001875 phase=-1 future=0 gain=1 gain_base=0
-draw 640 0 640 800 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=39 cols=640 rows=16 span=60000 lsb_per_row=2051.282 half_px=0.001875 phase=-1 future=0 gain=1 gain_base=256
+draw 0 0 640 800 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=7 cols=640 rows=32 span=60000 lsb_per_row=2051.282 half_px=0.001875 phase=-1 future=0 gain=1 gain_base=0 dec_mask=131071
+draw 640 0 640 800 review=false nch=62 cap_mask=1048575 newest=3012345 first_ch=39 cols=640 rows=16 span=60000 lsb_per_row=2051.282 half_px=0.001875 phase=-1 future=0 gain=1 gain_base=256 dec_mask=131071
 fill 640 0 1 800 0.22 0.24 0.28 1
 fill 0 0 640 3 0.3 0.55 0.95 1
 rect 5 5 230 18 { 8, 10, 14, 200 }

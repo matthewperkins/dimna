@@ -10,6 +10,7 @@ const std = @import("std");
 const vk = @import("vulkan");
 const font = @import("font.zig");
 const theme = @import("theme.zig");
+const decimate = @import("dimna").decimate;
 const log = std.log.scoped(.gpu);
 
 extern fn vkGetInstanceProcAddr(instance: ?vk.Instance, name: [*:0]const u8) vk.PfnVoidFunction;
@@ -40,6 +41,9 @@ pub const TraceParams = extern struct {
     gain: f32 = 1,
     /// Where the panel's row factors start in `Gpu.row_gains`.
     gain_base: u32 = 0,
+    /// Buckets in the decimated ring - 1: pixel columns that hold `bucket_cols` samples or
+    /// more are drawn from buckets. 0: always from samples.
+    dec_mask: u32 = 0,
 };
 
 /// Row factors per panel in `Gpu.row_gains` (matches the shader's limit).
@@ -134,6 +138,14 @@ pub const Gpu = struct {
     hist_cap: usize = 0,
     nch: usize = 0,
     hist_device_local: bool = false,
+    /// The decimated history beside it (`decimate.zig`): the minimum and maximum of every
+    /// 16 samples, reaching further back than the samples. `writeSamples` fills both.
+    dec_buf: vk.Buffer = .null,
+    dec_mem: vk.DeviceMemory = .null,
+    dec: decimate.Ring = .{},
+    /// Samples the review history holds (the time bases' need; the live sample ring may be
+    /// shorter when the card's memory is short).
+    rev_cap: usize = 0,
 
     /// With `wait_render`, `draw` waits for the GPU to finish the frame before presenting it,
     /// and records how long that took. For diagnostics only: under a compositor it costs
@@ -354,6 +366,7 @@ pub const Gpu = struct {
             dev.destroyBuffer(self.hist_buf, null);
             dev.freeMemory(self.hist_mem, null);
         }
+        self.destroyDecimated();
         self.destroyReview();
         if (self.gain_buf != .null) {
             dev.unmapMemory(self.gain_mem);
@@ -393,10 +406,11 @@ pub const Gpu = struct {
     fn createPipeline(self: *Gpu) !void {
         const dev = self.dev;
         self.set_layout = try dev.createDescriptorSetLayout(&.{
-            .binding_count = 2,
+            .binding_count = 3,
             .p_bindings = &[_]vk.DescriptorSetLayoutBinding{
                 .{ .binding = 0, .descriptor_type = .storage_buffer, .descriptor_count = 1, .stage_flags = .{ .vertex = true } },
                 .{ .binding = 1, .descriptor_type = .storage_buffer, .descriptor_count = 1, .stage_flags = .{ .vertex = true } },
+                .{ .binding = 2, .descriptor_type = .storage_buffer, .descriptor_count = 1, .stage_flags = .{ .vertex = true } },
             },
         }, null);
         self.pipeline_layout = try dev.createPipelineLayout(&.{
@@ -410,7 +424,7 @@ pub const Gpu = struct {
         self.desc_pool = try dev.createDescriptorPool(&.{
             .max_sets = 2,
             .pool_size_count = 1,
-            .p_pool_sizes = &[_]vk.DescriptorPoolSize{.{ .type = .storage_buffer, .descriptor_count = 4 }},
+            .p_pool_sizes = &[_]vk.DescriptorPoolSize{.{ .type = .storage_buffer, .descriptor_count = 6 }},
         }, null);
         var sets: [2]vk.DescriptorSet = undefined;
         try dev.allocateDescriptorSets(&.{
@@ -742,15 +756,20 @@ pub const Gpu = struct {
         return null;
     }
 
-    /// Creates the sample-history ring: at least `min_samples` samples (rounded up to a
-    /// power of two) of `nch` channels. Call before drawing, and again when the number of
-    /// channels or the sample rate changes (the old history is dropped).
-    pub fn createHistory(self: *Gpu, nch: usize, min_samples: usize) !void {
+    /// Creates the history: a ring of samples and a ring of buckets (`decimate.zig`), of
+    /// `nch` history columns. The buckets cover at least `bucket_samples` samples. The
+    /// sample ring holds `want_samples` (rounded up to a power of two) if that fits in the
+    /// memory on the card that the CPU can write, else the largest power of two that does,
+    /// down to `least_samples`; if not even that fits, `want_samples` in host memory.
+    /// Call before drawing, and again when the number of channels or the sample rate
+    /// changes (the old history is dropped).
+    pub fn createHistory(self: *Gpu, nch: usize, want_samples: usize, least_samples: usize, bucket_samples: usize) !void {
         const dev = self.dev;
         if (self.hist_buf != .null) {
             try dev.deviceWaitIdle();
             // The review history has the live one's shape: it goes too.
             self.destroyReview();
+            self.destroyDecimated();
             dev.unmapMemory(self.hist_mem);
             dev.destroyBuffer(self.hist_buf, null);
             dev.freeMemory(self.hist_mem, null);
@@ -758,66 +777,92 @@ pub const Gpu = struct {
             self.hist = &.{};
             self.hist_cap = 0;
         }
-        const cap = try std.math.ceilPowerOfTwo(usize, min_samples);
-        const bytes: vk.DeviceSize = std.mem.alignForward(u64, cap * nch * 2, 4);
-        const h = try self.createHistoryBuffer(bytes, cap * nch);
+        // The buckets first: long time bases are drawn from them, so they are what should
+        // be on the card if only one of the two can be.
+        const dec_cap = try std.math.ceilPowerOfTwo(usize, bucket_samples / decimate.bucket);
+        const dec_bytes: vk.DeviceSize = dec_cap * nch * 4;
+        const d = try self.createHistoryBuffer(dec_bytes, dec_cap * nch * 2, .anywhere);
+        self.dec_buf = d.buf;
+        self.dec_mem = d.mem;
+        errdefer self.destroyDecimated();
+        const words: [*]u32 = @ptrCast(@alignCast(d.samples.ptr));
+        self.dec = try decimate.Ring.init(self.gpa, words[0 .. dec_cap * nch], dec_cap, nch);
+
+        const full = try std.math.ceilPowerOfTwo(usize, want_samples);
+        const least = @min(full, try std.math.ceilPowerOfTwo(usize, least_samples));
+        var cap = full;
+        const h = while (true) : (cap /= 2) {
+            const bytes: vk.DeviceSize = std.mem.alignForward(u64, cap * nch * 2, 4);
+            if (self.createHistoryBuffer(bytes, cap * nch, .card)) |on_card| break on_card else |err| {
+                if (err != error.NotOnTheCard) return err;
+                if (cap > least) continue;
+                cap = full;
+                break try self.createHistoryBuffer(std.mem.alignForward(u64, cap * nch * 2, 4), cap * nch, .anywhere);
+            }
+        };
         self.hist_buf = h.buf;
         self.hist_mem = h.mem;
         self.hist_device_local = h.device_local;
         self.hist = h.samples;
         self.hist_cap = cap;
+        self.rev_cap = full;
         self.nch = nch;
-        dev.updateDescriptorSets(&[_]vk.WriteDescriptorSet{.{
-            .dst_set = self.desc_set,
-            .dst_binding = 0,
+        dev.updateDescriptorSets(&[_]vk.WriteDescriptorSet{
+            storageWrite(self.desc_set, 0, &.{ .buffer = self.hist_buf, .offset = 0, .range = vk.WHOLE_SIZE }),
+            storageWrite(self.desc_set, 2, &.{ .buffer = self.dec_buf, .offset = 0, .range = vk.WHOLE_SIZE }),
+        }, null);
+        log.info("sample history: {d} samples x {d} channels ({d:.1} MB, {s}); buckets of {d}: {d} ({d:.1} MB, {s})", .{
+            cap,
+            nch,
+            @as(f64, @floatFromInt(cap * nch * 2)) / 1e6,
+            if (self.hist_device_local) "on the card" else "host memory",
+            decimate.bucket,
+            dec_cap,
+            @as(f64, @floatFromInt(dec_bytes)) / 1e6,
+            if (d.device_local) "on the card" else "host memory",
+        });
+        if (cap < full) log.warn("the card has room for {d} samples of history, not {d}: overlaid triggered sweeps and a freeze reach back that far", .{ cap, full });
+    }
+
+    fn storageWrite(set: vk.DescriptorSet, binding: u32, info: *const vk.DescriptorBufferInfo) vk.WriteDescriptorSet {
+        return .{
+            .dst_set = set,
+            .dst_binding = binding,
             .dst_array_element = 0,
             .descriptor_count = 1,
             .descriptor_type = .storage_buffer,
             .p_image_info = undefined,
-            .p_buffer_info = &[_]vk.DescriptorBufferInfo{.{ .buffer = self.hist_buf, .offset = 0, .range = vk.WHOLE_SIZE }},
+            .p_buffer_info = @ptrCast(info),
             .p_texel_buffer_view = undefined,
-        }}, null);
-        log.info("sample history: {d} samples x {d} channels ({d:.1} MB, {s})", .{
-            cap,
-            nch,
-            @as(f64, @floatFromInt(bytes)) / 1e6,
-            if (self.hist_device_local) "on the card" else "host memory",
-        });
+        };
     }
 
-    /// Makes the review history (once): the live one's size and shape.
+    fn destroyDecimated(self: *Gpu) void {
+        if (self.dec_buf == .null) return;
+        self.dev.deviceWaitIdle() catch {};
+        self.dec.deinit(self.gpa);
+        self.dev.unmapMemory(self.dec_mem);
+        self.dev.destroyBuffer(self.dec_buf, null);
+        self.dev.freeMemory(self.dec_mem, null);
+        self.dec_buf = .null;
+    }
+
+    /// Makes the review history (once): `rev_cap` samples of the live one's columns.
     pub fn createReview(self: *Gpu) !void {
         if (self.rev_buf != .null or self.hist_cap == 0) return;
-        const dev = self.dev;
-        const bytes: vk.DeviceSize = std.mem.alignForward(u64, self.hist_cap * self.nch * 2, 4);
-        const h = try self.createHistoryBuffer(bytes, self.hist_cap * self.nch);
+        const bytes: vk.DeviceSize = std.mem.alignForward(u64, self.rev_cap * self.nch * 2, 4);
+        const h = try self.createHistoryBuffer(bytes, self.rev_cap * self.nch, .anywhere);
         self.rev = h.samples;
         self.rev_buf = h.buf;
         self.rev_mem = h.mem;
-        const writes = [_]vk.WriteDescriptorSet{
-            .{
-                .dst_set = self.rev_set,
-                .dst_binding = 0,
-                .dst_array_element = 0,
-                .descriptor_count = 1,
-                .descriptor_type = .storage_buffer,
-                .p_image_info = undefined,
-                .p_buffer_info = &[_]vk.DescriptorBufferInfo{.{ .buffer = h.buf, .offset = 0, .range = vk.WHOLE_SIZE }},
-                .p_texel_buffer_view = undefined,
-            },
-            .{
-                .dst_set = self.rev_set,
-                .dst_binding = 1,
-                .dst_array_element = 0,
-                .descriptor_count = 1,
-                .descriptor_type = .storage_buffer,
-                .p_image_info = undefined,
-                .p_buffer_info = &[_]vk.DescriptorBufferInfo{.{ .buffer = self.gain_buf, .offset = 0, .range = vk.WHOLE_SIZE }},
-                .p_texel_buffer_view = undefined,
-            },
-        };
-        dev.updateDescriptorSets(&writes, null);
-        log.info("review history: {d:.1} MB", .{@as(f64, @floatFromInt(bytes)) / 1e6});
+        // Review is drawn from samples only (`dec_mask` 0), but the binding must hold
+        // something: the live buckets.
+        self.dev.updateDescriptorSets(&[_]vk.WriteDescriptorSet{
+            storageWrite(self.rev_set, 0, &.{ .buffer = h.buf, .offset = 0, .range = vk.WHOLE_SIZE }),
+            storageWrite(self.rev_set, 1, &.{ .buffer = self.gain_buf, .offset = 0, .range = vk.WHOLE_SIZE }),
+            storageWrite(self.rev_set, 2, &.{ .buffer = self.dec_buf, .offset = 0, .range = vk.WHOLE_SIZE }),
+        }, null);
+        log.info("review history: {d:.1} MB, {s}", .{ @as(f64, @floatFromInt(bytes)) / 1e6, if (h.device_local) "on the card" else "host memory" });
     }
 
     const HistoryBuffer = struct {
@@ -831,7 +876,8 @@ pub const Gpu = struct {
 
     /// A storage buffer of `bytes` for a sample history (live or review), bound to memory
     /// that stays mapped, with its first `len` int16 zeroed. On failure nothing is left.
-    fn createHistoryBuffer(self: *const Gpu, bytes: vk.DeviceSize, len: usize) !HistoryBuffer {
+    /// `.card`: only in memory on the card (else `error.NotOnTheCard`).
+    fn createHistoryBuffer(self: *const Gpu, bytes: vk.DeviceSize, len: usize, where: enum { card, anywhere }) !HistoryBuffer {
         const dev = self.dev;
         const buf = try dev.createBuffer(&.{ .size = bytes, .usage = .{ .storage_buffer = true }, .sharing_mode = .exclusive }, null);
         errdefer dev.destroyBuffer(buf, null);
@@ -841,13 +887,17 @@ pub const Gpu = struct {
         const host: vk.MemoryPropertyFlags = .{ .host_visible = true, .host_coherent = true };
         var mem_type = self.findMemoryType(req.memory_type_bits, host.merge(.{ .device_local = true }));
         var device_local = mem_type != null;
-        if (mem_type == null) mem_type = self.findMemoryType(req.memory_type_bits, host);
+        if (mem_type == null) {
+            if (where == .card) return error.NotOnTheCard;
+            mem_type = self.findMemoryType(req.memory_type_bits, host);
+        }
         const mem = dev.allocateMemory(&.{
             .allocation_size = req.size,
             .memory_type_index = mem_type orelse return error.NoHostVisibleMemory,
         }, null) catch |e| blk: {
             // The device-local, host-visible heap can be small: fall back to host memory.
             if (!device_local) return e;
+            if (where == .card) return error.NotOnTheCard;
             device_local = false;
             break :blk try dev.allocateMemory(&.{
                 .allocation_size = req.size,
@@ -873,7 +923,8 @@ pub const Gpu = struct {
         self.rev = &.{};
     }
 
-    /// Writes `count` samples (interleaved, `nch` each) at absolute sample number `first`.
+    /// Writes `count` samples (interleaved, `nch` each) at absolute sample number `first`,
+    /// into the sample ring and the buckets.
     pub fn writeSamples(self: *Gpu, first: i64, samples: []const i16) void {
         const nch = self.nch;
         const count = samples.len / nch;
@@ -884,6 +935,7 @@ pub const Gpu = struct {
             @memcpy(self.hist[pos * nch ..][0 .. n * nch], samples[done * nch ..][0 .. n * nch]);
             done += n;
         }
+        self.dec.add(first, samples);
     }
 
     fn destroySwapchainViews(self: *Gpu) void {

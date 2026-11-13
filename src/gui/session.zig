@@ -188,7 +188,7 @@ pub const ReviewSession = struct {
                 return;
             };
             // No memory for the reader: review stays on the last seconds (not logged).
-            self.reader = dimna.review.Review.init(ctx.gpa, ctx.layout, ctx.set, ctx.gpu.rev, ctx.gpu.hist_cap) catch return;
+            self.reader = dimna.review.Review.init(ctx.gpa, ctx.layout, ctx.set, ctx.gpu.rev, ctx.gpu.rev_cap) catch return;
         }
         if (!self.reader.?.isOpen() or !std.mem.eql(u8, self.dir_buf[0..self.dir_len], r.path)) {
             self.reader.?.open(r.path, first) catch |err| {

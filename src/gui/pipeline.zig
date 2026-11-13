@@ -160,8 +160,13 @@ pub const Pipeline = struct {
             if (strict) return error.BadPanels else Display.init(dimna.panels.default(&layout, .scroll));
         if (carry) |old| session.carryOver(&display.set, old);
         // The longest time base plus a margin, so new samples never overwrite what is drawn.
+        // A sweep shows two passes: the buckets, and the feed's raw copy for refiltering,
+        // hold twice that. The samples themselves are only read at short time bases and
+        // by triggered sweeps: 8 s of them is the least that will do.
         const history_samples: usize = @intFromFloat((Panel.span_max + 2.0) * fs);
-        var feed = try dimna.feed.Feed.init(gpa, &layout, &display.set, history_samples, bs);
+        const sweep_samples: usize = @intFromFloat((2.0 * Panel.span_max + 2.0) * fs);
+        const least_samples: usize = @intFromFloat(8.0 * fs);
+        var feed = try dimna.feed.Feed.init(gpa, &layout, &display.set, sweep_samples, bs);
         errdefer feed.deinit(gpa);
         // `r` goes back to the config's values, in the slots the feed has just given out.
         const config_set = display.initial;
@@ -170,7 +175,8 @@ pub const Pipeline = struct {
             i.* = c.*;
             i.slot = p.slot;
         }
-        try self.gpu.createHistory(feed.width, history_samples);
+        try self.gpu.createHistory(feed.width, history_samples, least_samples, sweep_samples);
+        feed.dec = &self.gpu.dec;
 
         // Everything is made: let go of the old parts and take the new.
         if (self.assembled) {

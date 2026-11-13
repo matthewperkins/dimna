@@ -196,8 +196,15 @@ sweep mode they stand still and a cursor moves left to right, overwriting the pr
 (as oers and the stock LFP viewer draw). Set it per panel with `mode = "sweep"`, for all
 panels with a top-level `mode = "sweep"` or `--sweep`, or flip the panel under the pointer
 with `m`. It is the same drawing with a different choice of samples per column, so the
-latency is the same. Kept simple: the time base is limited to 10 s, and changing it restarts
-the pass from a new origin.
+latency is the same. Kept simple: changing the time base restarts the pass from a new
+origin.
+
+The time base goes up to 30 s in both modes. A panel whose pixel columns hold 64 samples or
+more (about 4 s across the full width of a 1920-pixel monitor) is drawn from a second,
+decimated history: the minimum and maximum of every 16 samples (`src/decimate.zig`), so a
+long time base costs the graphics card no more than a short one. Changing a display filter
+at a long time base makes the whole stretch again; at a 30 s sweep (a minute of signal) the
+picture stands still for most of a second while it does. Recording is not affected.
 
 Each panel is titled with its name, time base and scale per row, and its rows are labelled
 (the electrode's number on its headstage, AUXn, ADCn; thinned when rows are shorter than a
@@ -235,7 +242,7 @@ each panel's title says "review" too. Triggered panels stay live.
 - **Without a recording** it is a freeze of the last half minute that the live history
   still holds; it ends by itself when that has scrolled away.
 
-Limits for now: the window is as long as a live one (20 s at most; no overview of a whole
+Limits for now: the window is as long as a live one (30 s at most; no overview of a whole
 session yet); the newest second of TTL edges may not be in the file yet; the tint is not
 drawn for stretches older than the last 512 pulses; after lost blocks (gaps in the
 recording) later samples would be shown early by the length of the gap; no dragging with

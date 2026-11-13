@@ -8,6 +8,10 @@
 layout(set = 0, binding = 0) readonly buffer History { uint w[]; } hist;
 // Per-row factors on the vertical scale (1 = the panel's own), `max_rows` per panel.
 layout(set = 0, binding = 1) readonly buffer RowGains { float g[]; } gains;
+// The decimated history (decimate.zig): a ring of buckets of 16 samples, one word per
+// channel, the bucket's minimum in the low 16 bits and its maximum in the high. Bucket b
+// is samples [16 b, 16 b + 16), at index b modulo the ring's capacity.
+layout(set = 0, binding = 2) readonly buffer Buckets { uint w[]; } dec;
 
 layout(push_constant) uniform Params {
     uint nch;          // channels per sample in the history
@@ -25,7 +29,15 @@ layout(push_constant) uniform Params {
                        // triggered sweep still filling); those columns are not drawn
     float gain;        // brightness (older overlaid sweeps are dimmer)
     uint gain_base;    // where the panel's row factors start in `gains`
+    uint dec_mask;     // buckets in `dec` - 1; 0: draw from samples whatever the time base
 } p;
+
+// Pixel columns that hold this many samples or more are drawn from buckets: 4 to some
+// tens of reads per column instead of hundreds. A column then also takes in what its
+// first and last bucket hold beyond its own samples (15 samples at most at each end).
+const float bucket_cols = 64.0;
+
+int s16(uint v) { return int(v ^ 0x8000u) - 0x8000; }
 
 layout(location = 0) out vec3 colour;
 
@@ -64,18 +76,36 @@ void main() {
         fa = o + per_col <= p.phase ? o - p.phase : o - p.phase - p.span;
     }
     float fb = fa + per_col;
-    // The column's ends by interpolation, so traces stay connected when a column holds less
-    // than one sample; every whole sample in between.
-    float va = lerpAt(fa, ch);
-    float vb = lerpAt(fb, ch);
-    float mn = min(va, vb);
-    float mx = max(va, vb);
-    int ia = int(floor(fa)) + 1;
-    int ib = min(int(floor(fb)), -1);
-    for (int i = ia; i <= ib; ++i) {
-        float v = at(i, ch);
-        mn = min(mn, v);
-        mx = max(mx, v);
+    float mn;
+    float mx;
+    if (p.dec_mask != 0u && per_col >= bucket_cols) {
+        // Every bucket that holds one of the column's samples; the neighbouring columns
+        // share its end buckets, so the trace stays connected. Sample numbers and bucket
+        // numbers are taken modulo 2^32 and 2^28.
+        uint ba = (p.newest + uint(int(floor(fa)))) >> 4;
+        uint bb = (p.newest + uint(min(int(floor(fb)), -1))) >> 4;
+        uint n = min((bb - ba) & 0x0FFFFFFFu, 4096u);
+        mn = 32767.0;
+        mx = -32768.0;
+        for (uint k = 0u; k <= n; ++k) {
+            uint v = dec.w[((ba + k) & p.dec_mask) * p.nch + ch];
+            mn = min(mn, float(s16(v & 0xFFFFu)));
+            mx = max(mx, float(s16(v >> 16)));
+        }
+    } else {
+        // The column's ends by interpolation, so traces stay connected when a column holds
+        // less than one sample; every whole sample in between.
+        float va = lerpAt(fa, ch);
+        float vb = lerpAt(fb, ch);
+        mn = min(va, vb);
+        mx = max(va, vb);
+        int ia = int(floor(fa)) + 1;
+        int ib = min(int(floor(fb)), -1);
+        for (int i = ia; i <= ib; ++i) {
+            float v = at(i, ch);
+            mn = min(mn, v);
+            mx = max(mx, v);
+        }
     }
 
     float row_h = 2.0 / float(p.rows);

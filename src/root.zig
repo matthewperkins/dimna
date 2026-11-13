@@ -15,6 +15,7 @@ pub const toml = @import("toml.zig");
 pub const panels = @import("panels.zig");
 pub const dsp = @import("dsp.zig");
 pub const feed = @import("feed.zig");
+pub const decimate = @import("decimate.zig");
 pub const sweeps = @import("sweeps.zig");
 pub const slope = @import("slope.zig");
 pub const audio = @import("audio.zig");

@@ -63,6 +63,10 @@ pub const Surface = struct {
     nch: usize,
     /// Samples the history holds (a power of two).
     hist_cap: usize,
+    /// Samples the review history holds; 0: as the live one.
+    rev_cap: usize = 0,
+    /// Buckets the decimated history holds (a power of two); 0: none.
+    dec_cap: usize = 0,
     row_gains: []f32,
 
     pub fn of(gpu: *const Gpu) Surface {
@@ -71,6 +75,8 @@ pub const Surface = struct {
             .height = gpu.extent.height,
             .nch = gpu.nch,
             .hist_cap = gpu.hist_cap,
+            .rev_cap = gpu.rev_cap,
+            .dec_cap = gpu.dec.cap,
             .row_gains = gpu.row_gains,
         };
     }
@@ -1254,9 +1260,12 @@ fn panelTime(p: *const Panel, newest: i64, review: ?ReviewView, fs: f64) PanelTi
 /// The shader's parameters for panel `i`, showing the stretch `t` (a triggered panel's
 /// sweeps change some of them).
 fn traceParams(p: *const Panel, i: usize, r: panels_mod.Rect, t: PanelTime, surface: Surface) gpu_mod.TraceParams {
+    // What is read from the recording's file is in the review history: samples only.
+    const cap = if (t.from_file and surface.rev_cap > 0) surface.rev_cap else surface.hist_cap;
     return .{
         .nch = @intCast(surface.nch),
-        .cap_mask = @intCast(surface.hist_cap - 1),
+        .cap_mask = @intCast(cap - 1),
+        .dec_mask = if (t.from_file or surface.dec_cap == 0) 0 else @intCast(surface.dec_cap - 1),
         .newest = @truncate(@as(u64, @bitCast(t.t_end))),
         .first_ch = p.drawColumn(),
         .cols = r.w,
@@ -2277,7 +2286,7 @@ fn writeFrame(w: *std.Io.Writer, name: []const u8, st: *FrameState, gains: []f32
     var draws: [max_draws]gpu_mod.PanelDraw = undefined;
     var fills: [max_fills]gpu_mod.Fill = undefined;
     @memset(gains, 1);
-    const surface: Surface = .{ .width = st.width, .height = st.height, .nch = frame_nch, .hist_cap = st.hist_cap, .row_gains = gains };
+    const surface: Surface = .{ .width = st.width, .height = st.height, .nch = frame_nch, .hist_cap = st.hist_cap, .dec_cap = 1 << 17, .row_gains = gains };
     const fr = st.display.frame(surface, &layout, frame_newest, st.review, st.status, &st.notes, &batch, &draws, &fills);
     // A full batch drops quads silently: the comparison would then miss them.
     try testing.expect(batch.len + 6 <= vertices.len);
@@ -2332,7 +2341,7 @@ test "what the display draws is unchanged" {
 fn shaderPixelY(p: *const Panel, r: panels_mod.Rect, row: usize, value: f64) f32 {
     var gains: [gpu_mod.max_rows]f32 = @splat(1);
     setRowGains(&gains, p, 0);
-    const surface: Surface = .{ .width = 1000, .height = 700, .nch = frame_nch, .hist_cap = 1 << 20, .row_gains = &gains };
+    const surface: Surface = .{ .width = 1000, .height = 700, .nch = frame_nch, .hist_cap = 1 << 20, .dec_cap = 1 << 17, .row_gains = &gains };
     const params = traceParams(p, 0, r, panelTime(p, frame_newest, null, frame_fs), surface);
     const k: f32 = @floatFromInt(p.shownIndex(row).?);
     const lsb: f32 = @floatCast(value / p.unitsPerLsb());
@@ -2574,7 +2583,7 @@ fn thresholdRects(st: *FrameState, vertices: []font.Vertex) !ThresholdRects {
     var draws: [max_draws]gpu_mod.PanelDraw = undefined;
     var fills: [max_fills]gpu_mod.Fill = undefined;
     var gains: [gpu_mod.max_rows * gpu_mod.max_gain_panels]f32 = undefined;
-    const surface: Surface = .{ .width = st.width, .height = st.height, .nch = frame_nch, .hist_cap = st.hist_cap, .row_gains = &gains };
+    const surface: Surface = .{ .width = st.width, .height = st.height, .nch = frame_nch, .hist_cap = st.hist_cap, .dec_cap = 1 << 17, .row_gains = &gains };
     const fr = st.display.frame(surface, &layout, frame_newest, st.review, st.status, &st.notes, &batch, &draws, &fills);
     var out: ThresholdRects = .{};
     for (0..fr.text.len / 6) |q| {

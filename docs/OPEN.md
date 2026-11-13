@@ -23,6 +23,11 @@ seen, so it can be told apart from a guess. Remove an entry when it is fixed or 
 - **`dimna-headless --live-test` without `--record` always exits 1**: "ADC off" comes back
   `NeedsRestart`, and only `RecordingActive` is treated as expected. The doc comment says
   to use it with `--record`.
+- **A top-level `span_s` in the config is ignored without a warning** (the time base is
+  set per `[[panel]]`).
+- **Changing a display filter at a long time base stops the picture while the past is
+  filtered again**: 0.8 s at a 30 s sweep with every panel that long (board, 72 columns).
+  The display thread does it in one go.
 - **View-file error messages say "panel N"** where N counts `[[view]]` tables.
 - **After a restart whose panels cannot be made from the config, the fallback panels
   ignore a top-level `mode`** (`main.zig`, `panels.default(&layout, .scroll)`).
@@ -89,6 +94,13 @@ seen, so it can be told apart from a guess. Remove an entry when it is fixed or 
   the experiment to reproduce that did not.
 
 ## Never tested
+
+- More history columns than fit on the card beside the buckets (for example 64 + 16
+  channels with two panels): the sample ring is then made shorter (seen on the simulator:
+  176 columns, 262144 samples), but the frame rate in that state has not been measured,
+  and nothing has been triggered or frozen there.
+- The Vulkan validation layer was asked for in one board run with the bucket ring and
+  printed nothing; whether it was loaded was not checked.
 
 - Real mouse clicks and wheel on the display by anyone but the owner; the scripted input
   goes in above the compositor's seat.

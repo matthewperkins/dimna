@@ -39,6 +39,7 @@ const std = @import("std");
 const types = @import("types.zig");
 const panels = @import("panels.zig");
 const dsp = @import("dsp.zig");
+const decimate = @import("decimate.zig");
 
 const Slot = struct {
     first_ch: usize,
@@ -114,6 +115,10 @@ pub const Feed = struct {
     oldest: i64 = 0,
     newest: i64 = 0,
     started: bool = false,
+    /// The history's decimated ring, if there is one: `refilter` makes a slot's buckets
+    /// again along with its samples. (New rows are folded in by whoever writes them to
+    /// the history.)
+    dec: ?*decimate.Ring = null,
 
     /// Gives every electrode panel of `set` a slot (`Panel.slot`) and keeps `keep_samples`
     /// of raw history (rounded up to a power of two) for refiltering. `rows` takes blocks of
@@ -274,9 +279,12 @@ pub const Feed = struct {
 
     fn refilter(self: *Feed, gpa: std.mem.Allocator, s: *Slot, recent: usize, hist: []i16, hist_cap: usize) !void {
         if (!self.started) return;
-        const start = @max(self.oldest, self.newest - @as(i64, @intCast(@min(recent, hist_cap))));
+        // As far back as the raw copy goes. The sample ring may hold less than that (the
+        // buckets reach further): only its part is written there.
+        const start = @max(self.oldest, self.newest - @as(i64, @intCast(recent)));
         const count: usize = @intCast(self.newest - start);
         if (count == 0) return;
+        const in_hist = count -| hist_cap;
         const raw_mask = self.raw_cap - 1;
         const hist_mask = hist_cap - 1;
         const nch = self.nch;
@@ -310,11 +318,16 @@ pub const Feed = struct {
             var st: dsp.Band.State = @splat(.{});
             const first_pos: usize = @intCast(@as(u64, @bitCast(start)) & raw_mask);
             s.band.settle(&st, @as(f64, @floatFromInt(self.raw[first_pos * nch + ch])) - sub * mean[0]);
+            var none: decimate.Ring = .{};
+            var redo = (self.dec orelse &none).redo(col, start);
             for (0..count) |i| {
                 const n: u64 = @bitCast(start + @as(i64, @intCast(i)));
                 const x = @as(f64, @floatFromInt(self.raw[@as(usize, @intCast(n & raw_mask)) * nch + ch])) - sub * mean[i];
-                hist[@as(usize, @intCast(n & hist_mask)) * self.width + col] = dsp.toI16(if (through_band) s.band.step(&st, x) else x);
+                const v = dsp.toI16(if (through_band) s.band.step(&st, x) else x);
+                if (i >= in_hist) hist[@as(usize, @intCast(n & hist_mask)) * self.width + col] = v;
+                redo.put(v);
             }
+            redo.finish();
             st_ptr.* = st;
         }
     }
@@ -581,4 +594,112 @@ test "one panel: some rows filtered, some as they are, some hidden" {
         try testing.expect(@abs(@as(i32, row[5])) < 60 and @abs(@as(i32, row[6])) < 60);
         try testing.expectEqual(row[3], row[7]);
     }
+}
+
+test "refilter makes the slot's buckets again, further back than the sample ring reaches" {
+    const gpa = testing.allocator;
+    var layout: types.Layout = .{ .sample_rate = 30000, .hw_clock_hz = 50e6 };
+    layout.headstages[0] = .{ .slot = 0, .chip = "RHD2132", .num_channels = 2, .first_channel = 0, .has_bno = false };
+    layout.num_headstages = 1;
+    layout.num_electrodes = 2;
+    var set = panels.default(&layout, .scroll);
+    set.items[0].filter.on = true;
+    set.items[0].filter.low_hz = 300;
+    set.items[0].filter.high_hz = 6000;
+    var feed = try Feed.init(gpa, &layout, &set, 8192, 256);
+    defer feed.deinit(gpa);
+    const w = feed.width;
+
+    // The sample ring holds 1024 samples; the buckets 8192 (512 buckets). `all` keeps every
+    // row there has been, to check against.
+    const cap = 1024;
+    const dec_cap = 512;
+    const hist = try gpa.alloc(i16, cap * w);
+    defer gpa.free(hist);
+    const words = try gpa.alloc(u32, dec_cap * w);
+    defer gpa.free(words);
+    @memset(words, 0);
+    var dec = try decimate.Ring.init(gpa, words, dec_cap, w);
+    defer dec.deinit(gpa);
+    feed.dec = &dec;
+    const first = 1003; // not on a bucket's edge
+    const total = 5000 + 7; // ends inside a bucket
+    const all = try gpa.alloc(i16, total * w);
+    defer gpa.free(all);
+    var prng = std.Random.DefaultPrng.init(3);
+    var block: [256 * 2]i16 = undefined;
+    var done: usize = 0;
+    while (done < total) {
+        const n: usize = @min(256, total - done);
+        for (block[0 .. n * 2]) |*v| v.* = prng.random().intRangeAtMost(i16, -3000, 3000);
+        const at = first + @as(i64, @intCast(done));
+        const out = try feed.rows(at, block[0 .. n * 2], &.{});
+        @memcpy(all[done * w ..][0 .. n * w], out);
+        for (0..n) |i| {
+            const pos: usize = @intCast(@mod(at + @as(i64, @intCast(i)), cap));
+            @memcpy(hist[pos * w ..][0..w], out[i * w ..][0..w]);
+        }
+        dec.add(at, out);
+        done += n;
+    }
+    const newest: i64 = first + total;
+    const col = set.items[0].slot;
+
+    // Other corners; 4000 samples back, which is more than the sample ring holds.
+    set.items[0].filter.low_hz = 0;
+    set.items[0].filter.high_hz = 500;
+    const recent = 4000;
+    try testing.expect(try feed.sync(gpa, &set, recent, hist, cap));
+
+    // What the refilter wrote, sample by sample: a second feed with the new corners from
+    // the start gives other values (its filter began elsewhere), so instead check the
+    // buckets against the samples where the ring has them, and that buckets further back
+    // changed too.
+    const start = newest - recent;
+    var b = (start >> decimate.shift) + 1; // the first whole bucket
+    var changed_beyond_ring: usize = 0;
+    while (b <= (newest - 1) >> decimate.shift) : (b += 1) {
+        const word = words[@as(usize, @intCast(@mod(b, dec_cap))) * w + col];
+        const s0 = b * decimate.bucket;
+        const s1 = @min(newest, s0 + decimate.bucket);
+        if (s0 >= newest - cap) {
+            var lo: i16 = std.math.maxInt(i16);
+            var hi: i16 = std.math.minInt(i16);
+            var s = s0;
+            while (s < s1) : (s += 1) {
+                const v = hist[@as(usize, @intCast(@mod(s, cap))) * w + col];
+                lo = @min(lo, v);
+                hi = @max(hi, v);
+            }
+            try testing.expectEqual(lo, decimate.minOf(word));
+            try testing.expectEqual(hi, decimate.maxOf(word));
+        } else {
+            // Before: the 300-6000 Hz band of ±3000 noise. Now: below 500 Hz, much smaller.
+            var old_hi: i16 = std.math.minInt(i16);
+            var s = s0;
+            while (s < s1) : (s += 1) old_hi = @max(old_hi, all[@as(usize, @intCast(s - first)) * w + col]);
+            if (decimate.maxOf(word) != old_hi) changed_beyond_ring += 1;
+        }
+    }
+    try testing.expect(changed_beyond_ring > 150);
+    // The raw columns' buckets are as they were.
+    const raw_word = words[@as(usize, @intCast(@mod((newest - 100) >> decimate.shift, dec_cap))) * w];
+    var raw_hi: i16 = std.math.minInt(i16);
+    var s = ((newest - 100) >> decimate.shift) * decimate.bucket;
+    const s_end = s + decimate.bucket;
+    while (s < s_end) : (s += 1) raw_hi = @max(raw_hi, all[@as(usize, @intCast(s - first)) * w]);
+    try testing.expectEqual(raw_hi, decimate.maxOf(raw_word));
+
+    // New rows continue the open bucket from the refiltered values.
+    const more = try feed.rows(newest, block[0 .. 3 * 2], &.{});
+    for (0..3) |i| {
+        const pos: usize = @intCast(@mod(newest + @as(i64, @intCast(i)), cap));
+        @memcpy(hist[pos * w ..][0..w], more[i * w ..][0..w]);
+    }
+    dec.add(newest, more);
+    const ob = (newest + 2) >> decimate.shift;
+    var lo: i16 = std.math.maxInt(i16);
+    var k = ob * decimate.bucket;
+    while (k < newest + 3) : (k += 1) lo = @min(lo, hist[@as(usize, @intCast(@mod(k, cap))) * w + col]);
+    try testing.expectEqual(lo, decimate.minOf(words[@as(usize, @intCast(@mod(ob, dec_cap))) * w + col]));
 }
