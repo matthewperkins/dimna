@@ -140,6 +140,7 @@ const renderViews = files.renderViews;
 const writeAtomic = files.writeAtomic;
 const runDirect = @import("direct.zig").runDirect;
 const session = @import("session.zig");
+const Pacer = @import("pacing.zig").Pacer;
 
 pub const std_options: std.Options = .{ .log_level = .info };
 
@@ -325,65 +326,18 @@ pub fn main(init: std.process.Init) !u8 {
 
     var newest: i64 = 0;
     var newest_acquired_ns: i128 = 0;
-    // Acquisition time of the newest sample drawn in each frame, by frame tag.
-    var frame_acquired: [64]i128 = @splat(0);
-    // Per-frame timing, to explain frames that land late (logged with OEZ_FRAME_DEBUG=1).
-    const FrameTiming = struct { wake_late_ms: f64 = 0, draw_ms: f64 = 0, before_refresh_ms: f64 = 0, callback_to_draw_ms: f64 = 0, target_ns: i128 = 0 };
-    var frame_timing: [64]FrameTiming = @splat(.{});
-    const frame_debug = std.c.getenv("OEZ_FRAME_DEBUG") != null;
-    // OEZ_FRAME_DEBUG=2: one line per presented frame.
-    const frame_trace = if (std.c.getenv("OEZ_FRAME_DEBUG")) |v| v[0] == '2' else false;
-    var ready_seen_ns: i128 = 0;
-    var target_refresh_ns: i128 = 0;
-    var frame_tag: u64 = 0;
-    // Frame pacing: the last presentation time and refresh period, the margin before the
-    // next refresh at which to draw, and when the pending frame is due.
-    var last_present_ns: i128 = 0;
-    var margin_ms: f64 = if (args.margin_ms >= 0) args.margin_ms else 3.0;
-    var draw_at: i128 = 0;
-    var misses: u64 = 0;
-    var misses_this_second: u32 = 0;
-    // The best latency of the last seconds: what a frame that lands on time achieves.
-    var best_ms: f64 = std.math.inf(f64);
-    var best_age: u32 = 0;
-    var clock_checked = false;
-    // Recovery of immediate presentation (see the header): skip one frame when frames keep
-    // landing a refresh after the one aimed at, and back off if that does not help.
-    var skip_frame = false;
-    var skips: u64 = 0;
-    const skip_backoff_min: i128 = 250 * std.time.ns_per_ms;
-    var skip_backoff_ns: i128 = skip_backoff_min;
-    var last_skip_ns: i128 = 0;
-    var late_run: u32 = 0; // consecutive frames presented a refresh after the one aimed at
-    var good_run: u32 = 0;
-    var on_time_frames: u64 = 0; // this second
-    var late_frames_now: u64 = 0;
-    var clean_seconds: u32 = 0;
-
+    // When to draw, and how the frames landed (see pacing.zig).
+    var pacer: Pacer = .init(args.margin_ms, args.free_ms, fullscreen);
     // Diagnostics only: time the GPU per frame (it delays presenting, see gpu.zig).
-    gpu.wait_render = frame_debug;
-    var render_sum: f64 = 0;
-    var render_max: f64 = 0;
-    var render_n: f64 = 0;
-    var n_out_of_date: u64 = 0;
-    var n_busy: u64 = 0;
-    var n_resize: u64 = 0;
-    var drawn_newest: i64 = 0;
-    var last_draw_ns: i128 = 0;
+    gpu.wait_render = pacer.debug;
     var script_pos: usize = 0;
     const t_start = nowNs(io);
     var next_report: i128 = t_start + std.time.ns_per_s;
-    var frames: u64 = 0;
-    var lat_sum: f64 = 0;
-    var lat_min: f64 = std.math.inf(f64);
-    var lat_max: f64 = 0;
-    var lat_n: f64 = 0;
-    var refresh_ns: u32 = 0;
     var title_buf: [160]u8 = undefined;
 
     while (!win.closed and !acq.done.load(.acquire)) {
         // Wake for events, for new samples (every 2 ms), or when the frame is due.
-        const wait_ms: i32 = if (draw_at != 0) @intCast(std.math.clamp(@divFloor(draw_at - nowNs(io), std.time.ns_per_ms), 0, 2)) else 2;
+        const wait_ms = pacer.waitMs(nowNs(io));
         try win.pump(wait_ms);
 
         // New samples into the GPU's history.
@@ -568,7 +522,7 @@ pub fn main(init: std.process.Init) !u8 {
                 try gpu.createHistory(feed.width, history_samples);
                 newest = 0;
                 newest_acquired_ns = 0;
-                drawn_newest = 0;
+                pacer.drawn_newest = 0;
                 try acq.start();
                 board_ctl.pending = acq.requested;
                 // Channel numbers mean something else now.
@@ -629,157 +583,46 @@ pub fn main(init: std.process.Init) !u8 {
         // A panel's corners changed: filter its recent past again.
         if (gpu.hist_cap > 0) _ = try feed.sync(gpa, &display.set, refilterSamples(&display.set, fs), gpu.hist, gpu.hist_cap);
 
-        for (win.takePresented()) |p| {
-            const acquired = frame_acquired[p.tag % frame_acquired.len];
-            if (acquired != 0) {
-                const ms = @as(f64, @floatFromInt(p.time_ns - acquired)) / 1e6;
-                lat_sum += ms;
-                lat_min = @min(lat_min, ms);
-                lat_max = @max(lat_max, ms);
-                lat_n += 1;
-                {
-                    // Did it reach the screen at the refresh aimed at, or a refresh later?
-                    const ft = frame_timing[p.tag % frame_timing.len];
-                    if (ft.target_ns != 0 and p.refresh_ns > 0) {
-                        if (p.time_ns - ft.target_ns > p.refresh_ns / 2) {
-                            late_run += 1;
-                            good_run = 0;
-                            late_frames_now += 1;
-                        } else {
-                            late_run = 0;
-                            good_run += 1;
-                            on_time_frames += 1;
-                            // Two seconds of frames on time: the next loss is a new event.
-                            if (good_run >= 120) skip_backoff_ns = skip_backoff_min;
-                        }
-                        // Recovery (see the header). Only a fullscreen window can be scanned
-                        // out directly, so only then is there something to recover.
-                        const t_now = nowNs(io);
-                        if (fullscreen and late_run >= 8 and t_now - last_skip_ns >= skip_backoff_ns) {
-                            skip_frame = true;
-                            last_skip_ns = t_now;
-                            skip_backoff_ns = @min(skip_backoff_ns * 2, 8 * std.time.ns_per_s);
-                            late_run = 0;
-                        }
-                    }
-                }
-                if (frame_trace) {
-                    const ft = frame_timing[p.tag % frame_timing.len];
-                    std.debug.print("frame {d} lat {d:.2} before {d:.2} cb {d:.2} shown {d:.2}\n", .{ p.tag, ms, ft.before_refresh_ms, ft.callback_to_draw_ms, if (ft.target_ns != 0) @as(f64, @floatFromInt(p.time_ns - ft.target_ns)) / 1e6 else 0 });
-                }
-                // Landed a refresh later than frames have been landing: it was drawn too
-                // close to the deadline (or the desktop was busy).
-                const refresh_ms = @as(f64, @floatFromInt(p.refresh_ns)) / 1e6;
-                best_ms = @min(best_ms, ms);
-                if (refresh_ms > 0 and ms > best_ms + 0.6 * refresh_ms) {
-                    const ft = frame_timing[p.tag % frame_timing.len];
-                    if (frame_debug) log.info("late frame {d}: latency {d:.1} ms; woke {d:.2} ms after its time, draw took {d:.2} ms, committed {d:.2} ms before the refresh aimed at, {d:.2} ms after the frame callback; presented {d:.2} ms after that refresh", .{ p.tag, ms, ft.wake_late_ms, ft.draw_ms, ft.before_refresh_ms, ft.callback_to_draw_ms, if (ft.target_ns != 0) @as(f64, @floatFromInt(p.time_ns - ft.target_ns)) / 1e6 else 0 });
-                    misses += 1;
-                    misses_this_second += 1;
-                }
-            }
-            refresh_ns = p.refresh_ns;
-            last_present_ns = p.time_ns;
-            if (!clock_checked) {
-                clock_checked = true;
-                if (win.presentation_clock != 1) log.warn("presentation clock is {d}, not CLOCK_MONOTONIC: latency figures will be off", .{win.presentation_clock});
-            }
-        }
+        for (win.takePresented()) |p| pacer.presented(p, nowNs(io), win.presentation_clock);
 
         const now = nowNs(io);
-        if (win.frame_ready and draw_at == 0) {
-            ready_seen_ns = now;
-            target_refresh_ns = 0;
-            // The next refresh after now, less the margin. Without presentation feedback
-            // (or before the first), draw at once.
-            draw_at = now;
-            // (`last_present_ns` can be slightly ahead of now: the compositor reports a flip it
-            // has just queued. The arithmetic below handles that; drawing at once instead
-            // would put two commits in one refresh and knock direct scanout into queueing.)
-            if (refresh_ns > 0 and last_present_ns > 0) {
-                const period: i128 = refresh_ns;
-                const next_refresh = last_present_ns + (@divFloor(now - last_present_ns, period) + 1) * period;
-                const at = next_refresh - @as(i128, @intFromFloat(margin_ms * 1e6));
-                // Already inside the margin: this refresh is lost anyway, so aim at the next.
-                draw_at = if (at >= now) at else at + period;
-                target_refresh_ns = if (at >= now) next_refresh else next_refresh + period;
-            }
-        }
-        const free = args.free_ms >= 0;
-        var due = if (free)
-            newest != drawn_newest and @as(f64, @floatFromInt(now - last_draw_ns)) >= args.free_ms * 1e6
-        else
-            win.frame_ready and draw_at != 0 and now >= draw_at;
-        if (due and skip_frame and !free and refresh_ns > 0) {
-            // Leave this refresh out: with nothing committed the output goes idle, and the
-            // next commit is taken at once again.
-            skip_frame = false;
-            skips += 1;
-            draw_at += refresh_ns;
-            if (target_refresh_ns != 0) target_refresh_ns += refresh_ns;
-            due = false;
-        }
-        if (due and newest > 0) {
+        if (pacer.due(now, win.frame_ready, newest)) {
             if (win.resized or gpu.swapchain == .null) {
                 try gpu.resize(win.width, win.height);
                 win.resized = false;
-                n_resize += 1;
+                pacer.n_resize += 1;
             }
             const fr = display.frame(&gpu, &layout, newest, review.view(newest, fs), status, &notes, &batch, &draws, &fills);
-            frame_tag += 1;
-            frame_acquired[frame_tag % frame_acquired.len] = newest_acquired_ns;
             const Ctx = struct { win: *Window, tag: u64 };
-            const result = try gpu.draw(fr.draws, fr.fills, fr.text, Ctx{ .win = &win, .tag = frame_tag }, struct {
+            const result = try gpu.draw(fr.draws, fr.fills, fr.text, Ctx{ .win = &win, .tag = pacer.begin(newest_acquired_ns) }, struct {
                 fn f(c: Ctx) void {
                     c.win.beforePresent(c.tag);
                 }
             }.f);
-            const done = nowNs(io);
-            if (gpu.wait_render) {
-                const r = @as(f64, @floatFromInt(gpu.last_render_ns)) / 1e6;
-                render_sum += r;
-                render_max = @max(render_max, r);
-                render_n += 1;
-            }
-            frame_timing[frame_tag % frame_timing.len] = .{
-                .wake_late_ms = @as(f64, @floatFromInt(now - draw_at)) / 1e6,
-                .draw_ms = @as(f64, @floatFromInt(done - now)) / 1e6,
-                .before_refresh_ms = if (target_refresh_ns != 0) @as(f64, @floatFromInt(target_refresh_ns - done)) / 1e6 else 0,
-                .callback_to_draw_ms = @as(f64, @floatFromInt(now - ready_seen_ns)) / 1e6,
-                .target_ns = target_refresh_ns,
-            };
+            pacer.end(now, nowNs(io), result, newest, if (gpu.wait_render) @as(f64, @floatFromInt(gpu.last_render_ns)) / 1e6 else null);
             switch (result) {
-                .presented => {
-                    frames += 1;
-                    drawn_newest = newest;
-                    last_draw_ns = now;
-                },
+                .presented => {},
                 .out_of_date => {
                     win.resized = true;
                     win.frame_ready = true;
-                    n_out_of_date += 1;
                 },
-                .busy => {
-                    win.frame_ready = true;
-                    n_busy += 1;
-                },
+                .busy => win.frame_ready = true,
             }
-            draw_at = 0;
         }
 
         if (now >= next_report) {
             const secs = @as(f64, @floatFromInt(now - t_start)) / 1e9;
-            const avg = if (lat_n > 0) lat_sum / lat_n else 0;
+            const r = pacer.second();
             const tp = &display.set.items[display.target];
             log.info("t={d:.0}s {d} fps, latency ms avg {d:.1} min {d:.1} max {d:.1}, at the refresh aimed at {d}, a refresh later {d}, recovery skips {d}, margin {d:.1} ms, refresh {d:.2} ms, display lost {d} blocks, ring overflow {d}, panel {d} span {d:.2} s scale {d:.1}, {d}x{d}", .{
-                secs,            frames, avg,       if (lat_n > 0) lat_min else 0,             lat_max,
-                on_time_frames,  late_frames_now, skips, margin_ms,                            @as(f64, @floatFromInt(refresh_ns)) / 1e6,
-                reader.lost,     acq.ring_overflow.load(.monotonic), display.target + 1, tp.span_s, tp.scale, gpu.extent.width,
-                gpu.extent.height,
+                secs,        r.frames,                           r.avg_ms,           r.min_ms,  r.max_ms,
+                r.on_time,   r.late,                             r.skips,            r.margin_ms, r.refresh_ms,
+                reader.lost, acq.ring_overflow.load(.monotonic), display.target + 1, tp.span_s, tp.scale,
+                gpu.extent.width, gpu.extent.height,
             });
-            status.valid = lat_n > 0;
-            status.latency_ms = avg;
-            status.fps = frames;
+            status.valid = r.valid;
+            status.latency_ms = r.avg_ms;
+            status.fps = r.frames;
             status.lost = reader.lost;
             snap_dirty = true;
             if (audio_dev != null) log.info("  audio: {d:.1} ms (queue {d:.1}, device {d:.1}, margin {d:.1}; longest wait for a block {d:.1}, oldest block {d:.1}), gaps {d}, dropped {d}, noise {d:.1} uV{s}", .{
@@ -794,55 +637,9 @@ pub fn main(init: std.process.Init) !u8 {
                 @as(f64, @floatFromInt(audio_shared.held_sigma_c.load(.monotonic))) / 100.0 * oez.types.electrode_uv_per_bit,
                 if (audio_shared.held_sigma_c.load(.monotonic) == 0) " (measuring)" else " held",
             });
-            on_time_frames = 0;
-            late_frames_now = 0;
-            if (frame_debug) {
-                log.info("  GPU time per frame: avg {d:.2} ms, max {d:.2} ms; draw results so far: out of date {d}, busy {d}, swapchain rebuilds {d}", .{ if (render_n > 0) render_sum / render_n else 0, render_max, n_out_of_date, n_busy, n_resize });
-                render_sum = 0;
-                render_max = 0;
-                render_n = 0;
-            }
-            const refresh_ms_now = @as(f64, @floatFromInt(refresh_ns)) / 1e6;
-            // A change of regime moves every frame by a refresh: that is not lateness.
-            if (lat_n > 0 and refresh_ms_now > 0 and @abs(lat_min - best_ms) > 0.6 * refresh_ms_now) {
-                best_ms = lat_min;
-                misses_this_second = 0;
-            }
-            // Adapt the margin to sustained lateness only. A few late frames now and then come
-            // from the desktop (a window moved, a resize), and a wider margin would not have
-            // saved them: widen when at least 5 frames in a second were late, and return
-            // towards 3 ms after 3 clean seconds.
-            // (Not fullscreen: there, frames a refresh late are a lost direct-scanout state,
-            // which a wider margin does not prevent and the skip above recovers.)
-            if (args.margin_ms < 0 and !fullscreen) {
-                const refresh_ms = @as(f64, @floatFromInt(refresh_ns)) / 1e6;
-                if (misses_this_second >= 5) {
-                    margin_ms = @min(margin_ms + 0.5, @max(3.0, 0.5 * refresh_ms));
-                    clean_seconds = 0;
-                } else if (misses_this_second == 0) {
-                    clean_seconds += 1;
-                    if (clean_seconds >= 3 and margin_ms > 3.0) {
-                        margin_ms = @max(3.0, margin_ms - 0.5);
-                        clean_seconds = 0;
-                    }
-                } else clean_seconds = 0;
-            }
-            misses_this_second = 0;
-            // Forget the best now and then, so a change of regime (direct scanout lost to
-            // an overlapping window, say) is not counted as lateness for ever.
-            best_age += 1;
-            if (best_age >= 5) {
-                best_age = 0;
-                best_ms = if (lat_n > 0) lat_min else std.math.inf(f64);
-            }
             if (std.c.getenv("OEZ_NO_TITLE") == null) {
-                if (std.fmt.bufPrintSentinel(&title_buf, "oEZ   {s}: {d:.2} s  {d:.1} {s}/row   latency {d:.1} ms   {d} fps", .{ tp.name(), tp.span_s, tp.scale, tp.unit(), avg, frames }, 0)) |t| win.setTitle(t) else |_| {}
+                if (std.fmt.bufPrintSentinel(&title_buf, "oEZ   {s}: {d:.2} s  {d:.1} {s}/row   latency {d:.1} ms   {d} fps", .{ tp.name(), tp.span_s, tp.scale, tp.unit(), r.avg_ms, r.frames }, 0)) |t| win.setTitle(t) else |_| {}
             }
-            frames = 0;
-            lat_sum = 0;
-            lat_min = std.math.inf(f64);
-            lat_max = 0;
-            lat_n = 0;
             next_report += std.time.ns_per_s;
         }
         if (args.seconds > 0 and @as(f64, @floatFromInt(now - t_start)) >= args.seconds * 1e9) break;
