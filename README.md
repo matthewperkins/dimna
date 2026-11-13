@@ -1,4 +1,8 @@
-# dimna
+<p align="center">
+  <img src="packaging/icon/dimna-icon.svg" width="160" alt="The dimna icon: two jackals in profile, one blue and one red, on parchment">
+</p>
+
+<h1 align="center">dimna</h1>
 
 Acquisition, display and recording for the Open Ephys acquisition board (the ECP5 / FT600
 USB 3 / ONI board), written in Zig. Linux and Wayland only.
