@@ -36,6 +36,8 @@ pub const ReviewSession = struct {
     dir_len: usize = 0,
     /// What was asked for (keys, the control window) since the last `step`.
     cmds: [16]control.ReviewAction = undefined,
+    /// For each of `cmds` that is `.scroll`: by how many samples (negative: back).
+    scroll_by: [16]i64 = undefined,
     num_cmds: usize = 0,
 
     pub const Context = struct {
@@ -57,8 +59,22 @@ pub const ReviewSession = struct {
     pub fn queue(self: *ReviewSession, cmd: control.ReviewAction) void {
         if (self.num_cmds < self.cmds.len) {
             self.cmds[self.num_cmds] = cmd;
+            self.scroll_by[self.num_cmds] = 0;
             self.num_cmds += 1;
         }
+    }
+
+    /// Queues a move by `n` samples (the display's wheel; negative: back).
+    pub fn queueScroll(self: *ReviewSession, n: i64) void {
+        if (n == 0) return;
+        self.queue(.scroll);
+        if (self.num_cmds > 0 and self.cmds[self.num_cmds - 1] == .scroll) self.scroll_by[self.num_cmds - 1] = n;
+    }
+
+    /// What the display's input asks for (`Display.reviewActions`), in order.
+    pub fn queueInput(self: *ReviewSession, actions: display_mod.ReviewActions) void {
+        for (actions.slice()) |cmd| self.queue(cmd);
+        self.queueScroll(actions.scroll);
     }
 
     /// Ends review and lets go of the review history (it is about to be replaced).
@@ -82,10 +98,14 @@ pub const ReviewSession = struct {
         if (longest == 0) longest = @intFromFloat(2 * fs);
         const tp = &ctx.set.items[ctx.target];
         const window: i64 = if (tp.mode != .triggered) @intFromFloat(tp.span_s * fs) else longest;
-        for (self.cmds[0..self.num_cmds]) |cmd| {
+        for (self.cmds[0..self.num_cmds], self.scroll_by[0..self.num_cmds]) |cmd, by| {
             changed = true;
             if (cmd == .live or (cmd == .toggle and self.active)) {
                 self.active = false;
+                continue;
+            }
+            if (cmd == .scroll) {
+                self.scroll(ctx, by);
                 continue;
             }
             if (!self.active) self.enter(ctx);
@@ -95,7 +115,7 @@ pub const ReviewSession = struct {
                 .page_back => self.view_end -= @max(1, @divTrunc(window * 9, 10)),
                 .page_forward => self.view_end += @max(1, @divTrunc(window * 9, 10)),
                 .start => self.view_end = std.math.minInt(i64) / 2,
-                .toggle, .live => {},
+                .toggle, .live, .scroll => {},
             }
         }
         self.num_cmds = 0;
@@ -131,6 +151,25 @@ pub const ReviewSession = struct {
             self.ready = true;
         }
         return changed;
+    }
+
+    /// Moves the view by `n` samples (the wheel): back from live enters review; forward to
+    /// the live edge (the end of the file being written, or the newest sample) leaves it.
+    /// Forward while live does nothing.
+    fn scroll(self: *ReviewSession, ctx: Context, n: i64) void {
+        if (!self.active) {
+            if (n >= 0) return;
+            self.enter(ctx);
+        }
+        self.view_end += n;
+        if (n <= 0) return;
+        const edge = if (!self.from_file)
+            ctx.newest
+        else if (ctx.rec) |live_rec|
+            self.first + @as(i64, @intCast(live_rec.stats.samples.load(.monotonic)))
+        else
+            self.file_end;
+        if (self.view_end >= edge) self.active = false;
     }
 
     /// Enters review where the display is now. From the file if one is being written.

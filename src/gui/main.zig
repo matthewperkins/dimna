@@ -279,26 +279,15 @@ pub fn main(init: std.process.Init) !u8 {
             @as(i64, @intFromFloat(@as(f64, @floatFromInt(nowNs() - newest_acquired_ns)) * 1e-9 * pl.fs))
         else
             0;
+        // ? (the key summary) before the notes: it must not start a note as / does.
+        if (!notes.editing) display.helpKey(&input);
         notes.handle(&input, note_stamp, recording.sessionPath());
-        // Review keys (what is left of them after a note took its own).
-        for (input.keys[0..input.num_keys]) |k| {
-            const cmd: control.ReviewAction = switch (k) {
-                .char => |c| if (c == ' ') .toggle else continue,
-                .named => |n| switch (n) {
-                    .left => .back,
-                    .right => .forward,
-                    .page_up => .page_back,
-                    .page_down => .page_forward,
-                    .home => .start,
-                    .end => .live,
-                    else => continue,
-                },
-            };
-            review.queue(cmd);
-        }
+        // Review keys (what is left of them after a note took its own), and Shift+wheel.
+        review.queueInput(display.reviewActions(&input, pl.fs));
         // Quitting (q or Esc here, Quit in the control window) asks first if the board
         // settings were changed; a second request quits.
         var quit = display.applyInput(input);
+        win.setCursor(display.cursor);
         var quit_answer: ?control.QuitAnswer = null;
         // What was clicked in the control window.
         while (shared.pop()) |e| {

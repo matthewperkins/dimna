@@ -65,7 +65,8 @@ pub const ReviewStatus = struct {
     loading: bool = false,
 };
 
-pub const ReviewAction = enum { toggle, back, forward, page_back, page_forward, start, live };
+/// `scroll`: move by the samples queued with it (`ReviewSession.queueScroll`; the display's wheel).
+pub const ReviewAction = enum { toggle, back, forward, page_back, page_forward, start, live, scroll };
 
 /// Notes, as the control window shows them.
 pub const NotesStatus = struct {

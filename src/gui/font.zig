@@ -1,6 +1,8 @@
 //! Text for the display: one font at one pixel size, rasterized by FreeType into a
 //! single-channel atlas (Latin-1: enough for labels, numbers and units such as µV), and laid
-//! out as textured quads. No shaping: one glyph per code point, left to right.
+//! out as textured quads. No shaping: one glyph per code point, left to right. A second,
+//! fixed-width set of ASCII glyphs can be added to the same atlas (`addMono`), for text
+//! laid out in columns (`Batch.textMono`).
 //!
 //! The atlas's top-left corner holds a block of full coverage, so solid rectangles go
 //! through the same pipeline as text (`Batch.rect`).
@@ -17,6 +19,9 @@ const last_cp = 255;
 /// and the small triangles before a heading that opens (closed) or closes (open).
 const extra_cps = [_]u21{ 0x03C3, 0x2013, 0x2192, 0x266A, 0x25B8, 0x25BE };
 const white_block = 4;
+/// The fixed-width glyphs: printable ASCII.
+const mono_first = 32;
+const mono_last = 126;
 
 pub const Vertex = extern struct {
     pos: [2]f32,
@@ -26,7 +31,7 @@ pub const Vertex = extern struct {
 
 pub const Colour = [4]u8;
 
-const Glyph = struct {
+pub const Glyph = struct {
     // Position in the atlas, pixels.
     x: u16 = 0,
     y: u16 = 0,
@@ -46,6 +51,12 @@ pub const Font = struct {
     ascent: f32 = 0,
     line_height: f32 = 0,
     px: u32,
+    /// The fixed-width glyphs (`addMono`), printable ASCII; `has_mono` once they are all in
+    /// the atlas. Without them, fixed-width text is drawn with the glyphs above.
+    mono: [mono_last - mono_first + 1]Glyph = @splat(.{}),
+    has_mono: bool = false,
+    /// Where the next glyph goes in the atlas.
+    pen: Pen = .{},
 
     /// Loads the font fontconfig picks for `family` (e.g. "sans-serif", "monospace",
     /// "Lato") at `px` pixels.
@@ -98,8 +109,38 @@ pub const Font = struct {
             if (c.FT_Set_Pixel_Sizes(other, 0, px) != 0) continue;
             if (font.place(other, cp, at, &pen)) log.info("U+{X:0>4} from {s}", .{ cp, other_path });
         }
+        font.pen = pen;
         log.info("font {s} at {d} px", .{ path, px });
         return font;
+    }
+
+    /// Adds the printable ASCII of the font fontconfig picks for `family` ("monospace") at
+    /// the same pixel size, into the same atlas after the glyphs there (upload the atlas
+    /// after this). All or nothing: if the atlas has no room for all of them, none is used
+    /// (`error.AtlasFull`; `has_mono` stays false) and fixed-width text is drawn with the
+    /// ordinary glyphs. A character the face lacks is drawn with the ordinary glyph.
+    pub fn addMono(self: *Font, family: [:0]const u8) !void {
+        var path_buf: [std.fs.max_path_bytes:0]u8 = undefined;
+        const path = try findFont(family, &path_buf);
+        var lib: c.FT_Library = null;
+        if (c.FT_Init_FreeType(&lib) != 0) return error.FreeType;
+        defer _ = c.FT_Done_FreeType(lib);
+        var face: c.FT_Face = null;
+        if (c.FT_New_Face(lib, path.ptr, 0, &face) != 0) return error.FontNotLoaded;
+        defer _ = c.FT_Done_Face(face);
+        if (c.FT_Set_Pixel_Sizes(face, 0, self.px) != 0) return error.FreeType;
+        var pen = self.pen;
+        var glyphs: @TypeOf(self.mono) = @splat(.{});
+        for (&glyphs, mono_first..) |*g, cp| {
+            g.* = self.render(face, @intCast(cp), &pen) catch |e| switch (e) {
+                error.NoGlyph => continue,
+                error.AtlasFull => return e,
+            };
+        }
+        self.mono = glyphs;
+        self.has_mono = true;
+        self.pen = pen;
+        log.info("fixed-width font {s} at {d} px", .{ path, self.px });
     }
 
     pub fn deinit(self: *Font, gpa: std.mem.Allocator) void {
@@ -111,6 +152,21 @@ pub const Font = struct {
         x: usize = white_block + 1,
         y: usize = 1,
         shelf_h: usize = white_block,
+
+        /// Where a glyph of `w` x `h` pixels goes (shelf packing, one pixel of padding),
+        /// the pen moved on past it; null if the atlas has no room left for it.
+        fn fit(pen: *Pen, w: usize, h: usize) ?[2]usize {
+            if (pen.x + w + 1 > atlas_size) {
+                pen.x = 1;
+                pen.y += pen.shelf_h + 1;
+                pen.shelf_h = 0;
+            }
+            if (pen.y + h + 1 > atlas_size) return null;
+            const at: [2]usize = .{ pen.x, pen.y };
+            pen.x += w + 1;
+            pen.shelf_h = @max(pen.shelf_h, h);
+            return at;
+        }
     };
 
     /// The code point of glyph slot `index`.
@@ -121,37 +177,44 @@ pub const Font = struct {
     /// Renders `cp` from `face` into the atlas as glyph slot `index`. False if the face
     /// has no such character, or the atlas is full.
     fn place(self: *Font, face: c.FT_Face, cp: u32, index: usize, pen: *Pen) bool {
-        if (c.FT_Get_Char_Index(face, cp) == 0) return false;
-        if (c.FT_Load_Char(face, cp, c.FT_LOAD_RENDER) != 0) return false;
+        self.glyphs[index] = self.render(face, cp, pen) catch |e| {
+            if (e == error.AtlasFull) log.warn("font atlas full at code point {d}; it and later glyphs are missing", .{cp});
+            return false;
+        };
+        return true;
+    }
+
+    /// Renders `cp` from `face` into the atlas at `pen` (moved on past it).
+    fn render(self: *Font, face: c.FT_Face, cp: u32, pen: *Pen) error{ NoGlyph, AtlasFull }!Glyph {
+        if (c.FT_Get_Char_Index(face, cp) == 0) return error.NoGlyph;
+        if (c.FT_Load_Char(face, cp, c.FT_LOAD_RENDER) != 0) return error.NoGlyph;
         const slot = face.*.glyph;
         const bm = slot.*.bitmap;
         const w: usize = bm.width;
         const h: usize = bm.rows;
-        if (pen.x + w + 1 > atlas_size) {
-            pen.x = 1;
-            pen.y += pen.shelf_h + 1;
-            pen.shelf_h = 0;
-        }
-        if (pen.y + h + 1 > atlas_size) {
-            log.warn("font atlas full at code point {d}; it and later glyphs are missing", .{cp});
-            return false;
-        }
+        const at = pen.fit(w, h) orelse return error.AtlasFull;
         for (0..h) |row| {
             const src: [*]const u8 = bm.buffer + row * @as(usize, @intCast(bm.pitch));
-            @memcpy(self.atlas[(pen.y + row) * atlas_size + pen.x ..][0..w], src[0..w]);
+            @memcpy(self.atlas[(at[1] + row) * atlas_size + at[0] ..][0..w], src[0..w]);
         }
-        self.glyphs[index] = .{
-            .x = @intCast(pen.x),
-            .y = @intCast(pen.y),
+        return .{
+            .x = @intCast(at[0]),
+            .y = @intCast(at[1]),
             .w = @intCast(w),
             .h = @intCast(h),
             .left = @intCast(slot.*.bitmap_left),
             .top = @intCast(slot.*.bitmap_top),
             .advance = @as(f32, @floatFromInt(slot.*.advance.x)) / 64.0,
         };
-        pen.x += w + 1;
-        pen.shelf_h = @max(pen.shelf_h, h);
-        return true;
+    }
+
+    /// The glyph for `cp`: with `mono`, the fixed-width one if there is one.
+    fn glyphOf(self: *const Font, cp: u21, mono: bool) *const Glyph {
+        if (mono and self.has_mono and cp >= mono_first and cp <= mono_last) {
+            const g = &self.mono[cp - mono_first];
+            if (g.advance > 0) return g;
+        }
+        return self.glyph(cp);
     }
 
     fn glyph(self: *const Font, cp: u21) *const Glyph {
@@ -165,9 +228,18 @@ pub const Font = struct {
 
     /// Width of `text` (UTF-8) in pixels.
     pub fn width(self: *const Font, text: []const u8) f32 {
+        return self.widthOf(text, false);
+    }
+
+    /// Width of `text` drawn with `Batch.textMono`, in pixels.
+    pub fn widthMono(self: *const Font, text: []const u8) f32 {
+        return self.widthOf(text, true);
+    }
+
+    fn widthOf(self: *const Font, text: []const u8, mono: bool) f32 {
         var w: f32 = 0;
         var it: Codepoints = .{ .bytes = text };
-        while (it.next()) |cp| w += self.glyph(cp).advance;
+        while (it.next()) |cp| w += self.glyphOf(cp, mono).advance;
         return w;
     }
 };
@@ -267,11 +339,20 @@ pub const Batch = struct {
     /// Draws `text` (UTF-8) with its top-left corner at (x, y), snapped to whole pixels.
     /// Returns the x after the last glyph.
     pub fn text(self: *Batch, x: f32, y: f32, string: []const u8, colour: Colour) f32 {
+        return self.textWith(x, y, string, colour, false);
+    }
+
+    /// As `text`, with the fixed-width glyphs (`Font.addMono`) where there are any.
+    pub fn textMono(self: *Batch, x: f32, y: f32, string: []const u8, colour: Colour) f32 {
+        return self.textWith(x, y, string, colour, true);
+    }
+
+    fn textWith(self: *Batch, x: f32, y: f32, string: []const u8, colour: Colour, mono: bool) f32 {
         var pen = @round(x);
         const baseline = @round(y) + @round(self.font.ascent);
         var it: Codepoints = .{ .bytes = string };
         while (it.next()) |cp| {
-            const g = self.font.glyph(cp);
+            const g = self.font.glyphOf(cp, mono);
             if (g.w > 0 and g.h > 0) {
                 const gx = pen + @as(f32, @floatFromInt(g.left));
                 const gy = baseline - @as(f32, @floatFromInt(g.top));
@@ -324,4 +405,51 @@ test "code points of text that is not valid UTF-8 never read past the end" {
     try expect(0xFFFD, it.next().?);
     try expect('y', it.next().?);
     try expect(null, it.next());
+}
+
+test "the atlas packs glyphs on shelves until it has no room, and then places nothing" {
+    const expect = std.testing.expectEqual;
+    var pen: Font.Pen = .{};
+    // The first beside the white block, the next after it with a pixel between.
+    try expect([2]usize{ 5, 1 }, pen.fit(10, 12).?);
+    try expect([2]usize{ 16, 1 }, pen.fit(8, 14).?);
+    // One that does not fit across goes to a new shelf below the tallest of this one.
+    try expect([2]usize{ 1, 16 }, pen.fit(atlas_size - 20, 9).?);
+    // Fill: 24 x 24 glyphs to the bottom; then nothing fits, however small.
+    var n: usize = 0;
+    while (pen.fit(24, 24)) |at| : (n += 1) {
+        try std.testing.expect(at[0] + 24 < atlas_size and at[1] + 24 < atlas_size);
+    }
+    try std.testing.expect(n > 300);
+    try expect(null, pen.fit(24, 24));
+    try expect(null, pen.fit(1, 30));
+}
+
+test "fixed-width text uses the fixed-width glyphs where there are, the ordinary ones elsewhere" {
+    var atlas: [1]u8 = .{0};
+    var f: Font = .{ .atlas = &atlas, .px = 14 };
+    for (&f.glyphs, 0..) |*g, k| g.* = .{ .x = @intCast(10 + k), .y = 1, .w = 1, .h = 1, .advance = 7 };
+    for (&f.mono, 0..) |*g, k| g.* = .{ .x = @intCast(300 + k), .y = 2, .w = 1, .h = 1, .advance = 9 };
+    // Without `has_mono` (no monospace face, or no room): the ordinary glyphs.
+    try std.testing.expectEqual(21, f.widthMono("abc"));
+    f.has_mono = true;
+    try std.testing.expectEqual(27, f.widthMono("abc"));
+    try std.testing.expectEqual(21, f.width("abc"));
+    // Beyond ASCII ("µ"), and an ASCII character the face lacked ('b'): ordinary.
+    f.mono['b' - mono_first] = .{};
+    try std.testing.expectEqual(9 + 7 + 9, f.widthMono("a\u{b5}c"));
+    try std.testing.expectEqual(9 + 7 + 9, f.widthMono("abc"));
+    // Drawn: the quads' atlas positions say which glyph each is, the pen moves by its
+    // advance.
+    var vertices: [6 * 4]Vertex = undefined;
+    var batch: Batch = .{ .font = &f, .vertices = &vertices };
+    try std.testing.expectEqual(25, batch.textMono(0, 0, "abc", .{ 255, 255, 255, 255 }));
+    const s: f32 = atlas_size;
+    try std.testing.expectEqual(@as(f32, 300 + 'a' - 32) / s, vertices[0].uv[0]);
+    try std.testing.expectEqual(@as(f32, 10 + 'b' - 32) / s, vertices[6].uv[0]);
+    try std.testing.expectEqual(9, vertices[6].pos[0]);
+    try std.testing.expectEqual(16, vertices[12].pos[0]);
+    batch.clear();
+    _ = batch.text(0, 0, "a", .{ 255, 255, 255, 255 });
+    try std.testing.expectEqual(@as(f32, 10 + 'a' - 32) / s, vertices[0].uv[0]);
 }

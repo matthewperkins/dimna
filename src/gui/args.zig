@@ -65,35 +65,52 @@ pub const usage =
     \\Config file: $XDG_CONFIG_HOME/oez/config.toml (default ~/.config/oez); options above
     \\win. See the README for its keys and the [[panel]] tables.
     \\
-    \\On the display:
-    \\  wheel / two-finger scroll      Y scale (µV per row)
+    \\On the display (? shows these there, with the spike-tile window's):
+    \\  wheel                          Y scale (µV per row; also a two-finger scroll)
     \\  Ctrl+wheel                     Y scale of the row under the pointer alone
-    \\  Shift+wheel, sideways scroll   time base
+    \\  Shift+wheel                    back and forth in time: scroll-back review, a tenth of the
+    \\                                 time base a click; back from now enters it, forward to now
+    \\                                 leaves it (from the recording's file while recording, else
+    \\                                 the last half minute)
+    \\  sideways scroll                the same as Shift+wheel
+    \\  Alt+wheel                      time base (triggered: the window around the trigger)
     \\  touchpad pinch                 time base
-    \\  - =   [ ]                      Y scale, time base by keys;  r resets;  q or Esc quits
+    \\  - =                            Y scale
+    \\  [ ]                            time base
+    \\  r                              the panel as the config has it
     \\  m                              scroll <-> sweep (traces stand still, a cursor moves across)
+    \\  f                              display filter on/off (electrode panels): raw <-> band-pass
+    \\  , .                            the band's low corner: down, up
+    \\  ; '                            the band's high corner: down, up
     \\  t                              triggered sweeps on/off: the signal around each rising edge of
-    \\                                 a TTL input line, the last few overlaid; 1-8 pick the line;
-    \\                                 s switches to spikes on the row under the pointer (a slope
-    \\                                 trigger; left-click another row to move it) and back,
-    \\                                 [ ] and Shift+wheel zoom the window around the trigger
-    \\  Space                          freeze: look at what just went by. Then, or at once:
-    \\  Left / Right, PgUp / PgDn      go back and forth (a tenth of the window, a whole window)
-    \\  Home / End                     the start of the recording / back to live
-    \\                                 (scroll-back review: from the recording's file while
-    \\                                 recording, else the last half minute)
-    \\  /                              type a note (Enter saves, Esc drops, Tab keeps it as a draft);
-    \\                                 ` stamps a draft; 1-9 stamp the config's preset notes
-    \\  Shift+a                        acknowledge an alarm (the red bar: samples lost, or the
-    \\                                 recording failed)
+    \\                                 a TTL input line, the last few overlaid
+    \\  1-8                            triggered on TTL: the line
+    \\  s                              triggered: spikes on the row under the pointer (a slope
+    \\                                 trigger at that channel's threshold) <-> TTL
     \\  left-click a row               focus on that channel: an amber label, and its spike
     \\                                 threshold as a red line on its trace (where the row shows
-    \\                                 about 300-6000 Hz; else "thr" beside the label)
-    \\  right-click a row              listen to that channel (♪ before its label; Ctrl+right-click
-    \\                                 adds or removes one)
+    \\                                 about 300-6000 Hz; else "thr" beside the label); triggered
+    \\                                 on spikes, the trigger moves to that row
+    \\  right-click a row              listen to that channel alone (♪ before its label)
+    \\  Ctrl+right-click               add a channel to what is heard, or take it out
     \\  middle-click                   no channel in focus
-    \\  f                              display filter on/off (electrode panels): raw <-> band-pass
-    \\  , .   ; '                      the band's low corner, high corner: down, up
+    \\  drag a red line                its channel's threshold, fixed at the µV under the pointer
+    \\                                 (the pointer is a hand within 4 px of the line; dashed:
+    \\                                 the trigger's); across the row's centre it changes sign
+    \\  n                              the threshold of the row under the pointer: fixed <->
+    \\                                 following the noise (fixed at its present value)
+    \\  Space                          freeze: look at what just went by, or back to live
+    \\  Left / Right                   back, forward a tenth of the window
+    \\  PgUp / PgDn                    back, forward a whole window
+    \\  Home / End                     the start of the recording / back to live
+    \\  l                              back to live
+    \\  /                              type a note (Enter saves, Esc drops, Tab keeps it as a draft)
+    \\  `                              stamp the first draft note
+    \\  1-9                            stamp the config's preset notes
+    \\  Shift+a                        acknowledge an alarm (the red bar: samples lost, or the
+    \\                                 recording failed)
+    \\  ?                              the keys, over the display (? or Esc closes them)
+    \\  q or Esc                       quit
     \\
 ;
 

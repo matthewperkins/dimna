@@ -16,6 +16,8 @@ const tiles_mod = @import("tiles.zig");
 const tile_link = @import("tile_link.zig");
 const Args = @import("args.zig").Args;
 const Input = @import("window.zig").Input;
+const Cursor = @import("window.zig").Cursor;
+const Key = @import("window.zig").Key;
 const panels_mod = oez.panels;
 const Panel = panels_mod.Panel;
 const log = std.log.scoped(.oez);
@@ -154,6 +156,108 @@ pub fn levelPixelY(p: *const Panel, r: panels_mod.Rect, row: usize, value: f64) 
     return @floatCast(@floor(y));
 }
 
+/// The inverse of `levelPixelY`: the value (in the panel's unit) at the centre of pixel row
+/// `y` on panel row `row` of `p`, drawn in `r`, so that `levelPixelY` of it is `y` again;
+/// null if the row is hidden. Beyond ±1.5 rows from the row's centre, the value there (as
+/// `levelPixelY` clamps).
+pub fn levelAtPixelY(p: *const Panel, r: panels_mod.Rect, row: usize, y: f32) ?f64 {
+    const k = p.shownIndex(row) orelse return null;
+    const row_h = @as(f64, @floatFromInt(r.h)) / @as(f64, @floatFromInt(@max(p.shownRows(), 1)));
+    const centre = @as(f64, @floatFromInt(r.y)) + (@as(f64, @floatFromInt(k)) + 0.5) * row_h;
+    const d = std.math.clamp((centre - (@floor(@as(f64, y)) + 0.5)) / row_h, -1.5, 1.5);
+    return d * p.rowScale(row);
+}
+
+/// A threshold line drawn on a panel: whose threshold, on which of its rows, at which pixel
+/// row, and whether it is drawn dashed (a triggered panel's trigger row) or solid (the
+/// focused row).
+pub const ThresholdLine = struct { ch: u32, row: usize, y: f32, dashed: bool };
+
+/// The threshold lines of one panel, at most two (one per channel).
+pub const ThresholdLines = struct {
+    items: [2]ThresholdLine = undefined,
+    len: usize = 0,
+
+    pub fn slice(self: *const ThresholdLines) []const ThresholdLine {
+        return self.items[0..self.len];
+    }
+};
+
+/// What one turn's input asks of review (`Display.reviewActions`): one action per key, and
+/// samples to move by for the wheel (0: none), after the keys.
+pub const ReviewActions = struct {
+    items: [@typeInfo(@FieldType(Input, "keys")).array.len]control.ReviewAction = undefined,
+    len: usize = 0,
+    scroll: i64 = 0,
+
+    pub fn slice(self: *const ReviewActions) []const control.ReviewAction {
+        return self.items[0..self.len];
+    }
+};
+
+/// How near (in pixel rows) the pointer must be to a threshold line to take hold of it.
+pub const grab_px = 4;
+
+/// A threshold line being dragged: in panel `panel`, channel `ch` on row `row`. `from_y` is
+/// the pixel row it was taken at; nothing changes until the pointer has left it.
+pub const Drag = struct { panel: usize, ch: u32, row: usize, from_y: f32, moved: bool = false };
+
+/// One line of the key summary (`?`): in which window, the key or mouse action, what it
+/// does. ASCII, so that it lines up in the fixed-width font.
+pub const KeyHelp = struct { window: enum { display, tiles }, key: []const u8, what: []const u8 };
+
+/// The key summary, the one place it is written: the display's keys (they agree with
+/// `args.usage`, a test checks) and the spike-tile window's (tiles.zig).
+pub const key_help = [_]KeyHelp{
+    .{ .window = .display, .key = "wheel", .what = "Y scale (uV per row)" },
+    .{ .window = .display, .key = "Ctrl+wheel", .what = "Y scale of the row alone" },
+    .{ .window = .display, .key = "Shift+wheel", .what = "back / forward in time (review)" },
+    .{ .window = .display, .key = "sideways scroll", .what = "the same as Shift+wheel" },
+    .{ .window = .display, .key = "Alt+wheel", .what = "time base (triggered: window)" },
+    .{ .window = .display, .key = "touchpad pinch", .what = "time base" },
+    .{ .window = .display, .key = "- =", .what = "Y scale" },
+    .{ .window = .display, .key = "[ ]", .what = "time base" },
+    .{ .window = .display, .key = "r", .what = "the panel as configured" },
+    .{ .window = .display, .key = "m", .what = "scrolling <-> sweep" },
+    .{ .window = .display, .key = "f", .what = "display filter on / off" },
+    .{ .window = .display, .key = ", .", .what = "low corner down / up" },
+    .{ .window = .display, .key = "; '", .what = "high corner down / up" },
+    .{ .window = .display, .key = "t", .what = "triggered sweeps on / off" },
+    .{ .window = .display, .key = "1-8", .what = "triggered on TTL: the line" },
+    .{ .window = .display, .key = "s", .what = "triggered: TTL <-> spikes, this row" },
+    .{ .window = .display, .key = "left-click a row", .what = "focus (spikes: trigger there)" },
+    .{ .window = .display, .key = "right-click a row", .what = "listen to it alone" },
+    .{ .window = .display, .key = "Ctrl+right-click", .what = "add to / take from the sound" },
+    .{ .window = .display, .key = "middle-click", .what = "no channel in focus" },
+    .{ .window = .display, .key = "drag a red line", .what = "its threshold, fixed (uV)" },
+    .{ .window = .display, .key = "n", .what = "threshold: fixed <-> the noise" },
+    .{ .window = .display, .key = "Space", .what = "freeze / back to live" },
+    .{ .window = .display, .key = "Left / Right", .what = "back / forward 1/10 window" },
+    .{ .window = .display, .key = "PgUp / PgDn", .what = "back / forward a window" },
+    .{ .window = .display, .key = "Home / End", .what = "start of recording / live" },
+    .{ .window = .display, .key = "l", .what = "back to live" },
+    .{ .window = .display, .key = "/", .what = "type a note (Enter saves)" },
+    .{ .window = .display, .key = "`", .what = "stamp the first draft note" },
+    .{ .window = .display, .key = "1-9", .what = "stamp a preset note" },
+    .{ .window = .display, .key = "Shift+a", .what = "acknowledge an alarm" },
+    .{ .window = .display, .key = "?", .what = "these keys (? or Esc closes)" },
+    .{ .window = .display, .key = "q or Esc", .what = "quit" },
+    .{ .window = .tiles, .key = "wheel", .what = "scale the tiles shown" },
+    .{ .window = .tiles, .key = "Ctrl+wheel", .what = "scale the tile alone" },
+    .{ .window = .tiles, .key = "Ctrl+Shift+wheel", .what = "the tile's threshold" },
+    .{ .window = .tiles, .key = "r", .what = "tiles shown: common range" },
+    .{ .window = .tiles, .key = "a", .what = "tiles shown: own range, fixed" },
+    .{ .window = .tiles, .key = "u", .what = "undo a change of scale" },
+    .{ .window = .tiles, .key = "Shift+u", .what = "redo a change of scale" },
+    .{ .window = .tiles, .key = "n", .what = "threshold: fixed <-> the noise" },
+    .{ .window = .tiles, .key = "left-click", .what = "focus on that channel" },
+    .{ .window = .tiles, .key = "right-click", .what = "listen to it alone" },
+    .{ .window = .tiles, .key = "Ctrl+right-click", .what = "add to / take from the sound" },
+    .{ .window = .tiles, .key = "middle-click", .what = "no channel in focus" },
+    .{ .window = .tiles, .key = "drag the red line", .what = "its threshold, fixed (uV)" },
+    .{ .window = .tiles, .key = "the chips", .what = "one port's tiles, or all" },
+};
+
 /// The label of one row: the electrode's number on its headstage (with the headstage's name
 /// when the panel spans more than one), or AUXn / ADCn.
 pub fn rowLabel(buf: []u8, p: *const Panel, row: u32, layout: *const oez.types.Layout, set: *const panels_mod.Set) []const u8 {
@@ -196,9 +300,27 @@ pub const Display = struct {
     target: usize = 0,
     /// Set by a test script (`panel=`, `pointer=`); then it overrides the pointer.
     scripted_target: ?usize = null,
-    /// Where the pointer is, as a fraction of the display's height (for the row under it).
+    /// Where the pointer is, as fractions of the display's width and height (for the row
+    /// under it, and whether it is over the panel input goes to).
     pointer_fy: f64 = 0,
+    pointer_fx: f64 = 0,
     scripted_pointer: bool = false,
+    /// A test script holds the left button down (`press` until `release`).
+    scripted_left: bool = false,
+    /// The display's size in pixels when it was last drawn: where input finds the lines
+    /// drawn (0 before the first frame).
+    size: [2]u32 = .{ 0, 0 },
+    /// What the pointer is to look like (over a threshold line: a hand); the loop sets it
+    /// on the window once per turn.
+    cursor: Cursor = .default,
+    /// A threshold line being dragged with the left button.
+    drag: ?Drag = null,
+    /// The key summary is shown over the display (`?`; `?` or Esc hides it).
+    help: bool = false,
+    /// Per panel: the channel it triggers on (in triggered mode, on a channel) as last
+    /// seen, and whether it still owes that channel a latch (see `updateLatches`).
+    trig_on: [panels_mod.max_panels]?u32 = @splat(null),
+    owes_latch: [panels_mod.max_panels]bool = @splat(false),
     /// The triggers of each panel's TTL line (used by panels in triggered mode).
     triggers: [panels_mod.max_panels]oez.sweeps.Triggers = @splat(.{}),
 
@@ -346,6 +468,9 @@ pub const Display = struct {
     /// Looks for triggers in a block that starts at sample `first`: `samples` (`nch`
     /// interleaved, as acquired) for slope triggers, the digital `words` for TTL edges.
     pub fn feedBlock(self: *Display, first: i64, samples: []const i16, nch: usize, fs: f64, words: []const u16) void {
+        // A latch owed is paid as soon as the tile window has reported (and at start-up, a
+        // panel the config has triggering on a channel begins to owe one).
+        self.updateLatches();
         for (self.set.items[0..self.set.len], self.triggers[0..self.set.len], self.pulses[0..self.set.len], 0..) |*p, *t, *pl, i| {
             const channel = p.triggerChannel();
             const made_from: u64 = if (channel != null) 0x100 + @as(u64, p.trigger.row) else p.trigger.line;
@@ -362,13 +487,10 @@ pub const Display = struct {
     }
 
     /// Panel `i`'s slope trigger on channel `ch`, fed a block, at that channel's threshold.
-    /// A panel in triggered mode latches the threshold: if it follows the noise, it becomes
-    /// fixed at what the tile window reported, or failing that at the trigger's own level
-    /// once it has seen a second of signal.
+    /// A panel that owes its channel a latch (`updateLatches`) and has no report to latch
+    /// at fixes it at the trigger's own level once it has seen a second of signal.
     fn feedSlope(self: *Display, i: usize, ch: u32, first: i64, samples: []const i16, nch: usize, fs: f64) void {
         const p = &self.set.items[i];
-        const triggering = p.mode == .triggered;
-        if (triggering) self.latch(ch);
         const want = self.slopeSettings(ch, p.trigger.holdoff_ms);
         // A threshold that changed sides: the trigger starts afresh, as what it holds (the
         // previous sample and a search, folded for the slope) is the other slope's.
@@ -382,10 +504,13 @@ pub const Display = struct {
         var ref: [oez.audio.max_car_ref]u32 = undefined;
         const nref = self.carChannels(ch, &ref);
         sl.feed(first, samples, nch, ch, ref[0..nref], &self.triggers[i]);
-        if (triggering and !self.thresholds.isFixed(ch) and sl.seen >= @as(u64, @intFromFloat(fs))) {
+        if (self.owes_latch[i] and !self.thresholds.isFixed(ch) and sl.seen >= @as(u64, @intFromFloat(fs))) {
             // Following the noise, the level is below zero; anything else is no estimate.
             const level_uv = sl.level() * oez.types.electrode_uv_per_bit;
-            if (level_uv < 0) self.setThreshold(ch, level_uv);
+            if (level_uv < 0) {
+                self.setThreshold(ch, level_uv);
+                self.owes_latch[i] = false;
+            }
         }
     }
 
@@ -398,32 +523,42 @@ pub const Display = struct {
     }
 
     /// If channel `ch`'s threshold follows the noise and the tile window has reported what
-    /// it is, fixes it there: a channel that a panel triggers on has a fixed threshold.
+    /// it is, fixes it there.
     fn latch(self: *Display, ch: u32) void {
         if (self.thresholds.isFixed(ch)) return;
         const uv = self.reported.get(ch) orelse return;
         self.setThreshold(ch, uv);
     }
 
-    /// Latches the threshold of every channel a panel in triggered mode triggers on.
-    fn latchTriggered(self: *Display) void {
-        for (self.set.items[0..self.set.len]) |*p| {
-            if (p.mode != .triggered) continue;
-            if (p.triggerChannel()) |ch| self.latch(ch);
+    /// Latching once: a panel that begins to trigger on a channel (into triggered mode, onto
+    /// a channel source, onto another row, or at start-up with a config that has it so)
+    /// owes that channel a latch, paid at once if a value is known (the threshold fixed
+    /// where the tile window reported it), else as soon as one is (a report, or the slope
+    /// trigger's own level after a second: `feedSlope`); a channel already fixed owes
+    /// nothing. Paid, the channel is left as the user sets it: put back to following the
+    /// noise, it triggers at `sigmas` x sigma and is not latched again until the panel
+    /// begins anew. Runs after input, after a control-window edit and with every block.
+    fn updateLatches(self: *Display) void {
+        for (self.set.items[0..self.set.len], 0..) |*p, i| {
+            const on: ?u32 = if (p.mode == .triggered) p.triggerChannel() else null;
+            if (on != self.trig_on[i]) {
+                self.trig_on[i] = on;
+                self.owes_latch[i] = on != null;
+            }
+            if (!self.owes_latch[i]) continue;
+            self.latch(on.?);
+            if (self.thresholds.isFixed(on.?)) self.owes_latch[i] = false;
         }
     }
 
-    /// A panel in triggered mode triggers on channel `ch`.
-    fn triggeredOn(self: *const Display, ch: u32) bool {
-        for (self.set.items[0..self.set.len]) |*p| {
-            if (p.mode == .triggered and p.triggerChannel() == ch) return true;
-        }
-        return false;
+    /// `n`: channel `ch`'s threshold from fixed to following the noise, or from following
+    /// the noise to fixed at its present value (nothing if that is not known).
+    pub fn toggleFollow(self: *Display, ch: u32) void {
+        if (self.thresholds.isFixed(ch)) self.setThreshold(ch, 0) else self.latch(ch);
     }
 
     /// A change to the thresholds, from the control window (or a request of the tile
-    /// window's). A channel a panel triggers on stays fixed: it is not returned to the
-    /// noise; scaling or flipping one that follows the noise latches it first.
+    /// window's). Scaling or flipping one that follows the noise latches it first.
     pub fn applyThreshold(self: *Display, edit: control.ThresholdEdit) void {
         switch (edit) {
             .sigmas => |up| {
@@ -440,7 +575,7 @@ pub const Display = struct {
                 if (self.thresholds.isFixed(ch)) self.setThreshold(ch, -self.thresholds.fixed_uv[ch]);
             },
             .set => |s| if (s.uv != 0) self.setThreshold(s.channel, s.uv) else self.applyThreshold(.{ .follow = s.channel }),
-            .follow => |ch| if (!self.triggeredOn(ch)) self.setThreshold(ch, 0),
+            .follow => |ch| self.setThreshold(ch, 0),
         }
     }
 
@@ -450,7 +585,12 @@ pub const Display = struct {
 
     /// Points input at the panel under the pointer (fractions of the display).
     pub fn pointAt(self: *Display, fx: f64, fy: f64) void {
-        if (!self.scripted_pointer) self.pointer_fy = fy;
+        if (!self.scripted_pointer) {
+            self.pointer_fy = fy;
+            self.pointer_fx = fx;
+        }
+        // A drag keeps the panel it began in.
+        if (self.drag != null) return;
         if (self.scripted_target) |t| {
             self.target = t;
         } else if (self.set.at(fx, fy)) |t| self.target = t;
@@ -513,77 +653,29 @@ pub const Display = struct {
         }
         p.clamp();
         // A panel that has begun to trigger on a channel (its mode, source or row).
-        self.latchTriggered();
+        self.updateLatches();
     }
 
     /// Applies what the user did to the target panel. True means quit.
-    pub fn applyInput(self: *Display, in: Input) bool {
-        if (self.scripted_target) |t| self.target = t;
+    pub fn applyInput(self: *Display, in_given: Input) bool {
+        if (self.drag == null) {
+            if (self.scripted_target) |t| self.target = t;
+        }
         var quit = false;
-        for (in.keys[0..in.num_keys]) |k| {
-            if (k.isNamed(.escape) or k.is('q')) quit = true;
+        for (in_given.keys[0..in_given.num_keys]) |k| {
+            // Esc with the key summary up hides it, and does not quit.
+            if (k.isNamed(.escape) and self.help) {
+                self.help = false;
+            } else if (k.isNamed(.escape) or k.is('q')) quit = true;
         }
         if (self.set.len == 0) return quit;
+        var in = in_given;
+        // A press on a threshold line, and what follows it while the button is held, are
+        // the line's: no focus, no trigger moved.
+        if (self.dragInput(in)) in.clicks = 0;
         const p = &self.set.items[self.target];
-        // One wheel click (about 15 units) changes a scale by 15 %.
-        const per_unit = 0.0093;
-        var sx = in.scroll_x;
-        var sy = in.scroll_y;
-        if (in.shift) {
-            sx += sy;
-            sy = 0;
-        }
-        if (sy != 0) {
-            // Ctrl: the row under the pointer alone.
-            if (in.ctrl) {
-                if (p.rowAt(self.pointer_fy)) |row| p.scaleRow(row, @exp(sy * per_unit));
-            } else p.scale *= @exp(sy * per_unit);
-        }
-        // The time base; in triggered mode, the window around the trigger.
-        var zoom: f64 = 1;
-        if (sx != 0) zoom *= @exp(sx * per_unit);
-        // Fingers apart = zoom in = less time across the panel.
-        if (in.pinch != 1 and in.pinch > 0) zoom /= in.pinch;
-        for (in.keys[0..in.num_keys]) |k| {
-            if (k.is('[')) zoom *= 1.25;
-            if (k.is(']')) zoom /= 1.25;
-        }
-        if (p.mode == .triggered) {
-            p.trigger.pre_ms *= zoom;
-            p.trigger.post_ms *= zoom;
-        } else p.span_s *= zoom;
-        for (in.keys[0..in.num_keys]) |k| switch (k) {
-            .named => {},
-            .char => |c| switch (c) {
-                '-' => p.scale *= 1.25,
-                '=' => p.scale /= 1.25,
-                'r' => self.reset(self.target),
-                'f' => p.filter.on = p.kind == .electrode and !p.filter.on,
-                ',' => if (p.filter.on) p.stepCorner(false, false),
-                '.' => if (p.filter.on) p.stepCorner(false, true),
-                ';' => if (p.filter.on) p.stepCorner(true, false),
-                '\'' => if (p.filter.on) p.stepCorner(true, true),
-                'm' => p.mode = if (p.mode == .scroll) .sweep else .scroll,
-                // Shift+a; plain a is the tile window's autoscale key.
-                'a' => if (in.shift) {
-                    self.acknowledged = true;
-                },
-                // Triggered mode: s switches between a TTL line and spikes on the row under
-                // the pointer.
-                's' => if (p.mode == .triggered) {
-                    if (p.trigger.source == .ttl) {
-                        p.setTrigSource(.channel);
-                        if (p.rowAt(self.pointer_fy)) |row| p.trigger.row = @intCast(row);
-                    } else p.setTrigSource(.ttl);
-                },
-                't' => p.mode = if (p.mode == .triggered) .scroll else .triggered,
-                // Triggered on a TTL line: the digits pick the line.
-                '1'...'8' => if (p.mode == .triggered and p.trigger.source == .ttl) {
-                    p.trigger.line = c - '0';
-                },
-                else => {},
-            },
-        };
+        self.wheel(p, in);
+        for (in.keys[0..in.num_keys]) |k| self.key(p, k, in.shift);
         // On an electrode row a left click focuses its channel, a right click listens to it
         // (Ctrl: adds or removes it). A middle click anywhere clears the focus.
         if (p.kind == .electrode) {
@@ -600,15 +692,260 @@ pub const Display = struct {
         }
         p.clamp();
         // A panel that has begun to trigger on a channel (s, t, r, or that click).
-        self.latchTriggered();
+        self.updateLatches();
         return quit;
+    }
+
+    /// The wheel, pinch and `[` `]` on panel `p` (the target): the wheel its scale (Ctrl: the
+    /// row under the pointer alone), Alt+wheel its time base (in triggered mode, the window
+    /// around the trigger), as pinch and the keys do. Shift+wheel and a scroll that is
+    /// mostly sideways move through time instead (`reviewScroll`).
+    fn wheel(self: *Display, p: *Panel, in: Input) void {
+        // One wheel click (about 15 units) changes a scale by 15 %.
+        const per_unit = 0.0093;
+        const sy = in.scroll_y;
+        const sideways = @abs(in.scroll_x) > @abs(sy);
+        if (sy != 0 and !in.alt and !in.shift and !sideways) {
+            if (in.ctrl) {
+                if (p.rowAt(self.pointer_fy)) |row| p.scaleRow(row, @exp(sy * per_unit));
+            } else p.scale *= @exp(sy * per_unit);
+        }
+        var zoom: f64 = 1;
+        if (in.alt) zoom *= @exp((in.scroll_x + sy) * per_unit);
+        // Fingers apart = zoom in = less time across the panel.
+        if (in.pinch != 1 and in.pinch > 0) zoom /= in.pinch;
+        for (in.keys[0..in.num_keys]) |k| {
+            if (k.is('[')) zoom *= 1.25;
+            if (k.is(']')) zoom /= 1.25;
+        }
+        if (p.mode == .triggered) {
+            p.trigger.pre_ms *= zoom;
+            p.trigger.post_ms *= zoom;
+        } else p.span_s *= zoom;
+    }
+
+    /// What key `k` does to panel `p` (the target); `shift` held.
+    fn key(self: *Display, p: *Panel, k: Key, shift: bool) void {
+        switch (k) {
+            .named => {},
+            .char => |c| switch (c) {
+                '-' => p.scale *= 1.25,
+                '=' => p.scale /= 1.25,
+                'r' => self.reset(self.target),
+                'f' => p.filter.on = p.kind == .electrode and !p.filter.on,
+                ',' => if (p.filter.on) p.stepCorner(false, false),
+                '.' => if (p.filter.on) p.stepCorner(false, true),
+                ';' => if (p.filter.on) p.stepCorner(true, false),
+                '\'' => if (p.filter.on) p.stepCorner(true, true),
+                'm' => p.mode = if (p.mode == .scroll) .sweep else .scroll,
+                // Shift+a; plain a is the tile window's autoscale key.
+                'a' => if (shift) {
+                    self.acknowledged = true;
+                },
+                // Triggered mode: s switches between a TTL line and spikes on the row under
+                // the pointer.
+                's' => if (p.mode == .triggered) {
+                    if (p.trigger.source == .ttl) {
+                        p.setTrigSource(.channel);
+                        if (p.rowAt(self.pointer_fy)) |row| p.trigger.row = @intCast(row);
+                    } else p.setTrigSource(.ttl);
+                },
+                't' => p.mode = if (p.mode == .triggered) .scroll else .triggered,
+                // The threshold of the electrode row under the pointer: fixed <-> following
+                // the noise.
+                'n' => if (p.kind == .electrode) {
+                    if (p.rowAt(self.pointer_fy)) |row| self.toggleFollow(p.first_ch + @as(u32, @intCast(row)));
+                },
+                // Triggered on a TTL line: the digits pick the line.
+                '1'...'8' => if (p.mode == .triggered and p.trigger.source == .ttl) {
+                    p.trigger.line = c - '0';
+                },
+                else => {},
+            },
+        }
+    }
+
+    /// `?` shows or hides the key summary, and is taken out of `in` so that it does not also
+    /// start a note (a note begins at `/`, and `?` is Shift+/ on a US layout). Call it before
+    /// the notes take their keys, and not while a note is being typed (then `?` is text).
+    ///
+    /// Which key is `?` is read from what the keys typed (`in.text`): xkbcommon gives it
+    /// with the modifiers held when each key went down, in the layout in use. `in.shift` is
+    /// the modifiers' state when the input was taken, which a quick Shift+/ may have left
+    /// already, and `keys` hold the unshifted symbol (`/`). Only without a keymap (no text
+    /// at all) is `/` with Shift held taken for `?`. The `/` keys that typed a `?` (paired
+    /// in order with the `/` and `?` typed) are removed.
+    pub fn helpKey(self: *Display, in: *Input) void {
+        var typed: [16]u8 = undefined;
+        var n_typed: usize = 0;
+        var asked: usize = 0;
+        for (in.text[0..in.text_len]) |c| {
+            if (c != '/' and c != '?') continue;
+            asked += @intFromBool(c == '?');
+            if (n_typed < typed.len) typed[n_typed] = c;
+            n_typed += 1;
+        }
+        const no_text = in.text_len == 0;
+        var kept: usize = 0;
+        var slash: usize = 0;
+        for (in.keys[0..in.num_keys]) |k| {
+            if (k.is('/')) {
+                defer slash += 1;
+                const is_help = if (no_text) in.shift else slash < typed.len and slash < n_typed and typed[slash] == '?';
+                if (is_help) {
+                    if (no_text) asked += 1;
+                    continue;
+                }
+            }
+            in.keys[kept] = k;
+            kept += 1;
+        }
+        in.num_keys = kept;
+        if (asked % 2 == 1) self.help = !self.help;
+    }
+
+    /// What this turn's input asks of scroll-back review: the keys (Space, Left / Right,
+    /// PgUp / PgDn, Home, End, and `l` back to live) and the wheel (`reviewScroll`), in that
+    /// order. `fs`: the sample rate.
+    pub fn reviewActions(self: *const Display, in: *const Input, fs: f64) ReviewActions {
+        var out: ReviewActions = .{};
+        for (in.keys[0..in.num_keys]) |k| {
+            out.items[out.len] = switch (k) {
+                .char => |c| switch (c) {
+                    ' ' => .toggle,
+                    'l' => .live,
+                    else => continue,
+                },
+                .named => |n| switch (n) {
+                    .left => .back,
+                    .right => .forward,
+                    .page_up => .page_back,
+                    .page_down => .page_forward,
+                    .home => .start,
+                    .end => .live,
+                    else => continue,
+                },
+            };
+            out.len += 1;
+        }
+        out.scroll = self.reviewScroll(in, fs);
+        return out;
+    }
+
+    /// Shift+wheel, or a scroll that is mostly sideways (without Alt): samples to move the
+    /// review position by (negative: back), a tenth of the target panel's time base per
+    /// wheel click of 15 axis units (proportionally for a touchpad). Wheel up and scrolling
+    /// left go back. A triggered panel's step is that of the longest panel that is not
+    /// triggered (as `ReviewSession.step` takes its keys' steps).
+    pub fn reviewScroll(self: *const Display, in: *const Input, fs: f64) i64 {
+        if (in.alt or self.set.len == 0) return 0;
+        const amount = if (in.shift)
+            in.scroll_x + in.scroll_y
+        else if (@abs(in.scroll_x) > @abs(in.scroll_y)) in.scroll_x else 0;
+        if (amount == 0) return 0;
+        const tp = &self.set.items[@min(self.scripted_target orelse self.target, self.set.len - 1)];
+        var window_s: f64 = if (tp.mode != .triggered) tp.span_s else 0;
+        if (window_s == 0) {
+            for (self.set.items[0..self.set.len]) |*p| {
+                if (p.mode != .triggered) window_s = @max(window_s, p.span_s);
+            }
+        }
+        if (window_s == 0) window_s = 2;
+        return @intFromFloat(@round(amount / 15 * 0.1 * window_s * fs));
+    }
+
+    /// The threshold lines under the pointer: a hand over one (within `grab_px` pixel rows,
+    /// inside the panel input goes to), a press there takes hold of it, moving drags it
+    /// (the threshold fixed at the value under the pointer), releasing lets go. True if the
+    /// left button's press this turn was the line's.
+    fn dragInput(self: *Display, in: Input) bool {
+        const py: f32 = @floatCast(self.pointer_fy * @as(f64, @floatFromInt(self.size[1])));
+        if (self.drag) |*d| {
+            if (in.left_down) {
+                self.dragTo(d, py);
+                self.cursor = .grabbing;
+                return true;
+            }
+            self.drag = null;
+        }
+        const line = self.lineAtPointer(py);
+        self.cursor = if (line != null) .grab else .default;
+        const l = line orelse return false;
+        if (in.clicks == 0) return false;
+        // Pressed and let go within one turn: a click on the line, which does nothing.
+        if (in.left_down) {
+            self.drag = .{ .panel = self.target, .ch = l.ch, .row = l.row, .from_y = @floor(py) };
+            self.cursor = .grabbing;
+        }
+        return true;
+    }
+
+    /// The dragged threshold follows the pointer at pixel height `py`: fixed at the value
+    /// under it (`levelAtPixelY`), clamped as `Thresholds.set` clamps. Crossing the row's
+    /// centre changes the sign (the slope). Nothing until the pointer leaves the pixel row
+    /// the line was taken at.
+    fn dragTo(self: *Display, d: *Drag, py: f32) void {
+        if (!d.moved and @floor(py) == d.from_y) return;
+        d.moved = true;
+        if (d.panel >= self.set.len) return;
+        const p = &self.set.items[d.panel];
+        const r = p.pixelRect(self.size[0], self.size[1]);
+        var uv = levelAtPixelY(p, r, d.row, @floor(py)) orelse return;
+        // Exactly on the centre: the smallest threshold on the side it was (0 would put it
+        // back to following the noise).
+        if (uv == 0) uv = std.math.copysign(@as(f64, oez.thresholds.min_uv), @as(f64, self.thresholdUv(d.ch) orelse -1));
+        self.setThreshold(d.ch, uv);
+    }
+
+    /// The threshold line under the pointer (at pixel height `py`), if there is one within
+    /// `grab_px` pixel rows, in the panel input goes to, with the pointer inside it (the
+    /// nearest, if both of its lines are).
+    fn lineAtPointer(self: *const Display, py: f32) ?ThresholdLine {
+        if (self.size[1] == 0 or self.target >= self.set.len) return null;
+        if (self.set.at(self.pointer_fx, self.pointer_fy) != self.target) return null;
+        const p = &self.set.items[self.target];
+        const lines = self.panelLines(p, p.pixelRect(self.size[0], self.size[1]));
+        var best: ?ThresholdLine = null;
+        for (lines.slice()) |l| {
+            const dist = @abs(@floor(py) - l.y);
+            if (dist > grab_px) continue;
+            if (best) |b| {
+                if (@abs(@floor(py) - b.y) <= dist) continue;
+            }
+            best = l;
+        }
+        return best;
+    }
+
+    /// The threshold lines panel `p` draws in `r`: a triggered panel's trigger channel's
+    /// threshold across the trigger's row, dashed, once known; the focused channel's across
+    /// its row, solid, where the row shows about the detector's band, unless it is the
+    /// trigger channel (one line per channel).
+    pub fn panelLines(self: *const Display, p: *const Panel, r: panels_mod.Rect) ThresholdLines {
+        var out: ThresholdLines = .{};
+        if (p.mode == .triggered) if (p.triggerChannel()) |ch| if (self.thresholdUv(ch)) |uv| {
+            if (levelPixelY(p, r, p.trigger.row, uv)) |y| {
+                out.items[out.len] = .{ .ch = ch, .row = p.trigger.row, .y = y, .dashed = true };
+                out.len += 1;
+            }
+        };
+        const row = self.focusedRow(p) orelse return out;
+        const ch = self.focus.?;
+        if (out.len > 0 and out.items[0].ch == ch) return out;
+        const uv = self.thresholdUv(ch) orelse return out;
+        if (!showsDetectorBand(p, row)) return out;
+        const y = levelPixelY(p, r, row, uv) orelse return out;
+        out.items[out.len] = .{ .ch = ch, .row = row, .y = y, .dashed = false };
+        out.len += 1;
+        return out;
     }
 
     /// What to draw: each panel's traces, then dividers and a bar marking the target panel,
     /// and into `batch` the text: each panel's title (name, time base, scale per row), its
-    /// row labels, and the status read-out in the bottom right corner.
+    /// row labels, and the status read-out in the bottom right corner. Keeps the display's
+    /// size (`size`), for input to find what was drawn where.
     pub fn frame(
-        self: *const Display,
+        self: *Display,
         surface: Surface,
         layout: *const oez.types.Layout,
         newest: i64,
@@ -622,6 +959,7 @@ pub const Display = struct {
         const width = surface.width;
         const height = surface.height;
         const fs = layout.sample_rate;
+        self.size = .{ width, height };
         batch.clear();
         var o: Output = .{ .draws = draws, .fills = fills, .batch = batch, .line_h = @round(batch.font.line_height) };
         const scene: Scene = .{ .surface = surface, .layout = layout, .newest = newest, .review = review, .notes = notes };
@@ -633,6 +971,7 @@ pub const Display = struct {
         if (notes.editing and o.line_h > 0) noteDraft(&o, notes, height, fs);
         if (status.valid and o.line_h > 0) statusReadout(&o, status, width, height);
         if (self.set.len > 1) targetBar(&o, self.set.items[self.target].pixelRect(width, height));
+        if (self.help and o.line_h > 0) helpPanel(&o, width, height);
         return .{ .draws = draws[0..o.nd], .fills = fills[0..o.nf], .text = batch.vertices[0..batch.len] };
     }
 
@@ -730,20 +1069,16 @@ pub const Display = struct {
         const window = win.window;
         const px: f32 = @floatFromInt(r.x);
         const py: f32 = @floatFromInt(r.y);
-        const shown = p.shownRows();
         const w: f32 = @floatFromInt(r.w);
         const x0 = px + w * @as(f32, @floatFromInt(pre)) / @as(f32, @floatCast(window));
         if (p.trigger.source == .channel) {
-            // The level (the trigger channel's threshold, once known), as a line across the
-            // trigger's row (in the row's own scale: it sits on the trace when the panel
-            // shows the spike band).
-            const row_h = @as(f32, @floatFromInt(r.h)) / @as(f32, @floatFromInt(@max(shown, 1)));
-            const centre = py + (@as(f32, @floatFromInt(p.shownIndex(p.trigger.row) orelse 0)) + 0.5) * row_h;
-            if (self.thresholdUv(p.first_ch + p.trigger.row)) |uv| {
-                const dy: f32 = @floatCast(std.math.clamp(uv / p.rowScale(p.trigger.row), -1.5, 1.5));
+            // The level (the trigger channel's threshold, once known), as a dashed line
+            // across the trigger's row where a sample of that value is drawn (in the row's
+            // own scale: it sits on the trace when the panel shows the spike band).
+            for (self.panelLines(p, r).slice()) |l| {
+                if (!l.dashed) continue;
                 var x = px;
-                if (p.shownIndex(p.trigger.row) != null)
-                    while (x < px + w) : (x += 12) batch.rect(x, @round(centre - dy * row_h), 6, 1, theme.trigger_level);
+                while (x < px + w) : (x += 12) batch.rect(x, l.y, 6, 1, theme.trigger_level);
             }
         } else if (trig.recent(0)) |s| {
             const until = @min(s.fall orelse newest, s.t0 + post);
@@ -761,13 +1096,12 @@ pub const Display = struct {
     }
 
     /// The focused channel's detection threshold (if known), as a line across its row where
-    /// the row is drawn and shows about the detector's band.
+    /// the row is drawn and shows about the detector's band (`panelLines`; not where the
+    /// trigger's dashed line is already that channel's).
     fn thresholdLine(self: *const Display, o: *Output, p: *const Panel, r: panels_mod.Rect) void {
-        const row = self.focusedRow(p) orelse return;
-        const uv = self.thresholdUv(self.focus.?) orelse return;
-        if (!showsDetectorBand(p, row)) return;
-        const y = levelPixelY(p, r, row, uv) orelse return;
-        o.batch.rect(@floatFromInt(r.x), y, @floatFromInt(r.w), 1, theme.tile_threshold);
+        for (self.panelLines(p, r).slice()) |l| {
+            if (!l.dashed) o.batch.rect(@floatFromInt(r.x), l.y, @floatFromInt(r.w), 1, theme.tile_threshold);
+        }
     }
 
     /// The row is in focus or listened to: its label carries a mark, so it is always shown.
@@ -1196,6 +1530,48 @@ fn statusReadout(o: *Output, status: Status, width: u32, height: u32) void {
     }
 }
 
+/// The key summary (`key_help`) over the middle of the display: the display's keys on the
+/// left, the spike-tile window's on the right, each a column of keys and a column of what
+/// they do, in the fixed-width font (the ordinary one if there is none). Where the display
+/// is too small, it is cut at the right and bottom edges.
+fn helpPanel(o: *Output, width: u32, height: u32) void {
+    const batch = o.batch;
+    const f = batch.font;
+    const line_h = o.line_h;
+    const pad: f32 = 12;
+    const title = "Keys and the mouse   (? or Esc closes this)";
+    const headings = [2][]const u8{ "On the display", "In the spike-tile window" };
+    // Per column: how wide its keys and its descriptions are, and how many lines.
+    var key_w: [2]f32 = @splat(0);
+    var what_w: [2]f32 = @splat(0);
+    var lines: [2]usize = @splat(0);
+    for (key_help) |k| {
+        const c = @backingInt(k.window);
+        key_w[c] = @max(key_w[c], f.widthMono(k.key));
+        what_w[c] = @max(what_w[c], f.widthMono(k.what), f.widthMono(headings[c]));
+        lines[c] += 1;
+    }
+    const sp = f.widthMono("  ");
+    const col_w = [2]f32{ key_w[0] + sp + what_w[0], key_w[1] + sp + what_w[1] };
+    const gap = f.widthMono("    ");
+    const w = @max(col_w[0] + gap + col_w[1], f.widthMono(title)) + 2 * pad;
+    const h = @as(f32, @floatFromInt(@max(lines[0], lines[1]) + 3)) * line_h + 2 * pad;
+    const x0 = @round(@max(0, (@as(f32, @floatFromInt(width)) - w) / 2));
+    const y0 = @round(@max(0, (@as(f32, @floatFromInt(height)) - h) / 2));
+    batch.rect(x0, y0, w, h, theme.help_backing);
+    _ = batch.textMono(x0 + pad, y0 + pad, title, theme.help_title);
+    const col_x = [2]f32{ x0 + pad, x0 + pad + col_w[0] + gap };
+    var row: [2]usize = @splat(0);
+    for (headings, col_x) |heading, x| _ = batch.textMono(x, y0 + pad + 2 * line_h, heading, theme.help_title);
+    for (key_help) |k| {
+        const c = @backingInt(k.window);
+        const y = y0 + pad + @as(f32, @floatFromInt(row[c] + 3)) * line_h;
+        _ = batch.textMono(col_x[c], y, k.key, theme.help_key);
+        _ = batch.textMono(col_x[c] + key_w[c] + sp, y, k.what, theme.help_text);
+        row[c] += 1;
+    }
+}
+
 /// A bar along the top of the panel that input goes to.
 fn targetBar(o: *Output, r: panels_mod.Rect) void {
     o.fills[o.nf] = .{ .rect = .{ .x = r.x, .y = r.y, .w = r.w, .h = 3 }, .colour = theme.target_bar };
@@ -1238,10 +1614,12 @@ pub const Text = struct {
     pub fn init(self: *Text, gpa: std.mem.Allocator, gpu: *Gpu, args: Args) void {
         var name_buf: [128]u8 = undefined;
         const family = std.fmt.bufPrintSentinel(&name_buf, "{s}", .{args.font}, 0) catch "sans-serif";
-        const f = font.Font.init(gpa, family, args.font_px) catch |e| {
+        var f = font.Font.init(gpa, family, args.font_px) catch |e| {
             log.warn("no font '{s}' ({t}): the display has no text", .{ args.font, e });
             return;
         };
+        // The key summary's fixed-width glyphs, in the same atlas (before it is uploaded).
+        f.addMono("monospace") catch |e| log.warn("no fixed-width font ({t}): the key summary uses '{s}'", .{ e, args.font });
         self.font = f;
         const vertices = gpa.alloc(font.Vertex, max_text_vertices) catch return;
         gpu.createText(f.atlas, font.atlas_size, max_text_vertices) catch |e| {
@@ -1279,16 +1657,25 @@ const testing = std.testing;
 var frame_atlas: [1]u8 = .{0};
 
 /// The hand-made font (as control.zig's test has it); a line height of 0 is a display
-/// without a font.
-fn frameFont(line_height: f32) font.Font {
+/// without a font. With `mono`, fixed-width glyphs too: 10 pixels wide, at atlas x 8 +
+/// `frame_mono_at` + (code point - 32).
+fn frameFont(line_height: f32, mono: bool) font.Font {
     var f: font.Font = .{ .atlas = &frame_atlas, .px = 14, .ascent = 12, .line_height = line_height };
     for (&f.glyphs, 0..) |*g, k| g.* = .{ .x = @intCast(8 + k), .y = 8, .w = 1, .h = 1, .top = 12, .advance = 8 };
+    if (mono) {
+        for (&f.mono, 0..) |*g, k| g.* = .{ .x = @intCast(8 + frame_mono_at + k), .y = 8, .w = 1, .h = 1, .top = 12, .advance = 10 };
+        f.has_mono = true;
+    }
     return f;
 }
 
-/// The code point of glyph `k` of `frameFont` (as `font.Font.glyph` numbers them).
+const frame_mono_at = 300;
+
+/// The code point of glyph `k` of `frameFont` (as `font.Font.glyph` numbers them, then
+/// the fixed-width ones from `frame_mono_at`).
 fn frameCodepoint(k: usize) u21 {
     const extra = [_]u21{ 0x03C3, 0x2013, 0x2192, 0x266A };
+    if (k >= frame_mono_at) return @intCast(32 + k - frame_mono_at);
     return if (k < 224) @intCast(32 + k) else extra[k - 224];
 }
 
@@ -1366,6 +1753,8 @@ const FrameState = struct {
     height: u32 = 700,
     hist_cap: usize = 1 << 20,
     no_text: bool = false,
+    /// The font has fixed-width glyphs.
+    mono: bool = false,
 
     fn panels(self: *FrameState, list: []const Panel) void {
         var set: panels_mod.Set = .{};
@@ -1455,6 +1844,11 @@ const frame_states = [_][]const u8{
     "focus in a triggered panel and a sweep panel",
     "focus: a threshold beyond the row's extent, clamped",
     "thinned labels: the focused row and the rows listened to are labelled all the same",
+    "dragging the focused row's line: drawn at the value dragged to",
+    "the trigger row in focus: one line, dashed, in the threshold's colour",
+    "review entered by Shift+wheel: three clicks back over Port A (5 s): 1.5 s behind",
+    "the key summary (?), in the fixed-width font",
+    "the key summary (?), without a fixed-width font",
 };
 
 /// Puts state `k` of `frame_states` into `st`.
@@ -1477,6 +1871,10 @@ fn frameState(st: *FrameState, k: usize) void {
         21 => focusHiddenState(st),
         22 => focusModesState(st),
         24 => thinnedMarksState(st),
+        25 => dragState(st),
+        26 => triggerFocusState(st),
+        27 => scrolledReviewState(st),
+        28, 29 => helpState(st, k == 28),
         else => unreachable,
     }
 }
@@ -1766,8 +2164,76 @@ fn focusModesState(st: *FrameState) void {
     st.feed(8, false);
 }
 
+/// As state 15 (the line on pixel row 103), the line taken hold of and dragged, the left
+/// button still down, to pixel row 130: its centre 130.5 is 28.887 px = 1.2793 R below row
+/// 5's centre at 101.6129, at 800 µV/row -1023.4 µV, fixed; the line drawn on 130.
+fn dragState(st: *FrameState) void {
+    focusLineState(st, 15);
+    st.display.size = .{ st.width, st.height };
+    st.display.pointAt(0.5, 103.5 / 700.0);
+    _ = st.display.applyInput(.{ .clicks = 1, .left_down = true });
+    st.display.pointAt(0.5, 130.5 / 700.0);
+    _ = st.display.applyInput(.{ .left_down = true });
+}
+
+/// Port A triggered on row 4 (channel 4, which has spikes), and channel 4 in focus: the
+/// trigger's dashed line alone, where the solid one would be: row 4's centre 4.5 R =
+/// 98.4375, -50 µV at 400 µV/row 0.125 R below: 101.17, the pixel row 101.
+fn triggerFocusState(st: *FrameState) void {
+    var a = focusPanel();
+    a.mode = .triggered;
+    a.setTrigSource(.channel);
+    a.trigger.row = 4;
+    st.panels(&.{a});
+    st.display.focus = 4;
+    st.reportAll(-50);
+    st.feed(2, true);
+}
+
+/// The panels of the review states, live, and then three clicks of Shift+wheel up over Port
+/// A (time base 5 s: 0.5 s a click) through `reviewActions` and `ReviewSession` (frozen:
+/// no recording): 45000 samples behind the newest.
+fn scrolledReviewState(st: *FrameState) void {
+    const session = @import("session.zig");
+    reviewState(st, 5);
+    var gpu: gpu_mod.Gpu = undefined;
+    gpu.hist_cap = st.hist_cap;
+    const layout = frameLayout();
+    var review: session.ReviewSession = .{};
+    review.queueInput(st.display.reviewActions(&.{ .scroll_y = -45, .shift = true }, frame_fs));
+    _ = review.step(.{
+        .gpa = testing.allocator,
+        .gpu = &gpu,
+        .layout = &layout,
+        .set = &st.display.set,
+        .target = st.display.target,
+        .newest = frame_newest,
+        .rec = null,
+    });
+    st.review = review.view(frame_newest, frame_fs);
+}
+
+/// The key summary over two panels, opened by `?` as typed (Shift+/), on a 1280 x 800
+/// display; `mono`: the font has fixed-width glyphs.
+fn helpState(st: *FrameState, mono: bool) void {
+    st.panels(&.{
+        framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0, .w = 0.5, .h = 1 }),
+        framePanel("Port B", .electrode, 32, 16, .{ .x = 0.5, .y = 0, .w = 0.5, .h = 1 }),
+    });
+    st.width = 1280;
+    st.height = 800;
+    st.mono = mono;
+    var in: Input = .{ .num_keys = 1, .shift = true };
+    in.keys[0] = .{ .char = '/' };
+    setText(&in.text, &in.text_len, "?");
+    st.display.helpKey(&in);
+    st.notes.handle(&in, frame_newest, "");
+    _ = st.display.applyInput(in);
+}
+
 /// Writes the batch's quads as rectangles and runs of text (glyphs on one row, of one
-/// colour, 8 pixels apart). Returns how many of each; with `w` null, only counts.
+/// colour, 8 pixels apart; "mono": fixed-width glyphs, 10 apart). Returns how many of
+/// each; with `w` null, only counts.
 fn writeQuads(w: ?*std.Io.Writer, verts: []const font.Vertex) !struct { rects: usize, runs: usize } {
     const quads = verts.len / 6;
     var rects: usize = 0;
@@ -1785,16 +2251,18 @@ fn writeQuads(w: ?*std.Io.Writer, verts: []const font.Vertex) !struct { rects: u
             continue;
         }
         runs += 1;
-        if (w) |out| try out.print("text {d} {d} {any} \"", .{ x, y, col });
+        const mono = v[0].uv[0] * font.atlas_size - 8 >= frame_mono_at;
+        if (w) |out| try out.print("{s} {d} {d} {any} \"", .{ if (mono) "mono" else "text", x, y, col });
         var next_x = x;
         while (q < quads) : (q += 1) {
             const g = verts[q * 6 ..][0..6];
             const gu = g[0].uv[0] * font.atlas_size;
             if (gu < 8 or g[0].pos[0] != next_x or g[0].pos[1] != y or !std.mem.eql(u8, &g[0].colour, &col)) break;
+            if ((gu - 8 >= frame_mono_at) != mono) break;
             var utf: [4]u8 = undefined;
             const n = std.unicode.utf8Encode(frameCodepoint(@intFromFloat(gu - 8)), &utf) catch unreachable;
             if (w) |out| try out.writeAll(utf[0..n]);
-            next_x += 8;
+            next_x += if (mono) 10 else 8;
         }
         if (w) |out| try out.writeAll("\"\n");
     }
@@ -1802,9 +2270,9 @@ fn writeQuads(w: ?*std.Io.Writer, verts: []const font.Vertex) !struct { rects: u
 }
 
 /// Runs `frame` on `st` and writes what it returned.
-fn writeFrame(w: *std.Io.Writer, name: []const u8, st: *const FrameState, gains: []f32, vertices: []font.Vertex) !void {
+fn writeFrame(w: *std.Io.Writer, name: []const u8, st: *FrameState, gains: []f32, vertices: []font.Vertex) !void {
     const layout = frameLayout();
-    const face = frameFont(if (st.no_text) 0 else 16);
+    const face = frameFont(if (st.no_text) 0 else 16, st.mono);
     var batch: font.Batch = .{ .font = &face, .vertices = vertices };
     var draws: [max_draws]gpu_mod.PanelDraw = undefined;
     var fills: [max_fills]gpu_mod.Fill = undefined;
@@ -1909,6 +2377,186 @@ test "the threshold line is on the pixel row where the shader draws a sample of 
     }
 }
 
+test "script steps: press, move and release drag a line; n toggles" {
+    const runScript = @import("script.zig").runScript;
+    var d = lineDisplay();
+    d.pointer_fy = 0;
+    const script = "0:pointer=0.25,0.1764;0:press;1:move=0.25,0.2;2:release;3:pointer=0.25,0.0186;3:n";
+    var pos: usize = 0;
+    var t: f64 = 0;
+    while (t < 4) : (t += 1) {
+        var in: Input = .{};
+        runScript(script, &pos, t, &in, &d);
+        if (d.scripted_target) |s| d.target = s;
+        _ = d.applyInput(in);
+        switch (@as(u32, @intFromFloat(t))) {
+            // 0.1764 x 700 = 123.5: on the focused row's line, pressed.
+            0 => try testing.expect(d.drag != null and d.drag.?.ch == 5 and in.left_down and in.clicks == 1),
+            // Held down without a step saying so; 0.2 x 700 = 140: channel 5 dragged there.
+            1 => {
+                try testing.expect(in.left_down and in.clicks == 0);
+                const p = &d.set.items[0];
+                try testing.expectEqual(140, levelPixelY(p, p.pixelRect(1000, 700), 5, d.thresholds.fixed_uv[5]).?);
+            },
+            2 => try testing.expect(d.drag == null and !in.left_down and !d.scripted_left),
+            // Row 0 (13 px down): n fixes channel 0 where it was reported.
+            else => try testing.expectEqual(-50, d.thresholds.fixed_uv[0]),
+        }
+    }
+}
+
+/// Input with the keys `keys` (characters, `\x1b` for Esc), typed text `text` and Shift
+/// held or not, as the window gives it.
+fn typedInput(keys: []const u8, text: []const u8, shift: bool) Input {
+    var in: Input = .{ .shift = shift, .num_keys = keys.len };
+    for (keys, 0..) |c, k| in.keys[k] = if (c == 0x1b) .{ .named = .escape } else .{ .char = c };
+    setText(&in.text, &in.text_len, text);
+    return in;
+}
+
+/// One turn of the display loop's key handling: the key summary, the notes, the display.
+/// True means quit.
+fn helpTurn(d: *Display, notes: *notes_mod.Notes, given: Input) bool {
+    var in = given;
+    if (!notes.editing) d.helpKey(&in);
+    notes.handle(&in, 1000, "");
+    return d.applyInput(in);
+}
+
+test "?: shows and hides the key summary and starts no note; / alone still does; Esc hides it, else quits" {
+    var d = clickDisplay(5);
+    var notes: notes_mod.Notes = .{};
+    // Shift+/ typing "?": shown, no note.
+    try testing.expect(!helpTurn(&d, &notes, typedInput("/", "?", true)));
+    try testing.expect(d.help and !notes.editing);
+    // While it is shown, other keys do what they do: m to sweep.
+    _ = helpTurn(&d, &notes, typedInput("m", "m", false));
+    try testing.expectEqual(.sweep, d.set.items[0].mode);
+    // ? again: hidden.
+    _ = helpTurn(&d, &notes, typedInput("/", "?", true));
+    try testing.expect(!d.help and !notes.editing);
+    // Shown again, then Esc: hidden, and no quitting.
+    _ = helpTurn(&d, &notes, typedInput("/", "?", true));
+    try testing.expect(!helpTurn(&d, &notes, typedInput("\x1b", "", false)));
+    try testing.expect(!d.help);
+    // Esc without it: quit. q quits with it shown, too.
+    try testing.expect(helpTurn(&d, &notes, typedInput("\x1b", "", false)));
+    _ = helpTurn(&d, &notes, typedInput("/", "?", true));
+    try testing.expect(helpTurn(&d, &notes, typedInput("q", "q", false)) and d.help);
+    d.help = false;
+    // Shift is read from the text, not the modifier state: "?" typed with Shift already
+    // let go is ?, and "/" typed with Shift still held (as reported) is /.
+    _ = helpTurn(&d, &notes, typedInput("/", "?", false));
+    try testing.expect(d.help and !notes.editing);
+    d.help = false;
+    _ = helpTurn(&d, &notes, typedInput("/", "/", true));
+    try testing.expect(!d.help and notes.editing);
+    // While a note is open, ? is part of it.
+    _ = helpTurn(&d, &notes, typedInput("/", "?", true));
+    try testing.expect(!d.help);
+    try testing.expectEqualStrings("?", notes.draft.text());
+    notes.editing = false;
+    // / then ? in one turn: a note for the /, the summary for the ?.
+    _ = helpTurn(&d, &notes, typedInput("//", "/?", true));
+    try testing.expect(d.help and notes.editing);
+    notes.editing = false;
+    d.help = false;
+    // Without a keymap there is no text: / with Shift held is ?.
+    _ = helpTurn(&d, &notes, typedInput("/", "", true));
+    try testing.expect(d.help and !notes.editing);
+    _ = helpTurn(&d, &notes, typedInput("/", "", false));
+    try testing.expect(d.help and notes.editing);
+}
+
+test "the key summary agrees with the usage text on the display's keys" {
+    const usage = @import("args.zig").usage;
+    const start = std.mem.indexOf(u8, usage, "\nOn the display").?;
+    const end = std.mem.indexOfPos(u8, usage, start + 1, "\n\n") orelse usage.len;
+    var lines = std.mem.splitScalar(u8, usage[start + 1 .. end], '\n');
+    _ = lines.next();
+    // Each line that names a key: two spaces, then the key up to a run of two spaces.
+    var k: usize = 0;
+    while (lines.next()) |line| {
+        if (line.len < 3 or line[2] == ' ') continue;
+        const key = line[2 .. std.mem.indexOfPos(u8, line, 2, "  ") orelse line.len];
+        while (k < key_help.len and key_help[k].window != .display) k += 1;
+        if (k == key_help.len or !std.mem.eql(u8, key_help[k].key, key)) {
+            const has = if (k < key_help.len) key_help[k].key else "nothing";
+            std.debug.print("usage lists '{s}' where the key summary has '{s}'\n", .{ key, has });
+            return error.TestUnexpectedResult;
+        }
+        k += 1;
+    }
+    while (k < key_help.len and key_help[k].window != .display) k += 1;
+    if (k < key_help.len) {
+        std.debug.print("the key summary has '{s}', the usage text does not\n", .{key_help[k].key});
+        return error.TestUnexpectedResult;
+    }
+    // Every line of the summary is ASCII, so the columns line up in the fixed-width font.
+    for (key_help) |h| {
+        for (h.key) |c| try testing.expect(c >= 0x20 and c < 0x7f);
+        for (h.what) |c| try testing.expect(c >= 0x20 and c < 0x7f);
+    }
+}
+
+test "script steps: swheel, awheel and l" {
+    const runScript = @import("script.zig").runScript;
+    var d = clickDisplay(5);
+    var pos: usize = 0;
+    var in: Input = .{};
+    runScript("0:swheel=-15", &pos, 0, &in, &d);
+    try testing.expect(in.shift and !in.alt and in.scroll_y == -15);
+    try testing.expectEqual(-6000, d.reviewActions(&in, frame_fs).scroll);
+    pos = 0;
+    in = .{};
+    runScript("0:awheel=30;0:l", &pos, 0, &in, &d);
+    try testing.expect(in.alt and !in.shift and in.scroll_y == 30);
+    const acts = d.reviewActions(&in, frame_fs);
+    try testing.expect(acts.len == 1 and acts.items[0] == .live and acts.scroll == 0);
+    // ? is Shift+/ typing "?": the key summary.
+    pos = 0;
+    in = .{};
+    runScript("0:?", &pos, 0, &in, &d);
+    try testing.expect(in.shift and in.keys[0].is('/') and std.mem.eql(u8, in.text[0..in.text_len], "?"));
+    d.helpKey(&in);
+    try testing.expect(d.help and in.num_keys == 0);
+}
+
+test "the trigger's dashed line is on the pixel row where the shader draws its level" {
+    const st = try testing.allocator.create(FrameState);
+    defer testing.allocator.destroy(st);
+    // The slope state: Port A's level fixed at -62 µV on row 4; Port B's latched from the
+    // noise on row 2 (where the dashes used to be put one pixel row low, at 114).
+    frameState(st, 3);
+    for ([_][3]f32{ .{ 0, 4, 81 }, .{ 1, 2, 113 } }) |c| {
+        const p = &st.display.set.items[@intFromFloat(c[0])];
+        const row: usize = @intFromFloat(c[1]);
+        const r = p.pixelRect(st.width, st.height);
+        const uv = st.display.thresholds.fixed_uv[p.first_ch + row];
+        const lines = st.display.panelLines(p, r);
+        try testing.expect(lines.len == 1 and lines.items[0].dashed and lines.items[0].y == c[2]);
+        try testing.expectEqual(c[2], levelPixelY(p, r, row, uv).?);
+        try testing.expect(@abs(c[2] + 0.5 - shaderPixelY(p, r, row, uv)) <= 0.5 + 1e-3);
+    }
+}
+
+test "a dragged line is drawn where the shader draws a sample of the value it set" {
+    const st = try testing.allocator.create(FrameState);
+    defer testing.allocator.destroy(st);
+    const vertices = try testing.allocator.alloc(font.Vertex, max_text_vertices);
+    defer testing.allocator.free(vertices);
+    frameState(st, 25);
+    const p = &st.display.set.items[0];
+    const r = p.pixelRect(st.width, st.height);
+    const uv = st.display.thresholds.fixed_uv[5];
+    try testing.expectApproxEqAbs(-1023.4, uv, 0.05);
+    try testing.expectEqual(130, levelPixelY(p, r, 5, uv).?);
+    try testing.expect(@abs(130 + 0.5 - shaderPixelY(p, r, 5, uv)) <= 0.5 + 1e-3);
+    const quads = try thresholdRects(st, vertices);
+    try testing.expectEqual(1, quads.len);
+    try testing.expectEqual([4]f32{ 0, 130, 1000, 1 }, quads.items[0]);
+}
+
 const ThresholdRects = struct {
     items: [8][4]f32 = undefined,
     len: usize = 0,
@@ -1919,9 +2567,9 @@ const ThresholdRects = struct {
 
 /// The rectangles in the colour of the threshold line that `frame` draws for `st`, as
 /// x, y, w, h.
-fn thresholdRects(st: *const FrameState, vertices: []font.Vertex) !ThresholdRects {
+fn thresholdRects(st: *FrameState, vertices: []font.Vertex) !ThresholdRects {
     const layout = frameLayout();
-    const face = frameFont(16);
+    const face = frameFont(16, false);
     var batch: font.Batch = .{ .font = &face, .vertices = vertices };
     var draws: [max_draws]gpu_mod.PanelDraw = undefined;
     var fills: [max_fills]gpu_mod.Fill = undefined;
@@ -2115,7 +2763,7 @@ test "latching: without a report, after the trigger's first second of signal" {
     try testing.expectEqual(-33, e.thresholds.fixed_uv[9]);
 }
 
-test "latching: only a panel in triggered mode latches; a triggered channel is not returned to the noise" {
+test "latching: only a panel in triggered mode latches; a trigger channel can be returned to the noise" {
     var d = clickDisplay(0);
     d.reported.uv[3] = -42;
     d.reported.len = 32;
@@ -2129,10 +2777,13 @@ test "latching: only a panel in triggered mode latches; a triggered channel is n
     in.keys[0] = .{ .char = 't' };
     _ = d.applyInput(in);
     try testing.expectEqual(-42, d.thresholds.fixed_uv[3]);
-    // Back to the noise: refused while triggered on; another channel goes.
+    // Back to the noise: allowed while triggered on (the control window's "follow", and
+    // the tile window's request with 0), and so is any other channel.
     d.applyThreshold(.{ .follow = 3 });
+    try testing.expect(!d.thresholds.isFixed(3));
+    d.setThreshold(3, -42);
     d.applyThreshold(.{ .set = .{ .channel = 3, .uv = 0 } });
-    try testing.expectEqual(-42, d.thresholds.fixed_uv[3]);
+    try testing.expect(!d.thresholds.isFixed(3));
     d.thresholds.set(12, -70);
     d.applyThreshold(.{ .follow = 12 });
     try testing.expect(!d.thresholds.isFixed(12));
@@ -2148,6 +2799,255 @@ test "latching: only a panel in triggered mode latches; a triggered channel is n
     // The global sigmas: one step.
     d.applyThreshold(.{ .sigmas = true });
     try testing.expectEqual(5, d.thresholds.sigmas);
+}
+
+/// The `n` key, over whatever row the pointer is on.
+fn keyInput(c: u8) Input {
+    var in: Input = .{ .num_keys = 1 };
+    in.keys[0] = .{ .char = c };
+    return in;
+}
+
+test "latching once: a trigger channel put back to the noise stays there until triggering starts anew" {
+    var d = triggeredDisplay(7);
+    for (0..32) |ch| d.reported.uv[ch] = -40 - @as(f32, @floatFromInt(ch));
+    d.reported.len = 32;
+    _ = d.applyInput(keyInput('s'));
+    try testing.expectEqual(-47, d.thresholds.fixed_uv[7]);
+    // n over row 7: back to the noise. Neither input, nor blocks with reports, nor the
+    // slope trigger's own second of signal latch it again.
+    _ = d.applyInput(keyInput('n'));
+    try testing.expect(!d.thresholds.isFixed(7));
+    _ = d.applyInput(.{});
+    _ = feedNoise(&d, 0, 1.5);
+    try testing.expect(!d.thresholds.isFixed(7));
+    // It triggers at sigmas x its own sigma, continuously.
+    try testing.expect(d.slopes[0].?.settings.auto and d.slopes[0].?.settings.auto_sigmas == 4.5);
+    // Starting anew (t out of triggered mode and back): latched again where reported.
+    _ = d.applyInput(keyInput('t'));
+    try testing.expect(!d.thresholds.isFixed(7));
+    d.reported.uv[7] = -52;
+    _ = d.applyInput(keyInput('t'));
+    try testing.expectEqual(-52, d.thresholds.fixed_uv[7]);
+    // The control window's "follow" the same: it stays with the noise.
+    d.applyThreshold(.{ .follow = 7 });
+    _ = feedNoise(&d, 45000, 0.1);
+    try testing.expect(!d.thresholds.isFixed(7));
+    // A config that triggers on a channel from the start owes it a latch: paid with the
+    // first block that comes with a report.
+    var e = triggeredDisplay(0);
+    e.set.items[0].setTrigSource(.channel);
+    e.set.items[0].trigger.row = 3;
+    _ = feedNoise(&e, 0, 0.01);
+    try testing.expect(!e.thresholds.isFixed(3) and e.owes_latch[0]);
+    e.reported.uv[3] = -61;
+    e.reported.len = 32;
+    _ = feedNoise(&e, 300, 0.01);
+    try testing.expectEqual(-61, e.thresholds.fixed_uv[3]);
+    try testing.expect(!e.owes_latch[0]);
+    // A channel already fixed when the panel begins owes nothing.
+    var f = triggeredDisplay(0);
+    f.thresholds.set(3, 75);
+    f.applyPanelEdit(0, .{ .trig_source = .channel });
+    f.applyPanelEdit(0, .{ .trig_row = 3 });
+    try testing.expect(!f.owes_latch[0]);
+    f.applyThreshold(.{ .follow = 3 });
+    f.reported.uv[3] = -30;
+    f.reported.len = 32;
+    _ = feedNoise(&f, 0, 0.01);
+    try testing.expect(!f.thresholds.isFixed(3));
+}
+
+test "n: fixed -> following the noise -> fixed at its present value; nothing without a value or off an electrode row" {
+    var d = clickDisplay(5);
+    d.reported.uv[5] = -50;
+    d.reported.len = 6;
+    d.setThreshold(5, 80);
+    _ = d.applyInput(keyInput('n'));
+    try testing.expect(!d.thresholds.isFixed(5));
+    _ = d.applyInput(keyInput('n'));
+    try testing.expectEqual(-50, d.thresholds.fixed_uv[5]);
+    _ = d.applyInput(keyInput('n'));
+    try testing.expect(!d.thresholds.isFixed(5));
+    // Row 9: no value known; nothing happens.
+    d.pointer_fy = 9.5 / 32.0;
+    _ = d.applyInput(keyInput('n'));
+    try testing.expect(!d.thresholds.isFixed(9));
+    // Over AUX: nothing (channel 48 + row is not an electrode).
+    d.target = 1;
+    d.setThreshold(5, -70);
+    d.pointer_fy = 5.5 / 32.0;
+    _ = d.applyInput(keyInput('n'));
+    try testing.expectEqual(-70, d.thresholds.fixed_uv[5]);
+}
+
+test "the value at a pixel row and the pixel row of a value round-trip" {
+    // Rows of every height the stored states have, with hidden rows and own scales.
+    var a = framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0.25, .w = 0.5, .h = 0.7 });
+    a.per_row.hidden.set(2, true);
+    a.per_row.gain[5] = 2;
+    a.per_row.gain[6] = 0.37;
+    a.scale = 137;
+    for ([_][2]u32{ .{ 1000, 700 }, .{ 320, 180 }, .{ 1920, 1080 }, .{ 777, 333 } }) |size| {
+        const r = a.pixelRect(size[0], size[1]);
+        for ([_]usize{ 0, 5, 6, 31 }) |row| {
+            const top = levelPixelY(&a, r, row, a.rowScale(row) * 1.5).?;
+            const bottom = levelPixelY(&a, r, row, -a.rowScale(row) * 1.5).?;
+            // Every pixel row within ±1.5 rows: its value is drawn on that row again.
+            var y = top;
+            while (y <= bottom) : (y += 1) {
+                const v = levelAtPixelY(&a, r, row, y).?;
+                try testing.expectEqual(y, levelPixelY(&a, r, row, v).?);
+            }
+            // And a value's pixel row gives back that value to within half a pixel.
+            var v: f64 = -1.4 * a.rowScale(row);
+            while (v < 1.4 * a.rowScale(row)) : (v += 0.0371 * a.rowScale(row)) {
+                const back = levelAtPixelY(&a, r, row, levelPixelY(&a, r, row, v).?).?;
+                const half_px = 0.5 * a.rowScale(row) / (@as(f64, @floatFromInt(r.h)) / 31.0);
+                try testing.expect(@abs(back - v) <= half_px + 1e-9);
+            }
+            // Beyond ±1.5 rows: the value at the clamp.
+            try testing.expectEqual(1.5 * a.rowScale(row), levelAtPixelY(&a, r, row, top - 30).?);
+        }
+        // A hidden row has neither.
+        try testing.expectEqual(null, levelAtPixelY(&a, r, 2, 100));
+    }
+}
+
+/// Port A (left half, 1000 x 700 drawn) filtered 300-6000 Hz, triggered on row 9, channel
+/// 5 in focus, every channel reported at -50 µV: the focus line on pixel row 123 (as in
+/// the stored state 22), the trigger's at 210 (row 9's centre 9.5 R = 207.8125, -50 µV at
+/// 400 µV/row 0.125 R below: 210.547).
+fn lineDisplay() Display {
+    var d = clickDisplay(0);
+    const p = &d.set.items[0];
+    p.filter.on = true;
+    p.mode = .triggered;
+    p.setTrigSource(.channel);
+    p.trigger.row = 9;
+    d.focus = 5;
+    for (0..32) |ch| d.reported.uv[ch] = -50;
+    d.reported.len = 32;
+    d.size = .{ 1000, 700 };
+    d.updateLatches();
+    return d;
+}
+
+/// The pointer at pixel (x, y) of the 1000 x 700 display (the panel under it found as
+/// `pointAt` would).
+fn pointerAt(d: *Display, x: f64, y: f64) void {
+    d.pointAt(x / 1000, (y + 0.5) / 700);
+}
+
+test "a threshold line is taken hold of within 4 px, inside its panel, only where one is drawn" {
+    var d = lineDisplay();
+    const r = d.set.items[0].pixelRect(1000, 700);
+    const lines = d.panelLines(&d.set.items[0], r);
+    try testing.expectEqual(2, lines.len);
+    try testing.expect(lines.items[0].dashed and lines.items[0].ch == 9 and lines.items[0].y == 210);
+    try testing.expect(!lines.items[1].dashed and lines.items[1].ch == 5 and lines.items[1].y == 123);
+    // Over each line and up to 4 pixel rows from it: a hand; 5 away: not.
+    for ([_]f32{ 123, 210 }) |at| {
+        for ([_]f32{ -5, -4, 0, 4, 5 }) |off| {
+            pointerAt(&d, 250, at + off);
+            _ = d.applyInput(.{});
+            try testing.expectEqual(if (@abs(off) <= 4) Cursor.grab else Cursor.default, d.cursor);
+        }
+    }
+    // The pointer outside the panel (over AUX, at the same height), with input still
+    // going to Port A: nothing.
+    d.pointer_fx = 0.6;
+    d.pointer_fy = 123.5 / 700.0;
+    _ = d.applyInput(.{});
+    try testing.expectEqual(Cursor.default, d.cursor);
+    // No line where none is drawn: the focused row raw ("thr"), the trigger's level not
+    // known (no report, following the noise).
+    d = lineDisplay();
+    d.set.items[0].per_row.raw.set(5, true);
+    d.thresholds.follow(9);
+    d.reported.len = 0;
+    for ([_]f32{ 123, 210 }) |at| {
+        pointerAt(&d, 250, at);
+        _ = d.applyInput(.{});
+        try testing.expectEqual(Cursor.default, d.cursor);
+    }
+    // Before anything is drawn the display has no size: nothing to take hold of.
+    d = lineDisplay();
+    d.size = .{ 0, 0 };
+    pointerAt(&d, 250, 123);
+    _ = d.applyInput(.{});
+    try testing.expectEqual(Cursor.default, d.cursor);
+}
+
+test "dragging a threshold line: fixed at the value under the pointer, the sign by the side; no focus, no trigger moved" {
+    var d = lineDisplay();
+    const p = &d.set.items[0];
+    const r = p.pixelRect(1000, 700);
+    // Press on the trigger's line (channel 9): the line's, not a click on row 9 (which
+    // would focus channel 9).
+    pointerAt(&d, 250, 211);
+    _ = d.applyInput(.{ .clicks = 1, .left_down = true });
+    try testing.expectEqual(Cursor.grabbing, d.cursor);
+    try testing.expectEqual(5, d.focus.?);
+    try testing.expectEqual(-50, d.thresholds.fixed_uv[9]);
+    // Not moved off the pixel row yet: unchanged.
+    _ = d.applyInput(.{ .left_down = true });
+    try testing.expectEqual(-50, d.thresholds.fixed_uv[9]);
+    // Down to 230: below the centre, falling, under the pointer.
+    pointerAt(&d, 250, 230);
+    _ = d.applyInput(.{ .left_down = true });
+    try testing.expectApproxEqAbs(@as(f32, (207.8125 - 230.5) / 21.875 * 400), d.thresholds.fixed_uv[9], 1e-3);
+    try testing.expectEqual(230, levelPixelY(p, r, 9, d.thresholds.fixed_uv[9]).?);
+    // Up across the centre to 205 (over row 9, with the pointer off the panel's other
+    // line): rising.
+    pointerAt(&d, 250, 205);
+    _ = d.applyInput(.{ .left_down = true });
+    try testing.expect(d.thresholds.fixed_uv[9] > 0);
+    try testing.expectEqual(205, levelPixelY(p, r, 9, d.thresholds.fixed_uv[9]).?);
+    // Through the focused row's line and beyond the panel's other rows: still channel 9's
+    // drag, clamped at 1.5 rows.
+    pointerAt(&d, 600, 120);
+    _ = d.applyInput(.{ .left_down = true, .clicks = 1 });
+    try testing.expectEqual(600, d.thresholds.fixed_uv[9]);
+    try testing.expectEqual(0, d.target);
+    try testing.expect(d.focus.? == 5 and p.trigger.row == 9);
+    // Released: the drag ends, the threshold stays; the line is at the clamp (175), and the
+    // pointer over it is a hand.
+    _ = d.applyInput(.{});
+    try testing.expectEqual(null, d.drag);
+    try testing.expectEqual(600, d.thresholds.fixed_uv[9]);
+    pointerAt(&d, 250, 175);
+    _ = d.applyInput(.{});
+    try testing.expectEqual(Cursor.grab, d.cursor);
+    // The focused row's line: a press there does not move the trigger to row 5.
+    pointerAt(&d, 250, 123);
+    _ = d.applyInput(.{ .clicks = 1, .left_down = true });
+    pointerAt(&d, 250, 130);
+    _ = d.applyInput(.{ .left_down = true });
+    _ = d.applyInput(.{});
+    try testing.expectEqual(9, p.trigger.row);
+    try testing.expectEqual(130, levelPixelY(p, r, 5, d.thresholds.fixed_uv[5]).?);
+    // Pressed and let go within one turn on a line: nothing at all.
+    const was = d.thresholds.fixed_uv[5];
+    pointerAt(&d, 250, 132);
+    _ = d.applyInput(.{ .clicks = 1 });
+    try testing.expect(d.drag == null and d.thresholds.fixed_uv[5] == was and p.trigger.row == 9 and d.focus.? == 5);
+    // A click elsewhere does what it did: focus row 12, and the trigger moves there.
+    pointerAt(&d, 250, 12.5 * 21.875);
+    _ = d.applyInput(.{ .clicks = 1 });
+    try testing.expect(d.focus.? == 12 and p.trigger.row == 12);
+    // Clamped as Thresholds.set clamps: at 50 µV/row, pixel row 119 (just above row 5's
+    // centre at 120.3125) is 1.86 µV, kept at 5 µV, rising; 120 just below, -5 µV.
+    d = lineDisplay();
+    d.set.items[0].scale = 50;
+    pointerAt(&d, 250, levelPixelY(&d.set.items[0], r, 5, -50).?);
+    _ = d.applyInput(.{ .clicks = 1, .left_down = true });
+    pointerAt(&d, 250, 119);
+    _ = d.applyInput(.{ .left_down = true });
+    try testing.expectEqual(5, d.thresholds.fixed_uv[5]);
+    pointerAt(&d, 250, 120);
+    _ = d.applyInput(.{ .left_down = true });
+    try testing.expectEqual(-5, d.thresholds.fixed_uv[5]);
 }
 
 test "a trigger channel's threshold that changes sides starts the slope trigger afresh" {
@@ -2214,4 +3114,115 @@ test "Shift+a acknowledges an alarm, a alone does not" {
     in.shift = true;
     _ = d.applyInput(in);
     try testing.expect(d.acknowledged);
+}
+
+test "the wheel: plain the Y scale, Alt the time base, Shift and sideways move through time" {
+    var d = clickDisplay(5);
+    const p = &d.set.items[0];
+    const grow = @exp(15 * 0.0093);
+    // Plain: the scale; nothing for review.
+    _ = d.applyInput(.{ .scroll_y = 15 });
+    try testing.expectApproxEqRel(400 * grow, p.scale, 1e-9);
+    try testing.expectEqual(2, p.span_s);
+    try testing.expectEqual(0, d.reviewScroll(&.{ .scroll_y = 15 }, frame_fs));
+    // Alt: the time base, either axis; not the scale, not review.
+    _ = d.applyInput(.{ .scroll_y = 15, .alt = true });
+    try testing.expectApproxEqRel(2 * grow, p.span_s, 1e-9);
+    _ = d.applyInput(.{ .scroll_x = -15, .alt = true });
+    try testing.expectApproxEqRel(2, p.span_s, 1e-9);
+    try testing.expectApproxEqRel(400 * grow, p.scale, 1e-9);
+    try testing.expectEqual(0, d.reviewScroll(&.{ .scroll_y = 15, .alt = true }, frame_fs));
+    // In triggered mode: the window around the trigger.
+    p.mode = .triggered;
+    const pre = p.trigger.pre_ms;
+    _ = d.applyInput(.{ .scroll_y = -15, .alt = true });
+    try testing.expectApproxEqRel(pre / grow, p.trigger.pre_ms, 1e-9);
+    p.mode = .scroll;
+    // Shift: neither the scale nor the time base, but a tenth of the 2 s time base per
+    // click: 6000 samples, back for wheel up; proportionally for less.
+    _ = d.applyInput(.{ .scroll_y = -15, .shift = true });
+    try testing.expectApproxEqRel(400 * grow, p.scale, 1e-9);
+    try testing.expectApproxEqRel(2, p.span_s, 1e-9);
+    try testing.expectEqual(-6000, d.reviewScroll(&.{ .scroll_y = -15, .shift = true }, frame_fs));
+    try testing.expectEqual(12000, d.reviewScroll(&.{ .scroll_y = 30, .shift = true }, frame_fs));
+    try testing.expectEqual(-1000, d.reviewScroll(&.{ .scroll_x = -2.5, .shift = true }, frame_fs));
+    // Sideways, mostly: the same, and no scale; mostly vertical: the scale, no review.
+    try testing.expectEqual(-3000, d.reviewScroll(&.{ .scroll_x = -7.5, .scroll_y = 1 }, frame_fs));
+    _ = d.applyInput(.{ .scroll_x = -7.5, .scroll_y = 1 });
+    try testing.expectApproxEqRel(400 * grow, p.scale, 1e-9);
+    try testing.expectEqual(0, d.reviewScroll(&.{ .scroll_x = 1, .scroll_y = 7.5 }, frame_fs));
+    // Over a triggered panel: the step of the longest panel that is not (here AUX, 2 s,
+    // lengthened to 5 s).
+    p.mode = .triggered;
+    d.set.items[1].span_s = 5;
+    try testing.expectEqual(-15000, d.reviewScroll(&.{ .scroll_y = -15, .shift = true }, frame_fs));
+}
+
+test "review by the wheel: back from live enters, forward to the live edge leaves; l and the keys" {
+    const session = @import("session.zig");
+    var d = clickDisplay(5);
+    const layout = frameLayout();
+    var gpu: gpu_mod.Gpu = undefined;
+    gpu.hist_cap = 1 << 22;
+    var review: session.ReviewSession = .{};
+    defer review.deinit();
+    var newest: i64 = 10_000_000;
+    const Step = struct {
+        fn run(r: *session.ReviewSession, dsp: *const Display, in: Input, g: *gpu_mod.Gpu, l: *const oez.types.Layout, now: i64) void {
+            r.queueInput(dsp.reviewActions(&in, frame_fs));
+            const ctx: session.ReviewSession.Context = .{
+                .gpa = testing.allocator,
+                .gpu = g,
+                .layout = l,
+                .set = &dsp.set,
+                .target = dsp.target,
+                .newest = now,
+                .rec = null,
+            };
+            _ = r.step(ctx);
+        }
+    };
+    // Forward while live: nothing; not even entering and leaving again (which, while
+    // recording, would open the review reader on the file): the position is untouched.
+    Step.run(&review, &d, .{ .scroll_y = 15, .shift = true }, &gpu, &layout, newest);
+    try testing.expect(!review.active);
+    try testing.expectEqual(0, review.view_end);
+    // Back two clicks: in review, 12000 samples (0.4 s) behind.
+    Step.run(&review, &d, .{ .scroll_y = -30, .shift = true }, &gpu, &layout, newest);
+    try testing.expect(review.active);
+    try testing.expectEqual(newest - 12000, review.view(newest, frame_fs).?.end);
+    // Sideways forward one click: 6000 behind; still in review.
+    Step.run(&review, &d, .{ .scroll_x = 15 }, &gpu, &layout, newest);
+    try testing.expectEqual(newest - 6000, review.view(newest, frame_fs).?.end);
+    // Time passes (a frozen view stays where it is), forward a click: 3000 behind the
+    // newest sample now, not yet live.
+    newest += 3000;
+    Step.run(&review, &d, .{ .scroll_y = 15, .shift = true }, &gpu, &layout, newest);
+    try testing.expect(review.active);
+    try testing.expectEqual(newest - 3000, review.view(newest, frame_fs).?.end);
+    // Forward to the live edge (past it, here): out of review.
+    Step.run(&review, &d, .{ .scroll_y = 15, .shift = true }, &gpu, &layout, newest);
+    try testing.expect(!review.active);
+    try testing.expectEqual(null, review.view(newest, frame_fs));
+    // In again, then l: live.
+    Step.run(&review, &d, .{ .scroll_y = -15, .shift = true }, &gpu, &layout, newest);
+    try testing.expect(review.active);
+    Step.run(&review, &d, keyInput('l'), &gpu, &layout, newest);
+    try testing.expect(!review.active);
+    // The keys as before: Space freezes, Left steps back, End is live.
+    Step.run(&review, &d, keyInput(' '), &gpu, &layout, newest);
+    try testing.expect(review.active);
+    var in: Input = .{ .num_keys = 2 };
+    in.keys[0] = .{ .named = .left };
+    in.keys[1] = .{ .char = 'l' };
+    const acts = d.reviewActions(&in, frame_fs);
+    try testing.expectEqual(2, acts.len);
+    try testing.expect(acts.items[0] == .back and acts.items[1] == .live);
+    in.keys[0] = .{ .named = .end };
+    in.num_keys = 1;
+    Step.run(&review, &d, in, &gpu, &layout, newest);
+    try testing.expect(!review.active);
+    // Alt+wheel never moves through time.
+    Step.run(&review, &d, .{ .scroll_y = -15, .alt = true }, &gpu, &layout, newest);
+    try testing.expect(!review.active);
 }

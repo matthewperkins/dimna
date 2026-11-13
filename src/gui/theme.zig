@@ -52,8 +52,10 @@ pub const tint_pulse: Colour = .{ 90, 150, 255, 30 };
 
 /// The vertical line at the trigger (t0).
 pub const trigger_line: Colour = .{ 200, 210, 230, 150 };
-/// A slope trigger's level: the dashed line across its row.
-pub const trigger_level: Colour = .{ 255, 205, 120, 200 };
+/// A slope trigger's level: the dashed line across its row. It is the trigger channel's
+/// detection threshold, so it is in the threshold's colour; the dashes say it is the
+/// trigger's.
+pub const trigger_level: Colour = tile_threshold;
 
 // Display: bars and badges.
 
@@ -69,6 +71,17 @@ pub const bar_text: Colour = .{ 255, 255, 255, 255 };
 pub const alarm_hint_text: Colour = .{ 255, 210, 210, 255 };
 /// The REVIEW badge's text.
 pub const review_badge_text: Colour = .{ 255, 240, 200, 255 };
+
+// Display: the key summary (`?`).
+
+/// The box behind it: nearly opaque, so the traces do not show through the text.
+pub const help_backing: Colour = .{ 14, 16, 22, 245 };
+/// Its title and the two columns' headings.
+pub const help_title: Colour = .{ 225, 230, 240, 255 };
+/// A key or mouse action.
+pub const help_key: Colour = .{ 150, 200, 255, 255 };
+/// What it does.
+pub const help_text: Colour = .{ 175, 184, 200, 255 };
 
 // Display: fills (`gpu.Fill`, `[4]f32`).
 
