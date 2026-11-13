@@ -524,12 +524,12 @@ pub fn notesStatus(notes: *const notes_mod.Notes, fs: f64) control.NotesStatus {
     for (&st.recent, 0..) |*line, k| {
         const note = notes.recentNote(k) orelse break;
         line.seconds = @as(f64, @floatFromInt(note.sample)) / fs;
-        line.len = @min(note.len, line.buf.len);
+        line.len = notes_mod.prefix(note.text(), line.buf.len).len;
         @memcpy(line.buf[0..line.len], note.buf[0..line.len]);
         st.num_recent = k + 1;
     }
     for (&st.presets, &notes.presets) |*line, *pr| {
-        line.len = @min(pr.len, 20);
+        line.len = notes_mod.prefix(pr.text(), 20).len;
         @memcpy(line.buf[0..line.len], pr.buf[0..line.len]);
     }
     return st;

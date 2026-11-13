@@ -133,9 +133,37 @@ pub const Font = struct {
     /// Width of `text` (UTF-8) in pixels.
     pub fn width(self: *const Font, text: []const u8) f32 {
         var w: f32 = 0;
-        var it: std.unicode.Utf8Iterator = .{ .bytes = text, .i = 0 };
-        while (it.nextCodepoint()) |cp| w += self.glyph(cp).advance;
+        var it: Codepoints = .{ .bytes = text };
+        while (it.next()) |cp| w += self.glyph(cp).advance;
         return w;
+    }
+};
+
+/// The code points of text that should be UTF-8 but may not be (a note cut in the middle
+/// of a character, a file name). A byte that does not begin a valid sequence comes out as
+/// U+FFFD, and nothing is read past the end: drawing text must never be what stops the
+/// program. (`std.unicode.Utf8Iterator` assumes valid input and reads out of bounds on a
+/// cut sequence.)
+pub const Codepoints = struct {
+    bytes: []const u8,
+    i: usize = 0,
+
+    pub fn next(self: *Codepoints) ?u21 {
+        if (self.i >= self.bytes.len) return null;
+        const n = std.unicode.utf8ByteSequenceLength(self.bytes[self.i]) catch {
+            self.i += 1;
+            return 0xFFFD;
+        };
+        if (self.i + n > self.bytes.len) {
+            self.i = self.bytes.len;
+            return 0xFFFD;
+        }
+        const cp = std.unicode.utf8Decode(self.bytes[self.i..][0..n]) catch {
+            self.i += 1;
+            return 0xFFFD;
+        };
+        self.i += n;
+        return cp;
     }
 };
 
@@ -208,8 +236,8 @@ pub const Batch = struct {
     pub fn text(self: *Batch, x: f32, y: f32, string: []const u8, colour: Colour) f32 {
         var pen = @round(x);
         const baseline = @round(y) + @round(self.font.ascent);
-        var it: std.unicode.Utf8Iterator = .{ .bytes = string, .i = 0 };
-        while (it.nextCodepoint()) |cp| {
+        var it: Codepoints = .{ .bytes = string };
+        while (it.next()) |cp| {
             const g = self.font.glyph(cp);
             if (g.w > 0 and g.h > 0) {
                 const gx = pen + @as(f32, @floatFromInt(g.left));
@@ -237,3 +265,30 @@ pub const Batch = struct {
         return self.text(x, y, string, colour) + 3;
     }
 };
+
+test "code points of text that is not valid UTF-8 never read past the end" {
+    const expect = std.testing.expectEqual;
+    // Valid: one, two and three bytes.
+    var it: Codepoints = .{ .bytes = "a\u{e9}\u{3c3}\u{2013}" };
+    try expect('a', it.next().?);
+    try expect(0xe9, it.next().?);
+    try expect(0x3c3, it.next().?);
+    try expect(0x2013, it.next().?);
+    try expect(null, it.next());
+    // Cut in the middle of a two-byte and of a three-byte character.
+    it = .{ .bytes = "ab\xc3" };
+    try expect('a', it.next().?);
+    try expect('b', it.next().?);
+    try expect(0xFFFD, it.next().?);
+    try expect(null, it.next());
+    it = .{ .bytes = "\xe2\x80" };
+    try expect(0xFFFD, it.next().?);
+    try expect(null, it.next());
+    // A continuation byte on its own, and a lead byte followed by something else.
+    it = .{ .bytes = "\x80x\xc3y" };
+    try expect(0xFFFD, it.next().?);
+    try expect('x', it.next().?);
+    try expect(0xFFFD, it.next().?);
+    try expect('y', it.next().?);
+    try expect(null, it.next());
+}

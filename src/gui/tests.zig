@@ -4,7 +4,9 @@
 //! instance or opens a sound device: they are the GUI's pure logic.
 
 test {
+    _ = @import("args.zig");
     _ = @import("control.zig");
+    _ = @import("font.zig");
     _ = @import("notes.zig");
     _ = @import("tiles.zig");
     _ = @import("ui.zig");

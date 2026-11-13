@@ -24,6 +24,16 @@ const log = std.log.scoped(.notes);
 
 pub const max_text = 200;
 
+/// The longest beginning of `s` of at most `max` bytes that does not end inside a UTF-8
+/// character. Text is cut with this wherever it is copied into a smaller buffer or shown
+/// shortened.
+pub fn prefix(s: []const u8, max: usize) []const u8 {
+    if (s.len <= max) return s;
+    var n = max;
+    while (n > 0 and s[n] & 0xC0 == 0x80) n -= 1;
+    return s[0..n];
+}
+
 pub const Note = struct {
     sample: i64 = 0,
     buf: [max_text]u8 = undefined,
@@ -33,7 +43,7 @@ pub const Note = struct {
         return self.buf[0..self.len];
     }
     fn set(self: *Note, s: []const u8) void {
-        self.len = @min(s.len, self.buf.len);
+        self.len = prefix(s, self.buf.len).len;
         @memcpy(self.buf[0..self.len], s[0..self.len]);
     }
 };
@@ -108,13 +118,20 @@ pub const Notes = struct {
                 else => {},
             };
             if (done == .no or done == .save or done == .keep) {
-                for (in.text[0..in.text_len]) |ch| {
+                // Whole characters only: a note that is full takes no part of one.
+                const typed = in.text[0..in.text_len];
+                var at: usize = 0;
+                while (at < typed.len) {
+                    const ch = typed[at];
+                    const n = std.unicode.utf8ByteSequenceLength(ch) catch 1;
+                    if (at + n > typed.len) break;
+                    defer at += n;
                     // The key that ends the note is not part of it.
                     if (ch == '\\' or ch == '\t' or ch == '\r' or ch == '\n') continue;
-                    if (self.draft.len < self.draft.buf.len) {
-                        self.draft.buf[self.draft.len] = ch;
-                        self.draft.len += 1;
-                    }
+                    if (ch & 0xC0 == 0x80) continue; // a stray continuation byte
+                    if (self.draft.len + n > self.draft.buf.len) break;
+                    @memcpy(self.draft.buf[self.draft.len..][0..n], typed[at..][0..n]);
+                    self.draft.len += n;
                 }
             }
             switch (done) {
@@ -482,4 +499,33 @@ test "a saved note is one line in the log: time, sample, session, text" {
     }
     try testing.expectEqualStrings("", lines.next().?);
     try testing.expectEqual(null, lines.next());
+}
+
+test "a full note takes no part of a character, and text is cut between characters" {
+    var n: Notes = .{};
+    var in: Input = .{};
+    in.keys[0] = .slash;
+    in.num_keys = 1;
+    n.handle(&in, 0, "");
+    try testing.expect(n.editing);
+    // 199 bytes, then a two-byte character: it does not fit and is left out whole.
+    var k: usize = 0;
+    while (k < 199) : (k += 1) {
+        in = .{};
+        in.text[0] = 'a';
+        in.text_len = 1;
+        n.handle(&in, 0, "");
+    }
+    in = .{};
+    @memcpy(in.text[0..3], "\u{e9}b");
+    in.text_len = 3;
+    n.handle(&in, 0, "");
+    try testing.expectEqual(199, n.draft.len);
+    try testing.expect(std.unicode.utf8ValidateSlice(n.draft.text()));
+
+    try testing.expectEqualStrings("ab", prefix("ab\u{e9}", 3));
+    try testing.expectEqualStrings("ab\u{e9}", prefix("ab\u{e9}", 4));
+    try testing.expectEqualStrings("", prefix("\u{2013}", 2));
+    try testing.expectEqualStrings("abc", prefix("abc", 10));
+    try testing.expectEqualStrings("", prefix("abc", 0));
 }

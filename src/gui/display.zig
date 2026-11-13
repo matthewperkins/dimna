@@ -525,7 +525,7 @@ pub const Display = struct {
                     if (at > t_end) continue;
                     const x = px + @as(f32, @floatCast(w * @as(f64, @floatFromInt(at - from)) / span));
                     batch.rect(@round(x), py, 1, @floatFromInt(r.h), .{ 255, 205, 120, 190 });
-                    if (line_h > 0 and x + 60 < px + @as(f32, @floatCast(w))) _ = batch.label(x + 5, py + line_h + 12, note.text()[0..@min(note.len, 40)], .{ 255, 225, 150, 255 });
+                    if (line_h > 0 and x + 60 < px + @as(f32, @floatCast(w))) _ = batch.label(x + 5, py + line_h + 12, notes_mod.prefix(note.text(), 40), .{ 255, 225, 150, 255 });
                 }
             }
             if (p.tint_line != 0 and p.mode != .triggered and span >= 1) {
