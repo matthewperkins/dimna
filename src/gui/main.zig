@@ -37,6 +37,8 @@ const Status = display_mod.Status;
 const Io = std.Io;
 const log = std.log.scoped(.dimna);
 const args_mod = @import("args.zig");
+const scheme = @import("scheme.zig");
+const theme = @import("theme.zig");
 const Args = args_mod.Args;
 const parseArgs = args_mod.parseArgs;
 const runScript = @import("script.zig").runScript;
@@ -91,6 +93,8 @@ pub fn main(init: std.process.Init) !u8 {
         return 2;
     };
     var args = parseArgs(argv, doc) catch |e| return if (e == error.Help) 0 else 2;
+    // `--print-scheme`: derive and print the colours of an image, without a window or the board.
+    if (args.print_scheme.len > 0) return scheme.printCommand(io, gpa, args.print_scheme, args.swatch);
     // The view file sits beside the config.
     var views_path_buf: [std.fs.max_path_bytes]u8 = undefined;
     // Not a label: too long a path is "", and the view file is not read, without saying why.
@@ -100,6 +104,19 @@ pub fn main(init: std.process.Init) !u8 {
         if (dimna.toml.parse(init.arena.allocator(), views_text, &toml_diag)) |vd| {
             args.views_doc = vd;
         } else |_| log.warn("{s}: syntax error on line {d}; the view file is ignored", .{ views_path, toml_diag.line });
+    }
+
+    // The colour scheme, if the config names an image. Before any window or thread draws;
+    // any failure is a warning and the built-in colours stay.
+    if (args.scheme_image.len > 0) {
+        var spath_buf: [std.fs.max_path_bytes]u8 = undefined;
+        var sdiag: scheme.Diagnostics = .{};
+        if (scheme.resolvePath(&spath_buf, args.scheme_image, env.home, std.fs.path.dirname(config_path) orelse ".")) |spath| {
+            if (scheme.loadFile(io, gpa, spath, &sdiag)) |r| {
+                theme.apply(r.scheme);
+                log.info("colour scheme from {s}", .{spath});
+            } else log.warn("{s}; using the built-in colours", .{sdiag.message()});
+        } else log.warn("scheme image '{s}': the path is too long; using the built-in colours", .{args.scheme_image});
     }
 
     // ---- the source: simulator or board ----

@@ -31,6 +31,7 @@ layout(push_constant) uniform Params {
     uint gain_base;    // where the panel's row factors start in `gains`
     uint dec_mask;     // buckets in `dec` - 1; 0: draw from samples whatever the time base;
                        // all ones: `dec` holds one word per pixel column, from `newest` on
+    float pal[12];     // the four trace colours (rgb each), by channel & 3: `theme.trace`
 } p;
 
 // Pixel columns that hold this many samples or more are drawn from buckets: 4 to some
@@ -137,8 +138,8 @@ void main() {
     float x = -1.0 + 2.0 * (float(col) + 0.5) / float(p.cols);
     gl_Position = vec4(x, y, 0.0, 1.0);
 
-    const vec3 palette[4] = vec3[4](vec3(0.55, 0.85, 1.0), vec3(1.0, 0.82, 0.45), vec3(0.6, 1.0, 0.65), vec3(1.0, 0.6, 0.75));
-    colour = palette[ch & 3u] * p.gain;
+    uint pi = (ch & 3u) * 3u;
+    colour = vec3(p.pal[pi], p.pal[pi + 1u], p.pal[pi + 2u]) * p.gain;
     // Off scale: the row's colour pulled towards amber. At the converter's limits (the
     // amplifier or ADC is saturated, whatever the display's scale): red.
     if (off_scale) colour = mix(colour, vec3(1.0, 0.62, 0.2) * p.gain, 0.65);

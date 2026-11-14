@@ -16,6 +16,7 @@ monitor = "DP-2"      # fullscreen on this monitor: the neural display
 tearing = true        # show each frame at once (see below)
 font = "sans-serif"   # optional: a fontconfig name
 font_px = 14          # optional: text size in pixels
+scheme_image = "~/Pictures/lab.jpg"   # optional: colours taken from this picture (below)
 
 [[panel]]
 name = "Port B"
@@ -53,6 +54,41 @@ display and of the tile window in a panel over the display (Esc or `?` closes it
 Ctrl+wheel scales only the row under the pointer; that row's label then shows its own
 scale in amber. The plain wheel still moves every row, keeping such a row's ratio, and `r`
 clears it. (Per-row scales are not saved in the config.)
+
+## Colour scheme from a picture
+
+`scheme_image = "<path>"` in the config (`~/` is the home folder; a relative path is
+relative to the config file's folder) makes dimna derive its colours from a JPEG or PNG at
+startup. Without the key the colours are the built-in ones, exactly. A file that is
+missing, over 64 MB, not a JPEG or PNG, or that will not decode logs one warning naming the
+file and the reason, and the built-in colours stay; it never stops the program. There is no
+UI for it, and the colours are set once at startup.
+
+How: the picture is shrunk to at most 96x96 cells by box-averaging in linear light, each
+cell becomes an Oklab colour, and k-means (8 clusters, k-means++ seeding from a fixed seed)
+finds its main colours. The same picture always gives the same scheme. The neutrals
+(background, panels, buttons, rules, text) take the hue of the heaviest cluster at fixed
+lightnesses and low chroma. The four trace colours (rows use them in turn, so neighbours
+differ) are the most chromatic, most present clusters whose hues are at least 40 degrees
+apart (25 if the picture does not have four such), the rest filled by rotating the first
+hue in 90 degree steps. The accent (a button that is on, the key colour in `?`, the bar over
+the panel that input goes to, the spike tiles' waveforms) takes the first trace colour's
+hue. Text, traces and the key colour are made lighter until they contrast with the
+background by at least 10 (bright text), 4.5 (dim text) or 6 (traces, keys), by the WCAG
+ratio.
+
+**Never themed**, because the colour means something: the warning and alarm bars and their
+text, REC, the focus amber, notes, the detection threshold and the trigger level, the TTL
+tint, a row's own scale, the review badge, and in the shader the amber of an off-scale
+trace and the red at the converter's limits. Display only: nothing here touches
+acquisition or recordings.
+
+    dimna --print-scheme picture.jpg [--swatch out.png]
+
+prints the derived colours (name and `#rrggbb`), the cluster centres with their weights, the
+contrast ratios and the time it took, optionally draws a swatch PNG (every themed colour
+and four noise traces in the trace colours), and exits without opening a window or the
+board. That is how to judge a picture before putting it in the config.
 
 ## Off scale and saturated
 

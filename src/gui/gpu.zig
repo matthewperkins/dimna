@@ -46,6 +46,12 @@ pub const TraceParams = extern struct {
     dec_mask: u32 = 0,
 };
 
+/// The trace colours (`theme.trace`, 12 floats) follow `TraceParams` in the push constants.
+const palette_bytes = @sizeOf(@TypeOf(theme.trace));
+comptime {
+    std.debug.assert(@sizeOf(TraceParams) + palette_bytes <= 128);
+}
+
 /// Pixel columns per panel in `Gpu.rev_cols`: no panel is wider.
 pub const column_region = 4096;
 /// `TraceParams.dec_mask` of a panel drawn from `Gpu.rev_cols`.
@@ -430,7 +436,7 @@ pub const Gpu = struct {
             .p_set_layouts = &[_]vk.DescriptorSetLayout{self.set_layout},
             .push_constant_range_count = 1,
             .p_push_constant_ranges = &[_]vk.PushConstantRange{
-                .{ .stage_flags = .{ .vertex = true }, .offset = 0, .size = @sizeOf(TraceParams) },
+                .{ .stage_flags = .{ .vertex = true }, .offset = 0, .size = @sizeOf(TraceParams) + palette_bytes },
             },
         }, null);
         self.desc_pool = try dev.createDescriptorPool(&.{
@@ -1118,6 +1124,7 @@ pub const Gpu = struct {
                 }});
                 dev.cmdSetScissor(cmd, 0, &[_]vk.Rect2D{r});
                 dev.cmdPushConstants(cmd, self.pipeline_layout, .{ .vertex = true }, 0, @sizeOf(TraceParams), @ptrCast(&pd.params));
+                dev.cmdPushConstants(cmd, self.pipeline_layout, .{ .vertex = true }, @sizeOf(TraceParams), palette_bytes, @ptrCast(&theme.trace));
                 dev.cmdDraw(cmd, 2 * pd.params.cols, pd.params.rows, 0, 0);
             }
         }

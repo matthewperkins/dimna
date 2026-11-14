@@ -60,6 +60,10 @@ is in the commit messages; what is known to be wrong, unexplained or never teste
 [docs/OPEN.md](docs/OPEN.md). There is no licence file yet. It is not an Open Ephys
 product.
 
+Third-party code: liboni (MIT) is vendored in `vendor/liboni`; stb_image and
+stb_image_write by Sean Barrett (public domain / MIT) in `vendor/stb`, used only to read the
+colour-scheme image and to write its swatch (see `vendor/stb/README.md`).
+
 ## Quick start
 
     zig build --release=safe                 # Zig 0.17.1; needs Wayland, Vulkan, glslc, FreeType, fontconfig
@@ -91,6 +95,7 @@ listens to it (♪). Shift+wheel scrolls back in time, `l` returns to live.
 
     monitor = "DP-2"          # the display goes fullscreen there
     tearing = true            # lowest latency; needs the compositor's cooperation
+    scheme_image = "~/Pictures/lab.jpg"   # optional: take the GUI's colours from this picture
 
     [board]
     lower_hz = 0.1
