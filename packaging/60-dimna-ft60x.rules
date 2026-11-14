@@ -1,0 +1,20 @@
+# The Open Ephys acquisition board's USB 3 bridge (FTDI FT60x, vendor 0403): who may open it.
+# Installed by the dimna package as /usr/lib/udev/rules.d/60-dimna-ft60x.rules; by hand, as
+# /etc/udev/rules.d/60-dimna-ft60x.rules (docs/install.md). The product IDs are those of the
+# rig's /etc/udev/rules.d/60-open-ephys-ft600.rules (FTDI's own 51-ftd3xx.rules, D3XX 1.1.8).
+#
+# Who gets access:
+# - uaccess: whoever has the active local session (logged in at the machine), while it is
+#   active, including programs they start over SSH or a VNC that shares that desktop;
+# - the dimna group: its members, at any time, with or without a session (e.g. remotely
+#   after a reboot with nobody logged in).
+# Nobody else: the node is root's, mode 0660. The package creates the dimna group if it is
+# missing but never adds anyone to it. To add yourself (then log out and in):
+#   sudo usermod -aG dimna $USER
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="601e", GROUP="dimna", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="601f", GROUP="dimna", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="602a", GROUP="dimna", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="602b", GROUP="dimna", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="602c", GROUP="dimna", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="602d", GROUP="dimna", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="602f", GROUP="dimna", MODE="0660", TAG+="uaccess"

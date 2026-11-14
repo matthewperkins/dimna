@@ -27,10 +27,20 @@ const release_targets = [_]struct { query: []const u8, name: []const u8, note: [
     },
 };
 
-/// The files of packaging/ that a release carries.
+/// The files of packaging/ that a release carries: what install-user.sh needs, the files the
+/// .deb and .rpm install (nfpm.yaml names them by their place in the release), and the
+/// workflow's test script, so it can be run against an unpacked tarball. install-desktop.sh
+/// and dimna-launch.sh stay out: they are for a source checkout's zig-out/bin.
 const release_packaging = [_][]const u8{
-    "dimna-launch.sh",
-    "install-desktop.sh",
+    "install-user.sh",
+    "dimna-desktop-launch.sh",
+    "dimna.desktop",
+    "60-dimna-ft60x.rules",
+    "99-dimna-realtime.conf",
+    "nfpm.yaml",
+    "package-postinstall.sh",
+    "package-postremove.sh",
+    "ci-test-install.sh",
     "icon/ICON-CREDITS.md",
     "icon/dimna-icon.svg",
     "icon/dimna-32.png",
@@ -320,8 +330,8 @@ fn addPrograms(
 }
 
 /// `zig build release`: for each of `release_targets`, zig-out/release/dimna-<version>-<name>/
-/// (bin/dimna, bin/dimna-headless, packaging/, licenses/, README.md, BUILD-INFO, COMMIT,
-/// CHECK) and the same folder as dimna-<version>-<name>.tar.gz. Needs tar, gzip, readelf and
+/// (bin/dimna, bin/dimna-headless, packaging/, tools/dimna_read.py, licenses/, README.md,
+/// BUILD-INFO, COMMIT, CHECK) and the same folder as dimna-<version>-<name>.tar.gz. Needs tar, gzip, readelf and
 /// objdump; and git for COMMIT (it says "unknown" without).
 fn addRelease(b: *std.Build, inputs: Inputs, licences: []const std.Build.LazyPath) void {
     const release_step = b.step("release", "Build the release tarballs (x86_64 glibc 2.34 and musl) into zig-out/release");
@@ -355,6 +365,8 @@ fn addRelease(b: *std.Build, inputs: Inputs, licences: []const std.Build.LazyPat
             _ = stage.addCopyFile(b.path(b.fmt("packaging/{s}", .{f})), b.fmt("{s}/packaging/{s}", .{ dir, f }));
         }
         _ = stage.addCopyFile(b.path("README.md"), b.fmt("{s}/README.md", .{dir}));
+        // The reference reader: verifies a recording (ci-test-install.sh runs it).
+        _ = stage.addCopyFile(b.path("tools/dimna_read.py"), b.fmt("{s}/tools/dimna_read.py", .{dir}));
         for (licences, licence_names) |licence, name| {
             _ = stage.addCopyFile(licence, b.fmt("{s}/licenses/{s}", .{ dir, name }));
         }

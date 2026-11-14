@@ -1,0 +1,16 @@
+[Desktop Entry]
+Type=Application
+Name=dimna
+GenericName=Electrophysiology acquisition
+Comment=Acquire and record from the Open Ephys acquisition board
+Exec=/usr/libexec/dimna/dimna-desktop-launch /usr/bin/dimna
+Icon=dimna
+Terminal=false
+Categories=Science;
+StartupWMClass=dimna
+StartupNotify=false
+Actions=Simulator;
+
+[Desktop Action Simulator]
+Name=dimna (simulated board)
+Exec=env XDG_CONFIG_HOME=/usr/share/dimna/sim-config /usr/libexec/dimna/dimna-desktop-launch /usr/bin/dimna --sim 32,16

@@ -69,6 +69,21 @@ README of each folder.
 
 ## Quick start
 
+**Installing a release** (x86_64): the GitHub release page has a `.deb` (Debian 12+, Ubuntu
+22.04+), an `.rpm` (Rocky/Alma/RHEL 9, Fedora) and tarballs for any glibc 2.34+ or musl
+distribution. The packages set up the board's udev rule and the real-time limits; then add
+yourself to the two groups they create and log out and in:
+
+    sudo apt install ./dimna_<version>-1_amd64.deb     # or: sudo dnf install ./dimna-<version>-1.x86_64.rpm
+    sudo usermod -aG dimna,realtime $USER
+
+From a tarball, `packaging/install-user.sh` adds the menu entry without root and prints the
+root steps. [docs/install.md](docs/install.md) has the details, and how to build from source
+on any distribution (Zig 0.17.1 from ziglang.org, `packaging/get-zig.sh`, and the package
+names of the development files per distribution).
+
+**Building from source:**
+
     zig build --release=safe                 # Zig 0.17.1; needs Wayland, Vulkan loader, FreeType, fontconfig, ALSA,
                                              # xkbcommon (development files); no glslc: shaders are checked in
                                              # optional at run time: harfbuzz and fribidi (Persian),
@@ -79,7 +94,7 @@ README of each folder.
     zig-out/bin/dimna                        # the board; ~/.config/dimna/config.toml decides the rest
     zig-out/bin/dimna-headless --seconds 600 --record ~/somewhere    # soak test, no windows
 
-    packaging/install-desktop.sh             # a launcher entry and icon
+    packaging/install-desktop.sh             # a launcher entry and icon for this checkout
 
     zig build release                        # tarballs for other distributions (glibc 2.34+, musl),
                                              # in zig-out/release; see docs/install.md, "Release build"
@@ -150,7 +165,7 @@ can write beside it. Raw int16 samples, TTL edges, typed notes and a text `meta.
 
 | | |
 |---|---|
-| [docs/install.md](docs/install.md) | building, the two ways to reach the FT600, the headless tool |
+| [docs/install.md](docs/install.md) | installing (packages, tarballs, groups), building, the two ways to reach the FT600, the headless tool |
 | [docs/display.md](docs/display.md) | panels and their config, filters, reference, triggered sweeps, TTL, review, notes, languages |
 | [docs/tiles-and-audio.md](docs/tiles-and-audio.md) | spike tiles, focus and listening, thresholds, the audio chain |
 | [docs/control.md](docs/control.md) | the control window, recording, board settings, alarms, saving the view |

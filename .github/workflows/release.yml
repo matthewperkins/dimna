@@ -1,0 +1,116 @@
+# Builds dimna's release tarballs, .deb and .rpm, installs and runs them on each supported
+# distribution, and for a version tag drafts a GitHub release (never published here: the
+# owner reads the draft and publishes it). See docs/plans/portability.md, "Release workflow".
+# The steps are scripts in packaging/ (ci-build.sh, make-packages.sh, ci-test-install.sh),
+# so they can be read and run without this file. No board is ever touched: there is none.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # https://ziglang.org/download/index.json, "0.17.1" / "x86_64-linux"
+  ZIG_VERSION: "0.17.1"
+  ZIG_SHA256: "3581863e3cbcfd0fce0efc682ce7e9e93da96668a977791d356a26d2a7e9b17a"
+  # https://github.com/goreleaser/nfpm/releases/download/v2.48.0/checksums.txt
+  NFPM_VERSION: "2.48.0"
+  NFPM_SHA256: "6d7f9a28b2f397934403950fcbba83f598b08d02edbe79a0815b3b4897341750"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # The maintained Rocky image (Docker Hub's library/rockylinux:9 was last updated in 2024).
+    container: rockylinux/rockylinux:9
+    steps:
+      # git first, so that checkout makes a real clone and `git describe` works for COMMIT.
+      - name: Install git
+        run: dnf install -y git
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # The checkout belongs to another user than the container's root.
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Build, test, package
+        env:
+          DIMNA_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: sh packaging/ci-build.sh dist
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  test-package:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - ubuntu:22.04
+          - ubuntu:24.04
+          - debian:12
+          - debian:13
+          - rockylinux/rockylinux:9
+          - fedora:latest
+    container: ${{ matrix.image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
+      - name: Install, run, remove
+        run: sh packaging/ci-test-install.sh package dist
+
+  # The musl tarball on Void musl. Not a container job: JavaScript actions (checkout,
+  # download-artifact) need the runner's glibc-built node, so the tests run in `docker run`.
+  test-musl:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
+      - name: Unpack the musl tarball
+        run: mkdir musl && tar -xzf dist/dimna-*-x86_64-linux-musl.tar.gz -C musl --strip-components=1
+      - name: dimna-headless on Void musl
+        run: docker run --rm -v "$PWD:/w" -w /w ghcr.io/void-linux/void-musl:latest sh packaging/ci-test-install.sh run musl/bin --headless-only
+      # The musl GUI has never been run anywhere; until it has passed once, a failure here
+      # is reported but does not hold the release back.
+      - name: dimna --help on Void musl (not yet required)
+        continue-on-error: true
+        run: docker run --rm -v "$PWD:/w" -w /w ghcr.io/void-linux/void-musl:latest sh -c 'sh packaging/ci-test-install.sh xbps-libs && sh packaging/ci-test-install.sh run musl/bin'
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: [build, test-package, test-musl]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum -- * > SHA256SUMS && cat SHA256SUMS
+      - name: Draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --verify-tag --title "dimna $TAG" --notes "Draft made by the release workflow from $GITHUB_SHA. Packages, tarballs and SHA256SUMS below; see docs/install.md." dist/*
