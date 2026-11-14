@@ -64,10 +64,14 @@ match the host driver).
      - the binaries in `/usr/bin`;
      - the board's udev rule, moved into the repo as `packaging/60-dimna-ft60x.rules`
        (the product IDs in the rig's `/etc/udev/rules.d/60-open-ephys-ft600.rules`), into
-       `/usr/lib/udev/rules.d/`, reloaded and triggered after install. The rig's rule
-       uses `MODE="0666"` as well as `TAG+="uaccess"`; 0666 lets every account on the
-       machine open the board, uaccess only the logged-in user. Which one the package uses
-       is the owner's call: ask, do not pick;
+       `/usr/lib/udev/rules.d/`, reloaded and triggered after install. Each line is
+       `GROUP="dimna", MODE="0660", TAG+="uaccess"` (decided with the owner, 2026-11-14;
+       the rig's own rule has `MODE="0666"`, which lets every account open the board).
+       uaccess gives the board to whoever has the active session at the machine, which
+       includes programs started over SSH or a VNC that shares that desktop; the `dimna`
+       group (a system group the package creates if missing) gives it to its members with
+       nobody logged in, e.g. remotely after a reboot. The package never adds anyone to
+       the group; it says how (`usermod -aG dimna $USER`);
      - real-time limits in `/etc/security/limits.d/` for a `realtime` group (rtprio 80,
        memlock unlimited, as on the rig), created as a system group if missing. The
        package never adds a user to a group: it says how (`usermod -aG realtime $USER`,
@@ -149,7 +153,8 @@ match the host driver).
   (`--help`, and `dimna-headless --sim --seconds 5 --no-audio` into a /tmp folder), and the
   tarball's file list. Do not run the GUI.
 - **Steps 4 to 6**: after step 3, with the owner. Step 4's open questions for the owner:
-  the udev mode (0666 or uaccess only), and nfpm or `dpkg-deb`/`rpmbuild`.
+  nfpm or `dpkg-deb`/`rpmbuild`. (The udev rule's access is decided: `dimna` group,
+  0660, uaccess.)
 
 ## Testing
 
