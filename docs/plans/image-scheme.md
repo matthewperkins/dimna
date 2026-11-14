@@ -144,8 +144,8 @@ The palette is pushed as a second push-constant range at offset 60 (`TraceParams
 
 **Verified.**
 - `zig build --release=safe`: clean. `zig fmt --check src build.zig`: no output.
-- `zig build test --summary all`: core 127 tests, GUI 85 (13 new: scheme 12 incl. the extra
-  hue test, theme 1, args 1 is counted in these), "85/85 tests passed" on the last run (the
+- `zig build test --summary all`: core 127 tests, GUI 85 (14 new: 12 in scheme.zig incl. the extra
+  hue test, 1 in theme.zig, 1 in args.zig), "85/85 tests passed" on the last run (the
   core's run was cached). All stored outputs (`display`, `control`, `tiles`) pass unchanged.
 - Timings (`dimna --print-scheme`, release-safe, this machine): 12-megapixel JPEG (4000x3000,
   ImageMagick plasma): decode 130-136 ms, shrink 24.7 ms, clustering and roles 2.3 ms.
