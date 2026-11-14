@@ -85,7 +85,7 @@ printed nothing (success). `zig fmt --check src build.zig` printed nothing. Not 
 anything touching the board.
 
 **Messages in `en.zig`: 256.** By part: shared words 15; display panel titles 18; display rows,
-banners, status 10; key summary 87 (35 keys, 49 descriptions, 3 headings); spike-tile window 3;
+banners, status 10; key summary 87 (42 keys, 42 descriptions, 3 title and headings); spike-tile window 3;
 control window: title/status/recording 25, notes and audio 22, spikes and headstages 20, a panel's
 section 26; alarms 9; warnings 5 (with the two "about N min/s" fragments); notes under the board and
 recording lines 12; start-up notice 4. Every message is referenced from code (checked by grep).
