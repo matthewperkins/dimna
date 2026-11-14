@@ -17,6 +17,7 @@ tearing = true        # show each frame at once (see below)
 font = "sans-serif"   # optional: a fontconfig name
 font_px = 14          # optional: text size in pixels
 scheme_image = "~/Pictures/lab.jpg"   # optional: colours taken from this picture (below)
+language = "en"       # optional: the language of the texts (below)
 
 [[panel]]
 name = "Port B"
@@ -54,6 +55,16 @@ display and of the tile window in a panel over the display (Esc or `?` closes it
 Ctrl+wheel scales only the row under the pointer; that row's label then shows its own
 scale in amber. The plain wheel still moves every row, keeping such a row's ratio, and `r`
 clears it. (Per-row scales are not saved in the config.)
+
+## Language
+
+Every text the windows show (titles, labels, alarms, the key summary) is in one catalogue,
+`src/gui/lang/en.zig`, read through `src/gui/i18n.zig`. `language = "de"` in the config (one
+of `en`, `de`, `fr`, `pt`, `pl`, `zh`, `fa`) picks the language; without it the first two
+letters of `LANG` are used when they name one, else English. An unknown value logs one
+warning and means English. Only the English catalogue exists so far, so every setting shows
+English; a message a language lacks is shown in English. Log messages, `--help`, config keys
+and file contents are not translated.
 
 ## Colour scheme from a picture
 
