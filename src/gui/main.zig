@@ -135,6 +135,9 @@ pub fn main(init: std.process.Init) !u8 {
     const source: dimna.source.Source = if (args.num_sim > 0) blk: {
         sim = try dimna.sim.Sim.init(gpa, io, args.sim[0..args.num_sim]);
         try sim.?.applySettings(args.settings);
+        sim.?.stall_at_s = env.sim_stall_at;
+        sim.?.stall_s = env.sim_stall_s;
+        sim.?.fail_at_s = env.sim_fail_at;
         log.info("simulated board: {d} headstages, {d} units", .{ args.num_sim, sim.?.units.len });
         break :blk .{ .sim = &sim.? };
     } else blk: {
@@ -291,7 +294,14 @@ pub fn main(init: std.process.Init) !u8 {
     var next_report: i128 = t_start + std.time.ns_per_s;
     var title_buf: [160]u8 = undefined;
 
-    while (!win.closed and !acq.done.load(.acquire)) {
+    // The board going quiet: since when acquisition (re)started, whether a quiet spell is
+    // under way, and how many there were.
+    var acq_since_ns: i128 = nowNs();
+    var quiet = false;
+    var quiet_spells: u64 = 0;
+    // Runs on when acquisition ends on an error: the alarm says so, and a recording in
+    // progress is kept until it is stopped.
+    while (!win.closed) {
         // Wake for events, for new samples (every 2 ms), or when the frame is due.
         const wait_ms = pacer.waitMs(nowNs());
         try win.pump(wait_ms);
@@ -507,6 +517,8 @@ pub fn main(init: std.process.Init) !u8 {
                 newest = 0;
                 newest_acquired_ns = 0;
                 pacer.drawn_newest = 0;
+                acq_since_ns = nowNs();
+                quiet = false;
             }
         }
         // The recorder has finished (asked to, or because writing failed).
@@ -526,12 +538,25 @@ pub fn main(init: std.process.Init) !u8 {
                 if (session.freeBytes(recording.sessionPath())) |free| disk.add(now_s, free, recording.written());
             }
         } else if (disk.len > 0) disk.reset();
+        // The board: how long since the newest block came in (blocks drained above), and
+        // whether acquisition has ended on an error.
+        const ended: ?anyerror = if (acq.done.load(.acquire)) acq.failure orelse error.AcquisitionEnded else null;
+        const stalled_s: f64 = if (ended != null) 0 else @as(f64, @floatFromInt(nowNs() - @max(newest_acquired_ns, acq_since_ns))) / 1e9;
+        if (stalled_s >= session.Alarms.stall_s and !quiet) {
+            quiet = true;
+            quiet_spells += 1;
+            log.err("no data from the board for {d:.1} s", .{stalled_s});
+        } else if (stalled_s < session.Alarms.stall_s and quiet) {
+            quiet = false;
+            log.warn("the board is sending data again", .{});
+        }
         // Alarms: anything that means samples are not being kept.
         if (alarms.update(&status, .{
             .overflow = acq.ring_overflow.load(.monotonic),
             .dropped = health.dropped_samples.load(.monotonic),
             .gaps = recording.gaps(),
-        }, recording.behind(pl.bs, pl.fs), if (recording.active()) disk.left() else null, &display.acknowledged)) snap_dirty = true;
+            .stalls = quiet_spells,
+        }, .{ .stalled_s = stalled_s, .ended = ended }, recording.behind(pl.bs, pl.fs), if (recording.active()) disk.left() else null, &display.acknowledged)) snap_dirty = true;
         audio_shared.alarm.store(status.alarm_len > 0, .monotonic);
         status.recording = recording.active();
         status.notice = if (scheme_notice.shown(nowNs())) &scheme_notice else null;

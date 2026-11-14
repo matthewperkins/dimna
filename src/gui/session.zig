@@ -428,6 +428,8 @@ pub const Alarms = struct {
     seen: Counts = .{},
     /// A recording failed or could not be started, and that has not been acknowledged.
     recording_failed: bool = false,
+    /// Acquisition ended on an error and that was acknowledged (a warning stays).
+    ended_seen: bool = false,
     /// The disk filling: the lowest threshold (`disk_alarm_s`) already raised as an alarm
     /// and acknowledged; it is raised again only below the next.
     disk_seen: usize = 0,
@@ -444,13 +446,27 @@ pub const Alarms = struct {
         dropped: u64 = 0,
         /// Gaps in the recording in progress.
         gaps: u64 = 0,
+        /// Times the board went quiet (`Board.stalled_s` reached `stall_s`).
+        stalls: u64 = 0,
     };
+
+    /// Whether the board is being read: how long since the last block (while acquiring),
+    /// and the error that ended acquisition, if one did.
+    pub const Board = struct {
+        stalled_s: f64 = 0,
+        ended: ?anyerror = null,
+    };
+
+    /// No block for this long while acquiring: the board has gone quiet (blocks come every
+    /// few ms; a USB read waits up to 1 s and then simply tries again, so a silent board
+    /// raises no error of its own).
+    pub const stall_s = 0.5;
 
     /// Writes the alarm and warning texts into `status`. `behind_s`: how far the recorder
     /// is behind acquisition, if recording. `acknowledged` is cleared when it was set.
     /// True if either text's presence changed.
     /// `disk`: how long until the recording's disk is full, if known.
-    pub fn update(self: *Alarms, status: *display_mod.Status, now: Counts, behind_s: ?f64, disk: ?DiskWatch.Left, acknowledged: *bool) bool {
+    pub fn update(self: *Alarms, status: *display_mod.Status, now: Counts, board: Board, behind_s: ?f64, disk: ?DiskWatch.Left, acknowledged: *bool) bool {
         // The disk thresholds passed: an alarm while one is passed that was not acknowledged.
         var disk_level: usize = 0;
         if (disk) |d| for (disk_alarm_s) |limit| {
@@ -461,13 +477,24 @@ pub const Alarms = struct {
             self.seen = now;
             self.recording_failed = false;
             self.disk_seen = disk_level;
+            self.ended_seen = board.ended != null;
         }
         // The disk got more room (files deleted, cameras stopped): alarm again next time.
         self.disk_seen = @min(self.disk_seen, disk_level);
         // Here and below: a text too long for its buffer is cut (the writer keeps what fit).
         var w: Io.Writer = .fixed(&status.alarm_buf);
         const sep = "   |   ";
-        if (self.recording_failed) w.writeAll("RECORDING FAILED: nothing is being recorded") catch {};
+        if (board.ended) |err| if (!self.ended_seen) w.print("ACQUISITION STOPPED ({t}): the board is not being read", .{err}) catch {};
+        if (board.ended == null and board.stalled_s >= stall_s) w.print(
+            "{s}NO DATA FROM THE BOARD FOR {d:.1} s",
+            .{ if (w.buffered().len > 0) sep else "", board.stalled_s },
+        ) catch {} else if (now.stalls > self.seen.stalls) {
+            const k = now.stalls - self.seen.stalls;
+            var times_buf: [24]u8 = undefined;
+            const times = if (k == 1) "ONCE" else std.fmt.bufPrint(&times_buf, "{d} TIMES", .{k}) catch "";
+            w.print("{s}THE BOARD WENT QUIET {s} (0.5 s or more without data)", .{ if (w.buffered().len > 0) sep else "", times }) catch {};
+        }
+        if (self.recording_failed) w.print("{s}RECORDING FAILED: nothing is being recorded", .{if (w.buffered().len > 0) sep else ""}) catch {};
         if (now.overflow > self.seen.overflow) w.print(
             "{s}{d} BLOCKS LOST: the disk fell 30 s behind",
             .{ if (w.buffered().len > 0) sep else "", now.overflow - self.seen.overflow },
@@ -488,8 +515,9 @@ pub const Alarms = struct {
         // Not yet lost, but on the way: the recorder is far behind acquisition, or the disk
         // is filling.
         var ww: Io.Writer = .fixed(&status.warning_buf);
+        if (board.ended) |err| if (self.ended_seen) ww.print("acquisition stopped ({t}): nothing is being read; restart dimna", .{err}) catch {};
         if (behind_s) |behind| {
-            if (behind > 5) ww.print("the disk is {d:.0} s behind (samples are lost at 30 s)", .{behind}) catch {};
+            if (behind > 5) ww.print("{s}the disk is {d:.0} s behind (samples are lost at 30 s)", .{ if (ww.buffered().len > 0) "   |   " else "", behind }) catch {};
         }
         if (disk) |d| if (d.seconds < disk_warn_s) ww.print("{s}the disk is full in {s} ({d:.1} GB left)", .{
             if (ww.buffered().len > 0) "   |   " else "",
@@ -977,31 +1005,31 @@ test "disk alarms: a warning under 30 min, an alarm under 5 and again under 1, e
             return .{ .seconds = s, .free_bytes = 20e9 };
         }
     }.f;
-    _ = a.update(&st, .{}, null, at(3600), &ack);
+    _ = a.update(&st, .{}, .{}, null, at(3600), &ack);
     try std.testing.expectEqual(@as(usize, 0), st.alarm_len + st.warning_len);
-    _ = a.update(&st, .{}, null, at(20 * 60), &ack);
+    _ = a.update(&st, .{}, .{}, null, at(20 * 60), &ack);
     try std.testing.expectEqual(@as(usize, 0), st.alarm_len);
     try std.testing.expectEqualStrings("the disk is full in about 20 min (20.0 GB left)", st.warning());
-    _ = a.update(&st, .{}, null, at(4 * 60), &ack);
+    _ = a.update(&st, .{}, .{}, null, at(4 * 60), &ack);
     try std.testing.expectEqualStrings("THE DISK IS FULL IN about 4 min", st.alarm());
     ack = true;
-    _ = a.update(&st, .{}, null, at(4 * 60), &ack);
+    _ = a.update(&st, .{}, .{}, null, at(4 * 60), &ack);
     try std.testing.expectEqual(@as(usize, 0), st.alarm_len);
     try std.testing.expect(st.warning_len > 0);
-    _ = a.update(&st, .{}, null, at(50), &ack);
+    _ = a.update(&st, .{}, .{}, null, at(50), &ack);
     try std.testing.expectEqualStrings("THE DISK IS FULL IN about 50 s", st.alarm());
     // Room made (back over an hour): nothing; and the next fall alarms again.
     ack = true;
-    _ = a.update(&st, .{}, null, at(50), &ack);
-    _ = a.update(&st, .{}, null, at(3600), &ack);
+    _ = a.update(&st, .{}, .{}, null, at(50), &ack);
+    _ = a.update(&st, .{}, .{}, null, at(3600), &ack);
     try std.testing.expectEqual(@as(usize, 0), st.alarm_len + st.warning_len);
-    _ = a.update(&st, .{}, null, at(4 * 60), &ack);
+    _ = a.update(&st, .{}, .{}, null, at(4 * 60), &ack);
     try std.testing.expect(st.alarm_len > 0);
     // Not recording: no warning, and the alarm still up until acknowledged.
-    _ = a.update(&st, .{}, null, null, &ack);
+    _ = a.update(&st, .{}, .{}, null, null, &ack);
     try std.testing.expectEqual(@as(usize, 0), st.warning_len);
     ack = true;
-    _ = a.update(&st, .{}, null, null, &ack);
+    _ = a.update(&st, .{}, .{}, null, null, &ack);
     try std.testing.expectEqual(@as(usize, 0), st.alarm_len + st.warning_len);
 }
 
@@ -1009,4 +1037,27 @@ test "freeBytes reads the free space of a real folder, and refuses a missing one
     try std.testing.expect(freeBytes("/") != null);
     try std.testing.expect(freeBytes("/no/such/folder/here") == null);
     try std.testing.expect(freeBytes("") == null);
+}
+
+test "board alarms: quiet now, quiet before (until acknowledged), and acquisition ended (then a warning)" {
+    var a: Alarms = .{};
+    var st: display_mod.Status = .{};
+    var ack = false;
+    _ = a.update(&st, .{}, .{ .stalled_s = 0.1 }, null, null, &ack);
+    try std.testing.expectEqual(@as(usize, 0), st.alarm_len);
+    _ = a.update(&st, .{ .stalls = 1 }, .{ .stalled_s = 1.2 }, null, null, &ack);
+    try std.testing.expectEqualStrings("NO DATA FROM THE BOARD FOR 1.2 s", st.alarm());
+    // Data again: the spell stays on the bar until acknowledged.
+    _ = a.update(&st, .{ .stalls = 1 }, .{ .stalled_s = 0.01 }, null, null, &ack);
+    try std.testing.expectEqualStrings("THE BOARD WENT QUIET ONCE (0.5 s or more without data)", st.alarm());
+    ack = true;
+    _ = a.update(&st, .{ .stalls = 1 }, .{ .stalled_s = 0.01 }, null, null, &ack);
+    try std.testing.expectEqual(@as(usize, 0), st.alarm_len);
+    // Acquisition ends: an alarm; acknowledged, a warning that stays.
+    _ = a.update(&st, .{ .stalls = 1 }, .{ .ended = error.SimulatedReadError }, null, null, &ack);
+    try std.testing.expectEqualStrings("ACQUISITION STOPPED (SimulatedReadError): the board is not being read", st.alarm());
+    ack = true;
+    _ = a.update(&st, .{ .stalls = 1 }, .{ .ended = error.SimulatedReadError }, null, null, &ack);
+    try std.testing.expectEqual(@as(usize, 0), st.alarm_len);
+    try std.testing.expectEqualStrings("acquisition stopped (SimulatedReadError): nothing is being read; restart dimna", st.warning());
 }

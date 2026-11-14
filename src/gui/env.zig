@@ -39,6 +39,11 @@ pub const Env = struct {
     tile_clicks: []const u8 = "",
     ring_seconds: f64 = 30,
     record_at: ?f64 = null,
+    /// The simulator stalls (`DIMNA_TEST_SIM_STALL=<at s>,<for s>`) or fails with a read
+    /// error (`DIMNA_TEST_SIM_FAIL_AT=<s>`), for testing the alarms.
+    sim_stall_at: ?f64 = null,
+    sim_stall_s: f64 = 0,
+    sim_fail_at: ?f64 = null,
     /// Free space on the recording's disk that counts as none, in GB (testing the disk alarm).
     disk_reserve_gb: ?f64 = null,
     record_test: RecordTest = .{},
@@ -64,6 +69,12 @@ pub const Env = struct {
         if (get("DIMNA_TILE_CLICKS")) |v| e.tile_clicks = v;
         if (get("DIMNA_TEST_RING_SECONDS")) |v| e.ring_seconds = std.fmt.parseFloat(f64, v) catch 30.0;
         if (get("DIMNA_TEST_RECORD_AT")) |v| e.record_at = std.fmt.parseFloat(f64, v) catch null;
+        if (get("DIMNA_TEST_SIM_STALL")) |v| {
+            var it = std.mem.splitScalar(u8, v, ',');
+            e.sim_stall_at = std.fmt.parseFloat(f64, it.first()) catch null;
+            e.sim_stall_s = std.fmt.parseFloat(f64, it.next() orelse "0") catch 0;
+        }
+        if (get("DIMNA_TEST_SIM_FAIL_AT")) |v| e.sim_fail_at = std.fmt.parseFloat(f64, v) catch null;
         if (get("DIMNA_TEST_DISK_RESERVE_GB")) |v| e.disk_reserve_gb = std.fmt.parseFloat(f64, v) catch null;
         if (get("DIMNA_TEST_RECORD_FAIL_AFTER")) |v| e.record_test.fail_after = std.fmt.parseInt(u64, v, 10) catch null;
         if (get("DIMNA_TEST_RECORD_STALL")) |v| {

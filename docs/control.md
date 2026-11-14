@@ -99,7 +99,13 @@ when the monitor is muted or off:
 - the recording failed (a write error such as a full disk), or could not be started;
 - blocks were lost because the recorder fell a whole ring (30 s) behind;
 - the board itself dropped samples;
-- the recording has gaps.
+- the recording has gaps;
+- no data has come from the board for 0.5 s (a USB read waits up to 1 s and then simply
+  tries again, so a board that goes quiet raises no error of its own): the bar counts the
+  seconds while it lasts, and says how many such spells there were until acknowledged;
+- acquisition stopped on an error (a cable pulled, a read failure). The display stays up
+  (it used to close), and a recording in progress is kept until you stop it; once
+  acknowledged, an amber bar stays, since nothing is being read until dimna is restarted.
 
 An amber bar warns earlier, while the disk is more than 5 s behind, and goes when it has
 caught up.
@@ -112,5 +118,7 @@ want of metadata space before its free space reaches 0). Under 30 minutes an amb
 says how long and how many GB are left; under 5 minutes, and again under 1, a red alarm
 until acknowledged. On btrfs the free space moves only when a transaction commits (every
 120 s with `commit=120`), which is why the window is 5 minutes and the recorder's rate is
-the floor. `DIMNA_TEST_DISK_RESERVE_GB=<GB>` counts that much more as full, for testing. `DIMNA_TEST_RECORD_FAIL_AFTER=<samples>`, `DIMNA_TEST_RECORD_STALL=<samples>,<ms>`
+the floor. `DIMNA_TEST_DISK_RESERVE_GB=<GB>` counts that much more as full, for testing. On the simulator,
+`DIMNA_TEST_SIM_STALL=<at s>,<for s>` makes it go quiet once and `DIMNA_TEST_SIM_FAIL_AT=<s>`
+makes it fail with a read error. `DIMNA_TEST_RECORD_FAIL_AFTER=<samples>`, `DIMNA_TEST_RECORD_STALL=<samples>,<ms>`
 and `DIMNA_TEST_RING_SECONDS=<s>` make these happen on purpose, for testing.

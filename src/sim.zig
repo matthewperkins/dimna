@@ -70,6 +70,12 @@ pub const Sim = struct {
     lfp_state: []f64 = &.{},
     /// The common-mode test artefact.
     artefact: bool = true,
+    /// For testing the alarms: at this second of signal, deliver nothing for `stall_s`
+    /// (the samples come late, all at once, as from a board's buffer) or fail with a read
+    /// error. Null: never.
+    stall_at_s: ?f64 = null,
+    stall_s: f64 = 0,
+    fail_at_s: ?f64 = null,
     sample: i64 = 0,
     t0: Io.Timestamp = .zero,
     health: ?*Health = null,
@@ -292,9 +298,15 @@ pub const Sim = struct {
     }
 
     /// Fills `blk`, then sleeps until its last sample is due in real time.
-    pub fn readBlock(self: *Sim, blk: *Block) Io.Cancelable!void {
+    pub fn readBlock(self: *Sim, blk: *Block) (Io.Cancelable || error{SimulatedReadError})!void {
         blk.clear();
         std.debug.assert(blk.num_channels == self.nch);
+        const at_s = @as(f64, @floatFromInt(self.sample)) / self.sample_rate;
+        if (self.fail_at_s) |f| if (at_s >= f) return error.SimulatedReadError;
+        if (self.stall_at_s) |s| if (at_s >= s) {
+            self.stall_at_s = null;
+            try self.io.sleep(.fromNanoseconds(@intFromFloat(self.stall_s * 1e9)), .awake);
+        };
         blk.first_sample = self.sample;
         const n = @min(@max(self.settings.block_samples, 1), blk.capacity);
         for (0..n) |_| self.generateSample(blk);
