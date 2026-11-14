@@ -1,8 +1,9 @@
 # Plan: dimna on other Linux distributions and Wayland compositors
 
-**Not before the translations land** (`i18n-catalogue.md`, `text-engine.md`, and the
-translation and right-to-left plans after them): those add HarfBuzz and FriBidi, which
-this plan must cover.
+The translations have landed (`i18n-catalogue.md`, `text-engine.md`, `translations.md`,
+`rtl-control.md`). HarfBuzz and FriBidi are **not** link dependencies: `src/gui/shape.zig`
+opens them with dlopen the first time a string needs shaping (Persian), and dimna draws
+unshaped text if they are missing. Keep it that way.
 
 Read `docs/plans/README.md` first; its rules apply. Nothing here changes acquisition,
 recording or the display's behaviour; it changes how dimna is built, shipped and set up.
@@ -16,11 +17,13 @@ sandboxes fight what an acquisition program needs (raw USB to the board, SCHED_F
 locked memory, recordings written anywhere, and with Flatpak an NVIDIA runtime that must
 match the host driver).
 
-## Where it stands (2026-11-13, on the owner's Arch/Hyprland rig)
+## Where it stands (2026-11-14, on the owner's Arch/Hyprland rig)
 
-- Runtime libraries, all dynamically linked: wayland-client, vulkan (loader), freetype2,
-  fontconfig, xkbcommon, alsa; after the text engine, harfbuzz and fribidi. All are on
-  any Wayland desktop with stable ABIs.
+- Runtime libraries linked (`readelf -d zig-out/bin/dimna`, NEEDED): wayland-client,
+  vulkan (loader), freetype, fontconfig, xkbcommon, asound, m, c. All are on any Wayland
+  desktop with stable ABIs. Loaded only if present: libharfbuzz.so.0, libfribidi.so.0
+  (Persian). Fonts, optional per language: Noto Sans CJK SC (Chinese), Noto Sans Arabic
+  or Vazirmatn (Persian); dimna falls back to English without them.
 - Build-time files from the system: Wayland protocol XMLs (`build.zig`: xdg-shell,
   presentation-time, pointer-gestures, tablet-v2 from stable/unstable; tearing-control,
   content-type, cursor-shape from **staging**, too new for Debian 12 / Ubuntu 22.04's
@@ -45,10 +48,11 @@ match the host driver).
    checked-in .spv matches what glslc produces when glslc is there. Then glslc is needed
    only by someone changing shaders.
 3. **A release build**: `zig build release` producing `dimna-<version>-x86_64-linux-gnu`
-   built for glibc 2.31 (`-Dtarget=x86_64-linux-gnu.2.31`; Debian 11 / Ubuntu 20.04 era)
+   built for glibc 2.34 (`-Dtarget=x86_64-linux-gnu.2.34`: Rocky/Alma/RHEL 9, which labs
+   run; Ubuntu 22.04, Debian 12 and everything newer)
    and `-x86_64-linux-musl` for Void musl. Check each with `readelf -d` (only the
    libraries listed above are NEEDED) and `objdump -T` (no GLIBC symbol version above
-   2.31). A tarball holds the binaries, `dimna-headless`, the packaging folder, the
+   2.34). A tarball holds the binaries, `dimna-headless`, the packaging folder, the
    licence files (stb, liboni, dimna's own once it has one: an open item) and README.
 4. **One install script** (`packaging/install.sh`, POSIX sh), idempotent, saying what it
    does before it does it and asking before anything needs root:
@@ -81,12 +85,34 @@ match the host driver).
      compositor lacks tearing-control or presentation-time, and what that costs.
    Only claims checked on a real session go in; the rest are marked "not yet tried".
 
+## Who does what
+
+- **Steps 1 and 2** (one agent, first): files you may change are `build.zig`,
+  `vendor/wayland-protocols/` and `vendor/vulkan/` (new), `src/gui/shaders/` (the .spv
+  files and nothing else there), `README.md` (the build section) and `docs/install.md`
+  (what a build needs). Copy the protocol XMLs and `vk.xml` from this machine's
+  `/usr/share/wayland-protocols` (wayland-protocols 1.50) and
+  `/usr/share/vulkan/registry/vk.xml` (vulkan-headers 1.4.363); no downloads. Record each
+  file's sha256 and the package version in the folder's README. For the shaders, find
+  where `build.zig` runs glslc and how the .spv files are embedded (`--dep
+  traces.vert.spv` and so on). Prove "identical" by diffing the generated `wayland.zig`
+  and `vk.zig` from the cache, before and after, and the .spv files glslc writes against
+  the checked-in ones; and show a build with glslc hidden from PATH (for example a PATH
+  without `/usr/bin/glslc`: make a temporary folder of symlinks to what the build needs, or
+  run with `bwrap` binding an empty file over glslc) succeeding.
+- **Step 3** (a second agent, after 1 and 2 are merged).
+- **Steps 4 to 6**: after step 3, with the owner.
+
 ## Testing
 
-There are no containers on the rig (no podman, docker or distrobox). Steps 1-3 are
-checked on the rig (identical generated bindings, readelf/objdump, all tests). Running
-the release binary on other distros and compositors needs a VM or a machine the owner
-provides: list per distro what was actually run and what was not. Never run the GUI
+There are no containers on the rig (no podman, docker or distrobox), but `systemd-nspawn`
+and `bwrap` are installed. Steps 1-3 are checked on the rig (identical generated bindings,
+readelf/objdump, all tests). The release binary can then be run on other distributions in
+`systemd-nspawn` containers made from their published root filesystem images (Debian 12,
+Ubuntu 22.04, Rocky 9, Fedora, openSUSE, Void musl), with the owner's Wayland socket bound
+in for a windowed `--sim` run. That needs downloads and root, so the owner does it or
+approves it; an agent never does. Other compositors need a session the owner provides:
+list per distro and compositor what was actually run and what was not. Never run the GUI
 against the board on someone else's machine without its owner present.
 
 ## Not in this plan
