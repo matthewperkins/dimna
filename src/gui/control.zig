@@ -506,7 +506,7 @@ fn titleSection(ui: *ui_mod.Ui, snap: *const Snapshot, shared: *Shared) void {
         // The same alarm as across the display, until acknowledged.
         ui.fill(0, ui.y - 2, ui.width, ui.rowHeight() + 2, theme.alarm_bar);
         ui.text(snap.status.alarm(), theme.text_bright);
-        ui.x = @max(ui.x, ui.width - 130);
+        ui.alignEnd(130, &.{i18n.text(.btn_acknowledge)});
         if (ui.button(i18n.text(.btn_acknowledge), false)) shared.push(.acknowledge);
         ui.newline();
     } else if (snap.status.warning_len > 0) {
@@ -544,7 +544,7 @@ fn statusSection(ui: *ui_mod.Ui, snap: *const Snapshot, shared: *Shared) void {
     } else ui.text(i18n.text(.status_starting), theme.text_dim);
     if (st.lost > 0) ui.text(i18n.count(&buf, "status_display_skipped", st.lost, .{ .blocks = st.lost }), theme.text_warn);
     if (snap.ring_overflow > 0) ui.text(i18n.fmt(&buf, .status_ring_overflow, .{ .count = snap.ring_overflow }), theme.text_warn);
-    ui.x = @max(ui.x, ui.width - 170);
+    ui.alignEnd(170, &.{ i18n.text(.btn_save_view), i18n.text(.btn_quit) });
     // Lit while the panels' settings differ from what is saved.
     if (ui.button(i18n.text(.btn_save_view), snap.view_unsaved)) shared.push(.save_view);
     if (ui.button(i18n.text(.btn_quit), false)) shared.push(.quit);
@@ -799,7 +799,7 @@ fn panelSection(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, snap: *const S
     ui.column(summary_column);
     ui.text(panelSummary(&buf, p), theme.text_dim);
     if (open) {
-        ui.x = @max(ui.x, ui.width - 78);
+        ui.alignEnd(78, &.{i18n.text(.btn_reset)});
         if (ui.button(i18n.text(.btn_reset), false)) shared.push(.{ .panel = .{ .index = i, .action = .reset } });
     }
     ui.newline();
@@ -1053,12 +1053,14 @@ const LayoutRig = struct {
     view: ControlView = .{},
     /// Mirrored, as for a language read right to left.
     rtl: bool = false,
+    /// The window's width.
+    width: f32 = 800,
 
     fn frame(self: *LayoutRig, snap: *const Snapshot, mx: f32, my: f32, clicked: bool) ui_mod.Ui {
         self.batch = .{ .font = &self.face, .vertices = self.vertices };
         self.shared = .{};
         self.view = self.start_view;
-        var ui: ui_mod.Ui = .begin(&self.batch, 800, mx, my, clicked, 0, self.rtl);
+        var ui: ui_mod.Ui = .begin(&self.batch, self.width, mx, my, clicked, 0, self.rtl);
         build(&ui, &self.cfg, snap, &self.shared, &self.view);
         return ui;
     }
@@ -1497,6 +1499,92 @@ fn createRig(gpa: std.mem.Allocator, no_env: *const Env) !*LayoutRig {
 fn destroyRig(gpa: std.mem.Allocator, rig: *LayoutRig) void {
     gpa.free(rig.vertices);
     gpa.destroy(rig);
+}
+
+// ---- Fit check (opt-in: DIMNA_FIT_CHECK=1) ----
+//
+// Every frozen state of the layout, in every language, with the real font (fontconfig's
+// "sans-serif" at 14 px, or DIMNA_FIT_FONT; Persian and Chinese from its fallbacks) at
+// DIMNA_FIT_WIDTH (800) pixels. Per language: how much taller the window gets than in
+// English (more rows wrapped), every text or box that runs past the right edge, and every
+// message cut to its buffer. It prints a report and fails only on a cut or an overrun.
+
+test "fit check: every language's texts fit the control window" {
+    const flag = std.c.getenv("DIMNA_FIT_CHECK") orelse return error.SkipZigTest;
+    _ = flag;
+    const gpa = testing.allocator;
+    const width: f32 = if (std.c.getenv("DIMNA_FIT_WIDTH")) |w| try std.fmt.parseFloat(f32, std.mem.span(w)) else 800;
+    const family: [:0]const u8 = if (std.c.getenv("DIMNA_FIT_FONT")) |f| std.mem.span(f) else "sans-serif";
+    const no_env: Env = .{};
+    const snaps = try gpa.alloc(Snapshot, layout_states.len);
+    defer gpa.free(snaps);
+    layoutSnapshots(snaps);
+    const saved_lang = i18n.current;
+    defer i18n.current = saved_lang;
+    const shape = @import("shape.zig");
+    const saved_rtl = shape.start_rtl;
+    defer shape.start_rtl = saved_rtl;
+
+    var english_h: [layout_states.len]f32 = undefined;
+    var problems: usize = 0;
+    for (std.enums.values(i18n.Language)) |lang| {
+        i18n.current = lang;
+        shape.start_rtl = i18n.rightToLeft(lang);
+        var face = try font.Font.init(gpa, family, 14);
+        defer face.deinit(gpa);
+        const rig = try createRig(gpa, &no_env);
+        defer destroyRig(gpa, rig);
+        rig.face = face;
+        rig.rtl = i18n.rightToLeft(lang);
+        rig.width = width;
+        i18n.cuts_len = 0;
+        var tallest: f32 = 0;
+        var worst_grow: f32 = 0;
+        var worst_state: []const u8 = "";
+        std.debug.print("== {t}\n", .{lang});
+        for (layout_states, snaps, 0..) |state, *snap, k| {
+            rig.start_view = layoutView(state.open, snap);
+            const ui = rig.frame(snap, -1, -1, false);
+            try testing.expect(rig.batch.len + 6 <= rig.vertices.len);
+            const h = ui.y;
+            tallest = @max(tallest, h);
+            if (lang == .en) english_h[k] = h;
+            if (h - english_h[k] > worst_grow) {
+                worst_grow = h - english_h[k];
+                worst_state = state.name;
+            }
+            // Past an edge: any quad (mirrored: past the left edge).
+            var q: usize = 0;
+            var reported: usize = 0;
+            while (q < rig.batch.len / 6) : (q += 1) {
+                const v = rig.vertices[q * 6 ..][0..6];
+                const x0 = v[0].pos[0];
+                const x1 = v[2].pos[0];
+                if (x1 > width + 0.5 or x0 < -0.5) {
+                    if (reported < 3) std.debug.print("   {s}: past the edge at y {d}: x {d:.0}..{d:.0}\n", .{ state.name, v[0].pos[1], x0, x1 });
+                    reported += 1;
+                }
+            }
+            if (reported > 0) problems += 1;
+        }
+        const rows = worst_grow / (@round(rig.face.line_height) + 12);
+        std.debug.print("   most growth over English: {d:.0} px ({d:.1} rows) in \"{s}\"; tallest state {d:.0} px\n", .{ worst_grow, rows, worst_state, tallest });
+        // The key summary over the display (two columns of keys and what they do), about as
+        // `display.helpPanel` lays it out: the ordinary font throughout, so roughly.
+        const key_help = @import("display.zig").key_help;
+        var key_w: [2]f32 = @splat(0);
+        var what_w: [2]f32 = @splat(0);
+        for (key_help) |kh| {
+            const col = @backingInt(kh.window);
+            key_w[col] = @max(key_w[col], face.width(i18n.textOf(kh.key)));
+            what_w[col] = @max(what_w[col], face.width(i18n.textOf(kh.what)));
+        }
+        const sp = face.width("  ");
+        std.debug.print("   key summary about {d:.0} px wide\n", .{key_w[0] + what_w[0] + key_w[1] + what_w[1] + 2 * sp + 2 * face.width("  ") + 24});
+        for (i18n.cuts[0..i18n.cuts_len]) |c| std.debug.print("   cut to its buffer: {s}\n", .{c});
+        problems += i18n.cuts_len;
+    }
+    try testing.expectEqual(0, problems);
 }
 
 test "mirrored, every rectangle and text of the control window is the mirror of its unmirrored one, and does the same" {

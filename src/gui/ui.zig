@@ -111,8 +111,37 @@ pub const Ui = struct {
         self.x = self.left;
     }
 
+    /// A text; one that would run past the right edge goes on a continuation row, as a
+    /// widget does, and one too long for that row as well is broken between words over
+    /// as many continuation rows as it needs (a word longer than a row runs over).
     pub fn text(self: *Ui, string: []const u8, colour: Colour) void {
-        self.x = self.textAt(self.x, self.y + 4, string, colour) + 8;
+        const f = self.batch.font;
+        self.fit(f.width(string));
+        var rest = string;
+        while (self.x + f.width(rest) > self.width - 8) {
+            // The longest run of whole words that fits from here.
+            var cut: ?usize = null;
+            var i: usize = 0;
+            while (std.mem.indexOfScalarPos(u8, rest, i, ' ')) |sp| : (i = sp + 1) {
+                if (sp > 0 and self.x + f.width(rest[0..sp]) <= self.width - 8) cut = sp else break;
+            }
+            if (cut) |c| {
+                _ = self.textAt(self.x, self.y + 4, rest[0..c], colour);
+                rest = std.mem.trimStart(u8, rest[c..], " ");
+            } else if (self.x <= self.left + self.indent + 1) break; // no word fits a row
+            self.newline();
+            self.x = self.left + self.indent;
+        }
+        self.x = self.textAt(self.x, self.y + 4, rest, colour) + 8;
+    }
+
+    /// Moves to where a group of buttons with these labels ends at the right edge: at
+    /// least `min_room` from it (so a short group stays where it always was), more if the
+    /// labels need it (a longer language). Never moves back.
+    pub fn alignEnd(self: *Ui, min_room: f32, labels: []const []const u8) void {
+        var need: f32 = 8;
+        for (labels) |l| need += self.buttonWidth(l) + 6;
+        self.x = @max(self.x, self.width - @max(min_room, need));
     }
 
     /// Text in a box at least `min_width` wide (so what follows does not move as it changes).
@@ -374,4 +403,25 @@ test "a stepper steps on its buttons and on the wheel over it" {
     _ = ui.stepper("gain", "1.0", 40);
     try testing.expectEqual([4]f32{ 76 + 40, 38, 26, 24 }, tb.rect(0));
     try testing.expectEqual([4]f32{ 76 + 118, 38, 26, 24 }, tb.rect(1));
+}
+
+test "a text too long for its row is broken between words onto continuation rows" {
+    var tb: TestBatch = .{};
+    // 200 wide: text must end by x = 192; 8 pixels a character.
+    var ui = tb.ui(200, -1, -1, false, 0);
+    // 24 characters (192 px) from x 12: "aaaa bbbb cccc dddd" (152) fits, "eeee" goes on.
+    ui.text("aaaa bbbb cccc dddd eeee", theme.text_dim);
+    try testing.expectEqual(38, ui.y);
+    try testing.expectEqual(76 + 32 + 8, ui.x);
+    // One that fits is not broken.
+    ui = tb.ui(200, -1, -1, false, 0);
+    ui.text("aaaa bbbb", theme.text_dim);
+    try testing.expectEqual(10, ui.y);
+    try testing.expectEqual(12 + 72 + 8, ui.x);
+    // A word longer than a row runs over, on its own row, and does not loop.
+    ui = tb.ui(200, -1, -1, false, 0);
+    ui.text("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", theme.text_dim);
+    try testing.expectEqual(10, ui.y);
+    ui.text("bb", theme.text_dim);
+    try testing.expectEqual(38, ui.y); // the next text wraps, as a widget would
 }

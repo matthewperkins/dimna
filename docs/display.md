@@ -84,6 +84,15 @@ to right in time. In every window, a Persian text (any text with a Persian lette
 notes included) is laid out right to left even when it starts with a Latin name or a
 number. In the other languages such a text takes the direction of its first letter.
 
+Translations are longer than English (German and French by up to a half). In the control
+window a text that does not fit its row goes on to the next, broken between words, and the
+buttons kept at the right edge make room for longer labels. `DIMNA_FIT_CHECK=1` runs an
+opt-in test that lays out every state of the control window in every language with the
+real font (`DIMNA_FIT_WIDTH`, default 800 px; `DIMNA_FIT_FONT`, default sans-serif) and
+reports texts past the edge, rows added over English, and messages cut to their buffers.
+zig caches test runs, so run the test binary itself to change these:
+`DIMNA_FIT_CHECK=1 $(ls -t .zig-cache/o/*/gui-test | head -1)`.
+
 ## Colour scheme from a picture
 
 `scheme_image = "<path>"` in the config (`~/` is the home folder; a relative path is

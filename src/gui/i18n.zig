@@ -15,6 +15,7 @@
 //! `Id` names every message, so a typo is a compile error.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const format = @import("format.zig");
 const en = @import("lang/en.zig");
 const log = std.log.scoped(.dimna);
@@ -97,8 +98,25 @@ pub fn textOfIn(lang: Language, id: Id) []const u8 {
 /// names as fields.
 pub fn fmt(buf: []u8, comptime id: Id, args: anytype) []const u8 {
     return switch (current) {
-        inline else => |lang| format.fmt(buf, lookup(lang, id), args),
+        inline else => |lang| blk: {
+            if (builtin.is_test) noteCut(@tagName(id), std.fmt.count(lookup(lang, id), args), buf.len);
+            break :blk format.fmt(buf, lookup(lang, id), args);
+        },
     };
+}
+
+/// In tests only: the messages cut to their buffer since `cuts_len` was last set to 0 (the
+/// fit check reads them; a cut message is a buffer too small for some language).
+pub var cuts: [16][]const u8 = undefined;
+pub var cuts_len: usize = 0;
+
+fn noteCut(name: []const u8, needed: u64, have: usize) void {
+    if (needed <= have) return;
+    for (cuts[0..cuts_len]) |c| if (std.mem.eql(u8, c, name)) return;
+    if (cuts_len < cuts.len) {
+        cuts[cuts_len] = name;
+        cuts_len += 1;
+    }
 }
 
 /// A message with values, onto a writer (which keeps what fits, if it is a fixed one).
@@ -189,6 +207,7 @@ fn countedFormat(comptime lang: Language, buf: []u8, comptime base: []const u8, 
     return switch (form(src, n)) {
         inline else => |f| blk: {
             const s = comptime countedOf(catalogue(src), base, f);
+            if (builtin.is_test) noteCut(base, std.fmt.count(s, only(s, args)), buf.len);
             break :blk format.fmt(buf, s, only(s, args));
         },
     };
