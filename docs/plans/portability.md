@@ -200,3 +200,129 @@ my file list; it compares checked-in against compiled bytes and skips without gl
   I left it.
 - Not run: the GUI (rules), any non-Arch distribution, a different zig-wayland/vulkan-zig
   fetch (they come from the package cache; offline vendoring is step 5).
+
+## Report: step 3
+
+Branch `worktree-agent-ac562bc10d4caccec`; commit `4822e95` (the release build) and this
+report. Files changed: `build.zig`, `README.md` (one Quick start entry), `docs/install.md`
+(new section "Release build"), new `packaging/check-release.sh`. Nothing else; `vendor/` is
+untouched.
+
+**What `zig build release` does.** `build.zig` now builds the programs in one function,
+`addPrograms(target, ...)`; the normal build calls it once for `-Dtarget`, the release step
+once per release target (`x86_64-linux-gnu.2.34`, `x86_64-linux-musl`; ReleaseSafe; baseline
+x86-64 CPU, since a query without a CPU is baseline). The wayland/vulkan bindings and the
+shaders are shared. Per target it stages `dimna-<version>-<target>/` with `bin/dimna`,
+`bin/dimna-headless`, `packaging/` (the whole folder), `README.md`, `licenses/` (liboni,
+stb, zig-wayland, vulkan-zig, and a README that lists dimna's own licence as MISSING),
+`BUILD-INFO` (version, target, zig version, a note on what the target needs), `COMMIT`
+(`git describe --always --dirty`, or `unknown`) and `CHECK`. It installs that folder to
+`zig-out/release/` and packs it with `tar` as `zig-out/release/dimna-<version>-<target>.tar.gz`.
+`<version>` is `build.zig.zon`'s (`0.0.0`, hence `COMMIT`).
+
+**How the cross build finds the system's files.** Zig searches no system folders for a
+non-native target (a glibc version or musl makes it one): before the change, `zig build
+-Dtarget=x86_64-linux-gnu.2.34` failed with `unable to find dynamic system library
+"wayland-client" ... searched paths: none`. The release build gets the folders Zig would
+search natively, from `std.zig.system.NativePaths.detect` on the host target (so Debian's
+`/usr/lib/x86_64-linux-gnu` is included there), filtered to those that exist. Here that is
+`-L /usr/local/lib -L /lib64 -L /lib -L /usr/lib64 -L /usr/lib`, and `/usr/include` (etc.)
+as `-idirafter` on the GUI's translate-c, so Zig's own glibc 2.34 / musl headers come first.
+pkg-config still runs for every target (the build runner calls it whatever the target), so
+`-I/usr/include/freetype2 -I/usr/include/libpng16` and the `-l` names come from the
+system's `.pc` files as before. Linking glibc 2.34 against Arch's libraries then failed with
+11 `undefined reference` errors, all inside the system libraries (`__isoc23_strtol@GLIBC_2.38`
+and similar, `sqrtf@GLIBC_2.43`; "referenced by /lib64/libasound.so", libvulkan,
+libxkbcommon; "disallowed by --no-allow-shlib-undefined"). So the release GUI on glibc sets
+`linker_allow_shlib_undefined`, and what dimna itself needs is checked afterwards.
+
+**The check.** `packaging/check-release.sh MAX_GLIBC FILE...` runs in the build on both
+binaries before staging; its stdout becomes `CHECK`. It fails if `readelf -d` NEEDED lists
+anything outside wayland-client, vulkan, freetype, fontconfig, xkbcommon, asound, libm, libc
+(`libc.so.6` or musl's `libc.so`) and ld-linux, or `objdump -T` shows a `GLIBC_` version
+above 2.34. A failure stops that target's tarball.
+
+**musl: works as far as can be checked here.** It first failed: liboni's
+`onidriverloader.h` includes `<execinfo.h>` (glibc only; `'execinfo.h' file not found`), and
+translate-c of `src/c.h` picked up the host's `/usr/include/execinfo.h` and choked on its
+glibc macros. liboni uses nothing from it, so for musl the build puts an empty `execinfo.h`
+first on liboni's and translate-c's include path (vendor/liboni unchanged). Then both link.
+The musl `dimna` is dynamic (interpreter `/lib/ld-musl-x86_64.so.1`), linked against this
+machine's glibc-built libraries only for their sonames; it links even without
+`--allow-shlib-undefined` (lld apparently does not check libraries whose own NEEDED,
+`libc.so.6`, is absent). It cannot run here (no musl loader) and has not been run anywhere;
+that needs a musl system, e.g. a Void musl root in `systemd-nspawn`. The musl
+`dimna-headless` is static and runs here, but cannot `dlopen`, so `--driver d3xx` is
+unavailable with it (D3XX is a glibc binary anyway); `--driver usb` is built in. That is
+inferred from musl's static `dlopen` being a stub, not run with any `--driver`.
+
+**Evidence** (scratch under `/tmp/dimna-step3-471090`, removed at the end):
+- Normal build unchanged: `zig build --release=safe` with the old and the new `build.zig`
+  into two prefixes, same cache: `cmp` says both `dimna` and `dimna-headless` IDENTICAL.
+  `zig build --help` differs only by the new line `release  Build the release tarballs
+  (x86_64 glibc 2.34 and musl) into zig-out/release` (the step order is kept).
+- `zig build test --summary all`: `22/22 steps succeeded; 273/275 tests passed (2 skipped)`
+  (`run test 133 pass`, `gui-test 139 pass, 2 skip`, `shader-check 1 pass`), as before.
+  `zig fmt --check src build.zig` printed nothing.
+- `zig build release --prefix /tmp/...` from the commit: exit 0. `CHECK`:
+
+      gnu:  dimna: NEEDED libwayland-client.so.0 libvulkan.so.1 libfreetype.so.6 libfontconfig.so.1 libxkbcommon.so.0 libasound.so.2 libm.so.6 libc.so.6 ld-linux-x86-64.so.2; highest GLIBC version: 2.34
+            dimna-headless: NEEDED libc.so.6 ld-linux-x86-64.so.2; highest GLIBC version: 2.34
+      musl: dimna: NEEDED libwayland-client.so.0 libvulkan.so.1 libfreetype.so.6 libfontconfig.so.1 libxkbcommon.so.0 libasound.so.2 libc.so; highest GLIBC version: none
+            dimna-headless: NEEDED none (static); highest GLIBC version: none
+
+  The same by hand (`readelf -d | grep NEEDED`; `objdump -T | grep -o 'GLIBC_[0-9.]*' |
+  sort -uV | tail -1`): identical lists, `GLIBC_2.34` for both gnu binaries. The 2.34
+  symbols are `__libc_start_main`, the pthread functions, `execveat` and
+  `dlopen`/`dlsym`/`dlclose`/`dlerror` (moved into libc in 2.34). `COMMIT`: `4822e95ce32b`.
+  Tarballs: gnu 4,820,891 bytes, sha256 `c744cfac...469e`; musl 5,141,275 bytes,
+  `04406f51...a35a`. They are not reproducible: the file mtimes are build times.
+- File list of each tarball (`tar -tvzf`; owner `0/0`; binaries and scripts `-rwxr-xr-x`),
+  under `dimna-0.0.0-x86_64-linux-{gnu,musl}/`: `BUILD-INFO`, `COMMIT`, `CHECK`, `README.md`,
+  `bin/dimna`, `bin/dimna-headless`, `licenses/` (`README`, `liboni.LICENSE`, `stb.LICENSE`,
+  `vulkan-zig.LICENSE`, `zig-wayland.LICENSE`), `packaging/` (`check-release.sh`,
+  `dimna-launch.sh`, `install-desktop.sh`, `icon/` with `ICON-CREDITS.md`,
+  `dimna-{32,48,64,128,256}.png`, `dimna-icon.svg` and `candidates/` (3 svg and
+  `contact-sheet.png`), `sim-config/dimna/config.toml`).
+- Unpacked from the tarballs, `dimna-headless --sim 32,16 --seconds 5 --record /tmp/...`:
+  gnu `150048 samples in 4689 blocks ... dropped=0 gaps=0 bad=0 ... CLEAN`, exit 0; musl
+  `150016 samples in 4688 blocks ... dropped=0 gaps=0 bad=0 ... CLEAN`, exit 0.
+  `tools/dimna_read.py` on each recording: `48 channels at 30000 Hz ... complete`, `gaps: 0,
+  TTL edges: 26`, `OK`.
+- gnu `dimna`: `ldd` resolves every NEEDED here; `ldd -r` (relocations only, no program code
+  run) reports no undefined symbol.
+
+**Broken on purpose, seen to fail:**
+- `release_max_glibc = "2.33"`: `run sh failure`, `.../dimna: needs GLIBC_2.34, above 2.33`,
+  the same for `dimna-headless`, exit 1, no gnu tarball.
+- Linking HarfBuzz into the release GUI. With a plain `linkSystemLibrary("harfbuzz")` the
+  check passed, rightly: the library is unused, lld drops it (as-needed) and NEEDED is
+  unchanged. `.needed = true` alone did not change that, because the pkg-config path turns it
+  into a plain `-lharfbuzz` (the build runner appends pkg-config's libs without the needed
+  prefix). With `.needed = true, .use_pkg_config = .no`: `.../dimna: needs libharfbuzz.so.0,
+  which a release must not link`, for gnu and for musl, exit 1.
+- Without `linker_allow_shlib_undefined`: the gnu GUI link fails with the 11 errors above;
+  the musl link succeeds.
+- Without the `execinfo.h` stand-in (the first musl attempt): `'execinfo.h' file not found`.
+- All reverted; the final build is from the commit.
+
+**Unexpected, and open:**
+- The plan's evidence command `dimna-headless --sim --seconds 5 --no-audio` does not fit the
+  program: `--sim` takes a list (`32,16`), and dimna-headless has neither `--no-audio` (it
+  plays no audio) nor `--help` (an unknown argument exits 2 before anything opens). I ran the
+  command above instead.
+- `dimna --help` was **not run**: the permission system refused to let me run the GUI
+  binary, even with `--help` (which exits during argument parsing, before Wayland). `ldd -r`
+  is the substitute, so none of the GUI's code has run from a release build.
+- When one target's check fails, the other target's tarball is still installed (the build
+  still exits 1). docs/install.md says so.
+- The headers are this machine's (Arch, the newest library versions). A FreeType,
+  fontconfig, xkbcommon or ALSA function newer than RHEL 9's would link here and fail to
+  load there; nothing checks that. `ldd -r bin/dimna` in a target container would.
+- `packaging/install-desktop.sh` and `dimna-launch.sh` in the tarball point at a checkout's
+  `zig-out/bin`, so they do not work from an unpacked tarball (step 4's `install.sh`). The
+  icon `candidates/` go in because the plan says "the packaging folder".
+
+**Not covered:** running anything on another distribution (that needs downloads and root,
+in the owner's `systemd-nspawn` plan); the musl GUI at all; `--driver d3xx` from either
+release; the board (rules); reproducible tarballs; any architecture other than x86_64.
