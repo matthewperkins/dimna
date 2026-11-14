@@ -66,6 +66,15 @@ warning and means English. Only the English catalogue exists so far, so every se
 English; a message a language lacks is shown in English. Log messages, `--help`, config keys
 and file contents are not translated.
 
+Chinese and Persian need more than English does. Chinese needs a font with Simplified
+Chinese (Noto Sans CJK SC: `noto-fonts-cjk` on Arch, `fonts-noto-cjk` on Debian/Ubuntu);
+Persian needs an Arabic-script font (Noto Sans Arabic: `noto-fonts`, `fonts-noto-core`) and
+the HarfBuzz and FriBidi libraries, which dimna loads only when Persian text is drawn (they
+are not linked: `ldd dimna` does not list them). At startup dimna checks that an installed
+font really has a sample of the language's characters, and for Persian that the libraries
+load; if not, it shows English, logs what to install, and says so in a banner for its first
+8 seconds. The other languages need nothing beyond English.
+
 ## Colour scheme from a picture
 
 `scheme_image = "<path>"` in the config (`~/` is the home folder; a relative path is

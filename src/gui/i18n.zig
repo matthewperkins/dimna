@@ -116,6 +116,45 @@ pub fn pick(configured: []const u8, lang_env: []const u8) Language {
     return std.meta.stringToEnum(Language, &two) orelse .en;
 }
 
+/// What a language needs from the machine beyond what English does: a font with its script
+/// (a sample of characters it must have), and for a joined, right-to-left script, the
+/// shaping libraries. Null: nothing beyond English (the Latin languages).
+pub const Needs = struct {
+    name: []const u8,
+    sample: []const u32,
+    shaping: bool,
+    /// What to install, for the message.
+    font_hint: []const u8,
+};
+
+pub fn needs(lang: Language) ?Needs {
+    return switch (lang) {
+        // 阈值 ("threshold"): two common Simplified characters.
+        .zh => .{ .name = "Chinese", .sample = &.{ 0x9608, 0x503C }, .shaping = false, .font_hint = "a Chinese font (Noto Sans CJK SC: noto-fonts-cjk, fonts-noto-cjk)" },
+        // پ ی ف: Persian's own peh and yeh, and feh.
+        .fa => .{ .name = "Persian", .sample = &.{ 0x067E, 0x06CC, 0x0641 }, .shaping = true, .font_hint = "an Arabic-script font (Noto Sans Arabic: noto-fonts, fonts-noto-core)" },
+        else => null,
+    };
+}
+
+/// Why `lang` cannot be shown, given whether a font has its sample and whether the shaping
+/// libraries load; null if it can.
+pub fn missing(lang: Language, has_font: bool, has_shaping: bool) ?[]const u8 {
+    const n = needs(lang) orelse return null;
+    if (!has_font) return n.font_hint;
+    if (n.shaping and !has_shaping) return "HarfBuzz and FriBidi (harfbuzz, fribidi)";
+    return null;
+}
+
+test "a language that cannot be shown says what it needs; the Latin ones need nothing" {
+    try std.testing.expect(missing(.de, false, false) == null);
+    try std.testing.expect(missing(.zh, true, false) == null); // Chinese needs no shaping
+    try std.testing.expect(std.mem.indexOf(u8, missing(.zh, false, true).?, "CJK SC") != null);
+    try std.testing.expect(missing(.fa, true, true) == null);
+    try std.testing.expect(std.mem.indexOf(u8, missing(.fa, false, true).?, "Arabic") != null);
+    try std.testing.expect(std.mem.indexOf(u8, missing(.fa, true, false).?, "HarfBuzz") != null);
+}
+
 // ---- Checking a catalogue ----
 
 /// One placeholder of a message: its name and its kind (`s` text, `d` number, `t` a tag).

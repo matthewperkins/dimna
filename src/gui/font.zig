@@ -323,6 +323,28 @@ pub const Codepoints = struct {
     }
 };
 
+/// Whether some installed font has every one of `cps` (fontconfig's font list filtered by
+/// character set; `fc-match` would not do: it always answers with something).
+pub fn anyFontHas(cps: []const u32) bool {
+    const pat = c.FcPatternCreate() orelse return false;
+    defer c.FcPatternDestroy(pat);
+    const cs = c.FcCharSetCreate() orelse return false;
+    defer c.FcCharSetDestroy(cs);
+    for (cps) |cp| _ = c.FcCharSetAddChar(cs, cp);
+    _ = c.FcPatternAddCharSet(pat, "charset", cs);
+    const os = c.FcObjectSetCreate() orelse return false;
+    defer c.FcObjectSetDestroy(os);
+    _ = c.FcObjectSetAdd(os, "file");
+    const set = c.FcFontList(null, pat, os) orelse return false;
+    defer c.FcFontSetDestroy(set);
+    return set.*.nfont > 0;
+}
+
+test "anyFontHas: Latin yes, an unassigned code point no" {
+    try std.testing.expect(anyFontHas(&.{ 'A', 'z' }));
+    try std.testing.expect(!anyFontHas(&.{0x10FFFD}));
+}
+
 fn findFont(family: [:0]const u8, buf: *[std.fs.max_path_bytes:0]u8) ![:0]const u8 {
     const cfg = c.FcInitLoadConfigAndFonts() orelse return error.Fontconfig;
     defer c.FcConfigDestroy(cfg);

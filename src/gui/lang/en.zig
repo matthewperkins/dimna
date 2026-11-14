@@ -331,3 +331,6 @@ pub const notice_colours_from = "colours taken from {[name]s}";
 pub const notice_colours_change = "to change them, edit scheme_image in {[where]s} (remove it for the built-in colours)";
 pub const notice_colours_failed = "{[reason]s}; the built-in colours are used";
 pub const notice_colours_where = "scheme_image is in {[where]s}";
+// The chosen language cannot be shown on this machine (always in English: it is the fallback).
+pub const notice_language_missing = "{[language]s} needs {[what]s}: showing English";
+pub const notice_language_where = "install it, or set language = \"en\" in {[where]s}";

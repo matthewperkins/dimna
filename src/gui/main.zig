@@ -28,6 +28,7 @@ const Gpu = gpu_mod.Gpu;
 const font = @import("font.zig");
 const format = @import("format.zig");
 const i18n = @import("i18n.zig");
+const shape = @import("shape.zig");
 const fmtSpan = format.fmtSpan;
 const fmtScale = format.fmtScale;
 const control = @import("control.zig");
@@ -112,6 +113,18 @@ pub fn main(init: std.process.Init) !u8 {
     // The colour scheme, if the config names an image. Before any window or thread draws;
     // any failure is a warning and the built-in colours stay. Either way a banner says so
     // over the display for its first seconds, and where to change it.
+    // The language: one this machine cannot show (no font with its script, or for Persian
+    // no shaping libraries) falls back to English, and a banner says what to install.
+    var language_notice: display_mod.Notice = .{};
+    if (i18n.needs(i18n.current)) |n| {
+        const has_shaping = !n.shaping or shape.libs() != null;
+        if (i18n.missing(i18n.current, font.anyFontHas(n.sample), has_shaping)) |what| {
+            log.warn("language {s}: {s} needs {s}; showing English", .{ @tagName(i18n.current), n.name, what });
+            i18n.current = .en;
+            var where_buf: [std.fs.max_path_bytes]u8 = undefined;
+            language_notice.say(.notice_language_missing, .{ .language = n.name, .what = what }, .notice_language_where, .{ .where = files.tildePath(&where_buf, config_path, env.home) });
+        }
+    }
     var scheme_notice: display_mod.Notice = .{};
     if (args.scheme_image.len > 0) {
         var spath_buf: [std.fs.max_path_bytes]u8 = undefined;
@@ -565,7 +578,8 @@ pub fn main(init: std.process.Init) !u8 {
         }, .{ .stalled_s = stalled_s, .ended = ended }, recording.behind(pl.bs, pl.fs), if (recording.active()) disk.left() else null, &display.acknowledged)) snap_dirty = true;
         audio_shared.alarm.store(status.alarm_len > 0, .monotonic);
         status.recording = recording.active();
-        status.notice = if (scheme_notice.shown(nowNs())) &scheme_notice else null;
+        // One banner at a time: the language's first, then the colour scheme's.
+        status.notice = if (language_notice.shown(nowNs())) &language_notice else if (scheme_notice.shown(nowNs())) &scheme_notice else null;
         status.rec_seconds = recording.seconds(nowNs());
         if (input.num_keys > 0 or input.scroll_x != 0 or input.scroll_y != 0 or input.pinch != 1 or
             display.target != snap_target) snap_dirty = true;
