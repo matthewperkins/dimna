@@ -25,11 +25,16 @@ pub const Language = enum { en, de, fr, pt, pl, zh, fa };
 /// The language of every text below. Set once, at start-up.
 pub var current: Language = .en;
 
-/// A language's messages, as a type whose declarations are the messages it has. Later
-/// plans add `lang/de.zig` and so on, and a line for each here.
+/// A language's messages, as a type whose declarations are the messages it has.
 pub fn catalogue(comptime lang: Language) type {
     return switch (lang) {
-        .en, .de, .fr, .pt, .pl, .zh, .fa => en,
+        .en => en,
+        .de => @import("lang/de.zig"),
+        .fr => @import("lang/fr.zig"),
+        .pt => @import("lang/pt.zig"),
+        .pl => @import("lang/pl.zig"),
+        .zh => @import("lang/zh.zig"),
+        .fa => @import("lang/fa.zig"),
     };
 }
 
@@ -540,7 +545,6 @@ test "every counted message of a language has the forms its language needs" {
     var ok = true;
     inline for (comptime std.enums.values(Language)) |lang| {
         const cat = catalogue(lang);
-        if (cat == en and lang != .en) continue; // no file yet: English throughout
         inline for (comptime std.meta.declarations(en)) |name| {
             if (comptime std.mem.endsWith(u8, name, "_other") and countedBase(name) != null) {
                 const base = comptime countedBase(name).?;
