@@ -267,8 +267,8 @@ pub const grab_px = 4;
 pub const Drag = struct { panel: usize, ch: u32, row: usize, from_y: f32, moved: bool = false };
 
 /// One line of the key summary (`?`): in which window, the key or mouse action, what it
-/// does (messages of the catalogue). English is ASCII, so that it lines up in the
-/// fixed-width font.
+/// does (messages of the catalogue). ASCII texts are drawn in the fixed-width font
+/// (`helpText`).
 pub const KeyHelp = struct { window: enum { display, tiles }, key: i18n.Id, what: i18n.Id };
 
 /// The key summary, the one place it is written: the display's keys (they agree with
@@ -1593,7 +1593,7 @@ fn triggeredTitle(o: *Output, p: *const Panel, r: panels_mod.Rect, shown_sweeps:
     const band_all = if (!electrode) "" else if (p.filter.on) fmtBand(&band_buf, p) else if (p.carActive()) i18n.text(.title_raw_car) else i18n.text(.title_raw);
     const gap = "   ";
     const band = if (std.mem.startsWith(u8, band_all, gap)) band_all[gap.len..] else band_all;
-    const tail = i18n.fmt(&tail_buf, .title_sweeps, .{ .count = shown_sweeps, .waiting = if (shown_sweeps == 0) i18n.text(.title_waiting_for_trigger) else "" });
+    const tail = i18n.count(&tail_buf, "title_sweeps", shown_sweeps, .{ .count = shown_sweeps, .waiting = if (shown_sweeps == 0) i18n.text(.title_waiting_for_trigger) else "" });
     const px: f32 = @floatFromInt(r.x);
     const y = @as(f32, @floatFromInt(r.y)) + 6;
     const gap_w = if (band.len > 0) face.width(gap) else 0;
@@ -1658,7 +1658,7 @@ fn panelTitle(o: *Output, p: *const Panel, r: panels_mod.Rect, in_review: bool, 
             trig,
             per_row,
             fmtBand(&band_buf, p),
-            i18n.fmt(&sweeps_buf, .title_sweeps, .{ .count = shown_sweeps, .waiting = if (shown_sweeps == 0) i18n.text(.title_waiting_for_trigger) else "" }),
+            i18n.count(&sweeps_buf, "title_sweeps", shown_sweeps, .{ .count = shown_sweeps, .waiting = if (shown_sweeps == 0) i18n.text(.title_waiting_for_trigger) else "" }),
         })
     else if (p.kind == .ttl)
         format.fmt(&title_buf, "{s}   {s}{s}", .{
@@ -1795,7 +1795,7 @@ fn statusReadout(o: *Output, status: Status, width: u32, height: u32) void {
     const line_h = o.line_h;
     var buf: [96]u8 = undefined;
     const text = if (status.lost > 0)
-        i18n.fmt(&buf, .readout_skipped, .{ .ms = status.latency_ms, .fps = status.fps, .blocks = status.lost })
+        i18n.count(&buf, "readout_skipped", status.lost, .{ .ms = status.latency_ms, .fps = status.fps, .blocks = status.lost })
     else
         format.fmt(&buf, "{d:.1} ms   {d} fps", .{ status.latency_ms, status.fps });
     const w = batch.font.width(text);
@@ -1827,29 +1827,44 @@ fn helpPanel(o: *Output, width: u32, height: u32) void {
     var lines: [2]usize = @splat(0);
     for (key_help) |k| {
         const c = @backingInt(k.window);
-        key_w[c] = @max(key_w[c], f.widthMono(i18n.textOf(k.key)));
-        what_w[c] = @max(what_w[c], f.widthMono(i18n.textOf(k.what)), f.widthMono(headings[c]));
+        key_w[c] = @max(key_w[c], helpWidth(f, i18n.textOf(k.key)));
+        what_w[c] = @max(what_w[c], helpWidth(f, i18n.textOf(k.what)), helpWidth(f, headings[c]));
         lines[c] += 1;
     }
     const sp = f.widthMono("  ");
     const col_w = [2]f32{ key_w[0] + sp + what_w[0], key_w[1] + sp + what_w[1] };
     const gap = f.widthMono("    ");
-    const w = @max(col_w[0] + gap + col_w[1], f.widthMono(title)) + 2 * pad;
+    const w = @max(col_w[0] + gap + col_w[1], helpWidth(f, title)) + 2 * pad;
     const h = @as(f32, @floatFromInt(@max(lines[0], lines[1]) + 3)) * line_h + 2 * pad;
     const x0 = @round(@max(0, (@as(f32, @floatFromInt(width)) - w) / 2));
     const y0 = @round(@max(0, (@as(f32, @floatFromInt(height)) - h) / 2));
     batch.rect(x0, y0, w, h, theme.help_backing);
-    _ = batch.textMono(x0 + pad, y0 + pad, title, theme.help_title);
+    _ = helpText(batch, x0 + pad, y0 + pad, title, theme.help_title);
     const col_x = [2]f32{ x0 + pad, x0 + pad + col_w[0] + gap };
     var row: [2]usize = @splat(0);
-    for (headings, col_x) |heading, x| _ = batch.textMono(x, y0 + pad + 2 * line_h, heading, theme.help_title);
+    for (headings, col_x) |heading, x| _ = helpText(batch, x, y0 + pad + 2 * line_h, heading, theme.help_title);
     for (key_help) |k| {
         const c = @backingInt(k.window);
         const y = y0 + pad + @as(f32, @floatFromInt(row[c] + 3)) * line_h;
-        _ = batch.textMono(col_x[c], y, i18n.textOf(k.key), theme.help_key);
-        _ = batch.textMono(col_x[c] + key_w[c] + sp, y, i18n.textOf(k.what), theme.help_text);
+        _ = helpText(batch, col_x[c], y, i18n.textOf(k.key), theme.help_key);
+        _ = helpText(batch, col_x[c] + key_w[c] + sp, y, i18n.textOf(k.what), theme.help_text);
         row[c] += 1;
     }
+}
+
+/// The key summary's text: ASCII in the fixed-width font, so English's columns line up;
+/// any other in the ordinary font, which shapes and has every script.
+fn helpText(batch: *font.Batch, x: f32, y: f32, string: []const u8, colour: font.Colour) f32 {
+    return if (isAscii(string)) batch.textMono(x, y, string, colour) else batch.text(x, y, string, colour);
+}
+
+fn helpWidth(f: *const font.Font, string: []const u8) f32 {
+    return if (isAscii(string)) f.widthMono(string) else f.width(string);
+}
+
+fn isAscii(string: []const u8) bool {
+    for (string) |c| if (c >= 0x80) return false;
+    return true;
 }
 
 /// A bar along the top of the panel that input goes to.
@@ -2783,10 +2798,9 @@ test "the key summary agrees with the usage text on the display's keys" {
         std.debug.print("the key summary has '{s}', the usage text does not\n", .{i18n.textOfIn(.en, key_help[k].key)});
         return error.TestUnexpectedResult;
     }
-    // Every line of the English summary is ASCII, so the columns line up in the fixed-width font.
+    // The English keys are ASCII, so their column lines up in the fixed-width font.
     for (key_help) |h| {
         for (i18n.textOfIn(.en, h.key)) |c| try testing.expect(c >= 0x20 and c < 0x7f);
-        for (i18n.textOfIn(.en, h.what)) |c| try testing.expect(c >= 0x20 and c < 0x7f);
     }
 }
 

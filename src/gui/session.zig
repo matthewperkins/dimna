@@ -492,7 +492,7 @@ pub const Alarms = struct {
         } else if (now.stalls > self.seen.stalls) {
             const k = now.stalls - self.seen.stalls;
             w.writeAll(if (w.buffered().len > 0) sep else "") catch {};
-            if (k == 1) i18n.print(&w, .alarm_quiet_once, .{}) catch {} else i18n.print(&w, .alarm_quiet_times, .{ .times = k }) catch {};
+            i18n.printCount(&w, "alarm_quiet_times", k, .{ .times = k }) catch {};
         }
         if (self.recording_failed) {
             w.writeAll(if (w.buffered().len > 0) sep else "") catch {};
@@ -500,15 +500,15 @@ pub const Alarms = struct {
         }
         if (now.overflow > self.seen.overflow) {
             w.writeAll(if (w.buffered().len > 0) sep else "") catch {};
-            i18n.print(&w, .alarm_blocks_lost, .{ .blocks = now.overflow - self.seen.overflow }) catch {};
+            i18n.printCount(&w, "alarm_blocks_lost", now.overflow - self.seen.overflow, .{ .blocks = now.overflow - self.seen.overflow }) catch {};
         }
         if (now.dropped > self.seen.dropped) {
             w.writeAll(if (w.buffered().len > 0) sep else "") catch {};
-            i18n.print(&w, .alarm_dropped, .{ .samples = now.dropped - self.seen.dropped }) catch {};
+            i18n.printCount(&w, "alarm_dropped", now.dropped - self.seen.dropped, .{ .samples = now.dropped - self.seen.dropped }) catch {};
         }
         if (now.gaps > self.seen.gaps) {
             w.writeAll(if (w.buffered().len > 0) sep else "") catch {};
-            i18n.print(&w, .alarm_gaps, .{ .gaps = now.gaps - self.seen.gaps }) catch {};
+            i18n.printCount(&w, "alarm_gaps", now.gaps - self.seen.gaps, .{ .gaps = now.gaps - self.seen.gaps }) catch {};
         }
         if (disk_level > self.disk_seen) {
             w.writeAll(if (w.buffered().len > 0) sep else "") catch {};

@@ -1,4 +1,4 @@
-== not recording, all open: 969 quads, ends at x 636 y 710
+== not recording, all open: 970 quads, ends at x 636 y 710
 text 12 14 { 225, 230, 240, 255 } "dimna"
 text 60 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
 text 12 42 { 255, 190, 90, 255 } "disk nearly full"
@@ -66,18 +66,18 @@ text 21 390 { 225, 230, 240, 255 } "▾ Headstages"
 text 140 390 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.17 Hz"
 text 12 418 { 150, 160, 178, 255 } "(these change what is recorded)"
 text 12 446 { 150, 160, 178, 255 } "amplifier band"
-text 132 446 { 150, 160, 178, 255 } "from"
-rect 172 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
-text 181 446 { 225, 230, 240, 255 } "-"
-text 216 446 { 225, 230, 240, 255 } "0.58 Hz"
-rect 290 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
-text 299 446 { 225, 230, 240, 255 } "+"
-text 332 446 { 150, 160, 178, 255 } "to"
-rect 356 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
-text 365 446 { 225, 230, 240, 255 } "-"
-text 396 446 { 225, 230, 240, 255 } "7.60 kHz"
-rect 474 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
-text 483 446 { 225, 230, 240, 255 } "+"
+text 132 446 { 150, 160, 178, 255 } "low"
+rect 164 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
+text 173 446 { 225, 230, 240, 255 } "-"
+text 208 446 { 225, 230, 240, 255 } "0.58 Hz"
+rect 282 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
+text 291 446 { 225, 230, 240, 255 } "+"
+text 324 446 { 150, 160, 178, 255 } "high"
+rect 364 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
+text 373 446 { 225, 230, 240, 255 } "-"
+text 404 446 { 225, 230, 240, 255 } "7.60 kHz"
+rect 482 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
+text 491 446 { 225, 230, 240, 255 } "+"
 text 12 474 { 150, 160, 178, 255 } "DSP high-pass"
 rect 132 470 42 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp = false } }
 text 141 474 { 225, 230, 240, 255 } "off"
@@ -166,7 +166,7 @@ rect 12 130 130 24 { 52, 96, 170, 255 } -> .{ .record = false }
 text 21 134 { 225, 230, 240, 255 } "Stop recording"
 text 148 134 { 255, 96, 96, 255 } "REC 1:01:01   13.20 GB   109.8 M samples"
 text 476 134 { 255, 190, 90, 255 } "disk is 2.5 s behind"
-text 644 134 { 255, 190, 90, 255 } "1 gaps"
+text 644 134 { 255, 190, 90, 255 } "1 gap"
 text 12 162 { 150, 160, 178, 255 } "started at 12:00"
 text 12 190 { 150, 160, 178, 255 } "/data/2026-11-12_12-00-00"
 rect 12 216 776 1 { 48, 52, 62, 255 }
@@ -225,18 +225,18 @@ text 140 474 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.1
 text 508 474 { 255, 190, 90, 255 } "(restart pending)"
 text 12 502 { 150, 160, 178, 255 } "(these change what is recorded)"
 text 12 530 { 150, 160, 178, 255 } "amplifier band"
-text 132 530 { 150, 160, 178, 255 } "from"
-rect 172 526 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
-text 181 530 { 225, 230, 240, 255 } "-"
-text 216 530 { 225, 230, 240, 255 } "0.58 Hz"
-rect 290 526 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
-text 299 530 { 225, 230, 240, 255 } "+"
-text 332 530 { 150, 160, 178, 255 } "to"
-rect 356 526 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
-text 365 530 { 225, 230, 240, 255 } "-"
-text 396 530 { 225, 230, 240, 255 } "7.60 kHz"
-rect 474 526 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
-text 483 530 { 225, 230, 240, 255 } "+"
+text 132 530 { 150, 160, 178, 255 } "low"
+rect 164 526 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
+text 173 530 { 225, 230, 240, 255 } "-"
+text 208 530 { 225, 230, 240, 255 } "0.58 Hz"
+rect 282 526 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
+text 291 530 { 225, 230, 240, 255 } "+"
+text 324 530 { 150, 160, 178, 255 } "high"
+rect 364 526 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
+text 373 530 { 225, 230, 240, 255 } "-"
+text 404 530 { 225, 230, 240, 255 } "7.60 kHz"
+rect 482 526 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
+text 491 530 { 225, 230, 240, 255 } "+"
 text 12 558 { 150, 160, 178, 255 } "DSP high-pass"
 rect 132 554 42 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp = false } }
 text 141 558 { 225, 230, 240, 255 } "off"
@@ -313,7 +313,7 @@ rect 124 814 34 24 { 38, 43, 54, 255 } -> panel 0 .{ .car = true }
 text 133 818 { 225, 230, 240, 255 } "on"
 rect 12 844 776 1 { 48, 52, 62, 255 }
 text 12 854 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
-== review active, all open: 851 quads, ends at x 636 y 682
+== review active, all open: 852 quads, ends at x 636 y 682
 text 12 14 { 225, 230, 240, 255 } "dimna"
 text 60 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
 text 12 42 { 255, 190, 90, 255 } "disk nearly full"
@@ -373,18 +373,18 @@ text 21 362 { 225, 230, 240, 255 } "▾ Headstages"
 text 140 362 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.17 Hz"
 text 12 390 { 150, 160, 178, 255 } "(these change what is recorded)"
 text 12 418 { 150, 160, 178, 255 } "amplifier band"
-text 132 418 { 150, 160, 178, 255 } "from"
-rect 172 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
-text 181 418 { 225, 230, 240, 255 } "-"
-text 216 418 { 225, 230, 240, 255 } "0.58 Hz"
-rect 290 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
-text 299 418 { 225, 230, 240, 255 } "+"
-text 332 418 { 150, 160, 178, 255 } "to"
-rect 356 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
-text 365 418 { 225, 230, 240, 255 } "-"
-text 396 418 { 225, 230, 240, 255 } "7.60 kHz"
-rect 474 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
-text 483 418 { 225, 230, 240, 255 } "+"
+text 132 418 { 150, 160, 178, 255 } "low"
+rect 164 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
+text 173 418 { 225, 230, 240, 255 } "-"
+text 208 418 { 225, 230, 240, 255 } "0.58 Hz"
+rect 282 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
+text 291 418 { 225, 230, 240, 255 } "+"
+text 324 418 { 150, 160, 178, 255 } "high"
+rect 364 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
+text 373 418 { 225, 230, 240, 255 } "-"
+text 404 418 { 225, 230, 240, 255 } "7.60 kHz"
+rect 482 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
+text 491 418 { 225, 230, 240, 255 } "+"
 text 12 446 { 150, 160, 178, 255 } "DSP high-pass"
 rect 132 442 42 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp = false } }
 text 141 446 { 225, 230, 240, 255 } "off"
@@ -473,7 +473,7 @@ rect 228 214 170 24 { 38, 43, 54, 255 } -> .{ .quit_answer = .discard }
 text 237 218 { 225, 230, 240, 255 } "Quit without saving"
 rect 404 214 66 24 { 38, 43, 54, 255 } -> .{ .quit_answer = .cancel }
 text 413 218 { 225, 230, 240, 255 } "Cancel"
-== restart pending, all open: 955 quads, ends at x 636 y 766
+== restart pending, all open: 956 quads, ends at x 636 y 766
 text 12 14 { 225, 230, 240, 255 } "dimna"
 text 60 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
 text 12 42 { 255, 190, 90, 255 } "disk nearly full"
@@ -539,18 +539,18 @@ text 140 390 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.1
 text 508 390 { 255, 190, 90, 255 } "(restart pending)"
 text 12 418 { 150, 160, 178, 255 } "(these change what is recorded)"
 text 12 446 { 150, 160, 178, 255 } "amplifier band"
-text 132 446 { 150, 160, 178, 255 } "from"
-rect 172 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
-text 181 446 { 225, 230, 240, 255 } "-"
-text 216 446 { 225, 230, 240, 255 } "0.58 Hz"
-rect 290 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
-text 299 446 { 225, 230, 240, 255 } "+"
-text 332 446 { 150, 160, 178, 255 } "to"
-rect 356 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
-text 365 446 { 225, 230, 240, 255 } "-"
-text 396 446 { 225, 230, 240, 255 } "7.60 kHz"
-rect 474 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
-text 483 446 { 225, 230, 240, 255 } "+"
+text 132 446 { 150, 160, 178, 255 } "low"
+rect 164 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
+text 173 446 { 225, 230, 240, 255 } "-"
+text 208 446 { 225, 230, 240, 255 } "0.58 Hz"
+rect 282 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
+text 291 446 { 225, 230, 240, 255 } "+"
+text 324 446 { 150, 160, 178, 255 } "high"
+rect 364 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
+text 373 446 { 225, 230, 240, 255 } "-"
+text 404 446 { 225, 230, 240, 255 } "7.60 kHz"
+rect 482 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
+text 491 446 { 225, 230, 240, 255 } "+"
 text 12 474 { 150, 160, 178, 255 } "DSP high-pass"
 rect 132 470 42 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp = false } }
 text 141 474 { 225, 230, 240, 255 } "off"
@@ -626,7 +626,7 @@ rect 124 730 34 24 { 38, 43, 54, 255 } -> panel 0 .{ .car = true }
 text 133 734 { 225, 230, 240, 255 } "on"
 rect 12 760 776 1 { 48, 52, 62, 255 }
 text 12 770 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
-== two panels: slope trigger, reference; all open: 1686 quads, ends at x 636 y 1110
+== two panels: slope trigger, reference; all open: 1689 quads, ends at x 636 y 1110
 text 12 14 { 225, 230, 240, 255 } "dimna"
 text 60 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
 text 12 42 { 150, 160, 178, 255 } "display 4.3 ms   144 fps   running 125 s"
@@ -691,18 +691,18 @@ text 21 362 { 225, 230, 240, 255 } "▾ Headstages"
 text 140 362 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.17 Hz"
 text 12 390 { 150, 160, 178, 255 } "(these change what is recorded)"
 text 12 418 { 150, 160, 178, 255 } "amplifier band"
-text 132 418 { 150, 160, 178, 255 } "from"
-rect 172 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
-text 181 418 { 225, 230, 240, 255 } "-"
-text 216 418 { 225, 230, 240, 255 } "0.58 Hz"
-rect 290 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
-text 299 418 { 225, 230, 240, 255 } "+"
-text 332 418 { 150, 160, 178, 255 } "to"
-rect 356 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
-text 365 418 { 225, 230, 240, 255 } "-"
-text 396 418 { 225, 230, 240, 255 } "7.60 kHz"
-rect 474 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
-text 483 418 { 225, 230, 240, 255 } "+"
+text 132 418 { 150, 160, 178, 255 } "low"
+rect 164 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
+text 173 418 { 225, 230, 240, 255 } "-"
+text 208 418 { 225, 230, 240, 255 } "0.58 Hz"
+rect 282 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
+text 291 418 { 225, 230, 240, 255 } "+"
+text 324 418 { 150, 160, 178, 255 } "high"
+rect 364 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
+text 373 418 { 225, 230, 240, 255 } "-"
+text 404 418 { 225, 230, 240, 255 } "7.60 kHz"
+rect 482 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
+text 491 418 { 225, 230, 240, 255 } "+"
 text 12 446 { 150, 160, 178, 255 } "DSP high-pass"
 rect 132 442 42 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp = false } }
 text 141 446 { 225, 230, 240, 255 } "off"
@@ -755,18 +755,18 @@ rect 76 618 42 24 { 38, 43, 54, 255 } -> panel 0 .{ .filter = false }
 text 85 622 { 225, 230, 240, 255 } "raw"
 rect 124 618 50 24 { 52, 96, 170, 255 }
 text 133 622 { 225, 230, 240, 255 } "band"
-text 194 622 { 150, 160, 178, 255 } "from"
-rect 234 618 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .corner = .{ .high = false, .up = false } }
-text 243 622 { 225, 230, 240, 255 } "-"
-text 282 622 { 225, 230, 240, 255 } "300 Hz"
-rect 352 618 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .corner = .{ .high = false, .up = true } }
-text 361 622 { 225, 230, 240, 255 } "+"
-text 394 622 { 150, 160, 178, 255 } "to"
-rect 418 618 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .corner = .{ .high = true, .up = false } }
-text 427 622 { 225, 230, 240, 255 } "-"
-text 462 622 { 225, 230, 240, 255 } "6000 Hz"
-rect 536 618 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .corner = .{ .high = true, .up = true } }
-text 545 622 { 225, 230, 240, 255 } "+"
+text 194 622 { 150, 160, 178, 255 } "low"
+rect 226 618 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .corner = .{ .high = false, .up = false } }
+text 235 622 { 225, 230, 240, 255 } "-"
+text 274 622 { 225, 230, 240, 255 } "300 Hz"
+rect 344 618 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .corner = .{ .high = false, .up = true } }
+text 353 622 { 225, 230, 240, 255 } "+"
+text 386 622 { 150, 160, 178, 255 } "high"
+rect 426 618 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .corner = .{ .high = true, .up = false } }
+text 435 622 { 225, 230, 240, 255 } "-"
+text 470 622 { 225, 230, 240, 255 } "6000 Hz"
+rect 544 618 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .corner = .{ .high = true, .up = true } }
+text 553 622 { 225, 230, 240, 255 } "+"
 text 12 650 { 150, 160, 178, 255 } "rows shown"
 rect 116 646 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 0 }
 text 127 650 { 225, 230, 240, 255 } "1"
@@ -964,18 +964,18 @@ rect 76 934 42 24 { 38, 43, 54, 255 } -> panel 1 .{ .filter = false }
 text 85 938 { 225, 230, 240, 255 } "raw"
 rect 124 934 50 24 { 52, 96, 170, 255 }
 text 133 938 { 225, 230, 240, 255 } "band"
-text 194 938 { 150, 160, 178, 255 } "from"
-rect 234 934 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .corner = .{ .high = false, .up = false } }
-text 243 938 { 225, 230, 240, 255 } "-"
-text 294 938 { 225, 230, 240, 255 } "off"
-rect 352 934 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .corner = .{ .high = false, .up = true } }
-text 361 938 { 225, 230, 240, 255 } "+"
-text 394 938 { 150, 160, 178, 255 } "to"
-rect 418 934 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .corner = .{ .high = true, .up = false } }
-text 427 938 { 225, 230, 240, 255 } "-"
-text 462 938 { 225, 230, 240, 255 } "6000 Hz"
-rect 536 934 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .corner = .{ .high = true, .up = true } }
-text 545 938 { 225, 230, 240, 255 } "+"
+text 194 938 { 150, 160, 178, 255 } "low"
+rect 226 934 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .corner = .{ .high = false, .up = false } }
+text 235 938 { 225, 230, 240, 255 } "-"
+text 286 938 { 225, 230, 240, 255 } "off"
+rect 344 934 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .corner = .{ .high = false, .up = true } }
+text 353 938 { 225, 230, 240, 255 } "+"
+text 386 938 { 150, 160, 178, 255 } "high"
+rect 426 934 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .corner = .{ .high = true, .up = false } }
+text 435 938 { 225, 230, 240, 255 } "-"
+text 470 938 { 225, 230, 240, 255 } "6000 Hz"
+rect 544 934 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .corner = .{ .high = true, .up = true } }
+text 553 938 { 225, 230, 240, 255 } "+"
 text 12 966 { 150, 160, 178, 255 } "rows shown"
 rect 116 962 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 0 }
 text 127 966 { 225, 230, 240, 255 } "1"
@@ -1123,7 +1123,7 @@ rect 729 1074 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 15 }
 text 736 1078 { 225, 230, 240, 255 } "16"
 rect 12 1104 776 1 { 48, 52, 62, 255 }
 text 12 1114 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
-== alarm, all open: 994 quads, ends at x 636 y 710
+== alarm, all open: 995 quads, ends at x 636 y 710
 text 12 14 { 225, 230, 240, 255 } "dimna"
 text 60 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
 rect 0 36 800 30 { 190, 25, 25, 245 }
@@ -1194,18 +1194,18 @@ text 21 390 { 225, 230, 240, 255 } "▾ Headstages"
 text 140 390 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.17 Hz"
 text 12 418 { 150, 160, 178, 255 } "(these change what is recorded)"
 text 12 446 { 150, 160, 178, 255 } "amplifier band"
-text 132 446 { 150, 160, 178, 255 } "from"
-rect 172 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
-text 181 446 { 225, 230, 240, 255 } "-"
-text 216 446 { 225, 230, 240, 255 } "0.58 Hz"
-rect 290 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
-text 299 446 { 225, 230, 240, 255 } "+"
-text 332 446 { 150, 160, 178, 255 } "to"
-rect 356 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
-text 365 446 { 225, 230, 240, 255 } "-"
-text 396 446 { 225, 230, 240, 255 } "7.60 kHz"
-rect 474 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
-text 483 446 { 225, 230, 240, 255 } "+"
+text 132 446 { 150, 160, 178, 255 } "low"
+rect 164 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
+text 173 446 { 225, 230, 240, 255 } "-"
+text 208 446 { 225, 230, 240, 255 } "0.58 Hz"
+rect 282 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
+text 291 446 { 225, 230, 240, 255 } "+"
+text 324 446 { 150, 160, 178, 255 } "high"
+rect 364 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
+text 373 446 { 225, 230, 240, 255 } "-"
+text 404 446 { 225, 230, 240, 255 } "7.60 kHz"
+rect 482 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
+text 491 446 { 225, 230, 240, 255 } "+"
 text 12 474 { 150, 160, 178, 255 } "DSP high-pass"
 rect 132 470 42 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp = false } }
 text 141 474 { 225, 230, 240, 255 } "off"
@@ -1278,7 +1278,7 @@ rect 124 674 34 24 { 38, 43, 54, 255 } -> panel 0 .{ .car = true }
 text 133 678 { 225, 230, 240, 255 } "on"
 rect 12 704 776 1 { 48, 52, 62, 255 }
 text 12 714 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
-== other panels, all open: 1404 quads, ends at x 636 y 1014
+== other panels, all open: 1405 quads, ends at x 636 y 1014
 text 12 14 { 225, 230, 240, 255 } "dimna"
 text 60 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
 text 12 42 { 150, 160, 178, 255 } "starting"
@@ -1341,18 +1341,18 @@ text 21 362 { 225, 230, 240, 255 } "▾ Headstages"
 text 140 362 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.17 Hz"
 text 12 390 { 150, 160, 178, 255 } "(these change what is recorded)"
 text 12 418 { 150, 160, 178, 255 } "amplifier band"
-text 132 418 { 150, 160, 178, 255 } "from"
-rect 172 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
-text 181 418 { 225, 230, 240, 255 } "-"
-text 216 418 { 225, 230, 240, 255 } "0.58 Hz"
-rect 290 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
-text 299 418 { 225, 230, 240, 255 } "+"
-text 332 418 { 150, 160, 178, 255 } "to"
-rect 356 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
-text 365 418 { 225, 230, 240, 255 } "-"
-text 396 418 { 225, 230, 240, 255 } "7.60 kHz"
-rect 474 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
-text 483 418 { 225, 230, 240, 255 } "+"
+text 132 418 { 150, 160, 178, 255 } "low"
+rect 164 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
+text 173 418 { 225, 230, 240, 255 } "-"
+text 208 418 { 225, 230, 240, 255 } "0.58 Hz"
+rect 282 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
+text 291 418 { 225, 230, 240, 255 } "+"
+text 324 418 { 150, 160, 178, 255 } "high"
+rect 364 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
+text 373 418 { 225, 230, 240, 255 } "-"
+text 404 418 { 225, 230, 240, 255 } "7.60 kHz"
+rect 482 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
+text 491 418 { 225, 230, 240, 255 } "+"
 text 12 446 { 150, 160, 178, 255 } "DSP high-pass"
 rect 132 442 42 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp = false } }
 text 141 446 { 225, 230, 240, 255 } "off"
@@ -1647,7 +1647,7 @@ text 21 342 { 225, 230, 240, 255 } "▸ Port A"
 text 140 342 { 150, 160, 178, 255 } "scroll   2.00 s   400 µV/row   raw"
 rect 12 368 776 1 { 48, 52, 62, 255 }
 text 12 378 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
-== headstages open: 658 quads, ends at x 636 y 430
+== headstages open: 659 quads, ends at x 636 y 430
 text 12 14 { 225, 230, 240, 255 } "dimna"
 text 60 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
 text 12 42 { 255, 190, 90, 255 } "disk nearly full"
@@ -1684,18 +1684,18 @@ text 21 250 { 225, 230, 240, 255 } "▾ Headstages"
 text 140 250 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.17 Hz"
 text 12 278 { 150, 160, 178, 255 } "(these change what is recorded)"
 text 12 306 { 150, 160, 178, 255 } "amplifier band"
-text 132 306 { 150, 160, 178, 255 } "from"
-rect 172 302 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
-text 181 306 { 225, 230, 240, 255 } "-"
-text 216 306 { 225, 230, 240, 255 } "0.58 Hz"
-rect 290 302 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
-text 299 306 { 225, 230, 240, 255 } "+"
-text 332 306 { 150, 160, 178, 255 } "to"
-rect 356 302 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
-text 365 306 { 225, 230, 240, 255 } "-"
-text 396 306 { 225, 230, 240, 255 } "7.60 kHz"
-rect 474 302 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
-text 483 306 { 225, 230, 240, 255 } "+"
+text 132 306 { 150, 160, 178, 255 } "low"
+rect 164 302 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
+text 173 306 { 225, 230, 240, 255 } "-"
+text 208 306 { 225, 230, 240, 255 } "0.58 Hz"
+rect 282 302 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
+text 291 306 { 225, 230, 240, 255 } "+"
+text 324 306 { 150, 160, 178, 255 } "high"
+rect 364 302 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
+text 373 306 { 225, 230, 240, 255 } "-"
+text 404 306 { 225, 230, 240, 255 } "7.60 kHz"
+rect 482 302 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
+text 491 306 { 225, 230, 240, 255 } "+"
 text 12 334 { 150, 160, 178, 255 } "DSP high-pass"
 rect 132 330 42 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp = false } }
 text 141 334 { 225, 230, 240, 255 } "off"
@@ -1724,7 +1724,7 @@ text 21 398 { 225, 230, 240, 255 } "▸ Port A"
 text 140 398 { 150, 160, 178, 255 } "scroll   2.00 s   400 µV/row   raw"
 rect 12 424 776 1 { 48, 52, 62, 255 }
 text 12 434 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
-== Port B open of two panels: 920 quads, ends at x 636 y 550
+== Port B open of two panels: 921 quads, ends at x 636 y 550
 text 12 14 { 225, 230, 240, 255 } "dimna"
 text 60 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
 text 12 42 { 150, 160, 178, 255 } "display 4.3 ms   144 fps   running 125 s"
@@ -1792,18 +1792,18 @@ rect 76 374 42 24 { 38, 43, 54, 255 } -> panel 1 .{ .filter = false }
 text 85 378 { 225, 230, 240, 255 } "raw"
 rect 124 374 50 24 { 52, 96, 170, 255 }
 text 133 378 { 225, 230, 240, 255 } "band"
-text 194 378 { 150, 160, 178, 255 } "from"
-rect 234 374 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .corner = .{ .high = false, .up = false } }
-text 243 378 { 225, 230, 240, 255 } "-"
-text 294 378 { 225, 230, 240, 255 } "off"
-rect 352 374 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .corner = .{ .high = false, .up = true } }
-text 361 378 { 225, 230, 240, 255 } "+"
-text 394 378 { 150, 160, 178, 255 } "to"
-rect 418 374 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .corner = .{ .high = true, .up = false } }
-text 427 378 { 225, 230, 240, 255 } "-"
-text 462 378 { 225, 230, 240, 255 } "6000 Hz"
-rect 536 374 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .corner = .{ .high = true, .up = true } }
-text 545 378 { 225, 230, 240, 255 } "+"
+text 194 378 { 150, 160, 178, 255 } "low"
+rect 226 374 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .corner = .{ .high = false, .up = false } }
+text 235 378 { 225, 230, 240, 255 } "-"
+text 286 378 { 225, 230, 240, 255 } "off"
+rect 344 374 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .corner = .{ .high = false, .up = true } }
+text 353 378 { 225, 230, 240, 255 } "+"
+text 386 378 { 150, 160, 178, 255 } "high"
+rect 426 374 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .corner = .{ .high = true, .up = false } }
+text 435 378 { 225, 230, 240, 255 } "-"
+text 470 378 { 225, 230, 240, 255 } "6000 Hz"
+rect 544 374 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .corner = .{ .high = true, .up = true } }
+text 553 378 { 225, 230, 240, 255 } "+"
 text 12 406 { 150, 160, 178, 255 } "rows shown"
 rect 116 402 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 0 }
 text 127 406 { 225, 230, 240, 255 } "1"
@@ -2008,7 +2008,7 @@ rect 12 130 130 24 { 52, 96, 170, 255 } -> .{ .record = false }
 text 21 134 { 225, 230, 240, 255 } "Stop recording"
 text 148 134 { 255, 96, 96, 255 } "REC 1:01:01   13.20 GB   109.8 M samples"
 text 476 134 { 255, 190, 90, 255 } "disk is 2.5 s behind"
-text 644 134 { 255, 190, 90, 255 } "1 gaps"
+text 644 134 { 255, 190, 90, 255 } "1 gap"
 text 12 162 { 150, 160, 178, 255 } "started at 12:00"
 text 12 190 { 150, 160, 178, 255 } "/data/2026-11-12_12-00-00"
 rect 12 216 776 1 { 48, 52, 62, 255 }
@@ -2035,18 +2035,18 @@ text 140 334 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.1
 text 508 334 { 255, 190, 90, 255 } "(restart pending)"
 text 12 362 { 150, 160, 178, 255 } "(these change what is recorded)"
 text 12 390 { 150, 160, 178, 255 } "amplifier band"
-text 132 390 { 150, 160, 178, 255 } "from"
-rect 172 386 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
-text 181 390 { 225, 230, 240, 255 } "-"
-text 216 390 { 225, 230, 240, 255 } "0.58 Hz"
-rect 290 386 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
-text 299 390 { 225, 230, 240, 255 } "+"
-text 332 390 { 150, 160, 178, 255 } "to"
-rect 356 386 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
-text 365 390 { 225, 230, 240, 255 } "-"
-text 396 390 { 225, 230, 240, 255 } "7.60 kHz"
-rect 474 386 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
-text 483 390 { 225, 230, 240, 255 } "+"
+text 132 390 { 150, 160, 178, 255 } "low"
+rect 164 386 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
+text 173 390 { 225, 230, 240, 255 } "-"
+text 208 390 { 225, 230, 240, 255 } "0.58 Hz"
+rect 282 386 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
+text 291 390 { 225, 230, 240, 255 } "+"
+text 324 390 { 150, 160, 178, 255 } "high"
+rect 364 386 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
+text 373 390 { 225, 230, 240, 255 } "-"
+text 404 390 { 225, 230, 240, 255 } "7.60 kHz"
+rect 482 386 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
+text 491 390 { 225, 230, 240, 255 } "+"
 text 12 418 { 150, 160, 178, 255 } "DSP high-pass"
 rect 132 414 42 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp = false } }
 text 141 418 { 225, 230, 240, 255 } "off"
@@ -2079,7 +2079,7 @@ text 21 538 { 225, 230, 240, 255 } "▸ Port A"
 text 140 538 { 150, 160, 178, 255 } "scroll   2.00 s   400 µV/row   raw"
 rect 12 564 776 1 { 48, 52, 62, 255 }
 text 12 574 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
-== all closed, Headstages open by itself: restart pending: 693 quads, ends at x 636 y 486
+== all closed, Headstages open by itself: restart pending: 694 quads, ends at x 636 y 486
 text 12 14 { 225, 230, 240, 255 } "dimna"
 text 60 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
 text 12 42 { 255, 190, 90, 255 } "disk nearly full"
@@ -2117,18 +2117,18 @@ text 140 250 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.1
 text 508 250 { 255, 190, 90, 255 } "(restart pending)"
 text 12 278 { 150, 160, 178, 255 } "(these change what is recorded)"
 text 12 306 { 150, 160, 178, 255 } "amplifier band"
-text 132 306 { 150, 160, 178, 255 } "from"
-rect 172 302 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
-text 181 306 { 225, 230, 240, 255 } "-"
-text 216 306 { 225, 230, 240, 255 } "0.58 Hz"
-rect 290 302 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
-text 299 306 { 225, 230, 240, 255 } "+"
-text 332 306 { 150, 160, 178, 255 } "to"
-rect 356 302 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
-text 365 306 { 225, 230, 240, 255 } "-"
-text 396 306 { 225, 230, 240, 255 } "7.60 kHz"
-rect 474 302 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
-text 483 306 { 225, 230, 240, 255 } "+"
+text 132 306 { 150, 160, 178, 255 } "low"
+rect 164 302 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
+text 173 306 { 225, 230, 240, 255 } "-"
+text 208 306 { 225, 230, 240, 255 } "0.58 Hz"
+rect 282 302 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
+text 291 306 { 225, 230, 240, 255 } "+"
+text 324 306 { 150, 160, 178, 255 } "high"
+rect 364 302 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
+text 373 306 { 225, 230, 240, 255 } "-"
+text 404 306 { 225, 230, 240, 255 } "7.60 kHz"
+rect 482 302 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
+text 491 306 { 225, 230, 240, 255 } "+"
 text 12 334 { 150, 160, 178, 255 } "DSP high-pass"
 rect 132 330 42 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp = false } }
 text 141 334 { 225, 230, 240, 255 } "off"
@@ -2160,7 +2160,7 @@ text 21 454 { 225, 230, 240, 255 } "▸ Port A"
 text 140 454 { 150, 160, 178, 255 } "scroll   2.00 s   400 µV/row   raw"
 rect 12 480 776 1 { 48, 52, 62, 255 }
 text 12 490 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
-== all closed, Headstages open by itself: settings not the config file's: 787 quads, ends at x 636 y 486
+== all closed, Headstages open by itself: settings not the config file's: 788 quads, ends at x 636 y 486
 text 12 14 { 225, 230, 240, 255 } "dimna"
 text 60 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
 text 12 42 { 255, 190, 90, 255 } "disk nearly full"
@@ -2198,18 +2198,18 @@ text 140 250 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.1
 text 508 250 { 255, 190, 90, 255 } "(not saved as default)"
 text 12 278 { 150, 160, 178, 255 } "(these change what is recorded)"
 text 12 306 { 150, 160, 178, 255 } "amplifier band"
-text 132 306 { 150, 160, 178, 255 } "from"
-rect 172 302 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
-text 181 306 { 225, 230, 240, 255 } "-"
-text 216 306 { 225, 230, 240, 255 } "0.58 Hz"
-rect 290 302 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
-text 299 306 { 225, 230, 240, 255 } "+"
-text 332 306 { 150, 160, 178, 255 } "to"
-rect 356 302 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
-text 365 306 { 225, 230, 240, 255 } "-"
-text 396 306 { 225, 230, 240, 255 } "7.60 kHz"
-rect 474 302 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
-text 483 306 { 225, 230, 240, 255 } "+"
+text 132 306 { 150, 160, 178, 255 } "low"
+rect 164 302 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
+text 173 306 { 225, 230, 240, 255 } "-"
+text 208 306 { 225, 230, 240, 255 } "0.58 Hz"
+rect 282 302 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
+text 291 306 { 225, 230, 240, 255 } "+"
+text 324 306 { 150, 160, 178, 255 } "high"
+rect 364 302 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
+text 373 306 { 225, 230, 240, 255 } "-"
+text 404 306 { 225, 230, 240, 255 } "7.60 kHz"
+rect 482 302 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
+text 491 306 { 225, 230, 240, 255 } "+"
 text 12 334 { 150, 160, 178, 255 } "DSP high-pass"
 rect 132 330 42 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp = false } }
 text 141 334 { 225, 230, 240, 255 } "off"

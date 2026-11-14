@@ -539,7 +539,7 @@ fn statusSection(ui: *ui_mod.Ui, snap: *const Snapshot, shared: *Shared) void {
             theme.text_dim,
         );
     } else ui.text(i18n.text(.status_starting), theme.text_dim);
-    if (st.lost > 0) ui.text(i18n.fmt(&buf, .status_display_skipped, .{ .blocks = st.lost }), theme.text_warn);
+    if (st.lost > 0) ui.text(i18n.count(&buf, "status_display_skipped", st.lost, .{ .blocks = st.lost }), theme.text_warn);
     if (snap.ring_overflow > 0) ui.text(i18n.fmt(&buf, .status_ring_overflow, .{ .count = snap.ring_overflow }), theme.text_warn);
     ui.x = @max(ui.x, ui.width - 170);
     // Lit while the panels' settings differ from what is saved.
@@ -568,7 +568,7 @@ fn recordSection(ui: *ui_mod.Ui, rec: *const RecStatus, shared: *Shared) void {
             theme.text_rec,
         );
         if (rec.behind_s > 1.0) ui.text(i18n.fmt(&buf, .rec_disk_behind, .{ .behind = rec.behind_s }), theme.text_warn);
-        if (rec.gaps > 0) ui.text(i18n.fmt(&buf, .rec_gaps, .{ .gaps = rec.gaps }), theme.text_warn);
+        if (rec.gaps > 0) ui.text(i18n.count(&buf, "rec_gaps", rec.gaps, .{ .gaps = rec.gaps }), theme.text_warn);
     } else if (rec.state == .failed) {
         ui.text(i18n.text(.rec_failed), theme.text_warn);
     } else ui.text(i18n.text(.rec_idle), theme.text_dim);
@@ -599,7 +599,7 @@ fn notesSection(ui: *ui_mod.Ui, nt: *const NotesStatus, shared: *Shared, open: *
     }
     if (!any_preset) ui.text(i18n.text(.notes_hint), theme.text_dim);
     if (nt.editing) ui.text(i18n.text(.notes_typing), theme.text_warn);
-    if (nt.num_drafts > 0) ui.text(i18n.fmt(&buf, .notes_drafts, .{ .count = nt.num_drafts }), theme.text_dim);
+    if (nt.num_drafts > 0) ui.text(i18n.count(&buf, "notes_drafts", nt.num_drafts, .{ .count = nt.num_drafts }), theme.text_dim);
     ui.newline();
     for (nt.recent[0..nt.num_recent]) |*line| {
         var clock_buf: [16]u8 = undefined;
@@ -615,10 +615,7 @@ fn notesSummary(buf: []u8, nt: *const NotesStatus) []const u8 {
     var presets: usize = 0;
     for (&nt.presets) |*pr| presets += @intFromBool(pr.len > 0);
     var presets_buf: [48]u8 = undefined;
-    const counted = if (presets == 1)
-        i18n.fmt(&presets_buf, .presets_one, .{ .count = presets })
-    else
-        i18n.fmt(&presets_buf, .presets_many, .{ .count = presets });
+    const counted = i18n.count(&presets_buf, "presets", presets, .{ .count = presets });
     if (nt.num_recent == 0) return i18n.fmt(buf, .notes_summary_empty, .{ .presets = counted });
     var clock_buf: [16]u8 = undefined;
     const last = &nt.recent[0];
@@ -665,7 +662,7 @@ fn audioSection(ui: *ui_mod.Ui, au: *const AudioStatus, shared: *Shared, open: *
                 ui.text(i18n.text(.audio_measuring), theme.text_warn);
             ui.text(format.fmt(&buf, "{d:.0} ms", .{au.latency_ms}), theme.text_dim);
         }
-        if (au.underruns > 0) ui.text(i18n.fmt(&buf, .audio_gaps, .{ .count = au.underruns }), theme.text_dim);
+        if (au.underruns > 0) ui.text(i18n.count(&buf, "audio_gaps", au.underruns, .{ .count = au.underruns }), theme.text_dim);
     } else ui.text(i18n.text(.toggle_off), theme.text_dim);
     ui.newline();
     ui.separator();
@@ -748,9 +745,9 @@ fn boardControls(ui: *ui_mod.Ui, bd: *const BoardStatus, rec: RecStatus.State, s
     ui.newline();
     ui.text(i18n.text(.label_amplifier_band), theme.text_dim);
     ui.column(120);
-    const dlo = ui.stepper(i18n.text(.label_from), fmtHz(&hz_buf, bd.lower_actual), 80);
+    const dlo = ui.stepper(i18n.text(.label_low), fmtHz(&hz_buf, bd.lower_actual), 80);
     if (dlo != 0) shared.push(.{ .board = .{ .lower = dlo > 0 } });
-    const dhi = ui.stepper(i18n.text(.label_to), fmtHz(&hz_buf, bd.upper_actual), 80);
+    const dhi = ui.stepper(i18n.text(.label_high), fmtHz(&hz_buf, bd.upper_actual), 80);
     if (dhi != 0) shared.push(.{ .board = .{ .upper = dhi > 0 } });
     ui.newline();
     ui.text(i18n.text(.label_dsp_highpass), theme.text_dim);
@@ -876,13 +873,13 @@ fn panelFilter(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Shared
     var value_buf: [48]u8 = undefined;
     ui.text(i18n.text(.label_filter), theme.text_dim);
     ui.column(64);
-    if (ui.button(i18n.text(.tag_raw), !p.filter.on) and p.filter.on) shared.push(.{ .panel = .{ .index = i, .action = .{ .filter = false } } });
+    if (ui.button(i18n.text(.btn_raw), !p.filter.on) and p.filter.on) shared.push(.{ .panel = .{ .index = i, .action = .{ .filter = false } } });
     if (ui.button(i18n.text(.btn_band), p.filter.on) and !p.filter.on) shared.push(.{ .panel = .{ .index = i, .action = .{ .filter = true } } });
     if (p.filter.on) {
         ui.space(14);
-        const lo = ui.stepper(i18n.text(.label_from), if (p.filter.low_hz > 0) format.fmt(&value_buf, "{d} Hz", .{p.filter.low_hz}) else i18n.text(.toggle_off), 80);
+        const lo = ui.stepper(i18n.text(.label_low), if (p.filter.low_hz > 0) format.fmt(&value_buf, "{d} Hz", .{p.filter.low_hz}) else i18n.text(.toggle_off), 80);
         if (lo != 0) shared.push(.{ .panel = .{ .index = i, .action = .{ .corner = .{ .high = false, .up = lo > 0 } } } });
-        const hi = ui.stepper(i18n.text(.label_to), if (p.filter.high_hz > 0) format.fmt(&value_buf, "{d} Hz", .{p.filter.high_hz}) else i18n.text(.toggle_off), 80);
+        const hi = ui.stepper(i18n.text(.label_high), if (p.filter.high_hz > 0) format.fmt(&value_buf, "{d} Hz", .{p.filter.high_hz}) else i18n.text(.toggle_off), 80);
         if (hi != 0) shared.push(.{ .panel = .{ .index = i, .action = .{ .corner = .{ .high = true, .up = hi > 0 } } } });
     }
     ui.newline();
@@ -981,7 +978,7 @@ fn panelTrigger(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, snap: *const S
         const dh = ui.stepper(i18n.text(.label_holdoff), format.fmt(&value_buf, "{d} ms", .{p.trigger.holdoff_ms}), 60);
         if (dh != 0) shared.push(.{ .panel = .{ .index = i, .action = .{ .trig_holdoff = dh > 0 } } });
     }
-    const dn = ui.stepper(i18n.text(.label_overlaid), i18n.fmt(&value_buf, .stepper_sweeps, .{ .count = p.trigger.overlay }), 90);
+    const dn = ui.stepper(i18n.text(.label_overlaid), i18n.count(&value_buf, "stepper_sweeps", p.trigger.overlay, .{ .count = p.trigger.overlay }), 90);
     if (dn != 0)
         shared.push(.{ .panel = .{ .index = i, .action = .{
             .overlay = @intCast(std.math.clamp(@as(i32, @intCast(p.trigger.overlay)) + dn, 1, dimna.sweeps.max_sweeps)),

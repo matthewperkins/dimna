@@ -1,6 +1,9 @@
 //! Every text the user sees, in English. One `pub const` per message. A message with values
 //! uses named placeholders (`{[left]s}`), so a translation can reorder them; it is formatted
-//! with a struct of those names: `i18n.fmt(&buf, .disk_full_in, .{ .left = text })`.
+//! with a struct of those names: `i18n.fmt(&buf, .disk_full_in, .{ .left = text })`. A
+//! message about a number of things has a form per plural form (`rec_gaps_one`,
+//! `rec_gaps_other`; see "Counted messages" in `i18n.zig`). Where a sentence holds two
+//! numbers, it says "samples: 3" instead, so no language needs two plurals in one message.
 //!
 //! Not here: log messages, the command-line usage text, config keys, the contents of files
 //! (recordings, events), window titles that compositor rules may match ("dimna", "dimna
@@ -15,8 +18,10 @@ pub const toggle_on = "on";
 pub const toggle_off = "off";
 /// Common average reference (a button, a heading, a badge).
 pub const label_car = "CAR";
-/// A filtered panel's row shown as it is; a button of the filter choice.
+/// Beside a row of a filtered panel that is drawn unfiltered.
 pub const tag_raw = "raw";
+/// The control window's filter choice: no filter (beside "band").
+pub const btn_raw = "raw";
 pub const btn_all = "all";
 pub const btn_none = "none";
 pub const slope_rising = "rising";
@@ -27,9 +32,10 @@ pub const mode_sweep = "sweep";
 pub const mode_triggered = "triggered";
 /// "6 presets" / "1 preset" (the control window's notes summary).
 pub const presets_one = "{[count]d} preset";
-pub const presets_many = "{[count]d} presets";
-pub const label_from = "from";
-pub const label_to = "to";
+pub const presets_other = "{[count]d} presets";
+/// A filter's corners (the panel's band, the amplifier's band), beside their steppers.
+pub const label_low = "low";
+pub const label_high = "high";
 
 // ---- The neural display: panel titles ----
 
@@ -46,7 +52,8 @@ pub const title_raw_car = "   raw   CAR";
 /// The scale of a panel's rows in its title and in the control window's summary.
 pub const title_per_row = "   {[scale]s}/row";
 /// "5 sweeps" after a triggered panel's title.
-pub const title_sweeps = "   {[count]d} sweeps{[waiting]s}";
+pub const title_sweeps_one = "   {[count]d} sweep{[waiting]s}";
+pub const title_sweeps_other = "   {[count]d} sweeps{[waiting]s}";
 pub const title_waiting_for_trigger = " (waiting for a trigger)";
 pub const title_review = "   review";
 pub const title_sweep = "   sweep";
@@ -76,12 +83,13 @@ pub const review_building = "   (building the overview)";
 /// The note being typed, bottom left.
 pub const note_draft = "note at {[clock]s}:  {[text]s}_";
 /// Bottom right, when the display missed blocks.
-pub const readout_skipped = "{[ms]d:.1} ms   {[fps]d} fps   display skipped {[blocks]d} blocks";
+pub const readout_skipped_one = "{[ms]d:.1} ms   {[fps]d} fps   display skipped {[blocks]d} block";
+pub const readout_skipped_other = "{[ms]d:.1} ms   {[fps]d} fps   display skipped {[blocks]d} blocks";
 /// The recording's clock beside it.
 pub const readout_rec = "REC {[clock]s}";
 
 // ---- The key summary (?) ----
-// ASCII only, so it lines up in the fixed-width font (a test checks English).
+// A text that is ASCII is drawn in the fixed-width font, any other in the ordinary one.
 
 pub const help_title = "Keys and the mouse   (? or Esc closes this)";
 pub const help_heading_display = "On the display";
@@ -130,7 +138,7 @@ pub const key_right_click = "right-click";
 pub const key_drag_the_red_line = "drag the red line";
 pub const key_the_chips = "the chips";
 
-pub const help_y_scale_uv = "Y scale (uV per row)";
+pub const help_y_scale_uv = "Y scale (µV per row)";
 pub const help_y_scale_row = "Y scale of the row alone";
 pub const help_back_forward_review = "back / forward in time (review)";
 pub const help_same_as_shift_wheel = "the same as Shift+wheel";
@@ -149,7 +157,7 @@ pub const help_focus_trigger = "focus (spikes: trigger there)";
 pub const help_listen_alone = "listen to it alone";
 pub const help_sound_add_take = "add to / take from the sound";
 pub const help_no_focus = "no channel in focus";
-pub const help_threshold_fixed_uv = "its threshold, fixed (uV)";
+pub const help_threshold_fixed_uv = "its threshold, fixed (µV)";
 pub const help_threshold_fixed_noise = "threshold: fixed <-> the noise";
 pub const help_freeze = "freeze / back to live";
 pub const help_back_forward_tenth = "back / forward 1/10 window";
@@ -191,7 +199,8 @@ pub const btn_quit_without_saving = "Quit without saving";
 pub const btn_cancel = "Cancel";
 pub const status_display = "display {[ms]d:.1} ms   {[fps]d} fps   running {[seconds]d:.0} s";
 pub const status_starting = "starting";
-pub const status_display_skipped = "display skipped {[blocks]d} blocks";
+pub const status_display_skipped_one = "display skipped {[blocks]d} block";
+pub const status_display_skipped_other = "display skipped {[blocks]d} blocks";
 pub const status_ring_overflow = "ACQUISITION RING OVERFLOW {[count]d}";
 pub const btn_save_view = "Save view";
 pub const btn_quit = "Quit";
@@ -200,11 +209,12 @@ pub const btn_stop_recording = "Stop recording";
 pub const rec_finishing = "finishing the recording";
 pub const rec_status = "REC {[clock]s}   {[gb]d:.2} GB   {[msamples]d:.1} M samples";
 pub const rec_disk_behind = "disk is {[behind]d:.1} s behind";
-pub const rec_gaps = "{[gaps]d} gaps";
+pub const rec_gaps_one = "{[gaps]d} gap";
+pub const rec_gaps_other = "{[gaps]d} gaps";
 pub const rec_failed = "RECORDING FAILED";
 pub const rec_idle = "not recording";
 /// The line about the source, at the top.
-pub const about_source = "{[source]s}   {[channels]d} channels ({[electrodes]d} electrode) at {[rate]d} Hz";
+pub const about_source = "{[source]s}   {[rate]d} Hz   channels: {[channels]d}, electrodes: {[electrodes]d}";
 pub const source_simulated = "simulated board";
 pub const source_board = "Open Ephys acquisition board";
 /// The display window's title bar, refreshed once a second.
@@ -219,7 +229,8 @@ pub const notes_summary_empty = "{[presets]s}   no notes yet";
 pub const notes_summary_last = "{[presets]s}   last note {[clock]s}  {[text]s}";
 pub const notes_hint = "on the display: / types a note, Enter saves it";
 pub const notes_typing = "typing a note";
-pub const notes_drafts = "{[count]d} drafts (` stamps one)";
+pub const notes_drafts_one = "{[count]d} draft (` stamps it)";
+pub const notes_drafts_other = "{[count]d} drafts (` stamps one)";
 pub const section_audio = "Audio";
 pub const btn_mute = "mute";
 pub const label_volume = "volume";
@@ -231,7 +242,8 @@ pub const audio_listening = "listening to {[what]s}";
 pub const audio_listening_nothing = "nothing (click a row on the display)";
 pub const audio_noise_held = "noise {[sigma]d:.1} µV, held";
 pub const audio_measuring = "measuring the noise (3 s)";
-pub const audio_gaps = "{[count]d} gaps in the sound";
+pub const audio_gaps_one = "{[count]d} gap in the sound";
+pub const audio_gaps_other = "{[count]d} gaps in the sound";
 pub const audio_muted = ", muted";
 pub const audio_summary_off = "off{[muted]s}   {[db]d:.0} dB";
 pub const audio_summary_nothing = "on{[muted]s}   {[db]d:.0} dB   listening to nothing";
@@ -287,18 +299,22 @@ pub const trigger_row_value = "row {[row]d}";
 pub const label_level = "level";
 pub const label_holdoff = "holdoff";
 pub const label_overlaid = "overlaid";
-pub const stepper_sweeps = "{[count]d} sweeps";
+pub const stepper_sweeps_one = "{[count]d} sweep";
+pub const stepper_sweeps_other = "{[count]d} sweeps";
 
 // ---- Alarms across the display (until acknowledged) ----
 
 pub const alarm_acquisition_stopped = "ACQUISITION STOPPED ({[err]t}): the board is not being read";
 pub const alarm_no_data = "NO DATA FROM THE BOARD FOR {[seconds]d:.1} s";
-pub const alarm_quiet_once = "THE BOARD WENT QUIET ONCE (0.5 s or more without data)";
-pub const alarm_quiet_times = "THE BOARD WENT QUIET {[times]d} TIMES (0.5 s or more without data)";
+pub const alarm_quiet_times_one = "THE BOARD WENT QUIET ONCE (0.5 s or more without data)";
+pub const alarm_quiet_times_other = "THE BOARD WENT QUIET {[times]d} TIMES (0.5 s or more without data)";
 pub const alarm_recording_failed = "RECORDING FAILED: nothing is being recorded";
-pub const alarm_blocks_lost = "{[blocks]d} BLOCKS LOST: the disk fell 30 s behind";
-pub const alarm_dropped = "THE BOARD DROPPED {[samples]d} SAMPLES";
-pub const alarm_gaps = "THE RECORDING HAS {[gaps]d} GAPS";
+pub const alarm_blocks_lost_one = "{[blocks]d} BLOCK LOST: the disk fell 30 s behind";
+pub const alarm_blocks_lost_other = "{[blocks]d} BLOCKS LOST: the disk fell 30 s behind";
+pub const alarm_dropped_one = "THE BOARD DROPPED {[samples]d} SAMPLE";
+pub const alarm_dropped_other = "THE BOARD DROPPED {[samples]d} SAMPLES";
+pub const alarm_gaps_one = "THE RECORDING HAS {[gaps]d} GAP";
+pub const alarm_gaps_other = "THE RECORDING HAS {[gaps]d} GAPS";
 pub const alarm_disk_full_in = "THE DISK IS FULL IN {[left]s}";
 
 // ---- Warnings across the display (while their cause lasts) ----
@@ -315,7 +331,7 @@ pub const about_seconds = "about {[count]d:.0} s";
 pub const note_cannot_create = "could not create a recording under {[dir]s}: {[err]t}";
 pub const note_cannot_start = "could not start the recorder: {[err]t}";
 pub const note_recording_failed = "recording failed: {[err]t}; what was written before is intact";
-pub const note_last_recording = "last recording: {[length]s}, {[samples]d} samples, {[gaps]d} gaps";
+pub const note_last_recording = "last recording: {[length]s}   samples: {[samples]d}   gaps: {[gaps]d}";
 pub const note_saved_to = "saved to {[path]s}";
 pub const note_cannot_save_to = "could not save to {[path]s}: {[err]t}";
 pub const note_band_edges = "the band's lower edge must stay below its upper edge";
