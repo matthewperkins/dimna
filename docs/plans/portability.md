@@ -54,23 +54,57 @@ match the host driver).
    libraries listed above are NEEDED) and `objdump -T` (no GLIBC symbol version above
    2.34). A tarball holds the binaries, `dimna-headless`, the packaging folder, the
    licence files (stb, liboni, dimna's own once it has one: an open item) and README.
-4. **One install script** (`packaging/install.sh`, POSIX sh), idempotent, saying what it
-   does before it does it and asking before anything needs root:
-   - the udev rule for the board, moved into the repo (`packaging/60-dimna-ft60x.rules`,
-     the IDs in the rig's rule), installed to `/etc/udev/rules.d/` and reloaded;
-   - real-time limits: `/etc/security/limits.d/` for a `realtime`-style group (or the
-     distro's existing one: Arch `realtime`, Debian `audio` has rtprio by default with
-     jackd), adding the user to it; explain logging out and in;
-   - the desktop entry and icons (what `install-desktop.sh` does, pointed at the
-     installed binary, not a checkout);
-   - checks at the end: the board's device node is accessible (if plugged in), `ulimit -r`
-     and `ulimit -l`, the Noto CJK SC and Noto Arabic fonts (optional; say which languages
-     need them), and that a Wayland session is running. It never writes to the board.
-5. **Packages, as recipes around the same build**: an AUR `PKGBUILD` first (the owner's
-   distro), then, only if someone asks, a Gentoo ebuild and a Void template. Each runs
-   the vendored build; none needs network access during the build beyond Zig's package
-   cache (`build.zig.zon` dependencies: zig-wayland, vulkan-zig; vendor or pre-fetch them
-   so an offline build works, as Gentoo and Void require).
+4. **Binary packages and a distribution-agnostic source build** (decided with the owner,
+   2026-11-14, replacing "one install script for every distribution": a script that adapts
+   to each distribution's package manager, groups, SELinux and file locations has a branch
+   per difference, none of them testable here, and it cannot uninstall cleanly).
+   - **`.deb` and `.rpm`** holding the **same** glibc 2.34 binaries `zig build release`
+     makes; only the wrapper differs. They declare the runtime libraries as dependencies
+     (so apt or dnf installs them) and install, in the standard places:
+     - the binaries in `/usr/bin`;
+     - the board's udev rule, moved into the repo as `packaging/60-dimna-ft60x.rules`
+       (the product IDs in the rig's `/etc/udev/rules.d/60-open-ephys-ft600.rules`), into
+       `/usr/lib/udev/rules.d/`, reloaded and triggered after install. The rig's rule
+       uses `MODE="0666"` as well as `TAG+="uaccess"`; 0666 lets every account on the
+       machine open the board, uaccess only the logged-in user. Which one the package uses
+       is the owner's call: ask, do not pick;
+     - real-time limits in `/etc/security/limits.d/` for a `realtime` group (rtprio 80,
+       memlock unlimited, as on the rig), created as a system group if missing. The
+       package never adds a user to a group: it says how (`usermod -aG realtime $USER`,
+       then log out and in), in the package description and in `docs/install.md`;
+     - the desktop entry and icons under `/usr/share`, pointing at `/usr/bin/dimna`.
+     - Built from one description with nfpm (a single Go binary; it is not in Arch's main
+       repositories, so fetching it is a download the owner approves) or, if the owner
+       prefers no new tool, `dpkg-deb` and `rpmbuild` (both in Arch's repositories). Either
+       way it runs from `zig build release` or a `packaging/` script beside it, and the
+       packages go into `zig-out/release` beside the tarballs.
+     - Evidence: `dpkg-deb --info/--contents` and `rpm -qip/-qlp` listings; declared
+       dependencies match the NEEDED list in CHECK. Installing them is a test on Ubuntu
+       22.04 and Rocky 9 (see Testing), not something done on the rig.
+     - Downloads from the GitHub release page at first. An apt/dnf repository (or a PPA
+       or COPR) for updates comes later, once other labs use dimna.
+   - **Building from source, any distribution**: a section in `docs/install.md` and
+     README: download Zig 0.17.1 from ziglang.org (self-contained, unpacks anywhere, no
+     root; several versions can sit side by side), install the `-dev` libraries (package
+     names for Debian/Ubuntu, Fedora/RHEL, openSUSE, Void, Gentoo), `zig build
+     --release=safe`. Optionally `packaging/get-zig.sh`: reads `minimum_zig_version` from
+     `build.zig.zon`, downloads that Zig, checks its minisign signature, unpacks it into
+     `~/.local/opt`. An agent writes and reads it but does not run the download.
+   - **Tarball helper** (`packaging/install-user.sh`, POSIX sh, replacing
+     `install-desktop.sh` and `dimna-launch.sh` in the tarball): installs the desktop entry
+     and icons for the current user without root, pointing at the unpacked binaries, then
+     **prints** the two root steps (udev rule, real-time limits) for the user to run rather
+     than running them. Ends with checks: the board's device node is accessible (if plugged
+     in), `ulimit -r` and `ulimit -l`, the Noto CJK SC and Noto Arabic fonts (optional; say
+     which languages need them), and that a Wayland session is running. It never writes to
+     the board.
+5. **Source packages, as recipes around the same build**: an AUR `PKGBUILD` first (the
+   owner's distro), then, only if someone asks, a Gentoo ebuild (`zig.eclass`, `ZIG_SLOT`
+   0.17 or `dev-lang/zig-bin`) and a Void template. Each runs the vendored build; none needs
+   network access during the build beyond Zig's package cache (`build.zig.zon`
+   dependencies: zig-wayland, vulkan-zig, given there as `git+https` URLs; the recipes fetch
+   the same commits as tarballs, Gentoo's via `ZBS_DEPENDENCIES`, and must show that Zig
+   accepts their hashes, so an offline build works, as Gentoo and Void require).
 6. **Compositors**: a section in `docs/install.md` with what works where, and window
    placement recipes for the control and tile windows by app ID (`dimna`,
    `dimna-control`, `dimna-tiles`):
@@ -114,7 +148,8 @@ match the host driver).
   fribidi), `objdump -T` showing no GLIBC_ version above 2.34, the binaries running here
   (`--help`, and `dimna-headless --sim --seconds 5 --no-audio` into a /tmp folder), and the
   tarball's file list. Do not run the GUI.
-- **Steps 4 to 6**: after step 3, with the owner.
+- **Steps 4 to 6**: after step 3, with the owner. Step 4's open questions for the owner:
+  the udev mode (0666 or uaccess only), and nfpm or `dpkg-deb`/`rpmbuild`.
 
 ## Testing
 
@@ -123,7 +158,10 @@ and `bwrap` are installed. Steps 1-3 are checked on the rig (identical generated
 readelf/objdump, all tests). The release binary can then be run on other distributions in
 `systemd-nspawn` containers made from their published root filesystem images (Debian 12,
 Ubuntu 22.04, Rocky 9, Fedora, openSUSE, Void musl), with the owner's Wayland socket bound
-in for a windowed `--sim` run. That needs downloads and root, so the owner does it or
+in for a windowed `--sim` run. The `.deb` is installed with apt in the Ubuntu 22.04 and
+Debian 12 containers and the `.rpm` with dnf in Rocky 9 and Fedora: dependencies resolve,
+the files land where listed, `dimna-headless --sim` runs, and removing the package
+removes them. That needs downloads and root, so the owner does it or
 approves it; an agent never does. Other compositors need a session the owner provides:
 list per distro and compositor what was actually run and what was not. Never run the GUI
 against the board on someone else's machine without its owner present.
