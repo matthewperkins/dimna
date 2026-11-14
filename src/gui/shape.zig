@@ -214,8 +214,12 @@ pub const Engine = struct {
     /// `faces[0..named]`: the primary and the named fallbacks; later ones were found for a
     /// single character.
     named: u8 = 0,
-    /// The primary's line height, which the fallbacks are scaled to.
+    /// The primary's line height (a fallback without a capital letter is scaled to it).
     line_height: f32,
+    /// The height of the primary's capitals in pixels, which the fallbacks' capitals (or
+    /// alef) are scaled to, so their letters stand as tall as the primary's (null: the
+    /// primary has none; line heights are matched instead).
+    cap_px: ?f32 = null,
     /// Rasterised glyphs by (font, glyph index).
     glyphs: std.AutoHashMapUnmanaged(u64, font.Glyph) = .empty,
     /// Characters none of the named fonts has: the font fontconfig found for each
@@ -273,6 +277,7 @@ pub const Engine = struct {
         };
         self.faces[0] = .{ .ft = primary, .line_height = f.line_height };
         self.nfaces = 1;
+        if (capRatio(primary)) |r| self.cap_px = r * @as(f32, @floatFromInt(f.px));
         // The fixed glyphs the primary font drew are the same glyphs by index.
         for (f.glyphs, 0..) |g, k| {
             if (g.advance <= 0) continue;
@@ -435,7 +440,7 @@ pub const Engine = struct {
         if (self.nfaces >= max_faces) return null;
         var ft: c.FT_Face = null;
         if (c.FT_New_Face(self.lib, path.ptr, index, &ft) != 0) return null;
-        const lh = scaleToLineHeight(ft, self.line_height) orelse {
+        const lh = (if (self.cap_px) |cap| scaleToCapHeight(ft, cap) else null) orelse scaleToLineHeight(ft, self.line_height) orelse {
             _ = c.FT_Done_Face(ft);
             return null;
         };
@@ -604,6 +609,32 @@ fn round26(v: i32) i32 {
 /// Sets `ft` to the size at which its line height is nearest `target` pixels (within a
 /// pixel where FreeType's rounding allows). The line height it got; null if the font cannot
 /// be scaled.
+/// The height of `ft`'s capital H, or of its alef where it has no Latin (an Arabic-script
+/// font: alef stands as tall as a capital), as a fraction of its em; null if it has
+/// neither or is not scalable.
+fn capRatio(ft: c.FT_Face) ?f32 {
+    if (ft.*.face_flags & c.FT_FACE_FLAG_SCALABLE == 0 or ft.*.units_per_EM == 0) return null;
+    for ([_]u32{ 'H', 0x0627 }) |cp| {
+        if (c.FT_Get_Char_Index(ft, cp) == 0) continue;
+        if (c.FT_Load_Char(ft, cp, c.FT_LOAD_NO_SCALE) != 0) continue;
+        const h: f32 = @floatFromInt(ft.*.glyph.*.metrics.height);
+        if (h <= 0) continue;
+        return h / @as(f32, @floatFromInt(ft.*.units_per_EM));
+    }
+    return null;
+}
+
+/// Sets `ft`'s size so that its capitals (`capRatio`) are `cap_px` pixels tall; its line
+/// height at that size, or null (no capital to measure: the caller matches line heights).
+/// A font whose line is taller than the primary's for its letters (Arabic-script fonts
+/// leave room for vowel marks) is then not shrunk to fit the primary's line.
+fn scaleToCapHeight(ft: c.FT_Face, cap_px: f32) ?f32 {
+    const r = capRatio(ft) orelse return null;
+    const size: c.FT_F26Dot6 = @intFromFloat(@round(cap_px / r * 64.0));
+    if (size <= 0 or c.FT_Set_Char_Size(ft, 0, size, 72, 72) != 0) return null;
+    return @as(f32, @floatFromInt(ft.*.size.*.metrics.height)) / 64.0;
+}
+
 fn scaleToLineHeight(ft: c.FT_Face, target: f32) ?f32 {
     if (ft.*.face_flags & c.FT_FACE_FLAG_SCALABLE == 0) return null;
     const upem: f32 = @floatFromInt(ft.*.units_per_EM);
@@ -1048,7 +1079,7 @@ test "without shaping, Persian is drawn letter by letter, left to right, from it
     try testing.expectEqual(0, e.shaped_calls);
 }
 
-test "Chinese: 阈值 is two glyphs from the CJK font, drawn, at the primary's line height" {
+test "Chinese: 阈值 is two glyphs from the CJK font, drawn, its capitals as tall as the primary's" {
     var f = try testFont();
     defer f.deinit(testing.allocator);
     const e = f.engine.?;
@@ -1062,7 +1093,10 @@ test "Chinese: 阈值 is two glyphs from the CJK font, drawn, at the primary's l
         try testing.expect(inked(f.atlas, p.g));
     }
     try testing.expect(glyphs[1].x > glyphs[0].x);
-    try testing.expect(@abs(e.faces[cjk].line_height - f.line_height) <= 1);
+    // Its capitals as tall as the primary's (to a pixel), not its line as high.
+    if (e.cap_px) |cap| {
+        try testing.expect(@abs(capRatio(e.faces[cjk].ft).? * @as(f32, @floatFromInt(e.faces[cjk].ft.*.size.*.metrics.y_ppem)) - cap) <= 1);
+    }
     // Chinese needs no shaping (nor HarfBuzz or FriBidi).
     try testing.expectEqual(0, e.shaped_calls);
     // Drawn through the batch: two quads, ending where the width says.
@@ -1407,4 +1441,18 @@ test "benchmark: a frame of text on the fast and the shaped paths; CJK glyphs th
         if (kv.key_ptr.* >> 32 == cjk and kv.value_ptr.w > 0 and kv.value_ptr.y < font.atlas_size - 1) fit += 1;
     }
     std.debug.print("CJK glyphs in the atlas when it filled: {d} (full: {}, up to U+{X})\n", .{ fit, e.full, cp });
+}
+
+test "Persian: alef stands as tall as the primary's capitals, not shrunk to its line height" {
+    var f = try testFont();
+    defer f.deinit(testing.allocator);
+    const e = f.engine.?;
+    const ar = fallbackFor(e, 0x0627) orelse return skipBecause("no Persian/Arabic font installed");
+    const cap = e.cap_px orelse return skipBecause("the primary font has no capital H");
+    const face = e.faces[ar].ft;
+    const alef_px = capRatio(face).? * @as(f32, @floatFromInt(face.*.size.*.metrics.x_ppem));
+    try testing.expect(@abs(alef_px - cap) <= 1);
+    // Noto Sans Arabic's line is far taller than the primary's for the same letters, so
+    // matching lines would have drawn alef at little more than half the height.
+    try testing.expect(e.faces[ar].line_height > f.line_height);
 }
