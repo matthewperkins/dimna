@@ -47,7 +47,12 @@ pub fn build(b: *std.Build) void {
     b.step("headless", "Run the headless acquisition tool").dependOn(&run.step);
 
     // ---- dimna: the GUI. Wayland directly (zig-wayland), Vulkan (vulkan-zig). ----
-    const scanner = Scanner.create(b, .{});
+    // The protocol XMLs are vendored (vendor/wayland-protocols), so a build needs neither
+    // wayland-protocols nor wayland-scanner installed, and no distribution's older copy.
+    const scanner = Scanner.create(b, .{
+        .wayland_xml = b.path("vendor/wayland-protocols/wayland.xml"),
+        .wayland_protocols = b.path("vendor/wayland-protocols"),
+    });
     scanner.addSystemProtocol("stable/xdg-shell/xdg-shell.xml");
     scanner.addSystemProtocol("stable/presentation-time/presentation-time.xml");
     scanner.addSystemProtocol("unstable/pointer-gestures/pointer-gestures-unstable-v1.xml");
@@ -68,11 +73,13 @@ pub fn build(b: *std.Build) void {
     scanner.generate("wp_cursor_shape_manager_v1", 1);
     const wayland = b.createModule(.{ .root_source_file = scanner.result });
 
-    // Vulkan bindings are generated from the system's registry (vulkan-headers).
-    const vk_registry = b.option([]const u8, "vk-registry", "Path to vk.xml") orelse "/usr/share/vulkan/registry/vk.xml";
-    const vulkan = b.dependency("vulkan", .{
-        .registry = std.Build.LazyPath{ .cwd_relative = vk_registry },
-    }).module("vulkan-zig");
+    // Vulkan bindings are generated from the vendored registry (vendor/vulkan/vk.xml);
+    // -Dvk-registry=<path> overrides it, e.g. with the system's vulkan-headers copy.
+    const vk_registry: std.Build.LazyPath = if (b.option([]const u8, "vk-registry", "Path to vk.xml (default: vendor/vulkan/vk.xml)")) |path|
+        .{ .cwd_relative = path }
+    else
+        b.path("vendor/vulkan/vk.xml");
+    const vulkan = b.dependency("vulkan", .{ .registry = vk_registry }).module("vulkan-zig");
 
     // Two modules over the same files: the program (main.zig) and its unit tests
     // (tests.zig), with the same imports and libraries so the test binary compiles the
@@ -124,14 +131,45 @@ pub fn build(b: *std.Build) void {
         // Sound: ALSA's API (PipeWire serves it on a desktop).
         m.linkSystemLibrary("alsa", .{});
     }
-    // Shaders: GLSL compiled to SPIR-V by glslc (shaderc) and embedded.
-    inline for (.{ "traces.vert", "traces.frag", "text.vert", "text.frag" }) |name| {
-        const glslc = b.addSystemCommand(&.{ "glslc", "--target-env=vulkan1.2", "-O", "-o" });
-        const spv = glslc.addOutputFileArg(name ++ ".spv");
-        glslc.addFileArg(b.path("src/gui/shaders/" ++ name));
-        gui_mod.addAnonymousImport(name ++ ".spv", .{ .root_source_file = spv });
-        gui_test_mod.addAnonymousImport(name ++ ".spv", .{ .root_source_file = spv });
+    // Shaders: GLSL compiled to SPIR-V and embedded. The compiled .spv files are checked in
+    // next to the sources, so building dimna does not need glslc. When glslc is installed
+    // and a source is newer than its .spv, that shader is compiled during the build and the
+    // fresh result is embedded instead. `zig build shaders` rewrites the checked-in .spv
+    // files from the sources (needs glslc); the GUI tests fail while a checked-in .spv
+    // differs from what glslc makes of its source.
+    const shader_names = [_][]const u8{ "traces.vert", "traces.frag", "text.vert", "text.frag" };
+    const glslc_path = b.findProgram(.{ .names = &.{"glslc"} });
+    const shader_check_src = b.addWriteFiles();
+    const shader_check_mod = b.createModule(.{
+        .root_source_file = shader_check_src.add("shader_check.zig", shader_check_zig),
+        .target = target,
+        .optimize = optimize,
+    });
+    const shader_opts = b.addOptions();
+    shader_opts.addOption(bool, "glslc_available", glslc_path != null);
+    shader_check_mod.addOptions("shader_opts", shader_opts);
+    const update_shaders = b.addUpdateSourceFiles();
+    inline for (shader_names) |name| {
+        const checked_in = b.path("src/gui/shaders/" ++ name ++ ".spv");
+        var compiled: ?std.Build.LazyPath = null;
+        if (glslc_path) |glslc_exe| {
+            const glslc = b.addSystemCommand(&.{ glslc_exe, "--target-env=vulkan1.2", "-O", "-o" });
+            compiled = glslc.addOutputFileArg(name ++ ".spv");
+            glslc.addFileArg(b.path("src/gui/shaders/" ++ name));
+            update_shaders.addCopyFileToSource(compiled.?, "src/gui/shaders/" ++ name ++ ".spv");
+        }
+        const embedded = if (compiled != null and sourceNewer(b, "src/gui/shaders/" ++ name, "src/gui/shaders/" ++ name ++ ".spv"))
+            compiled.?
+        else
+            checked_in;
+        gui_mod.addAnonymousImport(name ++ ".spv", .{ .root_source_file = embedded });
+        gui_test_mod.addAnonymousImport(name ++ ".spv", .{ .root_source_file = embedded });
+        // For the up-to-date test: the checked-in file, and what glslc makes of the source
+        // (the checked-in file again when there is no glslc; the test then skips).
+        shader_check_mod.addAnonymousImport("checked_in/" ++ name ++ ".spv", .{ .root_source_file = checked_in });
+        shader_check_mod.addAnonymousImport("compiled/" ++ name ++ ".spv", .{ .root_source_file = compiled orelse checked_in });
     }
+    b.step("shaders", "Rebuild the checked-in src/gui/shaders/*.spv with glslc").dependOn(&update_shaders.step);
     const gui = b.addExecutable(.{ .name = "dimna", .root_module = gui_mod });
     b.installArtifact(gui);
     const run_gui = b.addRunArtifact(gui);
@@ -144,4 +182,33 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests (the core's and the GUI's)");
     test_step.dependOn(&b.addRunArtifact(tests).step);
     test_step.dependOn(&b.addRunArtifact(gui_tests).step);
+    test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .name = "shader-check", .root_module = shader_check_mod })).step);
 }
+
+/// True when `source` was modified after `spv`, or `spv` cannot be read (both relative to
+/// the build root). Read at configure time.
+fn sourceNewer(b: *std.Build, source: []const u8, spv: []const u8) bool {
+    const io = b.graph.io;
+    const src_stat = b.root.root_dir.handle.statFile(io, source, .{}) catch return true;
+    const spv_stat = b.root.root_dir.handle.statFile(io, spv, .{}) catch return true;
+    return src_stat.mtime.nanoseconds > spv_stat.mtime.nanoseconds;
+}
+
+/// The shader up-to-date test, generated here so it needs no file outside the build.
+const shader_check_zig =
+    \\const std = @import("std");
+    \\const opts = @import("shader_opts");
+    \\
+    \\test "checked-in shaders match what glslc makes of the sources" {
+    \\    if (!opts.glslc_available) return error.SkipZigTest;
+    \\    inline for (.{ "traces.vert", "traces.frag", "text.vert", "text.frag" }) |name| {
+    \\        const checked_in = @embedFile("checked_in/" ++ name ++ ".spv");
+    \\        const compiled = @embedFile("compiled/" ++ name ++ ".spv");
+    \\        std.testing.expectEqualSlices(u8, compiled, checked_in) catch |err| {
+    \\            std.debug.print("src/gui/shaders/{s}.spv is stale: run `zig build shaders` and commit it\n", .{name});
+    \\            return err;
+    \\        };
+    \\    }
+    \\}
+    \\
+;

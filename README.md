@@ -62,11 +62,15 @@ product.
 
 Third-party code: liboni (MIT) is vendored in `vendor/liboni`; stb_image and
 stb_image_write by Sean Barrett (public domain / MIT) in `vendor/stb`, used only to read the
-colour-scheme image and to write its swatch (see `vendor/stb/README.md`).
+colour-scheme image and to write its swatch (see `vendor/stb/README.md`). The Wayland
+protocol XMLs (`vendor/wayland-protocols`) and the Vulkan registry (`vendor/vulkan/vk.xml`)
+the bindings are generated from are vendored too, with their versions and checksums in the
+README of each folder.
 
 ## Quick start
 
-    zig build --release=safe                 # Zig 0.17.1; needs Wayland, Vulkan, glslc, FreeType, fontconfig
+    zig build --release=safe                 # Zig 0.17.1; needs Wayland, Vulkan loader, FreeType, fontconfig, ALSA,
+                                             # xkbcommon (development files); no glslc: shaders are checked in
                                              # optional at run time: harfbuzz and fribidi (Persian),
                                              # Noto Sans CJK SC (Chinese), Noto Sans Arabic or Vazirmatn
     zig build test                           # 180 tests, none needs a display or the board
