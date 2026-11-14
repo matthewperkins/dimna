@@ -67,6 +67,8 @@ colour-scheme image and to write its swatch (see `vendor/stb/README.md`).
 ## Quick start
 
     zig build --release=safe                 # Zig 0.17.1; needs Wayland, Vulkan, glslc, FreeType, fontconfig
+                                             # optional at run time: harfbuzz and fribidi (Persian),
+                                             # Noto Sans CJK SC (Chinese), Noto Sans Arabic or Vazirmatn
     zig build test                           # 180 tests, none needs a display or the board
 
     zig-out/bin/dimna --sim 32,16            # simulated headstages, in a window

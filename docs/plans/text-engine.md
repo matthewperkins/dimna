@@ -19,8 +19,16 @@ except where this plan lists; keep `font.Batch`'s public API (`text`, `label`, `
 
 ## Files you may change or add
 
+**Changed by the owner during the work:** dimna gains no new link-time dependency.
+HarfBuzz and FriBidi are not linked and their headers are not in `c.h`; they are loaded at
+run time (`std.DynLib`: `libharfbuzz.so.0`, `libfribidi.so.0`) the first time a string with a
+right-to-left or joined script needs them, the few functions used declared in Zig. A
+missing library or function logs one line once, and that text is laid out unshaped, left to
+right. CJK and Latin Extended need neither: glyphs on demand and font fallback only.
+`readelf -d zig-out/bin/dimna | grep NEEDED` must list the same libraries before and after.
+
 `src/gui/font.zig`, `src/gui/shape.zig` (new, if you want the shaping apart),
-`src/gui/c.h`, `build.zig` (link `harfbuzz`, `fribidi`), `src/gui/gpu.zig` (the atlas: its
+`src/gui/c.h` and `build.zig` (no longer needed: see the owner's change above), `src/gui/gpu.zig` (the atlas: its
 size and updating part of it), `src/gui/tiles.zig` and `src/gui/control.zig` **only** where
 they create the font or upload its atlas, `src/gui/main.zig` likewise, `src/gui/tests.zig`,
 `docs/display.md` (a paragraph on fonts), `README.md` (build dependencies: harfbuzz,

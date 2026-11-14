@@ -284,6 +284,21 @@ the display). Text is drawn by dimna itself (`src/gui/font.zig`: FreeType into o
 quads in the same render pass), since nothing else may be on the monitor while tearing; it
 made no measurable difference to the latency (2.6 ms with and without, same session).
 
+Fonts. Latin-1 and a few symbols are rasterized at startup from the `font` named in the
+config; a text made only of those is laid out as it always was (one glyph per character, no
+kerning). Any other text goes through `src/gui/shape.zig`: each character comes from the
+first font that has it (the primary, then `Noto Sans CJK SC`, then `Vazirmatn` or
+`Noto Sans Arabic`, then fontconfig's best match for the character), the fallbacks scaled to
+the primary's line height, and each glyph is rasterized into the atlas (2048x2048) the first
+time it is drawn; only the atlas rows that changed are copied to the GPU before the frame.
+Text with a right-to-left or joined script (Persian) is also shaped with HarfBuzz and put in
+order with FriBidi, which dimna loads at run time the first time such text is drawn
+(`libharfbuzz.so.0`, `libfribidi.so.0`; not linked). Without them that text is drawn
+unshaped, left to right, and the log says so once. Numbers and Latin inside right-to-left
+text stay one left-to-right block ("300-6000 Hz"). Laid-out texts are cached (2048, least
+recently used out). A missing fallback font logs one line; its characters draw as the
+primary font's missing glyph.
+
 ## Scroll-back review
 
 Look at what went by without stopping anything: acquisition, the
@@ -351,8 +366,8 @@ late). A saved note goes into the recording's `events.tsv` as kind `note`, if on
 running; into a log of every note, recorded or not
 (`~/.local/state/dimna/notes.log`: local time, sample, session folder, text); and onto the
 traces as a line with the text beside it. The control window shows the last three, the
-presets as buttons, and how many drafts wait. Notes are limited to 200 bytes; the display
-font covers Latin-1, so other characters are stored as typed but drawn as "?".
+presets as buttons, and how many drafts wait. Notes are limited to 200 bytes; characters
+beyond Latin-1 are drawn from the fallback fonts (see Fonts above).
 
 Digits that have a preset no longer pick a triggered panel's TTL line (the control
 window's stepper does that).

@@ -162,6 +162,7 @@ pub const Tiles = struct {
         const vertices = try gpa.alloc(font.Vertex, max_vertices);
         defer gpa.free(vertices);
         try gpu.createText(face.atlas, font.atlas_size, max_vertices);
+        gpu.textFont(&face);
         var batch: font.Batch = .{ .font = &face, .vertices = vertices };
 
         const view = &self.view;
