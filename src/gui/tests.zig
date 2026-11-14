@@ -9,6 +9,7 @@ test {
     _ = @import("display.zig");
     _ = @import("font.zig");
     _ = @import("format.zig");
+    _ = @import("i18n.zig");
     _ = @import("notes.zig");
     _ = @import("scheme.zig");
     _ = @import("theme.zig");

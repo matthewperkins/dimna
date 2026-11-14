@@ -8,6 +8,7 @@ const std = @import("std");
 const dimna = @import("dimna");
 const gpu_mod = @import("gpu.zig");
 const control = @import("control.zig");
+const i18n = @import("i18n.zig");
 const files = @import("files.zig");
 const display_mod = @import("display.zig");
 const ReviewView = display_mod.ReviewView;
@@ -484,46 +485,53 @@ pub const Alarms = struct {
         // Here and below: a text too long for its buffer is cut (the writer keeps what fit).
         var w: Io.Writer = .fixed(&status.alarm_buf);
         const sep = "   |   ";
-        if (board.ended) |err| if (!self.ended_seen) w.print("ACQUISITION STOPPED ({t}): the board is not being read", .{err}) catch {};
-        if (board.ended == null and board.stalled_s >= stall_s) w.print(
-            "{s}NO DATA FROM THE BOARD FOR {d:.1} s",
-            .{ if (w.buffered().len > 0) sep else "", board.stalled_s },
-        ) catch {} else if (now.stalls > self.seen.stalls) {
+        if (board.ended) |err| if (!self.ended_seen) i18n.print(&w, .alarm_acquisition_stopped, .{ .err = err }) catch {};
+        if (board.ended == null and board.stalled_s >= stall_s) {
+            w.writeAll(if (w.buffered().len > 0) sep else "") catch {};
+            i18n.print(&w, .alarm_no_data, .{ .seconds = board.stalled_s }) catch {};
+        } else if (now.stalls > self.seen.stalls) {
             const k = now.stalls - self.seen.stalls;
-            var times_buf: [24]u8 = undefined;
-            const times = if (k == 1) "ONCE" else std.fmt.bufPrint(&times_buf, "{d} TIMES", .{k}) catch "";
-            w.print("{s}THE BOARD WENT QUIET {s} (0.5 s or more without data)", .{ if (w.buffered().len > 0) sep else "", times }) catch {};
+            w.writeAll(if (w.buffered().len > 0) sep else "") catch {};
+            if (k == 1) i18n.print(&w, .alarm_quiet_once, .{}) catch {} else i18n.print(&w, .alarm_quiet_times, .{ .times = k }) catch {};
         }
-        if (self.recording_failed) w.print("{s}RECORDING FAILED: nothing is being recorded", .{if (w.buffered().len > 0) sep else ""}) catch {};
-        if (now.overflow > self.seen.overflow) w.print(
-            "{s}{d} BLOCKS LOST: the disk fell 30 s behind",
-            .{ if (w.buffered().len > 0) sep else "", now.overflow - self.seen.overflow },
-        ) catch {};
-        if (now.dropped > self.seen.dropped) w.print(
-            "{s}THE BOARD DROPPED {d} SAMPLES",
-            .{ if (w.buffered().len > 0) sep else "", now.dropped - self.seen.dropped },
-        ) catch {};
-        if (now.gaps > self.seen.gaps) w.print(
-            "{s}THE RECORDING HAS {d} GAPS",
-            .{ if (w.buffered().len > 0) sep else "", now.gaps - self.seen.gaps },
-        ) catch {};
-        if (disk_level > self.disk_seen) w.print(
-            "{s}THE DISK IS FULL IN {s}",
-            .{ if (w.buffered().len > 0) sep else "", fmtLeft(disk.?.seconds) },
-        ) catch {};
+        if (self.recording_failed) {
+            w.writeAll(if (w.buffered().len > 0) sep else "") catch {};
+            i18n.print(&w, .alarm_recording_failed, .{}) catch {};
+        }
+        if (now.overflow > self.seen.overflow) {
+            w.writeAll(if (w.buffered().len > 0) sep else "") catch {};
+            i18n.print(&w, .alarm_blocks_lost, .{ .blocks = now.overflow - self.seen.overflow }) catch {};
+        }
+        if (now.dropped > self.seen.dropped) {
+            w.writeAll(if (w.buffered().len > 0) sep else "") catch {};
+            i18n.print(&w, .alarm_dropped, .{ .samples = now.dropped - self.seen.dropped }) catch {};
+        }
+        if (now.gaps > self.seen.gaps) {
+            w.writeAll(if (w.buffered().len > 0) sep else "") catch {};
+            i18n.print(&w, .alarm_gaps, .{ .gaps = now.gaps - self.seen.gaps }) catch {};
+        }
+        if (disk_level > self.disk_seen) {
+            w.writeAll(if (w.buffered().len > 0) sep else "") catch {};
+            i18n.print(&w, .alarm_disk_full_in, .{ .left = fmtLeft(disk.?.seconds) }) catch {};
+        }
         const alarm_len = w.buffered().len;
         // Not yet lost, but on the way: the recorder is far behind acquisition, or the disk
         // is filling.
         var ww: Io.Writer = .fixed(&status.warning_buf);
-        if (board.ended) |err| if (self.ended_seen) ww.print("acquisition stopped ({t}): nothing is being read; restart dimna", .{err}) catch {};
+        if (board.ended) |err| if (self.ended_seen) i18n.print(&ww, .warn_acquisition_stopped, .{ .err = err }) catch {};
         if (behind_s) |behind| {
-            if (behind > 5) ww.print("{s}the disk is {d:.0} s behind (samples are lost at 30 s)", .{ if (ww.buffered().len > 0) "   |   " else "", behind }) catch {};
+            if (behind > 5) {
+                ww.writeAll(if (ww.buffered().len > 0) "   |   " else "") catch {};
+                i18n.print(&ww, .warn_disk_behind, .{ .behind = behind }) catch {};
+            }
         }
-        if (disk) |d| if (d.seconds < disk_warn_s) ww.print("{s}the disk is full in {s} ({d:.1} GB left)", .{
-            if (ww.buffered().len > 0) "   |   " else "",
-            fmtLeft(d.seconds),
-            @as(f64, @floatFromInt(d.free_bytes)) / 1e9,
-        }) catch {};
+        if (disk) |d| if (d.seconds < disk_warn_s) {
+            ww.writeAll(if (ww.buffered().len > 0) "   |   " else "") catch {};
+            i18n.print(&ww, .warn_disk_full_in, .{
+                .left = fmtLeft(d.seconds),
+                .gb = @as(f64, @floatFromInt(d.free_bytes)) / 1e9,
+            }) catch {};
+        };
         const changed = alarm_len != status.alarm_len or ww.buffered().len != status.warning_len;
         status.alarm_len = alarm_len;
         status.warning_len = ww.buffered().len;
@@ -537,9 +545,9 @@ fn fmtLeft(seconds: f64) []const u8 {
         threadlocal var buf: [24]u8 = undefined;
     };
     return if (seconds >= 90)
-        std.fmt.bufPrint(&S.buf, "about {d:.0} min", .{seconds / 60}) catch "?"
+        i18n.fmt(&S.buf, .about_minutes, .{ .count = seconds / 60 })
     else
-        std.fmt.bufPrint(&S.buf, "about {d:.0} s", .{@max(0, seconds)}) catch "?";
+        i18n.fmt(&S.buf, .about_seconds, .{ .count = @max(0, seconds) });
 }
 
 /// The panels' settings as a view file: as they are now, and as last saved (at launch: as
@@ -662,7 +670,7 @@ pub const Recording = struct {
         while (self.notes.pop()) |_| {}
         const r = dimna.record.Recorder.create(gpa, io, ring, self.root(), info) catch |err| {
             self.status.state = .failed;
-            self.status.setNote("could not create a recording under {s}: {t}", .{ self.root(), err });
+            self.status.say(.note_cannot_create, .{ .dir = self.root(), .err = err });
             log.err("could not create a recording under {s}: {t}", .{ self.root(), err });
             return false;
         };
@@ -675,7 +683,7 @@ pub const Recording = struct {
         r.start() catch |err| {
             _ = r.finish();
             self.status.state = .failed;
-            self.status.setNote("could not start the recorder: {t}", .{err});
+            self.status.say(.note_cannot_start, .{ .err = err });
             return false;
         };
         self.recorder = r;
@@ -709,15 +717,16 @@ pub const Recording = struct {
         self.status.gaps = sum.gaps;
         if (sum.failure) |err| {
             self.status.state = .failed;
-            self.status.setNote("recording failed: {t}; what was written before is intact", .{err});
+            self.status.say(.note_recording_failed, .{ .err = err });
             return .failed;
         }
         self.status.state = .idle;
         var clock_buf: [16]u8 = undefined;
-        self.status.setNote(
-            "last recording: {s}, {d} samples, {d} gaps",
-            .{ control.fmtClock(&clock_buf, @as(f64, @floatFromInt(sum.samples)) / fs), sum.samples, sum.gaps },
-        );
+        self.status.say(.note_last_recording, .{
+            .length = control.fmtClock(&clock_buf, @as(f64, @floatFromInt(sum.samples)) / fs),
+            .samples = sum.samples,
+            .gaps = sum.gaps,
+        });
         return .complete;
     }
 
@@ -816,11 +825,11 @@ pub const BoardControl = struct {
             .apply => self.restart_asked = true,
             .save => if (files.saveBoard(io, gpa, config_path, &acq.requested)) |_| {
                 self.saved = acq.requested;
-                self.status.setNote("saved to {s}", .{config_path});
-            } else |err| self.status.setNote("could not save to {s}: {t}", .{ config_path, err }),
+                self.status.say(.note_saved_to, .{ .path = config_path });
+            } else |err| self.status.say(.note_cannot_save_to, .{ .path = config_path, .err = err }),
         }
         if (want.lower_bandwidth >= want.upper_bandwidth) {
-            self.status.setNote("the band's lower edge must stay below its upper edge", .{});
+            self.status.say(.note_band_edges, .{});
         } else if (acq.applySettings(want, recording)) |_| {
             // The live values carry over into what a restart will apply.
             const rate = self.pending.sample_rate;
@@ -829,7 +838,7 @@ pub const BoardControl = struct {
             self.pending.sample_rate = rate;
             self.pending.rhd2132_16ch = half;
         } else |err| {
-            self.status.setNote("not applied: {t}", .{err});
+            self.status.say(.note_not_applied, .{ .err = err });
         }
     }
 
@@ -852,7 +861,7 @@ pub const BoardControl = struct {
             log.info("board settings saved to {s}", .{config_path});
             return true;
         } else |err| {
-            self.status.setNote("could not save to {s}: {t}", .{ config_path, err });
+            self.status.say(.note_cannot_save_to, .{ .path = config_path, .err = err });
             return false;
         }
     }
@@ -864,7 +873,7 @@ pub const BoardControl = struct {
         const prompt = &self.quit_prompt;
         var changes = dimna.board_config.diff(&self.saved, in_use);
         // And the panels' settings, as one line.
-        if (view_unsaved) changes.add("panel views (saved to views.toml)", .{});
+        if (view_unsaved) changes.add("{s}", .{i18n.text(.quit_panel_views)});
         if (changes.count == 0 or prompt.active or !can_ask) return false;
         prompt.active = true;
         prompt.changes = changes;

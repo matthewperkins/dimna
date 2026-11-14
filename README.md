@@ -96,6 +96,7 @@ listens to it (♪). Shift+wheel scrolls back in time, `l` returns to live.
     monitor = "DP-2"          # the display goes fullscreen there
     tearing = true            # lowest latency; needs the compositor's cooperation
     scheme_image = "~/Pictures/lab.jpg"   # optional: take the GUI's colours from this picture
+    language = "en"           # optional: the language of the GUI's texts (only en so far; docs/display.md)
 
     [board]
     lower_hz = 0.1

@@ -8,6 +8,7 @@ const Gpu = gpu_mod.Gpu;
 const font = @import("font.zig");
 const theme = @import("theme.zig");
 const format = @import("format.zig");
+const i18n = @import("i18n.zig");
 const fmtSpan = format.fmtSpan;
 const fmtScale = format.fmtScale;
 const control = @import("control.zig");
@@ -34,18 +35,18 @@ pub const max_draws = panels_mod.max_panels * dimna.sweeps.max_sweeps;
 /// or nothing when the panel shows its channels as they are.
 pub fn fmtBand(buf: []u8, p: *const Panel) []const u8 {
     if (p.kind != .electrode) return "";
-    if (!p.filter.on) return if (p.carActive()) "   CAR" else "";
+    if (!p.filter.on) return if (p.carActive()) i18n.text(.title_car) else "";
     const lo = p.filter.low_hz;
     const hi = p.filter.high_hz;
-    const car: []const u8 = if (p.carActive()) "   CAR" else "";
+    const car: []const u8 = if (p.carActive()) i18n.text(.title_car) else "";
     return if (lo > 0 and hi > 0)
-        format.fmt(buf, "   {d}-{d} Hz{s}", .{ lo, hi, car })
+        i18n.fmt(buf, .title_band_range, .{ .low = lo, .high = hi, .car = car })
     else if (lo > 0)
-        format.fmt(buf, "   > {d} Hz{s}", .{ lo, car })
+        i18n.fmt(buf, .title_band_above, .{ .low = lo, .car = car })
     else if (hi > 0)
-        format.fmt(buf, "   < {d} Hz{s}", .{ hi, car })
+        i18n.fmt(buf, .title_band_below, .{ .high = hi, .car = car })
     else
-        format.fmt(buf, "   filter: no corners{s}", .{car});
+        i18n.fmt(buf, .title_band_none, .{ .car = car });
 }
 
 /// An electrode channel by headstage and number ("A1-5"), or "ch 37" if it is not one.
@@ -127,6 +128,12 @@ pub const Notice = struct {
         self.line2_len = format.fmt(&self.line2_buf, f2, a2).len;
     }
 
+    /// The same, from two messages of the catalogue.
+    pub fn say(self: *Notice, comptime id1: i18n.Id, a1: anytype, comptime id2: i18n.Id, a2: anytype) void {
+        self.line1_len = i18n.fmt(&self.line1_buf, id1, a1).len;
+        self.line2_len = i18n.fmt(&self.line2_buf, id2, a2).len;
+    }
+
     pub fn line1(self: *const Notice) []const u8 {
         return self.line1_buf[0..self.line1_len];
     }
@@ -161,8 +168,12 @@ pub const ReviewView = struct {
 /// threshold `uv`, its sign the slope), or before that is known "row 5 falling 4.5 σ".
 pub fn trigText(buf: []u8, p: *const Panel, uv: ?f32, sigmas: f32) []const u8 {
     if (p.trigger.source == .ttl) return format.fmt(buf, "TTL{d}", .{p.trigger.line});
-    const v = uv orelse return format.fmt(buf, "row {d} falling {d} σ", .{ p.trigger.row + 1, sigmas });
-    return format.fmt(buf, "row {d} {s} {d:.0} µV", .{ p.trigger.row + 1, if (v > 0) "rising" else "falling", v });
+    const v = uv orelse return i18n.fmt(buf, .trigger_row_sigmas, .{ .row = p.trigger.row + 1, .slope = i18n.text(.slope_falling), .sigmas = sigmas });
+    return i18n.fmt(buf, .trigger_row_level, .{
+        .row = p.trigger.row + 1,
+        .slope = if (v > 0) i18n.text(.slope_rising) else i18n.text(.slope_falling),
+        .uv = v,
+    });
 }
 
 /// How many recent samples to filter again when a panel's corners change: what its window
@@ -256,60 +267,61 @@ pub const grab_px = 4;
 pub const Drag = struct { panel: usize, ch: u32, row: usize, from_y: f32, moved: bool = false };
 
 /// One line of the key summary (`?`): in which window, the key or mouse action, what it
-/// does. ASCII, so that it lines up in the fixed-width font.
-pub const KeyHelp = struct { window: enum { display, tiles }, key: []const u8, what: []const u8 };
+/// does (messages of the catalogue). English is ASCII, so that it lines up in the
+/// fixed-width font.
+pub const KeyHelp = struct { window: enum { display, tiles }, key: i18n.Id, what: i18n.Id };
 
 /// The key summary, the one place it is written: the display's keys (they agree with
 /// `args.usage`, a test checks) and the spike-tile window's (tiles.zig).
 pub const key_help = [_]KeyHelp{
-    .{ .window = .display, .key = "wheel", .what = "Y scale (uV per row)" },
-    .{ .window = .display, .key = "Ctrl+wheel", .what = "Y scale of the row alone" },
-    .{ .window = .display, .key = "Shift+wheel", .what = "back / forward in time (review)" },
-    .{ .window = .display, .key = "sideways scroll", .what = "the same as Shift+wheel" },
-    .{ .window = .display, .key = "Alt+wheel", .what = "time base (triggered: window)" },
-    .{ .window = .display, .key = "touchpad pinch", .what = "time base" },
-    .{ .window = .display, .key = "- =", .what = "Y scale" },
-    .{ .window = .display, .key = "[ ]", .what = "time base" },
-    .{ .window = .display, .key = "r", .what = "the panel as configured" },
-    .{ .window = .display, .key = "m", .what = "scrolling <-> sweep" },
-    .{ .window = .display, .key = "f", .what = "display filter on / off" },
-    .{ .window = .display, .key = ", .", .what = "low corner down / up" },
-    .{ .window = .display, .key = "; '", .what = "high corner down / up" },
-    .{ .window = .display, .key = "t", .what = "triggered sweeps on / off" },
-    .{ .window = .display, .key = "1-8", .what = "triggered on TTL: the line" },
-    .{ .window = .display, .key = "s", .what = "triggered: TTL <-> spikes, this row" },
-    .{ .window = .display, .key = "left-click a row", .what = "focus (spikes: trigger there)" },
-    .{ .window = .display, .key = "right-click a row", .what = "listen to it alone" },
-    .{ .window = .display, .key = "Ctrl+right-click", .what = "add to / take from the sound" },
-    .{ .window = .display, .key = "middle-click", .what = "no channel in focus" },
-    .{ .window = .display, .key = "drag a red line", .what = "its threshold, fixed (uV)" },
-    .{ .window = .display, .key = "n", .what = "threshold: fixed <-> the noise" },
-    .{ .window = .display, .key = "Space", .what = "freeze / back to live" },
-    .{ .window = .display, .key = "Left / Right", .what = "back / forward 1/10 window" },
-    .{ .window = .display, .key = "PgUp / PgDn", .what = "back / forward a window" },
-    .{ .window = .display, .key = "Home / End", .what = "start of recording / live" },
-    .{ .window = .display, .key = "l", .what = "back to live" },
-    .{ .window = .display, .key = "/", .what = "type a note (Enter saves)" },
-    .{ .window = .display, .key = "`", .what = "stamp the first draft note" },
-    .{ .window = .display, .key = "1-9", .what = "stamp a preset note" },
-    .{ .window = .display, .key = "~", .what = "hide / show the ADC panels" },
-    .{ .window = .display, .key = "Shift+a", .what = "acknowledge an alarm" },
-    .{ .window = .display, .key = "?", .what = "these keys (? or Esc closes)" },
-    .{ .window = .display, .key = "q or Esc", .what = "quit" },
-    .{ .window = .tiles, .key = "wheel", .what = "scale the tiles shown" },
-    .{ .window = .tiles, .key = "Ctrl+wheel", .what = "scale the tile alone" },
-    .{ .window = .tiles, .key = "Ctrl+Shift+wheel", .what = "the tile's threshold" },
-    .{ .window = .tiles, .key = "r", .what = "tiles shown: common range" },
-    .{ .window = .tiles, .key = "a", .what = "tiles shown: own range, fixed" },
-    .{ .window = .tiles, .key = "u", .what = "undo a change of scale" },
-    .{ .window = .tiles, .key = "Shift+u", .what = "redo a change of scale" },
-    .{ .window = .tiles, .key = "n", .what = "threshold: fixed <-> the noise" },
-    .{ .window = .tiles, .key = "left-click", .what = "focus on that channel" },
-    .{ .window = .tiles, .key = "right-click", .what = "listen to it alone" },
-    .{ .window = .tiles, .key = "Ctrl+right-click", .what = "add to / take from the sound" },
-    .{ .window = .tiles, .key = "middle-click", .what = "no channel in focus" },
-    .{ .window = .tiles, .key = "drag the red line", .what = "its threshold, fixed (uV)" },
-    .{ .window = .tiles, .key = "the chips", .what = "one port's tiles, or all" },
+    .{ .window = .display, .key = .key_wheel, .what = .help_y_scale_uv },
+    .{ .window = .display, .key = .key_ctrl_wheel, .what = .help_y_scale_row },
+    .{ .window = .display, .key = .key_shift_wheel, .what = .help_back_forward_review },
+    .{ .window = .display, .key = .key_sideways_scroll, .what = .help_same_as_shift_wheel },
+    .{ .window = .display, .key = .key_alt_wheel, .what = .help_time_base_window },
+    .{ .window = .display, .key = .key_touchpad_pinch, .what = .help_time_base },
+    .{ .window = .display, .key = .key_minus_equals, .what = .help_y_scale },
+    .{ .window = .display, .key = .key_brackets, .what = .help_time_base },
+    .{ .window = .display, .key = .key_r, .what = .help_panel_as_configured },
+    .{ .window = .display, .key = .key_m, .what = .help_scrolling_sweep },
+    .{ .window = .display, .key = .key_f, .what = .help_filter_toggle },
+    .{ .window = .display, .key = .key_comma_period, .what = .help_low_corner },
+    .{ .window = .display, .key = .key_semicolon_quote, .what = .help_high_corner },
+    .{ .window = .display, .key = .key_t, .what = .help_triggered_toggle },
+    .{ .window = .display, .key = .key_1_8, .what = .help_triggered_line },
+    .{ .window = .display, .key = .key_s, .what = .help_triggered_source },
+    .{ .window = .display, .key = .key_left_click_row, .what = .help_focus_trigger },
+    .{ .window = .display, .key = .key_right_click_row, .what = .help_listen_alone },
+    .{ .window = .display, .key = .key_ctrl_right_click, .what = .help_sound_add_take },
+    .{ .window = .display, .key = .key_middle_click, .what = .help_no_focus },
+    .{ .window = .display, .key = .key_drag_red_line, .what = .help_threshold_fixed_uv },
+    .{ .window = .display, .key = .key_n, .what = .help_threshold_fixed_noise },
+    .{ .window = .display, .key = .key_space, .what = .help_freeze },
+    .{ .window = .display, .key = .key_left_right, .what = .help_back_forward_tenth },
+    .{ .window = .display, .key = .key_pgup_pgdn, .what = .help_back_forward_window },
+    .{ .window = .display, .key = .key_home_end, .what = .help_start_live },
+    .{ .window = .display, .key = .key_l, .what = .help_back_to_live },
+    .{ .window = .display, .key = .key_slash, .what = .help_type_note },
+    .{ .window = .display, .key = .key_backtick, .what = .help_stamp_draft },
+    .{ .window = .display, .key = .key_1_9, .what = .help_stamp_preset },
+    .{ .window = .display, .key = .key_tilde, .what = .help_adc_toggle },
+    .{ .window = .display, .key = .key_shift_a, .what = .help_acknowledge },
+    .{ .window = .display, .key = .key_question, .what = .help_these_keys },
+    .{ .window = .display, .key = .key_q_or_esc, .what = .help_quit },
+    .{ .window = .tiles, .key = .key_wheel, .what = .help_tiles_scale_shown },
+    .{ .window = .tiles, .key = .key_ctrl_wheel, .what = .help_tiles_scale_one },
+    .{ .window = .tiles, .key = .key_ctrl_shift_wheel, .what = .help_tiles_threshold },
+    .{ .window = .tiles, .key = .key_r, .what = .help_tiles_common_range },
+    .{ .window = .tiles, .key = .key_a, .what = .help_tiles_own_range },
+    .{ .window = .tiles, .key = .key_u, .what = .help_undo_scale },
+    .{ .window = .tiles, .key = .key_shift_u, .what = .help_redo_scale },
+    .{ .window = .tiles, .key = .key_n, .what = .help_threshold_fixed_noise },
+    .{ .window = .tiles, .key = .key_left_click, .what = .help_focus_channel },
+    .{ .window = .tiles, .key = .key_right_click, .what = .help_listen_alone },
+    .{ .window = .tiles, .key = .key_ctrl_right_click, .what = .help_sound_add_take },
+    .{ .window = .tiles, .key = .key_middle_click, .what = .help_no_focus },
+    .{ .window = .tiles, .key = .key_drag_the_red_line, .what = .help_threshold_fixed_uv },
+    .{ .window = .tiles, .key = .key_the_chips, .what = .help_tiles_chips },
 };
 
 /// The label of one row: the electrode's number on its headstage (with the headstage's name
@@ -1145,7 +1157,7 @@ pub const Display = struct {
         // In review with nothing to draw yet: say what is being waited for, where the
         // traces would be.
         if (t.waiting) {
-            const text = if (t.from_columns) "building the overview of this stretch" else "reading the recording";
+            const text = if (t.from_columns) i18n.text(.waiting_overview) else i18n.text(.waiting_reading);
             const x = @as(f32, @floatFromInt(r.x)) + (@as(f32, @floatFromInt(r.w)) - o.batch.font.width(text)) / 2;
             const y = @as(f32, @floatFromInt(r.y)) + (@as(f32, @floatFromInt(r.h)) - o.line_h) / 2;
             _ = o.batch.text(@max(x, @as(f32, @floatFromInt(r.x)) + 4), y, text, theme.text_warn);
@@ -1302,11 +1314,11 @@ pub const Display = struct {
                 if (focused) theme.focus else theme.text_dim,
             );
             // In a filtered panel, the rows shown as they are say so.
-            if (p.filter.on and p.kind == .electrode and !p.rowFiltered(row)) after = batch.label(after + 4, y, "raw", theme.text_dim);
+            if (p.filter.on and p.kind == .electrode and !p.rowFiltered(row)) after = batch.label(after + 4, y, i18n.text(.tag_raw), theme.text_dim);
             // The focused row with a threshold that is not drawn, because the row does not
             // show the detector's band, says so.
             if (focused and self.thresholdUv(p.first_ch + row) != null and !showsDetectorBand(p, row))
-                after = batch.label(after + 4, y, "thr", theme.text_dim);
+                after = batch.label(after + 4, y, i18n.text(.tag_threshold), theme.text_dim);
             // A row with a scale of its own says so.
             if (row < panels_mod.max_rows and p.per_row.gain[row] != 1) {
                 var own_buf: [24]u8 = undefined;
@@ -1559,7 +1571,7 @@ fn compactScale(buf: []u8, kind: panels_mod.Kind, v: f64) []const u8 {
 pub fn fmtTitleScale(buf: []u8, p: *const Panel) []const u8 {
     if (p.kind == .ttl or !p.usesPanelScale()) return "";
     var scale_buf: [24]u8 = undefined;
-    return format.fmt(buf, "   {s}/row", .{compactScale(&scale_buf, p.kind, p.scale)});
+    return i18n.fmt(buf, .title_per_row, .{ .scale = compactScale(&scale_buf, p.kind, p.scale) });
 }
 
 /// A panel's title, top left (a TTL lane strip's and a triggered panel's top right): what it
@@ -1578,10 +1590,10 @@ fn triggeredTitle(o: *Output, p: *const Panel, r: panels_mod.Rect, shown_sweeps:
     const head = format.fmt(&head_buf, "{s}   {s}{s}", .{ p.shortLabel(), trig, per_row });
     const electrode = p.kind == .electrode;
     // The filter text, with the three spaces before it apart (they are not the hot part).
-    const band_all = if (!electrode) "" else if (p.filter.on) fmtBand(&band_buf, p) else if (p.carActive()) "   raw   CAR" else "   raw";
+    const band_all = if (!electrode) "" else if (p.filter.on) fmtBand(&band_buf, p) else if (p.carActive()) i18n.text(.title_raw_car) else i18n.text(.title_raw);
     const gap = "   ";
     const band = if (std.mem.startsWith(u8, band_all, gap)) band_all[gap.len..] else band_all;
-    const tail = format.fmt(&tail_buf, "   {d} sweeps{s}", .{ shown_sweeps, if (shown_sweeps == 0) " (waiting for a trigger)" else "" });
+    const tail = i18n.fmt(&tail_buf, .title_sweeps, .{ .count = shown_sweeps, .waiting = if (shown_sweeps == 0) i18n.text(.title_waiting_for_trigger) else "" });
     const px: f32 = @floatFromInt(r.x);
     const y = @as(f32, @floatFromInt(r.y)) + 6;
     const gap_w = if (band.len > 0) face.width(gap) else 0;
@@ -1609,11 +1621,11 @@ fn bandTip(o: *Output, p: *const Panel, at_x: f64, at_y: f64, width: u32) void {
     const face = batch.font;
     var b1: [96]u8 = undefined;
     var band_buf: [48]u8 = undefined;
-    const band = if (p.filter.on) std.mem.trimStart(u8, fmtBand(&band_buf, p), " ") else "none (raw)";
+    const band = if (p.filter.on) std.mem.trimStart(u8, fmtBand(&band_buf, p), " ") else i18n.text(.tip_band_none);
     const lines = [_][]const u8{
-        format.fmt(&b1, "These sweeps are drawn through this panel's filter: {s}.", .{band}),
-        "Spike detection and the slope trigger always use 300-6000 Hz,",
-        "so the sweeps may not look like the spike tiles' waveforms.",
+        i18n.fmt(&b1, .tip_band_header, .{ .band = band }),
+        i18n.text(.tip_band_line2),
+        i18n.text(.tip_band_line3),
     };
     var w: f32 = 0;
     for (lines) |l| w = @max(w, face.width(l));
@@ -1637,22 +1649,22 @@ fn panelTitle(o: *Output, p: *const Panel, r: panels_mod.Rect, in_review: bool, 
     var title_buf: [128]u8 = undefined;
     var band_buf: [48]u8 = undefined;
     var per_row_buf: [40]u8 = undefined;
+    var sweeps_buf: [64]u8 = undefined;
     const per_row = fmtTitleScale(&per_row_buf, p);
     if (p.mode == .triggered) return triggeredTitle(o, p, r, shown_sweeps, trig, per_row);
     const title = if (p.mode == .triggered)
-        format.fmt(&title_buf, "{s}   {s}{s}{s}   {d} sweeps{s}", .{
+        format.fmt(&title_buf, "{s}   {s}{s}{s}{s}", .{
             p.shortLabel(),
             trig,
             per_row,
             fmtBand(&band_buf, p),
-            shown_sweeps,
-            if (shown_sweeps == 0) " (waiting for a trigger)" else "",
+            i18n.fmt(&sweeps_buf, .title_sweeps, .{ .count = shown_sweeps, .waiting = if (shown_sweeps == 0) i18n.text(.title_waiting_for_trigger) else "" }),
         })
     else if (p.kind == .ttl)
         format.fmt(&title_buf, "{s}   {s}{s}", .{
             p.shortLabel(),
             fmtSpan(&span_buf, p.span_s),
-            if (in_review) "   review" else if (p.mode == .sweep) "   sweep" else "",
+            if (in_review) i18n.text(.title_review) else if (p.mode == .sweep) i18n.text(.title_sweep) else "",
         })
     else
         format.fmt(&title_buf, "{s}   {s}{s}{s}{s}", .{
@@ -1660,7 +1672,7 @@ fn panelTitle(o: *Output, p: *const Panel, r: panels_mod.Rect, in_review: bool, 
             fmtSpan(&span_buf, p.span_s),
             per_row,
             fmtBand(&band_buf, p),
-            if (in_review) "   review" else if (p.mode == .sweep) "   sweep" else "",
+            if (in_review) i18n.text(.title_review) else if (p.mode == .sweep) i18n.text(.title_sweep) else "",
         });
     // A lane strip is short: its title goes to the right, clear of the lane labels. A
     // triggered panel's too, in the strip kept for it above the rows.
@@ -1721,7 +1733,7 @@ fn alarmBar(o: *Output, status: Status, below_badge: bool, width: u32) void {
     const tw = batch.font.width(text);
     _ = batch.text((@as(f32, @floatFromInt(width)) - tw) / 2, bar_y + 5, text, theme.bar_text);
     if (is_alarm) {
-        const hint = "press Shift+a to acknowledge";
+        const hint = i18n.text(.alarm_hint);
         _ = batch.text(
             (@as(f32, @floatFromInt(width)) - batch.font.width(hint)) / 2,
             bar_y + line_h + 7,
@@ -1752,15 +1764,11 @@ fn reviewBadge(o: *Output, v: ReviewView, width: u32, fs: f64) void {
     const line_h = o.line_h;
     var buf: [120]u8 = undefined;
     var clock_buf: [16]u8 = undefined;
-    const text = std.fmt.bufPrint(
-        &buf,
-        "REVIEW   {d:.1} s behind live   at {s}{s}   l = live",
-        .{
-            v.behind_s,
-            control.fmtClock(&clock_buf, @as(f64, @floatFromInt(v.end)) / fs),
-            if (!v.ready) "   (reading)" else if (v.columns & ~v.columns_ready != 0) "   (building the overview)" else "",
-        },
-    ) catch "REVIEW";
+    const text = i18n.fmt(&buf, .review_badge, .{
+        .behind = v.behind_s,
+        .clock = control.fmtClock(&clock_buf, @as(f64, @floatFromInt(v.end)) / fs),
+        .state = if (!v.ready) i18n.text(.review_reading) else if (v.columns & ~v.columns_ready != 0) i18n.text(.review_building) else "",
+    });
     const tw = batch.font.width(text);
     const x = (@as(f32, @floatFromInt(width)) - tw) / 2;
     batch.rect(x - 10, 4, tw + 20, line_h + 10, theme.warning_bar);
@@ -1773,11 +1781,10 @@ fn noteDraft(o: *Output, notes: *const notes_mod.Notes, height: u32, fs: f64) vo
     const line_h = o.line_h;
     var buf: [notes_mod.max_text + 64]u8 = undefined;
     var clock_buf: [16]u8 = undefined;
-    const text = std.fmt.bufPrint(
-        &buf,
-        "note at {s}:  {s}_",
-        .{ control.fmtClock(&clock_buf, @as(f64, @floatFromInt(notes.draft.sample)) / fs), notes.draft.text() },
-    ) catch "note";
+    const text = i18n.fmt(&buf, .note_draft, .{
+        .clock = control.fmtClock(&clock_buf, @as(f64, @floatFromInt(notes.draft.sample)) / fs),
+        .text = notes.draft.text(),
+    });
     _ = batch.label(10, @as(f32, @floatFromInt(height)) - 2 * line_h - 14, text, theme.note_draft_text);
 }
 
@@ -1788,7 +1795,7 @@ fn statusReadout(o: *Output, status: Status, width: u32, height: u32) void {
     const line_h = o.line_h;
     var buf: [96]u8 = undefined;
     const text = if (status.lost > 0)
-        format.fmt(&buf, "{d:.1} ms   {d} fps   display skipped {d} blocks", .{ status.latency_ms, status.fps, status.lost })
+        i18n.fmt(&buf, .readout_skipped, .{ .ms = status.latency_ms, .fps = status.fps, .blocks = status.lost })
     else
         format.fmt(&buf, "{d:.1} ms   {d} fps", .{ status.latency_ms, status.fps });
     const w = batch.font.width(text);
@@ -1798,7 +1805,7 @@ fn statusReadout(o: *Output, status: Status, width: u32, height: u32) void {
     if (status.recording) {
         var clock_buf: [16]u8 = undefined;
         var rec_buf: [32]u8 = undefined;
-        const rec_text = std.fmt.bufPrint(&rec_buf, "REC {s}", .{control.fmtClock(&clock_buf, status.rec_seconds)}) catch "REC";
+        const rec_text = i18n.fmt(&rec_buf, .readout_rec, .{ .clock = control.fmtClock(&clock_buf, status.rec_seconds) });
         _ = batch.label(x - batch.font.width(rec_text) - 14, y, rec_text, theme.text_rec);
     }
 }
@@ -1812,16 +1819,16 @@ fn helpPanel(o: *Output, width: u32, height: u32) void {
     const f = batch.font;
     const line_h = o.line_h;
     const pad: f32 = 12;
-    const title = "Keys and the mouse   (? or Esc closes this)";
-    const headings = [2][]const u8{ "On the display", "In the spike-tile window" };
+    const title = i18n.text(.help_title);
+    const headings = [2][]const u8{ i18n.text(.help_heading_display), i18n.text(.help_heading_tiles) };
     // Per column: how wide its keys and its descriptions are, and how many lines.
     var key_w: [2]f32 = @splat(0);
     var what_w: [2]f32 = @splat(0);
     var lines: [2]usize = @splat(0);
     for (key_help) |k| {
         const c = @backingInt(k.window);
-        key_w[c] = @max(key_w[c], f.widthMono(k.key));
-        what_w[c] = @max(what_w[c], f.widthMono(k.what), f.widthMono(headings[c]));
+        key_w[c] = @max(key_w[c], f.widthMono(i18n.textOf(k.key)));
+        what_w[c] = @max(what_w[c], f.widthMono(i18n.textOf(k.what)), f.widthMono(headings[c]));
         lines[c] += 1;
     }
     const sp = f.widthMono("  ");
@@ -1839,8 +1846,8 @@ fn helpPanel(o: *Output, width: u32, height: u32) void {
     for (key_help) |k| {
         const c = @backingInt(k.window);
         const y = y0 + pad + @as(f32, @floatFromInt(row[c] + 3)) * line_h;
-        _ = batch.textMono(col_x[c], y, k.key, theme.help_key);
-        _ = batch.textMono(col_x[c] + key_w[c] + sp, y, k.what, theme.help_text);
+        _ = batch.textMono(col_x[c], y, i18n.textOf(k.key), theme.help_key);
+        _ = batch.textMono(col_x[c] + key_w[c] + sp, y, i18n.textOf(k.what), theme.help_text);
         row[c] += 1;
     }
 }
@@ -2764,8 +2771,8 @@ test "the key summary agrees with the usage text on the display's keys" {
         if (line.len < 3 or line[2] == ' ') continue;
         const key = line[2 .. std.mem.indexOfPos(u8, line, 2, "  ") orelse line.len];
         while (k < key_help.len and key_help[k].window != .display) k += 1;
-        if (k == key_help.len or !std.mem.eql(u8, key_help[k].key, key)) {
-            const has = if (k < key_help.len) key_help[k].key else "nothing";
+        if (k == key_help.len or !std.mem.eql(u8, i18n.textOfIn(.en, key_help[k].key), key)) {
+            const has = if (k < key_help.len) i18n.textOfIn(.en, key_help[k].key) else "nothing";
             std.debug.print("usage lists '{s}' where the key summary has '{s}'\n", .{ key, has });
             return error.TestUnexpectedResult;
         }
@@ -2773,13 +2780,13 @@ test "the key summary agrees with the usage text on the display's keys" {
     }
     while (k < key_help.len and key_help[k].window != .display) k += 1;
     if (k < key_help.len) {
-        std.debug.print("the key summary has '{s}', the usage text does not\n", .{key_help[k].key});
+        std.debug.print("the key summary has '{s}', the usage text does not\n", .{i18n.textOfIn(.en, key_help[k].key)});
         return error.TestUnexpectedResult;
     }
-    // Every line of the summary is ASCII, so the columns line up in the fixed-width font.
+    // Every line of the English summary is ASCII, so the columns line up in the fixed-width font.
     for (key_help) |h| {
-        for (h.key) |c| try testing.expect(c >= 0x20 and c < 0x7f);
-        for (h.what) |c| try testing.expect(c >= 0x20 and c < 0x7f);
+        for (i18n.textOfIn(.en, h.key)) |c| try testing.expect(c >= 0x20 and c < 0x7f);
+        for (i18n.textOfIn(.en, h.what)) |c| try testing.expect(c >= 0x20 and c < 0x7f);
     }
 }
 

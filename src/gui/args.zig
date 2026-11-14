@@ -37,6 +37,9 @@ pub const Args = struct {
     sweep: bool = false,
     /// Free-running: least interval between frames in ms; negative = paced to the refresh.
     free_ms: f64 = -1,
+    /// The language of the GUI's texts (`language` in the config: "en", "de", ...; "" = from
+    /// `LANG`). Not checked here: see `i18n.pick`.
+    language: []const u8 = "",
     /// Font for labels: a fontconfig name and a size in pixels.
     font: []const u8 = "sans-serif",
     font_px: u32 = 14,
@@ -141,6 +144,8 @@ pub fn applyConfig(a: *Args, doc: dimna.toml.Document) void {
             a.margin_ms = e.value.number;
         } else if (std.mem.eql(u8, e.key, "free_ms") and e.value == .number) {
             a.free_ms = e.value.number;
+        } else if (std.mem.eql(u8, e.key, "language") and e.value == .string) {
+            a.language = e.value.string;
         } else if (std.mem.eql(u8, e.key, "font") and e.value == .string) {
             a.font = e.value.string;
         } else if (std.mem.eql(u8, e.key, "font_px") and e.value == .number and e.value.number >= 6 and e.value.number <= 64) {
@@ -273,6 +278,18 @@ test "scheme_image is read from the config, and the scheme options from the comm
     try std.testing.expectEqualStrings("~/pics/lab.jpg", a.scheme_image);
     try std.testing.expectEqualStrings("x.png", a.print_scheme);
     try std.testing.expectEqualStrings("out.png", a.swatch);
+}
+
+test "language is read from the config" {
+    var diag: dimna.toml.Diagnostics = .{};
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const doc = try dimna.toml.parse(arena.allocator(), "language = \"de\"\n", &diag);
+    const a = try parseArgs(&.{"dimna"}, doc);
+    try std.testing.expectEqualStrings("de", a.language);
+    try std.testing.expectEqual(@import("i18n.zig").Language.de, @import("i18n.zig").pick(a.language, "pl_PL.UTF-8"));
+    const none = try parseArgs(&.{"dimna"}, .{ .entries = &.{} });
+    try std.testing.expectEqualStrings("", none.language);
 }
 
 test "the usage text lists every option the parser accepts" {
