@@ -392,6 +392,8 @@ fn loop(cfg: *Config) !void {
     var tag: u64 = 0;
     // Which sections are open: at start, as the view file says.
     var view: ControlView = cfg.view;
+    // Mirrored for a language read right to left (the language is set before this thread).
+    const rtl = i18n.rightToLeft(i18n.current);
     // For tests: "SECONDS:X,Y;..." clicks at those pixels of this window.
     var script: []const u8 = cfg.env.control_clicks;
     const t_start = nowSeconds();
@@ -431,6 +433,7 @@ fn loop(cfg: *Config) !void {
             @floatCast(in.pointer_y),
             clicks > 0,
             @floatCast(wheel),
+            rtl,
         );
         build(&ui, cfg, &snap, shared, &view);
         clicks = 0;
@@ -501,7 +504,7 @@ fn titleSection(ui: *ui_mod.Ui, snap: *const Snapshot, shared: *Shared) void {
     ui.newline();
     if (snap.status.alarm_len > 0) {
         // The same alarm as across the display, until acknowledged.
-        ui.batch.rect(0, ui.y - 2, ui.width, ui.rowHeight() + 2, theme.alarm_bar);
+        ui.fill(0, ui.y - 2, ui.width, ui.rowHeight() + 2, theme.alarm_bar);
         ui.text(snap.status.alarm(), theme.text_bright);
         ui.x = @max(ui.x, ui.width - 130);
         if (ui.button(i18n.text(.btn_acknowledge), false)) shared.push(.acknowledge);
@@ -1048,12 +1051,14 @@ const LayoutRig = struct {
     /// changes it).
     start_view: ControlView = .{},
     view: ControlView = .{},
+    /// Mirrored, as for a language read right to left.
+    rtl: bool = false,
 
     fn frame(self: *LayoutRig, snap: *const Snapshot, mx: f32, my: f32, clicked: bool) ui_mod.Ui {
         self.batch = .{ .font = &self.face, .vertices = self.vertices };
         self.shared = .{};
         self.view = self.start_view;
-        var ui: ui_mod.Ui = .begin(&self.batch, 800, mx, my, clicked, 0);
+        var ui: ui_mod.Ui = .begin(&self.batch, 800, mx, my, clicked, 0, self.rtl);
         build(&ui, &self.cfg, snap, &self.shared, &self.view);
         return ui;
     }
@@ -1078,6 +1083,22 @@ fn writeView(w: *std.Io.Writer, v: *const ControlView) !void {
     try w.writeAll("]");
 }
 
+/// " -> edit" for each edit queued; returns the last view queued, if any.
+fn writeEdits(w: *std.Io.Writer, shared: *Shared) !?ControlView {
+    // A panel edit is written flat, so its action is not nested too deeply to print.
+    var queued_view: ?ControlView = null;
+    while (shared.pop()) |e| switch (e) {
+        .panel => |pe| try w.print(" -> panel {d} {any}", .{ pe.index, pe.action }),
+        .control_view => |cv| {
+            queued_view = cv;
+            try w.writeAll(" -> control_view:");
+            try writeView(w, &cv);
+        },
+        else => try w.print(" -> {any}", .{e}),
+    };
+    return queued_view;
+}
+
 fn writeLayout(w: *std.Io.Writer, rig: *LayoutRig, name: []const u8, snap: *const Snapshot, open: LayoutOpen) !void {
     rig.start_view = layoutView(open, snap);
     const ui = rig.frame(snap, -1, -1, false);
@@ -1100,17 +1121,7 @@ fn writeLayout(w: *std.Io.Writer, rig: *LayoutRig, name: []const u8, snap: *cons
             const rh = v[2].pos[1] - y;
             try w.print("rect {d} {d} {d} {d} {any}", .{ x, y, rw, rh, col });
             _ = rig.frame(snap, x + rw / 2, y + rh / 2, true);
-            // A panel edit is written flat, so its action is not nested too deeply to print.
-            var queued_view: ?ControlView = null;
-            while (rig.shared.pop()) |e| switch (e) {
-                .panel => |pe| try w.print(" -> panel {d} {any}", .{ pe.index, pe.action }),
-                .control_view => |cv| {
-                    queued_view = cv;
-                    try w.writeAll(" -> control_view:");
-                    try writeView(w, &cv);
-                },
-                else => try w.print(" -> {any}", .{e}),
-            };
+            const queued_view = try writeEdits(w, &rig.shared);
             // A heading opens or closes its section, and the display thread is told what is
             // open now; nothing else tells it.
             if (rig.view.eql(&rig.start_view)) {
@@ -1378,15 +1389,13 @@ fn panelSnapshots(out: []Snapshot, base: *const Snapshot) void {
     out[7] = s;
 }
 
-test "the control window's layout is unchanged" {
-    const gpa = testing.allocator;
-    const vertices = try gpa.alloc(font.Vertex, 6 * 8192);
-    defer gpa.free(vertices);
-    const rig = try gpa.create(LayoutRig);
-    defer gpa.destroy(rig);
-    rig.* = .{ .face = layoutFont(), .vertices = vertices };
+/// The frozen layout of every state in `layout_states`, as text (owned by the caller);
+/// with `rtl`, mirrored.
+fn layoutText(gpa: std.mem.Allocator, rtl: bool) ![]u8 {
     const no_env: Env = .{};
-    rig.cfg = .{ .gpa = gpa, .shared = &rig.shared, .display_gpu = undefined, .env = &no_env };
+    const rig = try createRig(gpa, &no_env);
+    defer destroyRig(gpa, rig);
+    rig.rtl = rtl;
     const snaps = try gpa.alloc(Snapshot, layout_states.len);
     defer gpa.free(snaps);
     layoutSnapshots(snaps);
@@ -1394,13 +1403,206 @@ test "the control window's layout is unchanged" {
     var out: std.Io.Writer.Allocating = .init(gpa);
     defer out.deinit();
     for (layout_states, snaps) |state, *snap| try writeLayout(&out.writer, rig, state.name, snap, state.open);
-    const got = out.written();
-    if (std.c.getenv("DIMNA_CONTROL_LAYOUT_OUT")) |path| {
-        const file = try std.Io.Dir.cwd().createFile(testing.io, std.mem.span(path), .{});
-        defer file.close(testing.io);
-        try file.writeStreamingAll(testing.io, got);
-    }
+    return out.toOwnedSlice();
+}
+
+/// Writes `got` to the path in the environment variable `env_name`, if it is set.
+fn writeIfAsked(env_name: [*:0]const u8, got: []const u8) !void {
+    const path = std.c.getenv(env_name) orelse return;
+    const file = try std.Io.Dir.cwd().createFile(testing.io, std.mem.span(path), .{});
+    defer file.close(testing.io);
+    try file.writeStreamingAll(testing.io, got);
+}
+
+test "the control window's layout is unchanged" {
+    const got = try layoutText(testing.allocator, false);
+    defer testing.allocator.free(got);
+    try writeIfAsked("DIMNA_CONTROL_LAYOUT_OUT", got);
     try testing.expectEqualStrings(@embedFile("testdata/control_layout.txt"), got);
+}
+
+// The mirrored layout (a language read right to left), frozen as a record in
+// `testdata/control_layout_rtl.txt` (DIMNA_CONTROL_LAYOUT_RTL_OUT writes this run's). The
+// test after it is the proof that it is the mirror of the one above.
+test "the control window's mirrored layout is unchanged" {
+    const got = try layoutText(testing.allocator, true);
+    defer testing.allocator.free(got);
+    try writeIfAsked("DIMNA_CONTROL_LAYOUT_RTL_OUT", got);
+    try testing.expectEqualStrings(@embedFile("testdata/control_layout_rtl.txt"), got);
+}
+
+/// A rectangle, or a run of glyphs (same row and colour, 8 pixels apart), of a frame drawn
+/// with `layoutFont`: quads `first`..`first + n` of it.
+const LayoutItem = struct {
+    glyphs: bool,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    colour: font.Colour,
+    first: usize,
+    n: usize,
+};
+
+/// The glyph number in `layoutFont` of a quad (its atlas position), or null for a rectangle.
+fn layoutGlyph(v: font.Vertex) ?usize {
+    const u = v.uv[0] * font.atlas_size;
+    return if (u < 8) null else @intFromFloat(u - 8);
+}
+
+/// The rectangles and runs of glyphs of `verts`, in the order drawn.
+fn layoutItems(gpa: std.mem.Allocator, verts: []const font.Vertex) ![]LayoutItem {
+    var items: std.ArrayList(LayoutItem) = .empty;
+    errdefer items.deinit(gpa);
+    const quads = verts.len / 6;
+    var q: usize = 0;
+    while (q < quads) {
+        const v = verts[q * 6 ..][0..6];
+        var item: LayoutItem = .{
+            .glyphs = false,
+            .x = v[0].pos[0],
+            .y = v[0].pos[1],
+            .w = v[2].pos[0] - v[0].pos[0],
+            .h = v[2].pos[1] - v[0].pos[1],
+            .colour = v[0].colour,
+            .first = q,
+            .n = 1,
+        };
+        if (layoutGlyph(v[0]) != null) {
+            item.glyphs = true;
+            item.n = 0;
+            while (q + item.n < quads) : (item.n += 1) {
+                const g = verts[(q + item.n) * 6 ..][0..6];
+                if (layoutGlyph(g[0]) == null or g[0].pos[0] != item.x + 8 * @as(f32, @floatFromInt(item.n)) or
+                    g[0].pos[1] != item.y or !std.mem.eql(u8, &g[0].colour, &item.colour)) break;
+            }
+            item.w = 8 * @as(f32, @floatFromInt(item.n));
+        }
+        try items.append(gpa, item);
+        q += item.n;
+    }
+    return items.toOwnedSlice(gpa);
+}
+
+/// A rig for `layoutFont` frames, made with `gpa` (`destroyRig` frees it).
+fn createRig(gpa: std.mem.Allocator, no_env: *const Env) !*LayoutRig {
+    const vertices = try gpa.alloc(font.Vertex, 6 * 8192);
+    errdefer gpa.free(vertices);
+    const rig = try gpa.create(LayoutRig);
+    rig.* = .{ .face = layoutFont(), .vertices = vertices };
+    rig.cfg = .{ .gpa = gpa, .shared = &rig.shared, .display_gpu = undefined, .env = no_env };
+    return rig;
+}
+
+fn destroyRig(gpa: std.mem.Allocator, rig: *LayoutRig) void {
+    gpa.free(rig.vertices);
+    gpa.destroy(rig);
+}
+
+test "mirrored, every rectangle and text of the control window is the mirror of its unmirrored one, and does the same" {
+    const gpa = testing.allocator;
+    const no_env: Env = .{};
+    const rig = try createRig(gpa, &no_env);
+    defer destroyRig(gpa, rig);
+    const snaps = try gpa.alloc(Snapshot, layout_states.len);
+    defer gpa.free(snaps);
+    layoutSnapshots(snaps);
+    const width = 800;
+    const closed_triangle = 224 + 4; // ▸ in `layoutFont`
+    const missing = '?' - 32; // ◂, which `layoutFont` does not have
+    var turned: usize = 0;
+    var rects: usize = 0;
+    var runs: usize = 0;
+    for (layout_states, snaps) |state, *snap| {
+        errdefer std.debug.print("in state \"{s}\"\n", .{state.name});
+        rig.start_view = layoutView(state.open, snap);
+        var frames: [2][]font.Vertex = undefined;
+        var items: [2][]LayoutItem = undefined;
+        for (0..2) |k| {
+            rig.rtl = k == 1;
+            _ = rig.frame(snap, -1, -1, false);
+            try testing.expect(rig.batch.len + 6 <= rig.vertices.len);
+            frames[k] = try gpa.dupe(font.Vertex, rig.vertices[0..rig.batch.len]);
+            items[k] = try layoutItems(gpa, frames[k]);
+        }
+        defer for (frames, items) |f, it| {
+            gpa.free(f);
+            gpa.free(it);
+        };
+        try testing.expectEqual(frames[0].len, frames[1].len);
+        try testing.expectEqual(items[0].len, items[1].len);
+        for (items[0], items[1]) |a, b| {
+            try testing.expectEqual(a.glyphs, b.glyphs);
+            try testing.expectEqual(width - a.x - a.w, b.x);
+            try testing.expectEqual(a.y, b.y);
+            try testing.expectEqual(a.w, b.w);
+            try testing.expectEqual(a.h, b.h);
+            try testing.expectEqual(a.colour, b.colour);
+            try testing.expectEqual(a.n, b.n);
+            if (a.glyphs) {
+                runs += 1;
+                // The same text, but for a closed heading's triangle, which turns.
+                for (0..a.n) |j| {
+                    const ga = layoutGlyph(frames[0][(a.first + j) * 6]).?;
+                    const gb = layoutGlyph(frames[1][(b.first + j) * 6]).?;
+                    if (j == 0 and ga == closed_triangle) {
+                        try testing.expectEqual(missing, gb);
+                        turned += 1;
+                    } else try testing.expectEqual(ga, gb);
+                }
+                continue;
+            }
+            rects += 1;
+            // A click in the middle of the mirrored rectangle does what one in the middle
+            // of the rectangle does.
+            var edits: [2][1024]u8 = undefined;
+            var lens: [2]usize = undefined;
+            for (0..2) |k| {
+                rig.rtl = k == 1;
+                const r = if (k == 0) a else b;
+                _ = rig.frame(snap, r.x + r.w / 2, r.y + r.h / 2, true);
+                var w: std.Io.Writer = .fixed(&edits[k]);
+                _ = try writeEdits(&w, &rig.shared);
+                lens[k] = w.buffered().len;
+            }
+            try testing.expectEqualStrings(edits[0][0..lens[0]], edits[1][0..lens[1]]);
+        }
+    }
+    std.debug.print("mirrored layout: {d} rectangles, {d} runs of text, {d} triangles turned\n", .{ rects, runs, turned });
+    try testing.expect(turned > 10);
+    try testing.expect(rects > 500 and runs > 500);
+}
+
+test "mirrored, a click where a button is drawn is that button's, and one where it would be unmirrored is not" {
+    const gpa = testing.allocator;
+    const no_env: Env = .{};
+    const rig = try createRig(gpa, &no_env);
+    defer destroyRig(gpa, rig);
+    const snap = layoutBase();
+    // "Record" is at x 12..78, y 102..126 unmirrored (control_layout.txt); mirrored, at
+    // 722..788. Its middle: x 45 unmirrored, 755 mirrored.
+    const Case = struct { rtl: bool, x: f32, record: bool };
+    for ([_]Case{
+        .{ .rtl = false, .x = 45, .record = true },
+        .{ .rtl = false, .x = 755, .record = false },
+        .{ .rtl = true, .x = 755, .record = true },
+        .{ .rtl = true, .x = 45, .record = false },
+        // The edges: a drawn box takes in its left edge, not its right.
+        .{ .rtl = true, .x = 722, .record = true },
+        .{ .rtl = true, .x = 787.9, .record = true },
+        .{ .rtl = true, .x = 788, .record = false },
+        .{ .rtl = true, .x = 721.9, .record = false },
+    }) |c| {
+        errdefer std.debug.print("case {any}\n", .{c});
+        rig.rtl = c.rtl;
+        _ = rig.frame(&snap, c.x, 114, true);
+        var got_record = false;
+        while (rig.shared.pop()) |e| switch (e) {
+            .record => |on| got_record = on,
+            else => return error.UnexpectedEdit,
+        };
+        try testing.expectEqual(c.record, got_record);
+    }
 }
 
 test "which sections are open is saved with the view, but is not by itself something to ask about" {

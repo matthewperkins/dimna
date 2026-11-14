@@ -1,0 +1,2364 @@
+== not recording, all open: 970 quads, ends at x 636 y 710
+text 748 14 { 225, 230, 240, 255 } "dimna"
+text 460 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
+text 660 42 { 255, 190, 90, 255 } "disk nearly full"
+text 468 70 { 150, 160, 178, 255 } "display 4.3 ms   144 fps   running 125 s"
+text 268 70 { 255, 190, 90, 255 } "display skipped 3 blocks"
+rect 80 66 90 24 { 52, 96, 170, 255 } -> .{ .save_view = void }
+text 89 70 { 225, 230, 240, 255 } "Save view"
+rect 24 66 50 24 { 38, 43, 54, 255 } -> .{ .quit = void }
+text 33 70 { 225, 230, 240, 255 } "Quit"
+rect 12 96 776 1 { 48, 52, 62, 255 }
+rect 722 102 66 24 { 38, 43, 54, 255 } -> .{ .record = true }
+text 731 106 { 225, 230, 240, 255 } "Record"
+text 612 106 { 150, 160, 178, 255 } "not recording"
+rect 12 132 776 1 { 48, 52, 62, 255 }
+rect 714 138 74 24 { 26, 30, 38, 255 } -> control_view: audio headstages [Port A]
+text 723 142 { 225, 230, 240, 255 } "▾ Notes"
+text 292 142 { 150, 160, 178, 255 } "2 presets   last note 1:02:05  cell 3, 2100 µm"
+rect 626 166 98 24 { 38, 43, 54, 255 } -> .{ .note_preset = 1 }
+text 635 170 { 225, 230, 240, 255 } "1 laser on"
+rect 538 166 82 24 { 38, 43, 54, 255 } -> .{ .note_preset = 4 }
+text 547 170 { 225, 230, 240, 255 } "4 µ-stim"
+text 348 170 { 150, 160, 178, 255 } "2 drafts (` stamps one)"
+text 580 198 { 150, 160, 178, 255 } "1:02:05  cell 3, 2100 µm"
+text 684 226 { 150, 160, 178, 255 } "1:01  moved"
+rect 12 252 776 1 { 48, 52, 62, 255 }
+rect 714 258 74 24 { 26, 30, 38, 255 } -> control_view: notes headstages [Port A]
+text 723 262 { 225, 230, 240, 255 } "▾ Audio"
+text 316 262 { 150, 160, 178, 255 } "on   -6 dB   listening to A1-5, B1-3   9 ms"
+rect 690 286 34 24 { 52, 96, 170, 255 }
+text 699 290 { 225, 230, 240, 255 } "on"
+rect 642 286 42 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .enabled = false } }
+text 651 290 { 225, 230, 240, 255 } "off"
+rect 586 286 50 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .mute = true } }
+text 595 290 { 225, 230, 240, 255 } "mute"
+text 532 290 { 150, 160, 178, 255 } "volume"
+rect 498 286 26 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .volume = false } }
+text 507 290 { 225, 230, 240, 255 } "-"
+text 442 290 { 225, 230, 240, 255 } "-6 dB"
+rect 400 286 26 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .volume = true } }
+text 409 290 { 225, 230, 240, 255 } "+"
+rect 318 286 66 24 { 52, 96, 170, 255 }
+text 327 290 { 225, 230, 240, 255 } "shaped"
+rect 254 286 58 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .reference = true } }
+text 263 290 { 225, 230, 240, 255 } "plain"
+rect 206 286 42 24 { 52, 96, 170, 255 } -> .{ .audio = .{ .car = false } }
+text 215 290 { 225, 230, 240, 255 } "CAR"
+rect 94 286 106 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .recalibrate = void } }
+text 103 290 { 225, 230, 240, 255 } "recalibrate"
+text 604 318 { 150, 160, 178, 255 } "listening to A1-5, B1-3"
+text 452 318 { 150, 160, 178, 255 } "noise 7.4 µV, held"
+text 412 318 { 150, 160, 178, 255 } "9 ms"
+text 252 318 { 150, 160, 178, 255 } "2 gaps in the sound"
+rect 12 344 776 1 { 48, 52, 62, 255 }
+text 731 354 { 225, 230, 240, 255 } "Spikes"
+text 588 354 { 150, 160, 178, 255 } "threshold"
+rect 554 350 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = false } }
+text 563 354 { 225, 230, 240, 255 } "-"
+text 498 354 { 225, 230, 240, 255 } "4.5 σ"
+rect 456 350 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = true } }
+text 465 354 { 225, 230, 240, 255 } "+"
+text 136 354 { 150, 160, 178, 255 } "below zero, where it follows the noise"
+rect 12 380 776 1 { 48, 52, 62, 255 }
+rect 674 386 114 24 { 26, 30, 38, 255 } -> control_view: notes audio [Port A]
+text 683 390 { 225, 230, 240, 255 } "▾ Headstages"
+text 300 390 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.17 Hz"
+text 540 418 { 150, 160, 178, 255 } "(these change what is recorded)"
+text 676 446 { 150, 160, 178, 255 } "amplifier band"
+text 644 446 { 150, 160, 178, 255 } "low"
+rect 610 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
+text 619 446 { 225, 230, 240, 255 } "-"
+text 536 446 { 225, 230, 240, 255 } "0.58 Hz"
+rect 492 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
+text 501 446 { 225, 230, 240, 255 } "+"
+text 444 446 { 150, 160, 178, 255 } "high"
+rect 410 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
+text 419 446 { 225, 230, 240, 255 } "-"
+text 332 446 { 225, 230, 240, 255 } "7.60 kHz"
+rect 292 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
+text 301 446 { 225, 230, 240, 255 } "+"
+text 684 474 { 150, 160, 178, 255 } "DSP high-pass"
+rect 626 470 42 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp = false } }
+text 635 474 { 225, 230, 240, 255 } "off"
+rect 586 470 34 24 { 52, 96, 170, 255 }
+text 595 474 { 225, 230, 240, 255 } "on"
+text 518 474 { 150, 160, 178, 255 } "cutoff"
+rect 484 470 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp_cutoff = false } }
+text 493 474 { 225, 230, 240, 255 } "-"
+text 410 474 { 225, 230, 240, 255 } "1.17 Hz"
+rect 366 470 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp_cutoff = true } }
+text 375 474 { 225, 230, 240, 255 } "+"
+text 700 502 { 150, 160, 178, 255 } "sample rate"
+rect 642 498 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .rate = false } }
+text 651 502 { 225, 230, 240, 255 } "-"
+text 564 502 { 225, 230, 240, 255 } "30000 Hz"
+rect 524 498 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .rate = true } }
+text 533 502 { 225, 230, 240, 255 } "+"
+text 492 502 { 150, 160, 178, 255 } "A1"
+rect 426 498 58 24 { 52, 96, 170, 255 }
+text 435 502 { 225, 230, 240, 255 } "32 ch"
+rect 338 498 82 24 { 38, 43, 54, 255 } -> .{ .board = .{ .half = 0 } }
+text 347 502 { 225, 230, 240, 255 } "16 of 32"
+rect 12 528 776 1 { 48, 52, 62, 255 }
+rect 706 534 82 24 { 26, 30, 38, 255 } -> control_view: notes audio headstages []
+text 715 538 { 225, 230, 240, 255 } "▾ Port A"
+text 388 538 { 150, 160, 178, 255 } "scroll   2.00 s   400 µV/row   raw"
+rect 20 534 58 24 { 38, 43, 54, 255 } -> panel 0 .{ .reset = void }
+text 29 538 { 225, 230, 240, 255 } "reset"
+text 756 566 { 150, 160, 178, 255 } "view"
+rect 658 562 66 24 { 52, 96, 170, 255 }
+text 667 566 { 225, 230, 240, 255 } "scroll"
+rect 594 562 58 24 { 38, 43, 54, 255 } -> panel 0 .{ .mode = .sweep }
+text 603 566 { 225, 230, 240, 255 } "sweep"
+rect 498 562 90 24 { 38, 43, 54, 255 } -> panel 0 .{ .mode = .triggered }
+text 507 566 { 225, 230, 240, 255 } "triggered"
+text 446 566 { 150, 160, 178, 255 } "time"
+rect 412 562 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .zoom = 0.8 }
+text 421 566 { 225, 230, 240, 255 } "-"
+text 317 566 { 225, 230, 240, 255 } "2.00 s"
+rect 244 562 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .zoom = 1.25 }
+text 253 566 { 225, 230, 240, 255 } "+"
+text 684 594 { 150, 160, 178, 255 } "scale"
+rect 650 590 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .scale = 0.8 }
+text 659 594 { 225, 230, 240, 255 } "-"
+text 549 594 { 225, 230, 240, 255 } "400 µV/row"
+rect 502 590 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .scale = 1.25 }
+text 511 594 { 225, 230, 240, 255 } "+"
+text 740 622 { 150, 160, 178, 255 } "filter"
+rect 682 618 42 24 { 52, 96, 170, 255 }
+text 691 622 { 225, 230, 240, 255 } "raw"
+rect 626 618 50 24 { 38, 43, 54, 255 } -> panel 0 .{ .filter = true }
+text 635 622 { 225, 230, 240, 255 } "band"
+text 708 650 { 150, 160, 178, 255 } "rows shown"
+rect 654 646 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 0 }
+text 665 650 { 225, 230, 240, 255 } "1"
+rect 621 646 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 1 }
+text 632 650 { 225, 230, 240, 255 } "2"
+rect 588 646 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 2 }
+text 599 650 { 225, 230, 240, 255 } "3"
+rect 555 646 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 3 }
+text 566 650 { 225, 230, 240, 255 } "4"
+rect 522 646 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 4 }
+text 533 650 { 225, 230, 240, 255 } "5"
+rect 489 646 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 5 }
+text 500 650 { 225, 230, 240, 255 } "6"
+text 764 678 { 150, 160, 178, 255 } "CAR"
+rect 682 674 42 24 { 52, 96, 170, 255 }
+text 691 678 { 225, 230, 240, 255 } "off"
+rect 642 674 34 24 { 38, 43, 54, 255 } -> panel 0 .{ .car = true }
+text 651 678 { 225, 230, 240, 255 } "on"
+rect 12 704 776 1 { 48, 52, 62, 255 }
+text 172 714 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
+== recording, all open: 1258 quads, ends at x 636 y 850
+text 748 14 { 225, 230, 240, 255 } "dimna"
+text 460 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
+text 660 42 { 255, 190, 90, 255 } "disk nearly full"
+text 468 70 { 150, 160, 178, 255 } "display 4.3 ms   144 fps   running 125 s"
+text 268 70 { 255, 190, 90, 255 } "display skipped 3 blocks"
+text 44 70 { 255, 190, 90, 255 } "ACQUISITION RING OVERFLOW 7"
+rect 634 94 90 24 { 52, 96, 170, 255 } -> .{ .save_view = void }
+text 643 98 { 225, 230, 240, 255 } "Save view"
+rect 578 94 50 24 { 38, 43, 54, 255 } -> .{ .quit = void }
+text 587 98 { 225, 230, 240, 255 } "Quit"
+rect 12 124 776 1 { 48, 52, 62, 255 }
+rect 658 130 130 24 { 52, 96, 170, 255 } -> .{ .record = false }
+text 667 134 { 225, 230, 240, 255 } "Stop recording"
+text 332 134 { 255, 96, 96, 255 } "REC 1:01:01   13.20 GB   109.8 M samples"
+text 164 134 { 255, 190, 90, 255 } "disk is 2.5 s behind"
+text 116 134 { 255, 190, 90, 255 } "1 gap"
+text 660 162 { 150, 160, 178, 255 } "started at 12:00"
+text 588 190 { 150, 160, 178, 255 } "/data/2026-11-12_12-00-00"
+rect 12 216 776 1 { 48, 52, 62, 255 }
+rect 714 222 74 24 { 26, 30, 38, 255 } -> control_view: audio headstages [Port A]
+text 723 226 { 225, 230, 240, 255 } "▾ Notes"
+text 292 226 { 150, 160, 178, 255 } "2 presets   last note 1:02:05  cell 3, 2100 µm"
+rect 626 250 98 24 { 38, 43, 54, 255 } -> .{ .note_preset = 1 }
+text 635 254 { 225, 230, 240, 255 } "1 laser on"
+rect 538 250 82 24 { 38, 43, 54, 255 } -> .{ .note_preset = 4 }
+text 547 254 { 225, 230, 240, 255 } "4 µ-stim"
+text 428 254 { 255, 190, 90, 255 } "typing a note"
+text 236 254 { 150, 160, 178, 255 } "2 drafts (` stamps one)"
+text 580 282 { 150, 160, 178, 255 } "1:02:05  cell 3, 2100 µm"
+text 684 310 { 150, 160, 178, 255 } "1:01  moved"
+rect 12 336 776 1 { 48, 52, 62, 255 }
+rect 714 342 74 24 { 26, 30, 38, 255 } -> control_view: notes headstages [Port A]
+text 723 346 { 225, 230, 240, 255 } "▾ Audio"
+text 316 346 { 150, 160, 178, 255 } "on   -6 dB   listening to A1-5, B1-3   9 ms"
+rect 690 370 34 24 { 52, 96, 170, 255 }
+text 699 374 { 225, 230, 240, 255 } "on"
+rect 642 370 42 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .enabled = false } }
+text 651 374 { 225, 230, 240, 255 } "off"
+rect 586 370 50 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .mute = true } }
+text 595 374 { 225, 230, 240, 255 } "mute"
+text 532 374 { 150, 160, 178, 255 } "volume"
+rect 498 370 26 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .volume = false } }
+text 507 374 { 225, 230, 240, 255 } "-"
+text 442 374 { 225, 230, 240, 255 } "-6 dB"
+rect 400 370 26 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .volume = true } }
+text 409 374 { 225, 230, 240, 255 } "+"
+rect 318 370 66 24 { 52, 96, 170, 255 }
+text 327 374 { 225, 230, 240, 255 } "shaped"
+rect 254 370 58 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .reference = true } }
+text 263 374 { 225, 230, 240, 255 } "plain"
+rect 206 370 42 24 { 52, 96, 170, 255 } -> .{ .audio = .{ .car = false } }
+text 215 374 { 225, 230, 240, 255 } "CAR"
+rect 94 370 106 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .recalibrate = void } }
+text 103 374 { 225, 230, 240, 255 } "recalibrate"
+text 604 402 { 150, 160, 178, 255 } "listening to A1-5, B1-3"
+text 396 402 { 255, 190, 90, 255 } "measuring the noise (3 s)"
+text 356 402 { 150, 160, 178, 255 } "9 ms"
+text 196 402 { 150, 160, 178, 255 } "2 gaps in the sound"
+rect 12 428 776 1 { 48, 52, 62, 255 }
+text 731 438 { 225, 230, 240, 255 } "Spikes"
+text 588 438 { 150, 160, 178, 255 } "threshold"
+rect 554 434 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = false } }
+text 563 438 { 225, 230, 240, 255 } "-"
+text 498 438 { 225, 230, 240, 255 } "4.5 σ"
+rect 456 434 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = true } }
+text 465 438 { 225, 230, 240, 255 } "+"
+text 136 438 { 150, 160, 178, 255 } "below zero, where it follows the noise"
+rect 12 464 776 1 { 48, 52, 62, 255 }
+rect 674 470 114 24 { 26, 30, 38, 255 }
+text 683 474 { 225, 230, 240, 255 } "▾ Headstages"
+text 300 474 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.17 Hz"
+text 156 474 { 255, 190, 90, 255 } "(restart pending)"
+text 540 502 { 150, 160, 178, 255 } "(these change what is recorded)"
+text 676 530 { 150, 160, 178, 255 } "amplifier band"
+text 644 530 { 150, 160, 178, 255 } "low"
+rect 610 526 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
+text 619 530 { 225, 230, 240, 255 } "-"
+text 536 530 { 225, 230, 240, 255 } "0.58 Hz"
+rect 492 526 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
+text 501 530 { 225, 230, 240, 255 } "+"
+text 444 530 { 150, 160, 178, 255 } "high"
+rect 410 526 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
+text 419 530 { 225, 230, 240, 255 } "-"
+text 332 530 { 225, 230, 240, 255 } "7.60 kHz"
+rect 292 526 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
+text 301 530 { 225, 230, 240, 255 } "+"
+text 684 558 { 150, 160, 178, 255 } "DSP high-pass"
+rect 626 554 42 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp = false } }
+text 635 558 { 225, 230, 240, 255 } "off"
+rect 586 554 34 24 { 52, 96, 170, 255 }
+text 595 558 { 225, 230, 240, 255 } "on"
+text 518 558 { 150, 160, 178, 255 } "cutoff"
+rect 484 554 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp_cutoff = false } }
+text 493 558 { 225, 230, 240, 255 } "-"
+text 410 558 { 225, 230, 240, 255 } "1.17 Hz"
+rect 366 554 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp_cutoff = true } }
+text 375 558 { 225, 230, 240, 255 } "+"
+text 700 586 { 150, 160, 178, 255 } "sample rate"
+rect 642 582 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .rate = false } }
+text 651 586 { 225, 230, 240, 255 } "-"
+text 564 586 { 225, 230, 240, 255 } "20000 Hz"
+rect 524 582 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .rate = true } }
+text 533 586 { 225, 230, 240, 255 } "+"
+text 492 586 { 150, 160, 178, 255 } "A1"
+rect 426 582 58 24 { 52, 96, 170, 255 }
+text 435 586 { 225, 230, 240, 255 } "32 ch"
+rect 338 582 82 24 { 38, 43, 54, 255 } -> .{ .board = .{ .half = 0 } }
+text 347 586 { 225, 230, 240, 255 } "16 of 32"
+text 268 614 { 255, 190, 90, 255 } "sample rate and channels can change once the recording is stopped"
+rect 650 638 138 24 { 38, 43, 54, 255 } -> .{ .board = .{ .save = void } }
+text 659 642 { 225, 230, 240, 255 } "Save as default"
+text 308 642 { 150, 160, 178, 255 } "these settings differ from the config file"
+rect 12 668 776 1 { 48, 52, 62, 255 }
+rect 706 674 82 24 { 26, 30, 38, 255 } -> control_view: notes audio headstages []
+text 715 678 { 225, 230, 240, 255 } "▾ Port A"
+text 388 678 { 150, 160, 178, 255 } "scroll   2.00 s   400 µV/row   raw"
+rect 20 674 58 24 { 38, 43, 54, 255 } -> panel 0 .{ .reset = void }
+text 29 678 { 225, 230, 240, 255 } "reset"
+text 756 706 { 150, 160, 178, 255 } "view"
+rect 658 702 66 24 { 52, 96, 170, 255 }
+text 667 706 { 225, 230, 240, 255 } "scroll"
+rect 594 702 58 24 { 38, 43, 54, 255 } -> panel 0 .{ .mode = .sweep }
+text 603 706 { 225, 230, 240, 255 } "sweep"
+rect 498 702 90 24 { 38, 43, 54, 255 } -> panel 0 .{ .mode = .triggered }
+text 507 706 { 225, 230, 240, 255 } "triggered"
+text 446 706 { 150, 160, 178, 255 } "time"
+rect 412 702 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .zoom = 0.8 }
+text 421 706 { 225, 230, 240, 255 } "-"
+text 317 706 { 225, 230, 240, 255 } "2.00 s"
+rect 244 702 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .zoom = 1.25 }
+text 253 706 { 225, 230, 240, 255 } "+"
+text 684 734 { 150, 160, 178, 255 } "scale"
+rect 650 730 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .scale = 0.8 }
+text 659 734 { 225, 230, 240, 255 } "-"
+text 549 734 { 225, 230, 240, 255 } "400 µV/row"
+rect 502 730 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .scale = 1.25 }
+text 511 734 { 225, 230, 240, 255 } "+"
+text 740 762 { 150, 160, 178, 255 } "filter"
+rect 682 758 42 24 { 52, 96, 170, 255 }
+text 691 762 { 225, 230, 240, 255 } "raw"
+rect 626 758 50 24 { 38, 43, 54, 255 } -> panel 0 .{ .filter = true }
+text 635 762 { 225, 230, 240, 255 } "band"
+text 708 790 { 150, 160, 178, 255 } "rows shown"
+rect 654 786 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 0 }
+text 665 790 { 225, 230, 240, 255 } "1"
+rect 621 786 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 1 }
+text 632 790 { 225, 230, 240, 255 } "2"
+rect 588 786 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 2 }
+text 599 790 { 225, 230, 240, 255 } "3"
+rect 555 786 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 3 }
+text 566 790 { 225, 230, 240, 255 } "4"
+rect 522 786 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 4 }
+text 533 790 { 225, 230, 240, 255 } "5"
+rect 489 786 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 5 }
+text 500 790 { 225, 230, 240, 255 } "6"
+text 764 818 { 150, 160, 178, 255 } "CAR"
+rect 682 814 42 24 { 52, 96, 170, 255 }
+text 691 818 { 225, 230, 240, 255 } "off"
+rect 642 814 34 24 { 38, 43, 54, 255 } -> panel 0 .{ .car = true }
+text 651 818 { 225, 230, 240, 255 } "on"
+rect 12 844 776 1 { 48, 52, 62, 255 }
+text 172 854 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
+== review active, all open: 852 quads, ends at x 636 y 682
+text 748 14 { 225, 230, 240, 255 } "dimna"
+text 460 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
+text 660 42 { 255, 190, 90, 255 } "disk nearly full"
+text 468 70 { 150, 160, 178, 255 } "display 4.3 ms   144 fps   running 125 s"
+text 268 70 { 255, 190, 90, 255 } "display skipped 3 blocks"
+rect 80 66 90 24 { 52, 96, 170, 255 } -> .{ .save_view = void }
+text 89 70 { 225, 230, 240, 255 } "Save view"
+rect 24 66 50 24 { 38, 43, 54, 255 } -> .{ .quit = void }
+text 33 70 { 225, 230, 240, 255 } "Quit"
+rect 12 96 776 1 { 48, 52, 62, 255 }
+rect 722 102 66 24 { 38, 43, 54, 255 } -> .{ .record = true }
+text 731 106 { 225, 230, 240, 255 } "Record"
+text 588 106 { 255, 190, 90, 255 } "RECORDING FAILED"
+text 636 134 { 255, 190, 90, 255 } "cannot create /data"
+rect 12 160 776 1 { 48, 52, 62, 255 }
+rect 714 166 74 24 { 26, 30, 38, 255 } -> control_view: audio headstages [Port A]
+text 723 170 { 225, 230, 240, 255 } "▾ Notes"
+text 468 170 { 150, 160, 178, 255 } "0 presets   no notes yet"
+text 356 198 { 150, 160, 178, 255 } "on the display: / types a note, Enter saves it"
+rect 12 224 776 1 { 48, 52, 62, 255 }
+rect 714 230 74 24 { 26, 30, 38, 255 } -> control_view: notes headstages [Port A]
+text 723 234 { 225, 230, 240, 255 } "▾ Audio"
+text 516 234 { 150, 160, 178, 255 } "off, muted   -6 dB"
+rect 690 258 34 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .enabled = true } }
+text 699 262 { 225, 230, 240, 255 } "on"
+rect 642 258 42 24 { 52, 96, 170, 255 }
+text 651 262 { 225, 230, 240, 255 } "off"
+rect 586 258 50 24 { 52, 96, 170, 255 } -> .{ .audio = .{ .mute = false } }
+text 595 262 { 225, 230, 240, 255 } "mute"
+text 532 262 { 150, 160, 178, 255 } "volume"
+rect 498 258 26 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .volume = false } }
+text 507 262 { 225, 230, 240, 255 } "-"
+text 442 262 { 225, 230, 240, 255 } "-6 dB"
+rect 400 258 26 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .volume = true } }
+text 409 262 { 225, 230, 240, 255 } "+"
+rect 318 258 66 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .reference = false } }
+text 327 262 { 225, 230, 240, 255 } "shaped"
+rect 254 258 58 24 { 52, 96, 170, 255 }
+text 263 262 { 225, 230, 240, 255 } "plain"
+rect 206 258 42 24 { 52, 96, 170, 255 } -> .{ .audio = .{ .car = false } }
+text 215 262 { 225, 230, 240, 255 } "CAR"
+rect 94 258 106 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .recalibrate = void } }
+text 103 262 { 225, 230, 240, 255 } "recalibrate"
+text 764 290 { 150, 160, 178, 255 } "off"
+rect 12 316 776 1 { 48, 52, 62, 255 }
+text 731 326 { 225, 230, 240, 255 } "Spikes"
+text 588 326 { 150, 160, 178, 255 } "threshold"
+rect 554 322 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = false } }
+text 563 326 { 225, 230, 240, 255 } "-"
+text 498 326 { 225, 230, 240, 255 } "4.5 σ"
+rect 456 322 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = true } }
+text 465 326 { 225, 230, 240, 255 } "+"
+text 136 326 { 150, 160, 178, 255 } "below zero, where it follows the noise"
+rect 12 352 776 1 { 48, 52, 62, 255 }
+rect 674 358 114 24 { 26, 30, 38, 255 } -> control_view: notes audio [Port A]
+text 683 362 { 225, 230, 240, 255 } "▾ Headstages"
+text 300 362 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.17 Hz"
+text 540 390 { 150, 160, 178, 255 } "(these change what is recorded)"
+text 676 418 { 150, 160, 178, 255 } "amplifier band"
+text 644 418 { 150, 160, 178, 255 } "low"
+rect 610 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
+text 619 418 { 225, 230, 240, 255 } "-"
+text 536 418 { 225, 230, 240, 255 } "0.58 Hz"
+rect 492 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
+text 501 418 { 225, 230, 240, 255 } "+"
+text 444 418 { 150, 160, 178, 255 } "high"
+rect 410 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
+text 419 418 { 225, 230, 240, 255 } "-"
+text 332 418 { 225, 230, 240, 255 } "7.60 kHz"
+rect 292 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
+text 301 418 { 225, 230, 240, 255 } "+"
+text 684 446 { 150, 160, 178, 255 } "DSP high-pass"
+rect 626 442 42 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp = false } }
+text 635 446 { 225, 230, 240, 255 } "off"
+rect 586 442 34 24 { 52, 96, 170, 255 }
+text 595 446 { 225, 230, 240, 255 } "on"
+text 518 446 { 150, 160, 178, 255 } "cutoff"
+rect 484 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp_cutoff = false } }
+text 493 446 { 225, 230, 240, 255 } "-"
+text 410 446 { 225, 230, 240, 255 } "1.17 Hz"
+rect 366 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp_cutoff = true } }
+text 375 446 { 225, 230, 240, 255 } "+"
+text 700 474 { 150, 160, 178, 255 } "sample rate"
+rect 642 470 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .rate = false } }
+text 651 474 { 225, 230, 240, 255 } "-"
+text 564 474 { 225, 230, 240, 255 } "30000 Hz"
+rect 524 470 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .rate = true } }
+text 533 474 { 225, 230, 240, 255 } "+"
+text 492 474 { 150, 160, 178, 255 } "A1"
+rect 426 470 58 24 { 52, 96, 170, 255 }
+text 435 474 { 225, 230, 240, 255 } "32 ch"
+rect 338 470 82 24 { 38, 43, 54, 255 } -> .{ .board = .{ .half = 0 } }
+text 347 474 { 225, 230, 240, 255 } "16 of 32"
+rect 12 500 776 1 { 48, 52, 62, 255 }
+rect 706 506 82 24 { 26, 30, 38, 255 } -> control_view: notes audio headstages []
+text 715 510 { 225, 230, 240, 255 } "▾ Port A"
+text 388 510 { 150, 160, 178, 255 } "scroll   2.00 s   400 µV/row   raw"
+rect 20 506 58 24 { 38, 43, 54, 255 } -> panel 0 .{ .reset = void }
+text 29 510 { 225, 230, 240, 255 } "reset"
+text 756 538 { 150, 160, 178, 255 } "view"
+rect 658 534 66 24 { 52, 96, 170, 255 }
+text 667 538 { 225, 230, 240, 255 } "scroll"
+rect 594 534 58 24 { 38, 43, 54, 255 } -> panel 0 .{ .mode = .sweep }
+text 603 538 { 225, 230, 240, 255 } "sweep"
+rect 498 534 90 24 { 38, 43, 54, 255 } -> panel 0 .{ .mode = .triggered }
+text 507 538 { 225, 230, 240, 255 } "triggered"
+text 446 538 { 150, 160, 178, 255 } "time"
+rect 412 534 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .zoom = 0.8 }
+text 421 538 { 225, 230, 240, 255 } "-"
+text 317 538 { 225, 230, 240, 255 } "2.00 s"
+rect 244 534 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .zoom = 1.25 }
+text 253 538 { 225, 230, 240, 255 } "+"
+text 684 566 { 150, 160, 178, 255 } "scale"
+rect 650 562 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .scale = 0.8 }
+text 659 566 { 225, 230, 240, 255 } "-"
+text 549 566 { 225, 230, 240, 255 } "400 µV/row"
+rect 502 562 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .scale = 1.25 }
+text 511 566 { 225, 230, 240, 255 } "+"
+text 740 594 { 150, 160, 178, 255 } "filter"
+rect 682 590 42 24 { 52, 96, 170, 255 }
+text 691 594 { 225, 230, 240, 255 } "raw"
+rect 626 590 50 24 { 38, 43, 54, 255 } -> panel 0 .{ .filter = true }
+text 635 594 { 225, 230, 240, 255 } "band"
+text 708 622 { 150, 160, 178, 255 } "rows shown"
+rect 654 618 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 0 }
+text 665 622 { 225, 230, 240, 255 } "1"
+rect 621 618 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 1 }
+text 632 622 { 225, 230, 240, 255 } "2"
+rect 588 618 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 2 }
+text 599 622 { 225, 230, 240, 255 } "3"
+rect 555 618 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 3 }
+text 566 622 { 225, 230, 240, 255 } "4"
+rect 522 618 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 4 }
+text 533 622 { 225, 230, 240, 255 } "5"
+rect 489 618 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 5 }
+text 500 622 { 225, 230, 240, 255 } "6"
+text 764 650 { 150, 160, 178, 255 } "CAR"
+rect 682 646 42 24 { 52, 96, 170, 255 }
+text 691 650 { 225, 230, 240, 255 } "off"
+rect 642 646 34 24 { 38, 43, 54, 255 } -> panel 0 .{ .car = true }
+text 651 650 { 225, 230, 240, 255 } "on"
+rect 12 676 776 1 { 48, 52, 62, 255 }
+text 172 686 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
+== quit prompt, all open: 239 quads, ends at x 476 y 214
+text 748 14 { 225, 230, 240, 255 } "dimna"
+text 460 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
+text 660 42 { 255, 190, 90, 255 } "disk nearly full"
+rect 12 68 776 1 { 48, 52, 62, 255 }
+text 436 78 { 225, 230, 240, 255 } "Settings changed since they were last saved:"
+text 636 106 { 255, 190, 90, 255 } "setting 0 changed"
+text 636 134 { 255, 190, 90, 255 } "setting 1 changed"
+text 636 162 { 255, 190, 90, 255 } "setting 2 changed"
+text 508 190 { 150, 160, 178, 255 } "/home/user/.config/dimna/dimna.toml"
+rect 578 214 210 24 { 52, 96, 170, 255 } -> .{ .quit_answer = .save }
+text 587 218 { 225, 230, 240, 255 } "Save as default and quit"
+rect 402 214 170 24 { 38, 43, 54, 255 } -> .{ .quit_answer = .discard }
+text 411 218 { 225, 230, 240, 255 } "Quit without saving"
+rect 330 214 66 24 { 38, 43, 54, 255 } -> .{ .quit_answer = .cancel }
+text 339 218 { 225, 230, 240, 255 } "Cancel"
+== restart pending, all open: 956 quads, ends at x 636 y 766
+text 748 14 { 225, 230, 240, 255 } "dimna"
+text 460 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
+text 660 42 { 255, 190, 90, 255 } "disk nearly full"
+text 468 70 { 150, 160, 178, 255 } "display 4.3 ms   144 fps   running 125 s"
+text 268 70 { 255, 190, 90, 255 } "display skipped 3 blocks"
+rect 80 66 90 24 { 52, 96, 170, 255 } -> .{ .save_view = void }
+text 89 70 { 225, 230, 240, 255 } "Save view"
+rect 24 66 50 24 { 38, 43, 54, 255 } -> .{ .quit = void }
+text 33 70 { 225, 230, 240, 255 } "Quit"
+rect 12 96 776 1 { 48, 52, 62, 255 }
+rect 722 102 66 24 { 38, 43, 54, 255 } -> .{ .record = true }
+text 731 106 { 225, 230, 240, 255 } "Record"
+text 612 106 { 150, 160, 178, 255 } "not recording"
+rect 12 132 776 1 { 48, 52, 62, 255 }
+rect 714 138 74 24 { 26, 30, 38, 255 } -> control_view: audio headstages [Port A]
+text 723 142 { 225, 230, 240, 255 } "▾ Notes"
+text 292 142 { 150, 160, 178, 255 } "2 presets   last note 1:02:05  cell 3, 2100 µm"
+rect 626 166 98 24 { 38, 43, 54, 255 } -> .{ .note_preset = 1 }
+text 635 170 { 225, 230, 240, 255 } "1 laser on"
+rect 538 166 82 24 { 38, 43, 54, 255 } -> .{ .note_preset = 4 }
+text 547 170 { 225, 230, 240, 255 } "4 µ-stim"
+text 348 170 { 150, 160, 178, 255 } "2 drafts (` stamps one)"
+text 580 198 { 150, 160, 178, 255 } "1:02:05  cell 3, 2100 µm"
+text 684 226 { 150, 160, 178, 255 } "1:01  moved"
+rect 12 252 776 1 { 48, 52, 62, 255 }
+rect 714 258 74 24 { 26, 30, 38, 255 } -> control_view: notes headstages [Port A]
+text 723 262 { 225, 230, 240, 255 } "▾ Audio"
+text 540 262 { 150, 160, 178, 255 } "no audio output"
+rect 690 286 34 24 { 52, 96, 170, 255 }
+text 699 290 { 225, 230, 240, 255 } "on"
+rect 642 286 42 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .enabled = false } }
+text 651 290 { 225, 230, 240, 255 } "off"
+rect 586 286 50 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .mute = true } }
+text 595 290 { 225, 230, 240, 255 } "mute"
+text 532 290 { 150, 160, 178, 255 } "volume"
+rect 498 286 26 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .volume = false } }
+text 507 290 { 225, 230, 240, 255 } "-"
+text 442 290 { 225, 230, 240, 255 } "-6 dB"
+rect 400 286 26 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .volume = true } }
+text 409 290 { 225, 230, 240, 255 } "+"
+rect 318 286 66 24 { 52, 96, 170, 255 }
+text 327 290 { 225, 230, 240, 255 } "shaped"
+rect 254 286 58 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .reference = true } }
+text 263 290 { 225, 230, 240, 255 } "plain"
+rect 206 286 42 24 { 52, 96, 170, 255 } -> .{ .audio = .{ .car = false } }
+text 215 290 { 225, 230, 240, 255 } "CAR"
+rect 94 286 106 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .recalibrate = void } }
+text 103 290 { 225, 230, 240, 255 } "recalibrate"
+text 668 318 { 150, 160, 178, 255 } "no audio output"
+rect 12 344 776 1 { 48, 52, 62, 255 }
+text 731 354 { 225, 230, 240, 255 } "Spikes"
+text 588 354 { 150, 160, 178, 255 } "threshold"
+rect 554 350 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = false } }
+text 563 354 { 225, 230, 240, 255 } "-"
+text 498 354 { 225, 230, 240, 255 } "4.5 σ"
+rect 456 350 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = true } }
+text 465 354 { 225, 230, 240, 255 } "+"
+text 136 354 { 150, 160, 178, 255 } "below zero, where it follows the noise"
+rect 12 380 776 1 { 48, 52, 62, 255 }
+rect 674 386 114 24 { 26, 30, 38, 255 }
+text 683 390 { 225, 230, 240, 255 } "▾ Headstages"
+text 300 390 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.17 Hz"
+text 156 390 { 255, 190, 90, 255 } "(restart pending)"
+text 540 418 { 150, 160, 178, 255 } "(these change what is recorded)"
+text 676 446 { 150, 160, 178, 255 } "amplifier band"
+text 644 446 { 150, 160, 178, 255 } "low"
+rect 610 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
+text 619 446 { 225, 230, 240, 255 } "-"
+text 536 446 { 225, 230, 240, 255 } "0.58 Hz"
+rect 492 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
+text 501 446 { 225, 230, 240, 255 } "+"
+text 444 446 { 150, 160, 178, 255 } "high"
+rect 410 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
+text 419 446 { 225, 230, 240, 255 } "-"
+text 332 446 { 225, 230, 240, 255 } "7.60 kHz"
+rect 292 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
+text 301 446 { 225, 230, 240, 255 } "+"
+text 684 474 { 150, 160, 178, 255 } "DSP high-pass"
+rect 626 470 42 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp = false } }
+text 635 474 { 225, 230, 240, 255 } "off"
+rect 586 470 34 24 { 52, 96, 170, 255 }
+text 595 474 { 225, 230, 240, 255 } "on"
+text 518 474 { 150, 160, 178, 255 } "cutoff"
+rect 484 470 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp_cutoff = false } }
+text 493 474 { 225, 230, 240, 255 } "-"
+text 410 474 { 225, 230, 240, 255 } "1.17 Hz"
+rect 366 470 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp_cutoff = true } }
+text 375 474 { 225, 230, 240, 255 } "+"
+text 700 502 { 150, 160, 178, 255 } "sample rate"
+rect 642 498 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .rate = false } }
+text 651 502 { 225, 230, 240, 255 } "-"
+text 564 502 { 225, 230, 240, 255 } "30000 Hz"
+rect 524 498 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .rate = true } }
+text 533 502 { 225, 230, 240, 255 } "+"
+text 492 502 { 150, 160, 178, 255 } "A1"
+rect 426 498 58 24 { 38, 43, 54, 255 } -> .{ .board = .{ .half = 0 } }
+text 435 502 { 225, 230, 240, 255 } "32 ch"
+rect 338 498 82 24 { 52, 96, 170, 255 }
+text 347 502 { 225, 230, 240, 255 } "16 of 32"
+rect 546 526 242 24 { 52, 96, 170, 255 } -> .{ .board = .{ .apply = void } }
+text 555 530 { 225, 230, 240, 255 } "Apply (restarts acquisition)"
+text 652 558 { 255, 190, 90, 255 } "cannot set 10 kHz"
+rect 12 584 776 1 { 48, 52, 62, 255 }
+rect 706 590 82 24 { 26, 30, 38, 255 } -> control_view: notes audio headstages []
+text 715 594 { 225, 230, 240, 255 } "▾ Port A"
+text 388 594 { 150, 160, 178, 255 } "scroll   2.00 s   400 µV/row   raw"
+rect 20 590 58 24 { 38, 43, 54, 255 } -> panel 0 .{ .reset = void }
+text 29 594 { 225, 230, 240, 255 } "reset"
+text 756 622 { 150, 160, 178, 255 } "view"
+rect 658 618 66 24 { 52, 96, 170, 255 }
+text 667 622 { 225, 230, 240, 255 } "scroll"
+rect 594 618 58 24 { 38, 43, 54, 255 } -> panel 0 .{ .mode = .sweep }
+text 603 622 { 225, 230, 240, 255 } "sweep"
+rect 498 618 90 24 { 38, 43, 54, 255 } -> panel 0 .{ .mode = .triggered }
+text 507 622 { 225, 230, 240, 255 } "triggered"
+text 446 622 { 150, 160, 178, 255 } "time"
+rect 412 618 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .zoom = 0.8 }
+text 421 622 { 225, 230, 240, 255 } "-"
+text 317 622 { 225, 230, 240, 255 } "2.00 s"
+rect 244 618 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .zoom = 1.25 }
+text 253 622 { 225, 230, 240, 255 } "+"
+text 684 650 { 150, 160, 178, 255 } "scale"
+rect 650 646 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .scale = 0.8 }
+text 659 650 { 225, 230, 240, 255 } "-"
+text 549 650 { 225, 230, 240, 255 } "400 µV/row"
+rect 502 646 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .scale = 1.25 }
+text 511 650 { 225, 230, 240, 255 } "+"
+text 740 678 { 150, 160, 178, 255 } "filter"
+rect 682 674 42 24 { 52, 96, 170, 255 }
+text 691 678 { 225, 230, 240, 255 } "raw"
+rect 626 674 50 24 { 38, 43, 54, 255 } -> panel 0 .{ .filter = true }
+text 635 678 { 225, 230, 240, 255 } "band"
+text 708 706 { 150, 160, 178, 255 } "rows shown"
+rect 654 702 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 0 }
+text 665 706 { 225, 230, 240, 255 } "1"
+rect 621 702 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 1 }
+text 632 706 { 225, 230, 240, 255 } "2"
+rect 588 702 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 2 }
+text 599 706 { 225, 230, 240, 255 } "3"
+rect 555 702 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 3 }
+text 566 706 { 225, 230, 240, 255 } "4"
+rect 522 702 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 4 }
+text 533 706 { 225, 230, 240, 255 } "5"
+rect 489 702 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 5 }
+text 500 706 { 225, 230, 240, 255 } "6"
+text 764 734 { 150, 160, 178, 255 } "CAR"
+rect 682 730 42 24 { 52, 96, 170, 255 }
+text 691 734 { 225, 230, 240, 255 } "off"
+rect 642 730 34 24 { 38, 43, 54, 255 } -> panel 0 .{ .car = true }
+text 651 734 { 225, 230, 240, 255 } "on"
+rect 12 760 776 1 { 48, 52, 62, 255 }
+text 172 770 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
+== two panels: slope trigger, reference; all open: 1689 quads, ends at x 636 y 1110
+text 748 14 { 225, 230, 240, 255 } "dimna"
+text 460 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
+text 468 42 { 150, 160, 178, 255 } "display 4.3 ms   144 fps   running 125 s"
+text 268 42 { 255, 190, 90, 255 } "display skipped 3 blocks"
+rect 80 38 90 24 { 52, 96, 170, 255 } -> .{ .save_view = void }
+text 89 42 { 225, 230, 240, 255 } "Save view"
+rect 24 38 50 24 { 38, 43, 54, 255 } -> .{ .quit = void }
+text 33 42 { 225, 230, 240, 255 } "Quit"
+rect 12 68 776 1 { 48, 52, 62, 255 }
+rect 722 74 66 24 { 38, 43, 54, 255 } -> .{ .record = true }
+text 731 78 { 225, 230, 240, 255 } "Record"
+text 612 78 { 150, 160, 178, 255 } "not recording"
+rect 12 104 776 1 { 48, 52, 62, 255 }
+rect 714 110 74 24 { 26, 30, 38, 255 } -> control_view: audio headstages [Port A, Port B]
+text 723 114 { 225, 230, 240, 255 } "▾ Notes"
+text 292 114 { 150, 160, 178, 255 } "2 presets   last note 1:02:05  cell 3, 2100 µm"
+rect 626 138 98 24 { 38, 43, 54, 255 } -> .{ .note_preset = 1 }
+text 635 142 { 225, 230, 240, 255 } "1 laser on"
+rect 538 138 82 24 { 38, 43, 54, 255 } -> .{ .note_preset = 4 }
+text 547 142 { 225, 230, 240, 255 } "4 µ-stim"
+text 348 142 { 150, 160, 178, 255 } "2 drafts (` stamps one)"
+text 580 170 { 150, 160, 178, 255 } "1:02:05  cell 3, 2100 µm"
+text 684 198 { 150, 160, 178, 255 } "1:01  moved"
+rect 12 224 776 1 { 48, 52, 62, 255 }
+rect 714 230 74 24 { 26, 30, 38, 255 } -> control_view: notes headstages [Port A, Port B]
+text 723 234 { 225, 230, 240, 255 } "▾ Audio"
+text 396 234 { 150, 160, 178, 255 } "on   -6 dB   listening to nothing"
+rect 690 258 34 24 { 52, 96, 170, 255 }
+text 699 262 { 225, 230, 240, 255 } "on"
+rect 642 258 42 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .enabled = false } }
+text 651 262 { 225, 230, 240, 255 } "off"
+rect 586 258 50 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .mute = true } }
+text 595 262 { 225, 230, 240, 255 } "mute"
+text 532 262 { 150, 160, 178, 255 } "volume"
+rect 498 258 26 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .volume = false } }
+text 507 262 { 225, 230, 240, 255 } "-"
+text 442 262 { 225, 230, 240, 255 } "-6 dB"
+rect 400 258 26 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .volume = true } }
+text 409 262 { 225, 230, 240, 255 } "+"
+rect 318 258 66 24 { 52, 96, 170, 255 }
+text 327 262 { 225, 230, 240, 255 } "shaped"
+rect 254 258 58 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .reference = true } }
+text 263 262 { 225, 230, 240, 255 } "plain"
+rect 206 258 42 24 { 52, 96, 170, 255 } -> .{ .audio = .{ .car = false } }
+text 215 262 { 225, 230, 240, 255 } "CAR"
+rect 94 258 106 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .recalibrate = void } }
+text 103 262 { 225, 230, 240, 255 } "recalibrate"
+text 396 290 { 150, 160, 178, 255 } "listening to nothing (click a row on the display)"
+text 236 290 { 150, 160, 178, 255 } "2 gaps in the sound"
+rect 12 316 776 1 { 48, 52, 62, 255 }
+text 731 326 { 225, 230, 240, 255 } "Spikes"
+text 588 326 { 150, 160, 178, 255 } "threshold"
+rect 554 322 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = false } }
+text 563 326 { 225, 230, 240, 255 } "-"
+text 498 326 { 225, 230, 240, 255 } "4.5 σ"
+rect 456 322 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = true } }
+text 465 326 { 225, 230, 240, 255 } "+"
+text 136 326 { 150, 160, 178, 255 } "below zero, where it follows the noise"
+rect 12 352 776 1 { 48, 52, 62, 255 }
+rect 674 358 114 24 { 26, 30, 38, 255 } -> control_view: notes audio [Port A, Port B]
+text 683 362 { 225, 230, 240, 255 } "▾ Headstages"
+text 300 362 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.17 Hz"
+text 540 390 { 150, 160, 178, 255 } "(these change what is recorded)"
+text 676 418 { 150, 160, 178, 255 } "amplifier band"
+text 644 418 { 150, 160, 178, 255 } "low"
+rect 610 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
+text 619 418 { 225, 230, 240, 255 } "-"
+text 536 418 { 225, 230, 240, 255 } "0.58 Hz"
+rect 492 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
+text 501 418 { 225, 230, 240, 255 } "+"
+text 444 418 { 150, 160, 178, 255 } "high"
+rect 410 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
+text 419 418 { 225, 230, 240, 255 } "-"
+text 332 418 { 225, 230, 240, 255 } "7.60 kHz"
+rect 292 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
+text 301 418 { 225, 230, 240, 255 } "+"
+text 684 446 { 150, 160, 178, 255 } "DSP high-pass"
+rect 626 442 42 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp = false } }
+text 635 446 { 225, 230, 240, 255 } "off"
+rect 586 442 34 24 { 52, 96, 170, 255 }
+text 595 446 { 225, 230, 240, 255 } "on"
+text 518 446 { 150, 160, 178, 255 } "cutoff"
+rect 484 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp_cutoff = false } }
+text 493 446 { 225, 230, 240, 255 } "-"
+text 410 446 { 225, 230, 240, 255 } "1.17 Hz"
+rect 366 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp_cutoff = true } }
+text 375 446 { 225, 230, 240, 255 } "+"
+text 700 474 { 150, 160, 178, 255 } "sample rate"
+rect 642 470 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .rate = false } }
+text 651 474 { 225, 230, 240, 255 } "-"
+text 564 474 { 225, 230, 240, 255 } "30000 Hz"
+rect 524 470 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .rate = true } }
+text 533 474 { 225, 230, 240, 255 } "+"
+text 492 474 { 150, 160, 178, 255 } "A1"
+rect 426 470 58 24 { 52, 96, 170, 255 }
+text 435 474 { 225, 230, 240, 255 } "32 ch"
+rect 338 470 82 24 { 38, 43, 54, 255 } -> .{ .board = .{ .half = 0 } }
+text 347 474 { 225, 230, 240, 255 } "16 of 32"
+rect 12 500 776 1 { 48, 52, 62, 255 }
+rect 706 506 82 24 { 26, 30, 38, 255 } -> control_view: notes audio headstages [Port B]
+text 715 510 { 225, 230, 240, 255 } "▾ Port A"
+text 44 510 { 150, 160, 178, 255 } "triggered   -1.0 / +2.0 ms   400 µV/row   band 300–6000 Hz   on spikes, row 5"
+rect 666 534 58 24 { 38, 43, 54, 255 } -> panel 0 .{ .reset = void }
+text 675 538 { 225, 230, 240, 255 } "reset"
+text 756 566 { 150, 160, 178, 255 } "view"
+rect 658 562 66 24 { 38, 43, 54, 255 } -> panel 0 .{ .mode = .scroll }
+text 667 566 { 225, 230, 240, 255 } "scroll"
+rect 594 562 58 24 { 38, 43, 54, 255 } -> panel 0 .{ .mode = .sweep }
+text 603 566 { 225, 230, 240, 255 } "sweep"
+rect 498 562 90 24 { 52, 96, 170, 255 }
+text 507 566 { 225, 230, 240, 255 } "triggered"
+text 430 566 { 150, 160, 178, 255 } "window"
+rect 396 562 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .zoom = 0.8 }
+text 405 566 { 225, 230, 240, 255 } "-"
+text 269 566 { 225, 230, 240, 255 } "-1.0 / +2.0 ms"
+rect 228 562 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .zoom = 1.25 }
+text 237 566 { 225, 230, 240, 255 } "+"
+text 684 594 { 150, 160, 178, 255 } "scale"
+rect 650 590 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .scale = 0.8 }
+text 659 594 { 225, 230, 240, 255 } "-"
+text 549 594 { 225, 230, 240, 255 } "400 µV/row"
+rect 502 590 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .scale = 1.25 }
+text 511 594 { 225, 230, 240, 255 } "+"
+text 740 622 { 150, 160, 178, 255 } "filter"
+rect 682 618 42 24 { 38, 43, 54, 255 } -> panel 0 .{ .filter = false }
+text 691 622 { 225, 230, 240, 255 } "raw"
+rect 626 618 50 24 { 52, 96, 170, 255 }
+text 635 622 { 225, 230, 240, 255 } "band"
+text 582 622 { 150, 160, 178, 255 } "low"
+rect 548 618 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .corner = .{ .high = false, .up = false } }
+text 557 622 { 225, 230, 240, 255 } "-"
+text 478 622 { 225, 230, 240, 255 } "300 Hz"
+rect 430 618 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .corner = .{ .high = false, .up = true } }
+text 439 622 { 225, 230, 240, 255 } "+"
+text 382 622 { 150, 160, 178, 255 } "high"
+rect 348 618 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .corner = .{ .high = true, .up = false } }
+text 357 622 { 225, 230, 240, 255 } "-"
+text 274 622 { 225, 230, 240, 255 } "6000 Hz"
+rect 230 618 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .corner = .{ .high = true, .up = true } }
+text 239 622 { 225, 230, 240, 255 } "+"
+text 708 650 { 150, 160, 178, 255 } "rows shown"
+rect 654 646 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 0 }
+text 665 650 { 225, 230, 240, 255 } "1"
+rect 621 646 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 1 }
+text 632 650 { 225, 230, 240, 255 } "2"
+rect 588 646 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 2 }
+text 599 650 { 225, 230, 240, 255 } "3"
+rect 555 646 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 3 }
+text 566 650 { 225, 230, 240, 255 } "4"
+rect 522 646 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 4 }
+text 533 650 { 225, 230, 240, 255 } "5"
+rect 489 646 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 5 }
+text 500 650 { 225, 230, 240, 255 } "6"
+rect 456 646 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 6 }
+text 467 650 { 225, 230, 240, 255 } "7"
+rect 423 646 30 24 { 38, 43, 54, 255 } -> panel 0 .{ .row_hidden = 7 }
+text 434 650 { 150, 160, 178, 255 } "8"
+rect 390 646 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 8 }
+text 401 650 { 225, 230, 240, 255 } "9"
+rect 357 646 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 9 }
+text 364 650 { 225, 230, 240, 255 } "10"
+rect 324 646 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 10 }
+text 331 650 { 225, 230, 240, 255 } "11"
+rect 291 646 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 11 }
+text 298 650 { 225, 230, 240, 255 } "12"
+rect 258 646 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 12 }
+text 265 650 { 225, 230, 240, 255 } "13"
+rect 225 646 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 13 }
+text 232 650 { 225, 230, 240, 255 } "14"
+rect 192 646 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 14 }
+text 199 650 { 225, 230, 240, 255 } "15"
+rect 159 646 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 15 }
+text 166 650 { 225, 230, 240, 255 } "16"
+rect 126 646 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 16 }
+text 133 650 { 225, 230, 240, 255 } "17"
+rect 93 646 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 17 }
+text 100 650 { 225, 230, 240, 255 } "18"
+rect 60 646 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 18 }
+text 67 650 { 225, 230, 240, 255 } "19"
+rect 27 646 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 19 }
+text 34 650 { 225, 230, 240, 255 } "20"
+rect 654 674 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 20 }
+text 661 678 { 225, 230, 240, 255 } "21"
+rect 621 674 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 21 }
+text 628 678 { 225, 230, 240, 255 } "22"
+rect 588 674 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 22 }
+text 595 678 { 225, 230, 240, 255 } "23"
+rect 555 674 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 23 }
+text 562 678 { 225, 230, 240, 255 } "24"
+rect 522 674 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 24 }
+text 529 678 { 225, 230, 240, 255 } "25"
+rect 489 674 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 25 }
+text 496 678 { 225, 230, 240, 255 } "26"
+rect 456 674 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 26 }
+text 463 678 { 225, 230, 240, 255 } "27"
+rect 423 674 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 27 }
+text 430 678 { 225, 230, 240, 255 } "28"
+rect 390 674 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 28 }
+text 397 678 { 225, 230, 240, 255 } "29"
+rect 357 674 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 29 }
+text 364 678 { 225, 230, 240, 255 } "30"
+rect 324 674 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 30 }
+text 331 678 { 225, 230, 240, 255 } "31"
+rect 291 674 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 31 }
+text 298 678 { 225, 230, 240, 255 } "32"
+text 724 706 { 150, 160, 178, 255 } "filtered"
+rect 654 702 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 0 }
+text 665 706 { 225, 230, 240, 255 } "1"
+rect 621 702 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 1 }
+text 632 706 { 225, 230, 240, 255 } "2"
+rect 588 702 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 2 }
+text 599 706 { 225, 230, 240, 255 } "3"
+rect 555 702 30 24 { 38, 43, 54, 255 } -> panel 0 .{ .row_raw = 3 }
+text 566 706 { 150, 160, 178, 255 } "4"
+rect 522 702 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 4 }
+text 533 706 { 225, 230, 240, 255 } "5"
+rect 489 702 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 5 }
+text 500 706 { 225, 230, 240, 255 } "6"
+rect 456 702 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 6 }
+text 467 706 { 225, 230, 240, 255 } "7"
+rect 423 702 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 7 }
+text 434 706 { 225, 230, 240, 255 } "8"
+rect 390 702 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 8 }
+text 401 706 { 225, 230, 240, 255 } "9"
+rect 357 702 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 9 }
+text 364 706 { 225, 230, 240, 255 } "10"
+rect 324 702 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 10 }
+text 331 706 { 225, 230, 240, 255 } "11"
+rect 291 702 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 11 }
+text 298 706 { 225, 230, 240, 255 } "12"
+rect 258 702 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 12 }
+text 265 706 { 225, 230, 240, 255 } "13"
+rect 225 702 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 13 }
+text 232 706 { 225, 230, 240, 255 } "14"
+rect 192 702 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 14 }
+text 199 706 { 225, 230, 240, 255 } "15"
+rect 159 702 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 15 }
+text 166 706 { 225, 230, 240, 255 } "16"
+rect 126 702 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 16 }
+text 133 706 { 225, 230, 240, 255 } "17"
+rect 93 702 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 17 }
+text 100 706 { 225, 230, 240, 255 } "18"
+rect 60 702 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 18 }
+text 67 706 { 225, 230, 240, 255 } "19"
+rect 27 702 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 19 }
+text 34 706 { 225, 230, 240, 255 } "20"
+rect 654 730 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 20 }
+text 661 734 { 225, 230, 240, 255 } "21"
+rect 621 730 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 21 }
+text 628 734 { 225, 230, 240, 255 } "22"
+rect 588 730 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 22 }
+text 595 734 { 225, 230, 240, 255 } "23"
+rect 555 730 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 23 }
+text 562 734 { 225, 230, 240, 255 } "24"
+rect 522 730 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 24 }
+text 529 734 { 225, 230, 240, 255 } "25"
+rect 489 730 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 25 }
+text 496 734 { 225, 230, 240, 255 } "26"
+rect 456 730 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 26 }
+text 463 734 { 225, 230, 240, 255 } "27"
+rect 423 730 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 27 }
+text 430 734 { 225, 230, 240, 255 } "28"
+rect 390 730 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 28 }
+text 397 734 { 225, 230, 240, 255 } "29"
+rect 357 730 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 29 }
+text 364 734 { 225, 230, 240, 255 } "30"
+rect 324 730 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 30 }
+text 331 734 { 225, 230, 240, 255 } "31"
+rect 291 730 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_raw = 31 }
+text 298 734 { 225, 230, 240, 255 } "32"
+text 764 762 { 150, 160, 178, 255 } "CAR"
+rect 682 758 42 24 { 52, 96, 170, 255 }
+text 691 762 { 225, 230, 240, 255 } "off"
+rect 642 758 34 24 { 38, 43, 54, 255 } -> panel 0 .{ .car = true }
+text 651 762 { 225, 230, 240, 255 } "on"
+text 732 790 { 150, 160, 178, 255 } "trigger"
+rect 682 786 42 24 { 38, 43, 54, 255 } -> panel 0 .{ .trig_source = .ttl }
+text 691 790 { 225, 230, 240, 255 } "TTL"
+rect 610 786 66 24 { 52, 96, 170, 255 }
+text 619 790 { 225, 230, 240, 255 } "spikes"
+rect 570 786 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .trig_row = -1 }
+text 579 790 { 225, 230, 240, 255 } "-"
+text 514 790 { 225, 230, 240, 255 } "row 5"
+rect 472 786 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .trig_row = 1 }
+text 481 790 { 225, 230, 240, 255 } "+"
+rect 382 786 74 24 { 52, 96, 170, 255 }
+text 391 790 { 225, 230, 240, 255 } "falling"
+rect 310 786 66 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .flip = 4 } }
+text 319 790 { 225, 230, 240, 255 } "rising"
+text 748 818 { 150, 160, 178, 255 } "level"
+rect 698 814 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .scale = .{ .channel = 4, .factor = 0.8695652 } } }
+text 707 818 { 225, 230, 240, 255 } "-"
+text 633 818 { 225, 230, 240, 255 } "-62 µV"
+rect 590 814 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .scale = .{ .channel = 4, .factor = 1.15 } } }
+text 599 818 { 225, 230, 240, 255 } "+"
+text 518 818 { 150, 160, 178, 255 } "holdoff"
+rect 484 814 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .trig_holdoff = false }
+text 493 818 { 225, 230, 240, 255 } "-"
+text 432 818 { 225, 230, 240, 255 } "2 ms"
+rect 386 814 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .trig_holdoff = true }
+text 395 818 { 225, 230, 240, 255 } "+"
+text 306 818 { 150, 160, 178, 255 } "overlaid"
+rect 272 814 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .overlay = 9 }
+text 281 818 { 225, 230, 240, 255 } "-"
+text 185 818 { 225, 230, 240, 255 } "10 sweeps"
+rect 144 814 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .overlay = 11 }
+text 153 818 { 225, 230, 240, 255 } "+"
+rect 12 844 776 1 { 48, 52, 62, 255 }
+rect 706 850 82 24 { 26, 30, 38, 255 } -> control_view: notes audio headstages [Port A]
+text 715 854 { 225, 230, 240, 255 } "▾ Port B"
+text 220 854 { 150, 160, 178, 255 } "sweep   500 ms   1.50 mV/row   band below 6000 Hz   CAR"
+rect 20 850 58 24 { 38, 43, 54, 255 } -> panel 1 .{ .reset = void }
+text 29 854 { 225, 230, 240, 255 } "reset"
+text 756 882 { 150, 160, 178, 255 } "view"
+rect 658 878 66 24 { 38, 43, 54, 255 } -> panel 1 .{ .mode = .scroll }
+text 667 882 { 225, 230, 240, 255 } "scroll"
+rect 594 878 58 24 { 52, 96, 170, 255 }
+text 603 882 { 225, 230, 240, 255 } "sweep"
+rect 498 878 90 24 { 38, 43, 54, 255 } -> panel 1 .{ .mode = .triggered }
+text 507 882 { 225, 230, 240, 255 } "triggered"
+text 446 882 { 150, 160, 178, 255 } "time"
+rect 412 878 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .zoom = 0.8 }
+text 421 882 { 225, 230, 240, 255 } "-"
+text 317 882 { 225, 230, 240, 255 } "500 ms"
+rect 244 878 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .zoom = 1.25 }
+text 253 882 { 225, 230, 240, 255 } "+"
+text 684 910 { 150, 160, 178, 255 } "scale"
+rect 650 906 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .scale = 0.8 }
+text 659 910 { 225, 230, 240, 255 } "-"
+text 545 910 { 225, 230, 240, 255 } "1.50 mV/row"
+rect 502 906 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .scale = 1.25 }
+text 511 910 { 225, 230, 240, 255 } "+"
+text 740 938 { 150, 160, 178, 255 } "filter"
+rect 682 934 42 24 { 38, 43, 54, 255 } -> panel 1 .{ .filter = false }
+text 691 938 { 225, 230, 240, 255 } "raw"
+rect 626 934 50 24 { 52, 96, 170, 255 }
+text 635 938 { 225, 230, 240, 255 } "band"
+text 582 938 { 150, 160, 178, 255 } "low"
+rect 548 934 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .corner = .{ .high = false, .up = false } }
+text 557 938 { 225, 230, 240, 255 } "-"
+text 490 938 { 225, 230, 240, 255 } "off"
+rect 430 934 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .corner = .{ .high = false, .up = true } }
+text 439 938 { 225, 230, 240, 255 } "+"
+text 382 938 { 150, 160, 178, 255 } "high"
+rect 348 934 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .corner = .{ .high = true, .up = false } }
+text 357 938 { 225, 230, 240, 255 } "-"
+text 274 938 { 225, 230, 240, 255 } "6000 Hz"
+rect 230 934 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .corner = .{ .high = true, .up = true } }
+text 239 938 { 225, 230, 240, 255 } "+"
+text 708 966 { 150, 160, 178, 255 } "rows shown"
+rect 654 962 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 0 }
+text 665 966 { 225, 230, 240, 255 } "1"
+rect 621 962 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 1 }
+text 632 966 { 225, 230, 240, 255 } "2"
+rect 588 962 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 2 }
+text 599 966 { 225, 230, 240, 255 } "3"
+rect 555 962 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 3 }
+text 566 966 { 225, 230, 240, 255 } "4"
+rect 522 962 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 4 }
+text 533 966 { 225, 230, 240, 255 } "5"
+rect 489 962 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 5 }
+text 500 966 { 225, 230, 240, 255 } "6"
+rect 456 962 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 6 }
+text 467 966 { 225, 230, 240, 255 } "7"
+rect 423 962 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 7 }
+text 434 966 { 225, 230, 240, 255 } "8"
+rect 390 962 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 8 }
+text 401 966 { 225, 230, 240, 255 } "9"
+rect 357 962 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 9 }
+text 364 966 { 225, 230, 240, 255 } "10"
+rect 324 962 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 10 }
+text 331 966 { 225, 230, 240, 255 } "11"
+rect 291 962 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 11 }
+text 298 966 { 225, 230, 240, 255 } "12"
+rect 258 962 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 12 }
+text 265 966 { 225, 230, 240, 255 } "13"
+rect 225 962 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 13 }
+text 232 966 { 225, 230, 240, 255 } "14"
+rect 192 962 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 14 }
+text 199 966 { 225, 230, 240, 255 } "15"
+rect 159 962 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 15 }
+text 166 966 { 225, 230, 240, 255 } "16"
+text 724 994 { 150, 160, 178, 255 } "filtered"
+rect 654 990 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 0 }
+text 665 994 { 225, 230, 240, 255 } "1"
+rect 621 990 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 1 }
+text 632 994 { 225, 230, 240, 255 } "2"
+rect 588 990 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 2 }
+text 599 994 { 225, 230, 240, 255 } "3"
+rect 555 990 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 3 }
+text 566 994 { 225, 230, 240, 255 } "4"
+rect 522 990 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 4 }
+text 533 994 { 225, 230, 240, 255 } "5"
+rect 489 990 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 5 }
+text 500 994 { 225, 230, 240, 255 } "6"
+rect 456 990 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 6 }
+text 467 994 { 225, 230, 240, 255 } "7"
+rect 423 990 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 7 }
+text 434 994 { 225, 230, 240, 255 } "8"
+rect 390 990 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 8 }
+text 401 994 { 225, 230, 240, 255 } "9"
+rect 357 990 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 9 }
+text 364 994 { 225, 230, 240, 255 } "10"
+rect 324 990 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 10 }
+text 331 994 { 225, 230, 240, 255 } "11"
+rect 291 990 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 11 }
+text 298 994 { 225, 230, 240, 255 } "12"
+rect 258 990 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 12 }
+text 265 994 { 225, 230, 240, 255 } "13"
+rect 225 990 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 13 }
+text 232 994 { 225, 230, 240, 255 } "14"
+rect 192 990 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 14 }
+text 199 994 { 225, 230, 240, 255 } "15"
+rect 159 990 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 15 }
+text 166 994 { 225, 230, 240, 255 } "16"
+text 764 1022 { 150, 160, 178, 255 } "CAR"
+rect 682 1018 42 24 { 38, 43, 54, 255 } -> panel 1 .{ .car = false }
+text 691 1022 { 225, 230, 240, 255 } "off"
+rect 642 1018 34 24 { 52, 96, 170, 255 }
+text 651 1022 { 225, 230, 240, 255 } "on"
+text 708 1050 { 150, 160, 178, 255 } "average of"
+rect 642 1046 42 24 { 38, 43, 54, 255 } -> panel 1 .{ .car_ref_all = true }
+text 651 1050 { 225, 230, 240, 255 } "all"
+rect 586 1046 50 24 { 38, 43, 54, 255 } -> panel 1 .{ .car_ref_all = false }
+text 595 1050 { 225, 230, 240, 255 } "none"
+rect 544 1046 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 0 }
+text 555 1050 { 225, 230, 240, 255 } "1"
+rect 511 1046 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 1 }
+text 522 1050 { 225, 230, 240, 255 } "2"
+rect 478 1046 30 24 { 38, 43, 54, 255 } -> panel 1 .{ .car_ref_row = 2 }
+text 489 1050 { 150, 160, 178, 255 } "3"
+rect 445 1046 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 3 }
+text 456 1050 { 225, 230, 240, 255 } "4"
+rect 412 1046 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 4 }
+text 423 1050 { 225, 230, 240, 255 } "5"
+rect 379 1046 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 5 }
+text 390 1050 { 225, 230, 240, 255 } "6"
+rect 346 1046 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 6 }
+text 357 1050 { 225, 230, 240, 255 } "7"
+rect 313 1046 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 7 }
+text 324 1050 { 225, 230, 240, 255 } "8"
+rect 280 1046 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 8 }
+text 291 1050 { 225, 230, 240, 255 } "9"
+rect 247 1046 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 9 }
+text 254 1050 { 225, 230, 240, 255 } "10"
+rect 214 1046 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 10 }
+text 221 1050 { 225, 230, 240, 255 } "11"
+rect 181 1046 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 11 }
+text 188 1050 { 225, 230, 240, 255 } "12"
+rect 148 1046 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 12 }
+text 155 1050 { 225, 230, 240, 255 } "13"
+rect 115 1046 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 13 }
+text 122 1050 { 225, 230, 240, 255 } "14"
+rect 82 1046 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 14 }
+text 89 1050 { 225, 230, 240, 255 } "15"
+rect 49 1046 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 15 }
+text 56 1050 { 225, 230, 240, 255 } "16"
+text 684 1078 { 150, 160, 178, 255 } "subtract from"
+rect 634 1074 42 24 { 38, 43, 54, 255 } -> panel 1 .{ .car_sub_all = true }
+text 643 1078 { 225, 230, 240, 255 } "all"
+rect 578 1074 50 24 { 38, 43, 54, 255 } -> panel 1 .{ .car_sub_all = false }
+text 587 1078 { 225, 230, 240, 255 } "none"
+rect 536 1074 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 0 }
+text 547 1078 { 225, 230, 240, 255 } "1"
+rect 503 1074 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 1 }
+text 514 1078 { 225, 230, 240, 255 } "2"
+rect 470 1074 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 2 }
+text 481 1078 { 225, 230, 240, 255 } "3"
+rect 437 1074 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 3 }
+text 448 1078 { 225, 230, 240, 255 } "4"
+rect 404 1074 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 4 }
+text 415 1078 { 225, 230, 240, 255 } "5"
+rect 371 1074 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 5 }
+text 382 1078 { 225, 230, 240, 255 } "6"
+rect 338 1074 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 6 }
+text 349 1078 { 225, 230, 240, 255 } "7"
+rect 305 1074 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 7 }
+text 316 1078 { 225, 230, 240, 255 } "8"
+rect 272 1074 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 8 }
+text 283 1078 { 225, 230, 240, 255 } "9"
+rect 239 1074 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 9 }
+text 246 1078 { 225, 230, 240, 255 } "10"
+rect 206 1074 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 10 }
+text 213 1078 { 225, 230, 240, 255 } "11"
+rect 173 1074 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 11 }
+text 180 1078 { 225, 230, 240, 255 } "12"
+rect 140 1074 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 12 }
+text 147 1078 { 225, 230, 240, 255 } "13"
+rect 107 1074 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 13 }
+text 114 1078 { 225, 230, 240, 255 } "14"
+rect 74 1074 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 14 }
+text 81 1078 { 225, 230, 240, 255 } "15"
+rect 41 1074 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 15 }
+text 48 1078 { 225, 230, 240, 255 } "16"
+rect 12 1104 776 1 { 48, 52, 62, 255 }
+text 172 1114 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
+== alarm, all open: 995 quads, ends at x 636 y 710
+text 748 14 { 225, 230, 240, 255 } "dimna"
+text 460 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
+rect 0 36 800 30 { 190, 25, 25, 245 }
+text 564 42 { 225, 230, 240, 255 } "RECORDING STOPPED: disk full"
+rect 24 38 106 24 { 38, 43, 54, 255 } -> .{ .acknowledge = void }
+text 33 42 { 225, 230, 240, 255 } "Acknowledge"
+text 468 70 { 150, 160, 178, 255 } "display 4.3 ms   144 fps   running 125 s"
+text 268 70 { 255, 190, 90, 255 } "display skipped 3 blocks"
+rect 80 66 90 24 { 52, 96, 170, 255 } -> .{ .save_view = void }
+text 89 70 { 225, 230, 240, 255 } "Save view"
+rect 24 66 50 24 { 38, 43, 54, 255 } -> .{ .quit = void }
+text 33 70 { 225, 230, 240, 255 } "Quit"
+rect 12 96 776 1 { 48, 52, 62, 255 }
+rect 722 102 66 24 { 38, 43, 54, 255 } -> .{ .record = true }
+text 731 106 { 225, 230, 240, 255 } "Record"
+text 612 106 { 150, 160, 178, 255 } "not recording"
+rect 12 132 776 1 { 48, 52, 62, 255 }
+rect 714 138 74 24 { 26, 30, 38, 255 } -> control_view: audio headstages [Port A]
+text 723 142 { 225, 230, 240, 255 } "▾ Notes"
+text 292 142 { 150, 160, 178, 255 } "2 presets   last note 1:02:05  cell 3, 2100 µm"
+rect 626 166 98 24 { 38, 43, 54, 255 } -> .{ .note_preset = 1 }
+text 635 170 { 225, 230, 240, 255 } "1 laser on"
+rect 538 166 82 24 { 38, 43, 54, 255 } -> .{ .note_preset = 4 }
+text 547 170 { 225, 230, 240, 255 } "4 µ-stim"
+text 348 170 { 150, 160, 178, 255 } "2 drafts (` stamps one)"
+text 580 198 { 150, 160, 178, 255 } "1:02:05  cell 3, 2100 µm"
+text 684 226 { 150, 160, 178, 255 } "1:01  moved"
+rect 12 252 776 1 { 48, 52, 62, 255 }
+rect 714 258 74 24 { 26, 30, 38, 255 } -> control_view: notes headstages [Port A]
+text 723 262 { 225, 230, 240, 255 } "▾ Audio"
+text 316 262 { 150, 160, 178, 255 } "on   -6 dB   listening to A1-5, B1-3   9 ms"
+rect 690 286 34 24 { 52, 96, 170, 255 }
+text 699 290 { 225, 230, 240, 255 } "on"
+rect 642 286 42 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .enabled = false } }
+text 651 290 { 225, 230, 240, 255 } "off"
+rect 586 286 50 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .mute = true } }
+text 595 290 { 225, 230, 240, 255 } "mute"
+text 532 290 { 150, 160, 178, 255 } "volume"
+rect 498 286 26 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .volume = false } }
+text 507 290 { 225, 230, 240, 255 } "-"
+text 442 290 { 225, 230, 240, 255 } "-6 dB"
+rect 400 286 26 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .volume = true } }
+text 409 290 { 225, 230, 240, 255 } "+"
+rect 318 286 66 24 { 52, 96, 170, 255 }
+text 327 290 { 225, 230, 240, 255 } "shaped"
+rect 254 286 58 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .reference = true } }
+text 263 290 { 225, 230, 240, 255 } "plain"
+rect 206 286 42 24 { 52, 96, 170, 255 } -> .{ .audio = .{ .car = false } }
+text 215 290 { 225, 230, 240, 255 } "CAR"
+rect 94 286 106 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .recalibrate = void } }
+text 103 290 { 225, 230, 240, 255 } "recalibrate"
+text 604 318 { 150, 160, 178, 255 } "listening to A1-5, B1-3"
+text 452 318 { 150, 160, 178, 255 } "noise 7.4 µV, held"
+text 412 318 { 150, 160, 178, 255 } "9 ms"
+text 252 318 { 150, 160, 178, 255 } "2 gaps in the sound"
+rect 12 344 776 1 { 48, 52, 62, 255 }
+text 731 354 { 225, 230, 240, 255 } "Spikes"
+text 588 354 { 150, 160, 178, 255 } "threshold"
+rect 554 350 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = false } }
+text 563 354 { 225, 230, 240, 255 } "-"
+text 498 354 { 225, 230, 240, 255 } "4.5 σ"
+rect 456 350 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = true } }
+text 465 354 { 225, 230, 240, 255 } "+"
+text 136 354 { 150, 160, 178, 255 } "below zero, where it follows the noise"
+rect 12 380 776 1 { 48, 52, 62, 255 }
+rect 674 386 114 24 { 26, 30, 38, 255 } -> control_view: notes audio [Port A]
+text 683 390 { 225, 230, 240, 255 } "▾ Headstages"
+text 300 390 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.17 Hz"
+text 540 418 { 150, 160, 178, 255 } "(these change what is recorded)"
+text 676 446 { 150, 160, 178, 255 } "amplifier band"
+text 644 446 { 150, 160, 178, 255 } "low"
+rect 610 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
+text 619 446 { 225, 230, 240, 255 } "-"
+text 536 446 { 225, 230, 240, 255 } "0.58 Hz"
+rect 492 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
+text 501 446 { 225, 230, 240, 255 } "+"
+text 444 446 { 150, 160, 178, 255 } "high"
+rect 410 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
+text 419 446 { 225, 230, 240, 255 } "-"
+text 332 446 { 225, 230, 240, 255 } "7.60 kHz"
+rect 292 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
+text 301 446 { 225, 230, 240, 255 } "+"
+text 684 474 { 150, 160, 178, 255 } "DSP high-pass"
+rect 626 470 42 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp = false } }
+text 635 474 { 225, 230, 240, 255 } "off"
+rect 586 470 34 24 { 52, 96, 170, 255 }
+text 595 474 { 225, 230, 240, 255 } "on"
+text 518 474 { 150, 160, 178, 255 } "cutoff"
+rect 484 470 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp_cutoff = false } }
+text 493 474 { 225, 230, 240, 255 } "-"
+text 410 474 { 225, 230, 240, 255 } "1.17 Hz"
+rect 366 470 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp_cutoff = true } }
+text 375 474 { 225, 230, 240, 255 } "+"
+text 700 502 { 150, 160, 178, 255 } "sample rate"
+rect 642 498 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .rate = false } }
+text 651 502 { 225, 230, 240, 255 } "-"
+text 564 502 { 225, 230, 240, 255 } "30000 Hz"
+rect 524 498 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .rate = true } }
+text 533 502 { 225, 230, 240, 255 } "+"
+text 492 502 { 150, 160, 178, 255 } "A1"
+rect 426 498 58 24 { 52, 96, 170, 255 }
+text 435 502 { 225, 230, 240, 255 } "32 ch"
+rect 338 498 82 24 { 38, 43, 54, 255 } -> .{ .board = .{ .half = 0 } }
+text 347 502 { 225, 230, 240, 255 } "16 of 32"
+rect 12 528 776 1 { 48, 52, 62, 255 }
+rect 706 534 82 24 { 26, 30, 38, 255 } -> control_view: notes audio headstages []
+text 715 538 { 225, 230, 240, 255 } "▾ Port A"
+text 388 538 { 150, 160, 178, 255 } "scroll   2.00 s   400 µV/row   raw"
+rect 20 534 58 24 { 38, 43, 54, 255 } -> panel 0 .{ .reset = void }
+text 29 538 { 225, 230, 240, 255 } "reset"
+text 756 566 { 150, 160, 178, 255 } "view"
+rect 658 562 66 24 { 52, 96, 170, 255 }
+text 667 566 { 225, 230, 240, 255 } "scroll"
+rect 594 562 58 24 { 38, 43, 54, 255 } -> panel 0 .{ .mode = .sweep }
+text 603 566 { 225, 230, 240, 255 } "sweep"
+rect 498 562 90 24 { 38, 43, 54, 255 } -> panel 0 .{ .mode = .triggered }
+text 507 566 { 225, 230, 240, 255 } "triggered"
+text 446 566 { 150, 160, 178, 255 } "time"
+rect 412 562 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .zoom = 0.8 }
+text 421 566 { 225, 230, 240, 255 } "-"
+text 317 566 { 225, 230, 240, 255 } "2.00 s"
+rect 244 562 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .zoom = 1.25 }
+text 253 566 { 225, 230, 240, 255 } "+"
+text 684 594 { 150, 160, 178, 255 } "scale"
+rect 650 590 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .scale = 0.8 }
+text 659 594 { 225, 230, 240, 255 } "-"
+text 549 594 { 225, 230, 240, 255 } "400 µV/row"
+rect 502 590 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .scale = 1.25 }
+text 511 594 { 225, 230, 240, 255 } "+"
+text 740 622 { 150, 160, 178, 255 } "filter"
+rect 682 618 42 24 { 52, 96, 170, 255 }
+text 691 622 { 225, 230, 240, 255 } "raw"
+rect 626 618 50 24 { 38, 43, 54, 255 } -> panel 0 .{ .filter = true }
+text 635 622 { 225, 230, 240, 255 } "band"
+text 708 650 { 150, 160, 178, 255 } "rows shown"
+rect 654 646 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 0 }
+text 665 650 { 225, 230, 240, 255 } "1"
+rect 621 646 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 1 }
+text 632 650 { 225, 230, 240, 255 } "2"
+rect 588 646 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 2 }
+text 599 650 { 225, 230, 240, 255 } "3"
+rect 555 646 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 3 }
+text 566 650 { 225, 230, 240, 255 } "4"
+rect 522 646 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 4 }
+text 533 650 { 225, 230, 240, 255 } "5"
+rect 489 646 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 5 }
+text 500 650 { 225, 230, 240, 255 } "6"
+text 764 678 { 150, 160, 178, 255 } "CAR"
+rect 682 674 42 24 { 52, 96, 170, 255 }
+text 691 678 { 225, 230, 240, 255 } "off"
+rect 642 674 34 24 { 38, 43, 54, 255 } -> panel 0 .{ .car = true }
+text 651 678 { 225, 230, 240, 255 } "on"
+rect 12 704 776 1 { 48, 52, 62, 255 }
+text 172 714 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
+== other panels, all open: 1405 quads, ends at x 636 y 1014
+text 748 14 { 225, 230, 240, 255 } "dimna"
+text 460 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
+text 724 42 { 150, 160, 178, 255 } "starting"
+rect 80 38 90 24 { 52, 96, 170, 255 } -> .{ .save_view = void }
+text 89 42 { 225, 230, 240, 255 } "Save view"
+rect 24 38 50 24 { 38, 43, 54, 255 } -> .{ .quit = void }
+text 33 42 { 225, 230, 240, 255 } "Quit"
+rect 12 68 776 1 { 48, 52, 62, 255 }
+text 604 78 { 150, 160, 178, 255 } "finishing the recording"
+text 324 78 { 255, 96, 96, 255 } "REC 0:00   0.00 GB   0.0 M samples"
+rect 12 104 776 1 { 48, 52, 62, 255 }
+rect 714 110 74 24 { 26, 30, 38, 255 } -> control_view: audio headstages [Port C, AUX, ADC, TTL]
+text 723 114 { 225, 230, 240, 255 } "▾ Notes"
+text 292 114 { 150, 160, 178, 255 } "2 presets   last note 1:02:05  cell 3, 2100 µm"
+rect 626 138 98 24 { 38, 43, 54, 255 } -> .{ .note_preset = 1 }
+text 635 142 { 225, 230, 240, 255 } "1 laser on"
+rect 538 138 82 24 { 38, 43, 54, 255 } -> .{ .note_preset = 4 }
+text 547 142 { 225, 230, 240, 255 } "4 µ-stim"
+text 348 142 { 150, 160, 178, 255 } "2 drafts (` stamps one)"
+text 580 170 { 150, 160, 178, 255 } "1:02:05  cell 3, 2100 µm"
+text 684 198 { 150, 160, 178, 255 } "1:01  moved"
+rect 12 224 776 1 { 48, 52, 62, 255 }
+rect 714 230 74 24 { 26, 30, 38, 255 } -> control_view: notes headstages [Port C, AUX, ADC, TTL]
+text 723 234 { 225, 230, 240, 255 } "▾ Audio"
+text 396 234 { 150, 160, 178, 255 } "on   -6 dB   listening to nothing"
+rect 690 258 34 24 { 52, 96, 170, 255 }
+text 699 262 { 225, 230, 240, 255 } "on"
+rect 642 258 42 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .enabled = false } }
+text 651 262 { 225, 230, 240, 255 } "off"
+rect 586 258 50 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .mute = true } }
+text 595 262 { 225, 230, 240, 255 } "mute"
+text 532 262 { 150, 160, 178, 255 } "volume"
+rect 498 258 26 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .volume = false } }
+text 507 262 { 225, 230, 240, 255 } "-"
+text 442 262 { 225, 230, 240, 255 } "-6 dB"
+rect 400 258 26 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .volume = true } }
+text 409 262 { 225, 230, 240, 255 } "+"
+rect 318 258 66 24 { 52, 96, 170, 255 }
+text 327 262 { 225, 230, 240, 255 } "shaped"
+rect 254 258 58 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .reference = true } }
+text 263 262 { 225, 230, 240, 255 } "plain"
+rect 206 258 42 24 { 52, 96, 170, 255 } -> .{ .audio = .{ .car = false } }
+text 215 262 { 225, 230, 240, 255 } "CAR"
+rect 94 258 106 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .recalibrate = void } }
+text 103 262 { 225, 230, 240, 255 } "recalibrate"
+text 396 290 { 150, 160, 178, 255 } "listening to nothing (click a row on the display)"
+text 236 290 { 150, 160, 178, 255 } "2 gaps in the sound"
+rect 12 316 776 1 { 48, 52, 62, 255 }
+text 731 326 { 225, 230, 240, 255 } "Spikes"
+text 588 326 { 150, 160, 178, 255 } "threshold"
+rect 554 322 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = false } }
+text 563 326 { 225, 230, 240, 255 } "-"
+text 498 326 { 225, 230, 240, 255 } "4.5 σ"
+rect 456 322 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = true } }
+text 465 326 { 225, 230, 240, 255 } "+"
+text 136 326 { 150, 160, 178, 255 } "below zero, where it follows the noise"
+rect 12 352 776 1 { 48, 52, 62, 255 }
+rect 674 358 114 24 { 26, 30, 38, 255 } -> control_view: notes audio [Port C, AUX, ADC, TTL]
+text 683 362 { 225, 230, 240, 255 } "▾ Headstages"
+text 300 362 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.17 Hz"
+text 540 390 { 150, 160, 178, 255 } "(these change what is recorded)"
+text 676 418 { 150, 160, 178, 255 } "amplifier band"
+text 644 418 { 150, 160, 178, 255 } "low"
+rect 610 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
+text 619 418 { 225, 230, 240, 255 } "-"
+text 536 418 { 225, 230, 240, 255 } "0.58 Hz"
+rect 492 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
+text 501 418 { 225, 230, 240, 255 } "+"
+text 444 418 { 150, 160, 178, 255 } "high"
+rect 410 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
+text 419 418 { 225, 230, 240, 255 } "-"
+text 332 418 { 225, 230, 240, 255 } "7.60 kHz"
+rect 292 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
+text 301 418 { 225, 230, 240, 255 } "+"
+text 684 446 { 150, 160, 178, 255 } "DSP high-pass"
+rect 626 442 42 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp = false } }
+text 635 446 { 225, 230, 240, 255 } "off"
+rect 586 442 34 24 { 52, 96, 170, 255 }
+text 595 446 { 225, 230, 240, 255 } "on"
+text 518 446 { 150, 160, 178, 255 } "cutoff"
+rect 484 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp_cutoff = false } }
+text 493 446 { 225, 230, 240, 255 } "-"
+text 410 446 { 225, 230, 240, 255 } "1.17 Hz"
+rect 366 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp_cutoff = true } }
+text 375 446 { 225, 230, 240, 255 } "+"
+text 700 474 { 150, 160, 178, 255 } "sample rate"
+rect 642 470 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .rate = false } }
+text 651 474 { 225, 230, 240, 255 } "-"
+text 564 474 { 225, 230, 240, 255 } "30000 Hz"
+rect 524 470 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .rate = true } }
+text 533 474 { 225, 230, 240, 255 } "+"
+text 492 474 { 150, 160, 178, 255 } "A1"
+rect 426 470 58 24 { 52, 96, 170, 255 }
+text 435 474 { 225, 230, 240, 255 } "32 ch"
+rect 338 470 82 24 { 38, 43, 54, 255 } -> .{ .board = .{ .half = 0 } }
+text 347 474 { 225, 230, 240, 255 } "16 of 32"
+rect 12 500 776 1 { 48, 52, 62, 255 }
+rect 706 506 82 24 { 26, 30, 38, 255 } -> control_view: notes audio headstages [AUX, ADC, TTL]
+text 715 510 { 225, 230, 240, 255 } "▾ Port C"
+text 132 510 { 150, 160, 178, 255 } "triggered   -10.0 / +40.0 ms   400 µV/row   raw   on spikes, row 1"
+rect 20 506 58 24 { 38, 43, 54, 255 } -> panel 0 .{ .reset = void }
+text 29 510 { 225, 230, 240, 255 } "reset"
+text 756 538 { 150, 160, 178, 255 } "view"
+rect 658 534 66 24 { 38, 43, 54, 255 } -> panel 0 .{ .mode = .scroll }
+text 667 538 { 225, 230, 240, 255 } "scroll"
+rect 594 534 58 24 { 38, 43, 54, 255 } -> panel 0 .{ .mode = .sweep }
+text 603 538 { 225, 230, 240, 255 } "sweep"
+rect 498 534 90 24 { 52, 96, 170, 255 }
+text 507 538 { 225, 230, 240, 255 } "triggered"
+text 430 538 { 150, 160, 178, 255 } "window"
+rect 396 534 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .zoom = 0.8 }
+text 405 538 { 225, 230, 240, 255 } "-"
+text 261 538 { 225, 230, 240, 255 } "-10.0 / +40.0 ms"
+rect 228 534 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .zoom = 1.25 }
+text 237 538 { 225, 230, 240, 255 } "+"
+text 684 566 { 150, 160, 178, 255 } "scale"
+rect 650 562 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .scale = 0.8 }
+text 659 566 { 225, 230, 240, 255 } "-"
+text 549 566 { 225, 230, 240, 255 } "400 µV/row"
+rect 502 562 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .scale = 1.25 }
+text 511 566 { 225, 230, 240, 255 } "+"
+text 740 594 { 150, 160, 178, 255 } "filter"
+rect 682 590 42 24 { 52, 96, 170, 255 }
+text 691 594 { 225, 230, 240, 255 } "raw"
+rect 626 590 50 24 { 38, 43, 54, 255 } -> panel 0 .{ .filter = true }
+text 635 594 { 225, 230, 240, 255 } "band"
+text 708 622 { 150, 160, 178, 255 } "rows shown"
+rect 654 618 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 0 }
+text 665 622 { 225, 230, 240, 255 } "1"
+rect 621 618 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 1 }
+text 632 622 { 225, 230, 240, 255 } "2"
+rect 588 618 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 2 }
+text 599 622 { 225, 230, 240, 255 } "3"
+rect 555 618 30 24 { 52, 96, 170, 255 } -> panel 0 .{ .row_hidden = 3 }
+text 566 622 { 225, 230, 240, 255 } "4"
+text 764 650 { 150, 160, 178, 255 } "CAR"
+rect 682 646 42 24 { 52, 96, 170, 255 }
+text 691 650 { 225, 230, 240, 255 } "off"
+rect 642 646 34 24 { 38, 43, 54, 255 } -> panel 0 .{ .car = true }
+text 651 650 { 225, 230, 240, 255 } "on"
+text 732 678 { 150, 160, 178, 255 } "trigger"
+rect 682 674 42 24 { 38, 43, 54, 255 } -> panel 0 .{ .trig_source = .ttl }
+text 691 678 { 225, 230, 240, 255 } "TTL"
+rect 610 674 66 24 { 52, 96, 170, 255 }
+text 619 678 { 225, 230, 240, 255 } "spikes"
+rect 570 674 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .trig_row = -1 }
+text 579 678 { 225, 230, 240, 255 } "-"
+text 514 678 { 225, 230, 240, 255 } "row 1"
+rect 472 674 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .trig_row = 1 }
+text 481 678 { 225, 230, 240, 255 } "+"
+rect 382 674 74 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .flip = 0 } }
+text 391 678 { 225, 230, 240, 255 } "falling"
+rect 310 674 66 24 { 52, 96, 170, 255 }
+text 319 678 { 225, 230, 240, 255 } "rising"
+text 748 706 { 150, 160, 178, 255 } "level"
+rect 698 702 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .scale = .{ .channel = 0, .factor = 0.8695652 } } }
+text 707 706 { 225, 230, 240, 255 } "-"
+text 637 706 { 225, 230, 240, 255 } "48 µV"
+rect 590 702 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .scale = .{ .channel = 0, .factor = 1.15 } } }
+text 599 706 { 225, 230, 240, 255 } "+"
+text 518 706 { 150, 160, 178, 255 } "holdoff"
+rect 484 702 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .trig_holdoff = false }
+text 493 706 { 225, 230, 240, 255 } "-"
+text 432 706 { 225, 230, 240, 255 } "0 ms"
+rect 386 702 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .trig_holdoff = true }
+text 395 706 { 225, 230, 240, 255 } "+"
+text 306 706 { 150, 160, 178, 255 } "overlaid"
+rect 272 702 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .overlay = 9 }
+text 281 706 { 225, 230, 240, 255 } "-"
+text 185 706 { 225, 230, 240, 255 } "10 sweeps"
+rect 144 702 26 24 { 38, 43, 54, 255 } -> panel 0 .{ .overlay = 11 }
+text 153 706 { 225, 230, 240, 255 } "+"
+rect 12 732 776 1 { 48, 52, 62, 255 }
+rect 730 738 58 24 { 26, 30, 38, 255 } -> control_view: notes audio headstages [Port C, ADC, TTL]
+text 739 742 { 225, 230, 240, 255 } "▾ AUX"
+text 436 742 { 150, 160, 178, 255 } "scroll   2.00 s   1.00 V/row"
+rect 20 738 58 24 { 38, 43, 54, 255 } -> panel 1 .{ .reset = void }
+text 29 742 { 225, 230, 240, 255 } "reset"
+text 756 770 { 150, 160, 178, 255 } "view"
+rect 658 766 66 24 { 52, 96, 170, 255 }
+text 667 770 { 225, 230, 240, 255 } "scroll"
+rect 594 766 58 24 { 38, 43, 54, 255 } -> panel 1 .{ .mode = .sweep }
+text 603 770 { 225, 230, 240, 255 } "sweep"
+rect 498 766 90 24 { 38, 43, 54, 255 } -> panel 1 .{ .mode = .triggered }
+text 507 770 { 225, 230, 240, 255 } "triggered"
+text 446 770 { 150, 160, 178, 255 } "time"
+rect 412 766 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .zoom = 0.8 }
+text 421 770 { 225, 230, 240, 255 } "-"
+text 317 770 { 225, 230, 240, 255 } "2.00 s"
+rect 244 766 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .zoom = 1.25 }
+text 253 770 { 225, 230, 240, 255 } "+"
+text 684 798 { 150, 160, 178, 255 } "scale"
+rect 650 794 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .scale = 0.8 }
+text 659 798 { 225, 230, 240, 255 } "-"
+text 549 798 { 225, 230, 240, 255 } "1.00 V/row"
+rect 502 794 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .scale = 1.25 }
+text 511 798 { 225, 230, 240, 255 } "+"
+rect 12 824 776 1 { 48, 52, 62, 255 }
+rect 730 830 58 24 { 26, 30, 38, 255 } -> control_view: notes audio headstages [Port C, AUX, TTL]
+text 739 834 { 225, 230, 240, 255 } "▾ ADC"
+text 436 834 { 150, 160, 178, 255 } "scroll   2.00 s   250 mV/row"
+rect 20 830 58 24 { 38, 43, 54, 255 } -> panel 2 .{ .reset = void }
+text 29 834 { 225, 230, 240, 255 } "reset"
+text 756 862 { 150, 160, 178, 255 } "view"
+rect 658 858 66 24 { 52, 96, 170, 255 }
+text 667 862 { 225, 230, 240, 255 } "scroll"
+rect 594 858 58 24 { 38, 43, 54, 255 } -> panel 2 .{ .mode = .sweep }
+text 603 862 { 225, 230, 240, 255 } "sweep"
+rect 498 858 90 24 { 38, 43, 54, 255 } -> panel 2 .{ .mode = .triggered }
+text 507 862 { 225, 230, 240, 255 } "triggered"
+text 446 862 { 150, 160, 178, 255 } "time"
+rect 412 858 26 24 { 38, 43, 54, 255 } -> panel 2 .{ .zoom = 0.8 }
+text 421 862 { 225, 230, 240, 255 } "-"
+text 317 862 { 225, 230, 240, 255 } "2.00 s"
+rect 244 858 26 24 { 38, 43, 54, 255 } -> panel 2 .{ .zoom = 1.25 }
+text 253 862 { 225, 230, 240, 255 } "+"
+text 684 890 { 150, 160, 178, 255 } "scale"
+rect 650 886 26 24 { 38, 43, 54, 255 } -> panel 2 .{ .scale = 0.8 }
+text 659 890 { 225, 230, 240, 255 } "-"
+text 549 890 { 225, 230, 240, 255 } "250 mV/row"
+rect 502 886 26 24 { 38, 43, 54, 255 } -> panel 2 .{ .scale = 1.25 }
+text 511 890 { 225, 230, 240, 255 } "+"
+rect 12 916 776 1 { 48, 52, 62, 255 }
+rect 730 922 58 24 { 26, 30, 38, 255 } -> control_view: notes audio headstages [Port C, AUX, ADC]
+text 739 926 { 225, 230, 240, 255 } "▾ TTL"
+text 348 926 { 150, 160, 178, 255 } "triggered   -10.0 / +40.0 ms   on TTL 2"
+rect 20 922 58 24 { 38, 43, 54, 255 } -> panel 3 .{ .reset = void }
+text 29 926 { 225, 230, 240, 255 } "reset"
+text 756 954 { 150, 160, 178, 255 } "view"
+rect 658 950 66 24 { 38, 43, 54, 255 } -> panel 3 .{ .mode = .scroll }
+text 667 954 { 225, 230, 240, 255 } "scroll"
+rect 594 950 58 24 { 38, 43, 54, 255 } -> panel 3 .{ .mode = .sweep }
+text 603 954 { 225, 230, 240, 255 } "sweep"
+rect 498 950 90 24 { 52, 96, 170, 255 }
+text 507 954 { 225, 230, 240, 255 } "triggered"
+text 430 954 { 150, 160, 178, 255 } "window"
+rect 396 950 26 24 { 38, 43, 54, 255 } -> panel 3 .{ .zoom = 0.8 }
+text 405 954 { 225, 230, 240, 255 } "-"
+text 261 954 { 225, 230, 240, 255 } "-10.0 / +40.0 ms"
+rect 228 950 26 24 { 38, 43, 54, 255 } -> panel 3 .{ .zoom = 1.25 }
+text 237 954 { 225, 230, 240, 255 } "+"
+text 732 982 { 150, 160, 178, 255 } "trigger"
+rect 698 978 26 24 { 38, 43, 54, 255 } -> panel 3 .{ .trig_line = 1 }
+text 707 982 { 225, 230, 240, 255 } "-"
+text 642 982 { 225, 230, 240, 255 } "TTL 2"
+rect 600 978 26 24 { 38, 43, 54, 255 } -> panel 3 .{ .trig_line = 3 }
+text 609 982 { 225, 230, 240, 255 } "+"
+text 520 982 { 150, 160, 178, 255 } "overlaid"
+rect 486 978 26 24 { 38, 43, 54, 255 } -> panel 3 .{ .overlay = 9 }
+text 495 982 { 225, 230, 240, 255 } "-"
+text 399 982 { 225, 230, 240, 255 } "10 sweeps"
+rect 358 978 26 24 { 38, 43, 54, 255 } -> panel 3 .{ .overlay = 11 }
+text 367 982 { 225, 230, 240, 255 } "+"
+rect 12 1008 776 1 { 48, 52, 62, 255 }
+text 172 1018 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
+== notes open: 585 quads, ends at x 636 y 402
+text 748 14 { 225, 230, 240, 255 } "dimna"
+text 460 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
+text 660 42 { 255, 190, 90, 255 } "disk nearly full"
+text 468 70 { 150, 160, 178, 255 } "display 4.3 ms   144 fps   running 125 s"
+text 268 70 { 255, 190, 90, 255 } "display skipped 3 blocks"
+rect 80 66 90 24 { 52, 96, 170, 255 } -> .{ .save_view = void }
+text 89 70 { 225, 230, 240, 255 } "Save view"
+rect 24 66 50 24 { 38, 43, 54, 255 } -> .{ .quit = void }
+text 33 70 { 225, 230, 240, 255 } "Quit"
+rect 12 96 776 1 { 48, 52, 62, 255 }
+rect 722 102 66 24 { 38, 43, 54, 255 } -> .{ .record = true }
+text 731 106 { 225, 230, 240, 255 } "Record"
+text 612 106 { 150, 160, 178, 255 } "not recording"
+rect 12 132 776 1 { 48, 52, 62, 255 }
+rect 714 138 74 24 { 26, 30, 38, 255 } -> control_view: []
+text 723 142 { 225, 230, 240, 255 } "▾ Notes"
+text 292 142 { 150, 160, 178, 255 } "2 presets   last note 1:02:05  cell 3, 2100 µm"
+rect 626 166 98 24 { 38, 43, 54, 255 } -> .{ .note_preset = 1 }
+text 635 170 { 225, 230, 240, 255 } "1 laser on"
+rect 538 166 82 24 { 38, 43, 54, 255 } -> .{ .note_preset = 4 }
+text 547 170 { 225, 230, 240, 255 } "4 µ-stim"
+text 348 170 { 150, 160, 178, 255 } "2 drafts (` stamps one)"
+text 580 198 { 150, 160, 178, 255 } "1:02:05  cell 3, 2100 µm"
+text 684 226 { 150, 160, 178, 255 } "1:01  moved"
+rect 12 252 776 1 { 48, 52, 62, 255 }
+rect 714 258 74 24 { 26, 30, 38, 255 } -> control_view: notes audio []
+text 723 262 { 225, 230, 240, 255 } "? Audio"
+text 316 262 { 150, 160, 178, 255 } "on   -6 dB   listening to A1-5, B1-3   9 ms"
+rect 12 288 776 1 { 48, 52, 62, 255 }
+text 731 298 { 225, 230, 240, 255 } "Spikes"
+text 588 298 { 150, 160, 178, 255 } "threshold"
+rect 554 294 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = false } }
+text 563 298 { 225, 230, 240, 255 } "-"
+text 498 298 { 225, 230, 240, 255 } "4.5 σ"
+rect 456 294 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = true } }
+text 465 298 { 225, 230, 240, 255 } "+"
+text 136 298 { 150, 160, 178, 255 } "below zero, where it follows the noise"
+rect 12 324 776 1 { 48, 52, 62, 255 }
+rect 674 330 114 24 { 26, 30, 38, 255 } -> control_view: notes headstages []
+text 683 334 { 225, 230, 240, 255 } "? Headstages"
+text 300 334 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.17 Hz"
+rect 12 360 776 1 { 48, 52, 62, 255 }
+rect 706 366 82 24 { 26, 30, 38, 255 } -> control_view: notes [Port A]
+text 715 370 { 225, 230, 240, 255 } "? Port A"
+text 388 370 { 150, 160, 178, 255 } "scroll   2.00 s   400 µV/row   raw"
+rect 12 396 776 1 { 48, 52, 62, 255 }
+text 172 406 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
+== audio open: 627 quads, ends at x 636 y 374
+text 748 14 { 225, 230, 240, 255 } "dimna"
+text 460 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
+text 660 42 { 255, 190, 90, 255 } "disk nearly full"
+text 468 70 { 150, 160, 178, 255 } "display 4.3 ms   144 fps   running 125 s"
+text 268 70 { 255, 190, 90, 255 } "display skipped 3 blocks"
+rect 80 66 90 24 { 52, 96, 170, 255 } -> .{ .save_view = void }
+text 89 70 { 225, 230, 240, 255 } "Save view"
+rect 24 66 50 24 { 38, 43, 54, 255 } -> .{ .quit = void }
+text 33 70 { 225, 230, 240, 255 } "Quit"
+rect 12 96 776 1 { 48, 52, 62, 255 }
+rect 722 102 66 24 { 38, 43, 54, 255 } -> .{ .record = true }
+text 731 106 { 225, 230, 240, 255 } "Record"
+text 612 106 { 150, 160, 178, 255 } "not recording"
+rect 12 132 776 1 { 48, 52, 62, 255 }
+rect 714 138 74 24 { 26, 30, 38, 255 } -> control_view: notes audio []
+text 723 142 { 225, 230, 240, 255 } "? Notes"
+text 292 142 { 150, 160, 178, 255 } "2 presets   last note 1:02:05  cell 3, 2100 µm"
+rect 12 168 776 1 { 48, 52, 62, 255 }
+rect 714 174 74 24 { 26, 30, 38, 255 } -> control_view: []
+text 723 178 { 225, 230, 240, 255 } "▾ Audio"
+text 316 178 { 150, 160, 178, 255 } "on   -6 dB   listening to A1-5, B1-3   9 ms"
+rect 690 202 34 24 { 52, 96, 170, 255 }
+text 699 206 { 225, 230, 240, 255 } "on"
+rect 642 202 42 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .enabled = false } }
+text 651 206 { 225, 230, 240, 255 } "off"
+rect 586 202 50 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .mute = true } }
+text 595 206 { 225, 230, 240, 255 } "mute"
+text 532 206 { 150, 160, 178, 255 } "volume"
+rect 498 202 26 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .volume = false } }
+text 507 206 { 225, 230, 240, 255 } "-"
+text 442 206 { 225, 230, 240, 255 } "-6 dB"
+rect 400 202 26 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .volume = true } }
+text 409 206 { 225, 230, 240, 255 } "+"
+rect 318 202 66 24 { 52, 96, 170, 255 }
+text 327 206 { 225, 230, 240, 255 } "shaped"
+rect 254 202 58 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .reference = true } }
+text 263 206 { 225, 230, 240, 255 } "plain"
+rect 206 202 42 24 { 52, 96, 170, 255 } -> .{ .audio = .{ .car = false } }
+text 215 206 { 225, 230, 240, 255 } "CAR"
+rect 94 202 106 24 { 38, 43, 54, 255 } -> .{ .audio = .{ .recalibrate = void } }
+text 103 206 { 225, 230, 240, 255 } "recalibrate"
+text 604 234 { 150, 160, 178, 255 } "listening to A1-5, B1-3"
+text 452 234 { 150, 160, 178, 255 } "noise 7.4 µV, held"
+text 412 234 { 150, 160, 178, 255 } "9 ms"
+text 252 234 { 150, 160, 178, 255 } "2 gaps in the sound"
+rect 12 260 776 1 { 48, 52, 62, 255 }
+text 731 270 { 225, 230, 240, 255 } "Spikes"
+text 588 270 { 150, 160, 178, 255 } "threshold"
+rect 554 266 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = false } }
+text 563 270 { 225, 230, 240, 255 } "-"
+text 498 270 { 225, 230, 240, 255 } "4.5 σ"
+rect 456 266 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = true } }
+text 465 270 { 225, 230, 240, 255 } "+"
+text 136 270 { 150, 160, 178, 255 } "below zero, where it follows the noise"
+rect 12 296 776 1 { 48, 52, 62, 255 }
+rect 674 302 114 24 { 26, 30, 38, 255 } -> control_view: audio headstages []
+text 683 306 { 225, 230, 240, 255 } "? Headstages"
+text 300 306 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.17 Hz"
+rect 12 332 776 1 { 48, 52, 62, 255 }
+rect 706 338 82 24 { 26, 30, 38, 255 } -> control_view: audio [Port A]
+text 715 342 { 225, 230, 240, 255 } "? Port A"
+text 388 342 { 150, 160, 178, 255 } "scroll   2.00 s   400 µV/row   raw"
+rect 12 368 776 1 { 48, 52, 62, 255 }
+text 172 378 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
+== headstages open: 659 quads, ends at x 636 y 430
+text 748 14 { 225, 230, 240, 255 } "dimna"
+text 460 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
+text 660 42 { 255, 190, 90, 255 } "disk nearly full"
+text 468 70 { 150, 160, 178, 255 } "display 4.3 ms   144 fps   running 125 s"
+text 268 70 { 255, 190, 90, 255 } "display skipped 3 blocks"
+rect 80 66 90 24 { 52, 96, 170, 255 } -> .{ .save_view = void }
+text 89 70 { 225, 230, 240, 255 } "Save view"
+rect 24 66 50 24 { 38, 43, 54, 255 } -> .{ .quit = void }
+text 33 70 { 225, 230, 240, 255 } "Quit"
+rect 12 96 776 1 { 48, 52, 62, 255 }
+rect 722 102 66 24 { 38, 43, 54, 255 } -> .{ .record = true }
+text 731 106 { 225, 230, 240, 255 } "Record"
+text 612 106 { 150, 160, 178, 255 } "not recording"
+rect 12 132 776 1 { 48, 52, 62, 255 }
+rect 714 138 74 24 { 26, 30, 38, 255 } -> control_view: notes headstages []
+text 723 142 { 225, 230, 240, 255 } "? Notes"
+text 292 142 { 150, 160, 178, 255 } "2 presets   last note 1:02:05  cell 3, 2100 µm"
+rect 12 168 776 1 { 48, 52, 62, 255 }
+rect 714 174 74 24 { 26, 30, 38, 255 } -> control_view: audio headstages []
+text 723 178 { 225, 230, 240, 255 } "? Audio"
+text 316 178 { 150, 160, 178, 255 } "on   -6 dB   listening to A1-5, B1-3   9 ms"
+rect 12 204 776 1 { 48, 52, 62, 255 }
+text 731 214 { 225, 230, 240, 255 } "Spikes"
+text 588 214 { 150, 160, 178, 255 } "threshold"
+rect 554 210 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = false } }
+text 563 214 { 225, 230, 240, 255 } "-"
+text 498 214 { 225, 230, 240, 255 } "4.5 σ"
+rect 456 210 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = true } }
+text 465 214 { 225, 230, 240, 255 } "+"
+text 136 214 { 150, 160, 178, 255 } "below zero, where it follows the noise"
+rect 12 240 776 1 { 48, 52, 62, 255 }
+rect 674 246 114 24 { 26, 30, 38, 255 } -> control_view: []
+text 683 250 { 225, 230, 240, 255 } "▾ Headstages"
+text 300 250 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.17 Hz"
+text 540 278 { 150, 160, 178, 255 } "(these change what is recorded)"
+text 676 306 { 150, 160, 178, 255 } "amplifier band"
+text 644 306 { 150, 160, 178, 255 } "low"
+rect 610 302 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
+text 619 306 { 225, 230, 240, 255 } "-"
+text 536 306 { 225, 230, 240, 255 } "0.58 Hz"
+rect 492 302 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
+text 501 306 { 225, 230, 240, 255 } "+"
+text 444 306 { 150, 160, 178, 255 } "high"
+rect 410 302 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
+text 419 306 { 225, 230, 240, 255 } "-"
+text 332 306 { 225, 230, 240, 255 } "7.60 kHz"
+rect 292 302 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
+text 301 306 { 225, 230, 240, 255 } "+"
+text 684 334 { 150, 160, 178, 255 } "DSP high-pass"
+rect 626 330 42 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp = false } }
+text 635 334 { 225, 230, 240, 255 } "off"
+rect 586 330 34 24 { 52, 96, 170, 255 }
+text 595 334 { 225, 230, 240, 255 } "on"
+text 518 334 { 150, 160, 178, 255 } "cutoff"
+rect 484 330 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp_cutoff = false } }
+text 493 334 { 225, 230, 240, 255 } "-"
+text 410 334 { 225, 230, 240, 255 } "1.17 Hz"
+rect 366 330 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp_cutoff = true } }
+text 375 334 { 225, 230, 240, 255 } "+"
+text 700 362 { 150, 160, 178, 255 } "sample rate"
+rect 642 358 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .rate = false } }
+text 651 362 { 225, 230, 240, 255 } "-"
+text 564 362 { 225, 230, 240, 255 } "30000 Hz"
+rect 524 358 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .rate = true } }
+text 533 362 { 225, 230, 240, 255 } "+"
+text 492 362 { 150, 160, 178, 255 } "A1"
+rect 426 358 58 24 { 52, 96, 170, 255 }
+text 435 362 { 225, 230, 240, 255 } "32 ch"
+rect 338 358 82 24 { 38, 43, 54, 255 } -> .{ .board = .{ .half = 0 } }
+text 347 362 { 225, 230, 240, 255 } "16 of 32"
+rect 12 388 776 1 { 48, 52, 62, 255 }
+rect 706 394 82 24 { 26, 30, 38, 255 } -> control_view: headstages [Port A]
+text 715 398 { 225, 230, 240, 255 } "? Port A"
+text 388 398 { 150, 160, 178, 255 } "scroll   2.00 s   400 µV/row   raw"
+rect 12 424 776 1 { 48, 52, 62, 255 }
+text 172 434 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
+== Port B open of two panels: 921 quads, ends at x 636 y 550
+text 748 14 { 225, 230, 240, 255 } "dimna"
+text 460 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
+text 468 42 { 150, 160, 178, 255 } "display 4.3 ms   144 fps   running 125 s"
+text 268 42 { 255, 190, 90, 255 } "display skipped 3 blocks"
+rect 80 38 90 24 { 52, 96, 170, 255 } -> .{ .save_view = void }
+text 89 42 { 225, 230, 240, 255 } "Save view"
+rect 24 38 50 24 { 38, 43, 54, 255 } -> .{ .quit = void }
+text 33 42 { 225, 230, 240, 255 } "Quit"
+rect 12 68 776 1 { 48, 52, 62, 255 }
+rect 722 74 66 24 { 38, 43, 54, 255 } -> .{ .record = true }
+text 731 78 { 225, 230, 240, 255 } "Record"
+text 612 78 { 150, 160, 178, 255 } "not recording"
+rect 12 104 776 1 { 48, 52, 62, 255 }
+rect 714 110 74 24 { 26, 30, 38, 255 } -> control_view: notes [Port B]
+text 723 114 { 225, 230, 240, 255 } "? Notes"
+text 292 114 { 150, 160, 178, 255 } "2 presets   last note 1:02:05  cell 3, 2100 µm"
+rect 12 140 776 1 { 48, 52, 62, 255 }
+rect 714 146 74 24 { 26, 30, 38, 255 } -> control_view: audio [Port B]
+text 723 150 { 225, 230, 240, 255 } "? Audio"
+text 396 150 { 150, 160, 178, 255 } "on   -6 dB   listening to nothing"
+rect 12 176 776 1 { 48, 52, 62, 255 }
+text 731 186 { 225, 230, 240, 255 } "Spikes"
+text 588 186 { 150, 160, 178, 255 } "threshold"
+rect 554 182 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = false } }
+text 563 186 { 225, 230, 240, 255 } "-"
+text 498 186 { 225, 230, 240, 255 } "4.5 σ"
+rect 456 182 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = true } }
+text 465 186 { 225, 230, 240, 255 } "+"
+text 136 186 { 150, 160, 178, 255 } "below zero, where it follows the noise"
+rect 12 212 776 1 { 48, 52, 62, 255 }
+rect 674 218 114 24 { 26, 30, 38, 255 } -> control_view: headstages [Port B]
+text 683 222 { 225, 230, 240, 255 } "? Headstages"
+text 300 222 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.17 Hz"
+rect 12 248 776 1 { 48, 52, 62, 255 }
+rect 706 254 82 24 { 26, 30, 38, 255 } -> control_view: [Port B, Port A]
+text 715 258 { 225, 230, 240, 255 } "? Port A"
+text 44 258 { 150, 160, 178, 255 } "triggered   -1.0 / +2.0 ms   400 µV/row   band 300–6000 Hz   on spikes, row 5"
+rect 12 284 776 1 { 48, 52, 62, 255 }
+rect 706 290 82 24 { 26, 30, 38, 255 } -> control_view: []
+text 715 294 { 225, 230, 240, 255 } "▾ Port B"
+text 220 294 { 150, 160, 178, 255 } "sweep   500 ms   1.50 mV/row   band below 6000 Hz   CAR"
+rect 20 290 58 24 { 38, 43, 54, 255 } -> panel 1 .{ .reset = void }
+text 29 294 { 225, 230, 240, 255 } "reset"
+text 756 322 { 150, 160, 178, 255 } "view"
+rect 658 318 66 24 { 38, 43, 54, 255 } -> panel 1 .{ .mode = .scroll }
+text 667 322 { 225, 230, 240, 255 } "scroll"
+rect 594 318 58 24 { 52, 96, 170, 255 }
+text 603 322 { 225, 230, 240, 255 } "sweep"
+rect 498 318 90 24 { 38, 43, 54, 255 } -> panel 1 .{ .mode = .triggered }
+text 507 322 { 225, 230, 240, 255 } "triggered"
+text 446 322 { 150, 160, 178, 255 } "time"
+rect 412 318 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .zoom = 0.8 }
+text 421 322 { 225, 230, 240, 255 } "-"
+text 317 322 { 225, 230, 240, 255 } "500 ms"
+rect 244 318 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .zoom = 1.25 }
+text 253 322 { 225, 230, 240, 255 } "+"
+text 684 350 { 150, 160, 178, 255 } "scale"
+rect 650 346 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .scale = 0.8 }
+text 659 350 { 225, 230, 240, 255 } "-"
+text 545 350 { 225, 230, 240, 255 } "1.50 mV/row"
+rect 502 346 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .scale = 1.25 }
+text 511 350 { 225, 230, 240, 255 } "+"
+text 740 378 { 150, 160, 178, 255 } "filter"
+rect 682 374 42 24 { 38, 43, 54, 255 } -> panel 1 .{ .filter = false }
+text 691 378 { 225, 230, 240, 255 } "raw"
+rect 626 374 50 24 { 52, 96, 170, 255 }
+text 635 378 { 225, 230, 240, 255 } "band"
+text 582 378 { 150, 160, 178, 255 } "low"
+rect 548 374 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .corner = .{ .high = false, .up = false } }
+text 557 378 { 225, 230, 240, 255 } "-"
+text 490 378 { 225, 230, 240, 255 } "off"
+rect 430 374 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .corner = .{ .high = false, .up = true } }
+text 439 378 { 225, 230, 240, 255 } "+"
+text 382 378 { 150, 160, 178, 255 } "high"
+rect 348 374 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .corner = .{ .high = true, .up = false } }
+text 357 378 { 225, 230, 240, 255 } "-"
+text 274 378 { 225, 230, 240, 255 } "6000 Hz"
+rect 230 374 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .corner = .{ .high = true, .up = true } }
+text 239 378 { 225, 230, 240, 255 } "+"
+text 708 406 { 150, 160, 178, 255 } "rows shown"
+rect 654 402 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 0 }
+text 665 406 { 225, 230, 240, 255 } "1"
+rect 621 402 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 1 }
+text 632 406 { 225, 230, 240, 255 } "2"
+rect 588 402 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 2 }
+text 599 406 { 225, 230, 240, 255 } "3"
+rect 555 402 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 3 }
+text 566 406 { 225, 230, 240, 255 } "4"
+rect 522 402 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 4 }
+text 533 406 { 225, 230, 240, 255 } "5"
+rect 489 402 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 5 }
+text 500 406 { 225, 230, 240, 255 } "6"
+rect 456 402 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 6 }
+text 467 406 { 225, 230, 240, 255 } "7"
+rect 423 402 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 7 }
+text 434 406 { 225, 230, 240, 255 } "8"
+rect 390 402 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 8 }
+text 401 406 { 225, 230, 240, 255 } "9"
+rect 357 402 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 9 }
+text 364 406 { 225, 230, 240, 255 } "10"
+rect 324 402 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 10 }
+text 331 406 { 225, 230, 240, 255 } "11"
+rect 291 402 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 11 }
+text 298 406 { 225, 230, 240, 255 } "12"
+rect 258 402 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 12 }
+text 265 406 { 225, 230, 240, 255 } "13"
+rect 225 402 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 13 }
+text 232 406 { 225, 230, 240, 255 } "14"
+rect 192 402 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 14 }
+text 199 406 { 225, 230, 240, 255 } "15"
+rect 159 402 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_hidden = 15 }
+text 166 406 { 225, 230, 240, 255 } "16"
+text 724 434 { 150, 160, 178, 255 } "filtered"
+rect 654 430 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 0 }
+text 665 434 { 225, 230, 240, 255 } "1"
+rect 621 430 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 1 }
+text 632 434 { 225, 230, 240, 255 } "2"
+rect 588 430 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 2 }
+text 599 434 { 225, 230, 240, 255 } "3"
+rect 555 430 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 3 }
+text 566 434 { 225, 230, 240, 255 } "4"
+rect 522 430 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 4 }
+text 533 434 { 225, 230, 240, 255 } "5"
+rect 489 430 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 5 }
+text 500 434 { 225, 230, 240, 255 } "6"
+rect 456 430 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 6 }
+text 467 434 { 225, 230, 240, 255 } "7"
+rect 423 430 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 7 }
+text 434 434 { 225, 230, 240, 255 } "8"
+rect 390 430 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 8 }
+text 401 434 { 225, 230, 240, 255 } "9"
+rect 357 430 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 9 }
+text 364 434 { 225, 230, 240, 255 } "10"
+rect 324 430 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 10 }
+text 331 434 { 225, 230, 240, 255 } "11"
+rect 291 430 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 11 }
+text 298 434 { 225, 230, 240, 255 } "12"
+rect 258 430 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 12 }
+text 265 434 { 225, 230, 240, 255 } "13"
+rect 225 430 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 13 }
+text 232 434 { 225, 230, 240, 255 } "14"
+rect 192 430 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 14 }
+text 199 434 { 225, 230, 240, 255 } "15"
+rect 159 430 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .row_raw = 15 }
+text 166 434 { 225, 230, 240, 255 } "16"
+text 764 462 { 150, 160, 178, 255 } "CAR"
+rect 682 458 42 24 { 38, 43, 54, 255 } -> panel 1 .{ .car = false }
+text 691 462 { 225, 230, 240, 255 } "off"
+rect 642 458 34 24 { 52, 96, 170, 255 }
+text 651 462 { 225, 230, 240, 255 } "on"
+text 708 490 { 150, 160, 178, 255 } "average of"
+rect 642 486 42 24 { 38, 43, 54, 255 } -> panel 1 .{ .car_ref_all = true }
+text 651 490 { 225, 230, 240, 255 } "all"
+rect 586 486 50 24 { 38, 43, 54, 255 } -> panel 1 .{ .car_ref_all = false }
+text 595 490 { 225, 230, 240, 255 } "none"
+rect 544 486 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 0 }
+text 555 490 { 225, 230, 240, 255 } "1"
+rect 511 486 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 1 }
+text 522 490 { 225, 230, 240, 255 } "2"
+rect 478 486 30 24 { 38, 43, 54, 255 } -> panel 1 .{ .car_ref_row = 2 }
+text 489 490 { 150, 160, 178, 255 } "3"
+rect 445 486 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 3 }
+text 456 490 { 225, 230, 240, 255 } "4"
+rect 412 486 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 4 }
+text 423 490 { 225, 230, 240, 255 } "5"
+rect 379 486 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 5 }
+text 390 490 { 225, 230, 240, 255 } "6"
+rect 346 486 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 6 }
+text 357 490 { 225, 230, 240, 255 } "7"
+rect 313 486 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 7 }
+text 324 490 { 225, 230, 240, 255 } "8"
+rect 280 486 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 8 }
+text 291 490 { 225, 230, 240, 255 } "9"
+rect 247 486 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 9 }
+text 254 490 { 225, 230, 240, 255 } "10"
+rect 214 486 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 10 }
+text 221 490 { 225, 230, 240, 255 } "11"
+rect 181 486 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 11 }
+text 188 490 { 225, 230, 240, 255 } "12"
+rect 148 486 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 12 }
+text 155 490 { 225, 230, 240, 255 } "13"
+rect 115 486 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 13 }
+text 122 490 { 225, 230, 240, 255 } "14"
+rect 82 486 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 14 }
+text 89 490 { 225, 230, 240, 255 } "15"
+rect 49 486 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_ref_row = 15 }
+text 56 490 { 225, 230, 240, 255 } "16"
+text 684 518 { 150, 160, 178, 255 } "subtract from"
+rect 634 514 42 24 { 38, 43, 54, 255 } -> panel 1 .{ .car_sub_all = true }
+text 643 518 { 225, 230, 240, 255 } "all"
+rect 578 514 50 24 { 38, 43, 54, 255 } -> panel 1 .{ .car_sub_all = false }
+text 587 518 { 225, 230, 240, 255 } "none"
+rect 536 514 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 0 }
+text 547 518 { 225, 230, 240, 255 } "1"
+rect 503 514 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 1 }
+text 514 518 { 225, 230, 240, 255 } "2"
+rect 470 514 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 2 }
+text 481 518 { 225, 230, 240, 255 } "3"
+rect 437 514 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 3 }
+text 448 518 { 225, 230, 240, 255 } "4"
+rect 404 514 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 4 }
+text 415 518 { 225, 230, 240, 255 } "5"
+rect 371 514 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 5 }
+text 382 518 { 225, 230, 240, 255 } "6"
+rect 338 514 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 6 }
+text 349 518 { 225, 230, 240, 255 } "7"
+rect 305 514 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 7 }
+text 316 518 { 225, 230, 240, 255 } "8"
+rect 272 514 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 8 }
+text 283 518 { 225, 230, 240, 255 } "9"
+rect 239 514 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 9 }
+text 246 518 { 225, 230, 240, 255 } "10"
+rect 206 514 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 10 }
+text 213 518 { 225, 230, 240, 255 } "11"
+rect 173 514 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 11 }
+text 180 518 { 225, 230, 240, 255 } "12"
+rect 140 514 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 12 }
+text 147 518 { 225, 230, 240, 255 } "13"
+rect 107 514 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 13 }
+text 114 518 { 225, 230, 240, 255 } "14"
+rect 74 514 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 14 }
+text 81 518 { 225, 230, 240, 255 } "15"
+rect 41 514 30 24 { 52, 96, 170, 255 } -> panel 1 .{ .car_sub_row = 15 }
+text 48 518 { 225, 230, 240, 255 } "16"
+rect 12 544 776 1 { 48, 52, 62, 255 }
+text 172 554 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
+== all closed: 507 quads, ends at x 636 y 318
+text 748 14 { 225, 230, 240, 255 } "dimna"
+text 460 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
+text 660 42 { 255, 190, 90, 255 } "disk nearly full"
+text 468 70 { 150, 160, 178, 255 } "display 4.3 ms   144 fps   running 125 s"
+text 268 70 { 255, 190, 90, 255 } "display skipped 3 blocks"
+rect 80 66 90 24 { 52, 96, 170, 255 } -> .{ .save_view = void }
+text 89 70 { 225, 230, 240, 255 } "Save view"
+rect 24 66 50 24 { 38, 43, 54, 255 } -> .{ .quit = void }
+text 33 70 { 225, 230, 240, 255 } "Quit"
+rect 12 96 776 1 { 48, 52, 62, 255 }
+rect 722 102 66 24 { 38, 43, 54, 255 } -> .{ .record = true }
+text 731 106 { 225, 230, 240, 255 } "Record"
+text 612 106 { 150, 160, 178, 255 } "not recording"
+rect 12 132 776 1 { 48, 52, 62, 255 }
+rect 714 138 74 24 { 26, 30, 38, 255 } -> control_view: notes []
+text 723 142 { 225, 230, 240, 255 } "? Notes"
+text 292 142 { 150, 160, 178, 255 } "2 presets   last note 1:02:05  cell 3, 2100 µm"
+rect 12 168 776 1 { 48, 52, 62, 255 }
+rect 714 174 74 24 { 26, 30, 38, 255 } -> control_view: audio []
+text 723 178 { 225, 230, 240, 255 } "? Audio"
+text 316 178 { 150, 160, 178, 255 } "on   -6 dB   listening to A1-5, B1-3   9 ms"
+rect 12 204 776 1 { 48, 52, 62, 255 }
+text 731 214 { 225, 230, 240, 255 } "Spikes"
+text 588 214 { 150, 160, 178, 255 } "threshold"
+rect 554 210 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = false } }
+text 563 214 { 225, 230, 240, 255 } "-"
+text 498 214 { 225, 230, 240, 255 } "4.5 σ"
+rect 456 210 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = true } }
+text 465 214 { 225, 230, 240, 255 } "+"
+text 136 214 { 150, 160, 178, 255 } "below zero, where it follows the noise"
+rect 12 240 776 1 { 48, 52, 62, 255 }
+rect 674 246 114 24 { 26, 30, 38, 255 } -> control_view: headstages []
+text 683 250 { 225, 230, 240, 255 } "? Headstages"
+text 300 250 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.17 Hz"
+rect 12 276 776 1 { 48, 52, 62, 255 }
+rect 706 282 82 24 { 26, 30, 38, 255 } -> control_view: [Port A]
+text 715 286 { 225, 230, 240, 255 } "? Port A"
+text 388 286 { 150, 160, 178, 255 } "scroll   2.00 s   400 µV/row   raw"
+rect 12 312 776 1 { 48, 52, 62, 255 }
+text 172 322 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
+== all closed, recording: Headstages open by itself: 927 quads, ends at x 636 y 570
+text 748 14 { 225, 230, 240, 255 } "dimna"
+text 460 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
+text 660 42 { 255, 190, 90, 255 } "disk nearly full"
+text 468 70 { 150, 160, 178, 255 } "display 4.3 ms   144 fps   running 125 s"
+text 268 70 { 255, 190, 90, 255 } "display skipped 3 blocks"
+text 44 70 { 255, 190, 90, 255 } "ACQUISITION RING OVERFLOW 7"
+rect 634 94 90 24 { 52, 96, 170, 255 } -> .{ .save_view = void }
+text 643 98 { 225, 230, 240, 255 } "Save view"
+rect 578 94 50 24 { 38, 43, 54, 255 } -> .{ .quit = void }
+text 587 98 { 225, 230, 240, 255 } "Quit"
+rect 12 124 776 1 { 48, 52, 62, 255 }
+rect 658 130 130 24 { 52, 96, 170, 255 } -> .{ .record = false }
+text 667 134 { 225, 230, 240, 255 } "Stop recording"
+text 332 134 { 255, 96, 96, 255 } "REC 1:01:01   13.20 GB   109.8 M samples"
+text 164 134 { 255, 190, 90, 255 } "disk is 2.5 s behind"
+text 116 134 { 255, 190, 90, 255 } "1 gap"
+text 660 162 { 150, 160, 178, 255 } "started at 12:00"
+text 588 190 { 150, 160, 178, 255 } "/data/2026-11-12_12-00-00"
+rect 12 216 776 1 { 48, 52, 62, 255 }
+rect 714 222 74 24 { 26, 30, 38, 255 } -> control_view: notes []
+text 723 226 { 225, 230, 240, 255 } "? Notes"
+text 292 226 { 150, 160, 178, 255 } "2 presets   last note 1:02:05  cell 3, 2100 µm"
+rect 12 252 776 1 { 48, 52, 62, 255 }
+rect 714 258 74 24 { 26, 30, 38, 255 } -> control_view: audio []
+text 723 262 { 225, 230, 240, 255 } "? Audio"
+text 316 262 { 150, 160, 178, 255 } "on   -6 dB   listening to A1-5, B1-3   9 ms"
+rect 12 288 776 1 { 48, 52, 62, 255 }
+text 731 298 { 225, 230, 240, 255 } "Spikes"
+text 588 298 { 150, 160, 178, 255 } "threshold"
+rect 554 294 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = false } }
+text 563 298 { 225, 230, 240, 255 } "-"
+text 498 298 { 225, 230, 240, 255 } "4.5 σ"
+rect 456 294 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = true } }
+text 465 298 { 225, 230, 240, 255 } "+"
+text 136 298 { 150, 160, 178, 255 } "below zero, where it follows the noise"
+rect 12 324 776 1 { 48, 52, 62, 255 }
+rect 674 330 114 24 { 26, 30, 38, 255 }
+text 683 334 { 225, 230, 240, 255 } "▾ Headstages"
+text 300 334 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.17 Hz"
+text 156 334 { 255, 190, 90, 255 } "(restart pending)"
+text 540 362 { 150, 160, 178, 255 } "(these change what is recorded)"
+text 676 390 { 150, 160, 178, 255 } "amplifier band"
+text 644 390 { 150, 160, 178, 255 } "low"
+rect 610 386 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
+text 619 390 { 225, 230, 240, 255 } "-"
+text 536 390 { 225, 230, 240, 255 } "0.58 Hz"
+rect 492 386 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
+text 501 390 { 225, 230, 240, 255 } "+"
+text 444 390 { 150, 160, 178, 255 } "high"
+rect 410 386 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
+text 419 390 { 225, 230, 240, 255 } "-"
+text 332 390 { 225, 230, 240, 255 } "7.60 kHz"
+rect 292 386 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
+text 301 390 { 225, 230, 240, 255 } "+"
+text 684 418 { 150, 160, 178, 255 } "DSP high-pass"
+rect 626 414 42 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp = false } }
+text 635 418 { 225, 230, 240, 255 } "off"
+rect 586 414 34 24 { 52, 96, 170, 255 }
+text 595 418 { 225, 230, 240, 255 } "on"
+text 518 418 { 150, 160, 178, 255 } "cutoff"
+rect 484 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp_cutoff = false } }
+text 493 418 { 225, 230, 240, 255 } "-"
+text 410 418 { 225, 230, 240, 255 } "1.17 Hz"
+rect 366 414 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp_cutoff = true } }
+text 375 418 { 225, 230, 240, 255 } "+"
+text 700 446 { 150, 160, 178, 255 } "sample rate"
+rect 642 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .rate = false } }
+text 651 446 { 225, 230, 240, 255 } "-"
+text 564 446 { 225, 230, 240, 255 } "20000 Hz"
+rect 524 442 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .rate = true } }
+text 533 446 { 225, 230, 240, 255 } "+"
+text 492 446 { 150, 160, 178, 255 } "A1"
+rect 426 442 58 24 { 52, 96, 170, 255 }
+text 435 446 { 225, 230, 240, 255 } "32 ch"
+rect 338 442 82 24 { 38, 43, 54, 255 } -> .{ .board = .{ .half = 0 } }
+text 347 446 { 225, 230, 240, 255 } "16 of 32"
+text 268 474 { 255, 190, 90, 255 } "sample rate and channels can change once the recording is stopped"
+rect 650 498 138 24 { 38, 43, 54, 255 } -> .{ .board = .{ .save = void } }
+text 659 502 { 225, 230, 240, 255 } "Save as default"
+text 308 502 { 150, 160, 178, 255 } "these settings differ from the config file"
+rect 12 528 776 1 { 48, 52, 62, 255 }
+rect 706 534 82 24 { 26, 30, 38, 255 } -> control_view: [Port A]
+text 715 538 { 225, 230, 240, 255 } "? Port A"
+text 388 538 { 150, 160, 178, 255 } "scroll   2.00 s   400 µV/row   raw"
+rect 12 564 776 1 { 48, 52, 62, 255 }
+text 172 574 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
+== all closed, Headstages open by itself: restart pending: 694 quads, ends at x 636 y 486
+text 748 14 { 225, 230, 240, 255 } "dimna"
+text 460 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
+text 660 42 { 255, 190, 90, 255 } "disk nearly full"
+text 468 70 { 150, 160, 178, 255 } "display 4.3 ms   144 fps   running 125 s"
+text 268 70 { 255, 190, 90, 255 } "display skipped 3 blocks"
+rect 80 66 90 24 { 52, 96, 170, 255 } -> .{ .save_view = void }
+text 89 70 { 225, 230, 240, 255 } "Save view"
+rect 24 66 50 24 { 38, 43, 54, 255 } -> .{ .quit = void }
+text 33 70 { 225, 230, 240, 255 } "Quit"
+rect 12 96 776 1 { 48, 52, 62, 255 }
+rect 722 102 66 24 { 38, 43, 54, 255 } -> .{ .record = true }
+text 731 106 { 225, 230, 240, 255 } "Record"
+text 612 106 { 150, 160, 178, 255 } "not recording"
+rect 12 132 776 1 { 48, 52, 62, 255 }
+rect 714 138 74 24 { 26, 30, 38, 255 } -> control_view: notes []
+text 723 142 { 225, 230, 240, 255 } "? Notes"
+text 292 142 { 150, 160, 178, 255 } "2 presets   last note 1:02:05  cell 3, 2100 µm"
+rect 12 168 776 1 { 48, 52, 62, 255 }
+rect 714 174 74 24 { 26, 30, 38, 255 } -> control_view: audio []
+text 723 178 { 225, 230, 240, 255 } "? Audio"
+text 540 178 { 150, 160, 178, 255 } "no audio output"
+rect 12 204 776 1 { 48, 52, 62, 255 }
+text 731 214 { 225, 230, 240, 255 } "Spikes"
+text 588 214 { 150, 160, 178, 255 } "threshold"
+rect 554 210 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = false } }
+text 563 214 { 225, 230, 240, 255 } "-"
+text 498 214 { 225, 230, 240, 255 } "4.5 σ"
+rect 456 210 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = true } }
+text 465 214 { 225, 230, 240, 255 } "+"
+text 136 214 { 150, 160, 178, 255 } "below zero, where it follows the noise"
+rect 12 240 776 1 { 48, 52, 62, 255 }
+rect 674 246 114 24 { 26, 30, 38, 255 }
+text 683 250 { 225, 230, 240, 255 } "▾ Headstages"
+text 300 250 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.17 Hz"
+text 156 250 { 255, 190, 90, 255 } "(restart pending)"
+text 540 278 { 150, 160, 178, 255 } "(these change what is recorded)"
+text 676 306 { 150, 160, 178, 255 } "amplifier band"
+text 644 306 { 150, 160, 178, 255 } "low"
+rect 610 302 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
+text 619 306 { 225, 230, 240, 255 } "-"
+text 536 306 { 225, 230, 240, 255 } "0.58 Hz"
+rect 492 302 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
+text 501 306 { 225, 230, 240, 255 } "+"
+text 444 306 { 150, 160, 178, 255 } "high"
+rect 410 302 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
+text 419 306 { 225, 230, 240, 255 } "-"
+text 332 306 { 225, 230, 240, 255 } "7.60 kHz"
+rect 292 302 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
+text 301 306 { 225, 230, 240, 255 } "+"
+text 684 334 { 150, 160, 178, 255 } "DSP high-pass"
+rect 626 330 42 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp = false } }
+text 635 334 { 225, 230, 240, 255 } "off"
+rect 586 330 34 24 { 52, 96, 170, 255 }
+text 595 334 { 225, 230, 240, 255 } "on"
+text 518 334 { 150, 160, 178, 255 } "cutoff"
+rect 484 330 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp_cutoff = false } }
+text 493 334 { 225, 230, 240, 255 } "-"
+text 410 334 { 225, 230, 240, 255 } "1.17 Hz"
+rect 366 330 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp_cutoff = true } }
+text 375 334 { 225, 230, 240, 255 } "+"
+text 700 362 { 150, 160, 178, 255 } "sample rate"
+rect 642 358 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .rate = false } }
+text 651 362 { 225, 230, 240, 255 } "-"
+text 564 362 { 225, 230, 240, 255 } "30000 Hz"
+rect 524 358 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .rate = true } }
+text 533 362 { 225, 230, 240, 255 } "+"
+text 492 362 { 150, 160, 178, 255 } "A1"
+rect 426 358 58 24 { 38, 43, 54, 255 } -> .{ .board = .{ .half = 0 } }
+text 435 362 { 225, 230, 240, 255 } "32 ch"
+rect 338 358 82 24 { 52, 96, 170, 255 }
+text 347 362 { 225, 230, 240, 255 } "16 of 32"
+rect 546 386 242 24 { 52, 96, 170, 255 } -> .{ .board = .{ .apply = void } }
+text 555 390 { 225, 230, 240, 255 } "Apply (restarts acquisition)"
+text 652 418 { 255, 190, 90, 255 } "cannot set 10 kHz"
+rect 12 444 776 1 { 48, 52, 62, 255 }
+rect 706 450 82 24 { 26, 30, 38, 255 } -> control_view: [Port A]
+text 715 454 { 225, 230, 240, 255 } "? Port A"
+text 388 454 { 150, 160, 178, 255 } "scroll   2.00 s   400 µV/row   raw"
+rect 12 480 776 1 { 48, 52, 62, 255 }
+text 172 490 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
+== all closed, Headstages open by itself: settings not the config file's: 788 quads, ends at x 636 y 486
+text 748 14 { 225, 230, 240, 255 } "dimna"
+text 460 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
+text 660 42 { 255, 190, 90, 255 } "disk nearly full"
+text 468 70 { 150, 160, 178, 255 } "display 4.3 ms   144 fps   running 125 s"
+text 268 70 { 255, 190, 90, 255 } "display skipped 3 blocks"
+rect 80 66 90 24 { 52, 96, 170, 255 } -> .{ .save_view = void }
+text 89 70 { 225, 230, 240, 255 } "Save view"
+rect 24 66 50 24 { 38, 43, 54, 255 } -> .{ .quit = void }
+text 33 70 { 225, 230, 240, 255 } "Quit"
+rect 12 96 776 1 { 48, 52, 62, 255 }
+rect 722 102 66 24 { 38, 43, 54, 255 } -> .{ .record = true }
+text 731 106 { 225, 230, 240, 255 } "Record"
+text 612 106 { 150, 160, 178, 255 } "not recording"
+rect 12 132 776 1 { 48, 52, 62, 255 }
+rect 714 138 74 24 { 26, 30, 38, 255 } -> control_view: notes []
+text 723 142 { 225, 230, 240, 255 } "? Notes"
+text 292 142 { 150, 160, 178, 255 } "2 presets   last note 1:02:05  cell 3, 2100 µm"
+rect 12 168 776 1 { 48, 52, 62, 255 }
+rect 714 174 74 24 { 26, 30, 38, 255 } -> control_view: audio []
+text 723 178 { 225, 230, 240, 255 } "? Audio"
+text 316 178 { 150, 160, 178, 255 } "on   -6 dB   listening to A1-5, B1-3   9 ms"
+rect 12 204 776 1 { 48, 52, 62, 255 }
+text 731 214 { 225, 230, 240, 255 } "Spikes"
+text 588 214 { 150, 160, 178, 255 } "threshold"
+rect 554 210 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = false } }
+text 563 214 { 225, 230, 240, 255 } "-"
+text 498 214 { 225, 230, 240, 255 } "4.5 σ"
+rect 456 210 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = true } }
+text 465 214 { 225, 230, 240, 255 } "+"
+text 136 214 { 150, 160, 178, 255 } "below zero, where it follows the noise"
+rect 12 240 776 1 { 48, 52, 62, 255 }
+rect 674 246 114 24 { 26, 30, 38, 255 }
+text 683 250 { 225, 230, 240, 255 } "▾ Headstages"
+text 300 250 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.17 Hz"
+text 116 250 { 255, 190, 90, 255 } "(not saved as default)"
+text 540 278 { 150, 160, 178, 255 } "(these change what is recorded)"
+text 676 306 { 150, 160, 178, 255 } "amplifier band"
+text 644 306 { 150, 160, 178, 255 } "low"
+rect 610 302 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = false } }
+text 619 306 { 225, 230, 240, 255 } "-"
+text 536 306 { 225, 230, 240, 255 } "0.58 Hz"
+rect 492 302 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .lower = true } }
+text 501 306 { 225, 230, 240, 255 } "+"
+text 444 306 { 150, 160, 178, 255 } "high"
+rect 410 302 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = false } }
+text 419 306 { 225, 230, 240, 255 } "-"
+text 332 306 { 225, 230, 240, 255 } "7.60 kHz"
+rect 292 302 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .upper = true } }
+text 301 306 { 225, 230, 240, 255 } "+"
+text 684 334 { 150, 160, 178, 255 } "DSP high-pass"
+rect 626 330 42 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp = false } }
+text 635 334 { 225, 230, 240, 255 } "off"
+rect 586 330 34 24 { 52, 96, 170, 255 }
+text 595 334 { 225, 230, 240, 255 } "on"
+text 518 334 { 150, 160, 178, 255 } "cutoff"
+rect 484 330 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp_cutoff = false } }
+text 493 334 { 225, 230, 240, 255 } "-"
+text 410 334 { 225, 230, 240, 255 } "1.17 Hz"
+rect 366 330 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .dsp_cutoff = true } }
+text 375 334 { 225, 230, 240, 255 } "+"
+text 700 362 { 150, 160, 178, 255 } "sample rate"
+rect 642 358 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .rate = false } }
+text 651 362 { 225, 230, 240, 255 } "-"
+text 564 362 { 225, 230, 240, 255 } "30000 Hz"
+rect 524 358 26 24 { 38, 43, 54, 255 } -> .{ .board = .{ .rate = true } }
+text 533 362 { 225, 230, 240, 255 } "+"
+text 492 362 { 150, 160, 178, 255 } "A1"
+rect 426 358 58 24 { 52, 96, 170, 255 }
+text 435 362 { 225, 230, 240, 255 } "32 ch"
+rect 338 358 82 24 { 38, 43, 54, 255 } -> .{ .board = .{ .half = 0 } }
+text 347 362 { 225, 230, 240, 255 } "16 of 32"
+rect 650 386 138 24 { 38, 43, 54, 255 } -> .{ .board = .{ .save = void } }
+text 659 390 { 225, 230, 240, 255 } "Save as default"
+text 308 390 { 150, 160, 178, 255 } "these settings differ from the config file"
+text 396 418 { 255, 190, 90, 255 } "view saved to /home/user/.config/dimna/views.toml"
+rect 12 444 776 1 { 48, 52, 62, 255 }
+rect 706 450 82 24 { 26, 30, 38, 255 } -> control_view: [Port A]
+text 715 454 { 225, 230, 240, 255 } "? Port A"
+text 388 454 { 150, 160, 178, 255 } "scroll   2.00 s   400 µV/row   raw"
+rect 12 480 776 1 { 48, 52, 62, 255 }
+text 172 490 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
+== AUX open of four panels: 676 quads, ends at x 636 y 454
+text 748 14 { 225, 230, 240, 255 } "dimna"
+text 460 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
+text 724 42 { 150, 160, 178, 255 } "starting"
+rect 80 38 90 24 { 52, 96, 170, 255 } -> .{ .save_view = void }
+text 89 42 { 225, 230, 240, 255 } "Save view"
+rect 24 38 50 24 { 38, 43, 54, 255 } -> .{ .quit = void }
+text 33 42 { 225, 230, 240, 255 } "Quit"
+rect 12 68 776 1 { 48, 52, 62, 255 }
+text 604 78 { 150, 160, 178, 255 } "finishing the recording"
+text 324 78 { 255, 96, 96, 255 } "REC 0:00   0.00 GB   0.0 M samples"
+rect 12 104 776 1 { 48, 52, 62, 255 }
+rect 714 110 74 24 { 26, 30, 38, 255 } -> control_view: notes [AUX]
+text 723 114 { 225, 230, 240, 255 } "? Notes"
+text 292 114 { 150, 160, 178, 255 } "2 presets   last note 1:02:05  cell 3, 2100 µm"
+rect 12 140 776 1 { 48, 52, 62, 255 }
+rect 714 146 74 24 { 26, 30, 38, 255 } -> control_view: audio [AUX]
+text 723 150 { 225, 230, 240, 255 } "? Audio"
+text 396 150 { 150, 160, 178, 255 } "on   -6 dB   listening to nothing"
+rect 12 176 776 1 { 48, 52, 62, 255 }
+text 731 186 { 225, 230, 240, 255 } "Spikes"
+text 588 186 { 150, 160, 178, 255 } "threshold"
+rect 554 182 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = false } }
+text 563 186 { 225, 230, 240, 255 } "-"
+text 498 186 { 225, 230, 240, 255 } "4.5 σ"
+rect 456 182 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = true } }
+text 465 186 { 225, 230, 240, 255 } "+"
+text 136 186 { 150, 160, 178, 255 } "below zero, where it follows the noise"
+rect 12 212 776 1 { 48, 52, 62, 255 }
+rect 674 218 114 24 { 26, 30, 38, 255 } -> control_view: headstages [AUX]
+text 683 222 { 225, 230, 240, 255 } "? Headstages"
+text 300 222 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP on, 1.17 Hz"
+rect 12 248 776 1 { 48, 52, 62, 255 }
+rect 706 254 82 24 { 26, 30, 38, 255 } -> control_view: [AUX, Port C]
+text 715 258 { 225, 230, 240, 255 } "? Port C"
+text 132 258 { 150, 160, 178, 255 } "triggered   -10.0 / +40.0 ms   400 µV/row   raw   on spikes, row 1"
+rect 12 284 776 1 { 48, 52, 62, 255 }
+rect 730 290 58 24 { 26, 30, 38, 255 } -> control_view: []
+text 739 294 { 225, 230, 240, 255 } "▾ AUX"
+text 436 294 { 150, 160, 178, 255 } "scroll   2.00 s   1.00 V/row"
+rect 20 290 58 24 { 38, 43, 54, 255 } -> panel 1 .{ .reset = void }
+text 29 294 { 225, 230, 240, 255 } "reset"
+text 756 322 { 150, 160, 178, 255 } "view"
+rect 658 318 66 24 { 52, 96, 170, 255 }
+text 667 322 { 225, 230, 240, 255 } "scroll"
+rect 594 318 58 24 { 38, 43, 54, 255 } -> panel 1 .{ .mode = .sweep }
+text 603 322 { 225, 230, 240, 255 } "sweep"
+rect 498 318 90 24 { 38, 43, 54, 255 } -> panel 1 .{ .mode = .triggered }
+text 507 322 { 225, 230, 240, 255 } "triggered"
+text 446 322 { 150, 160, 178, 255 } "time"
+rect 412 318 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .zoom = 0.8 }
+text 421 322 { 225, 230, 240, 255 } "-"
+text 317 322 { 225, 230, 240, 255 } "2.00 s"
+rect 244 318 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .zoom = 1.25 }
+text 253 322 { 225, 230, 240, 255 } "+"
+text 684 350 { 150, 160, 178, 255 } "scale"
+rect 650 346 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .scale = 0.8 }
+text 659 350 { 225, 230, 240, 255 } "-"
+text 549 350 { 225, 230, 240, 255 } "1.00 V/row"
+rect 502 346 26 24 { 38, 43, 54, 255 } -> panel 1 .{ .scale = 1.25 }
+text 511 350 { 225, 230, 240, 255 } "+"
+rect 12 376 776 1 { 48, 52, 62, 255 }
+rect 730 382 58 24 { 26, 30, 38, 255 } -> control_view: [AUX, ADC]
+text 739 386 { 225, 230, 240, 255 } "? ADC"
+text 436 386 { 150, 160, 178, 255 } "scroll   2.00 s   250 mV/row"
+rect 12 412 776 1 { 48, 52, 62, 255 }
+rect 730 418 58 24 { 26, 30, 38, 255 } -> control_view: [AUX, TTL]
+text 739 422 { 225, 230, 240, 255 } "? TTL"
+text 348 422 { 150, 160, 178, 255 } "triggered   -10.0 / +40.0 ms   on TTL 2"
+rect 12 448 776 1 { 48, 52, 62, 255 }
+text 172 458 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
+== panel summaries: triggered, filtered, TTL: 619 quads, ends at x 636 y 390
+text 748 14 { 225, 230, 240, 255 } "dimna"
+text 460 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
+text 660 42 { 255, 190, 90, 255 } "disk nearly full"
+text 468 70 { 150, 160, 178, 255 } "display 4.3 ms   144 fps   running 125 s"
+text 268 70 { 255, 190, 90, 255 } "display skipped 3 blocks"
+rect 80 66 90 24 { 52, 96, 170, 255 } -> .{ .save_view = void }
+text 89 70 { 225, 230, 240, 255 } "Save view"
+rect 24 66 50 24 { 38, 43, 54, 255 } -> .{ .quit = void }
+text 33 70 { 225, 230, 240, 255 } "Quit"
+rect 12 96 776 1 { 48, 52, 62, 255 }
+rect 722 102 66 24 { 38, 43, 54, 255 } -> .{ .record = true }
+text 731 106 { 225, 230, 240, 255 } "Record"
+text 612 106 { 150, 160, 178, 255 } "not recording"
+rect 12 132 776 1 { 48, 52, 62, 255 }
+rect 714 138 74 24 { 26, 30, 38, 255 } -> control_view: notes []
+text 723 142 { 225, 230, 240, 255 } "? Notes"
+text 476 142 { 150, 160, 178, 255 } "1 preset   no notes yet"
+rect 12 168 776 1 { 48, 52, 62, 255 }
+rect 714 174 74 24 { 26, 30, 38, 255 } -> control_view: audio []
+text 723 178 { 225, 230, 240, 255 } "? Audio"
+text 516 178 { 150, 160, 178, 255 } "off, muted   -6 dB"
+rect 12 204 776 1 { 48, 52, 62, 255 }
+text 731 214 { 225, 230, 240, 255 } "Spikes"
+text 588 214 { 150, 160, 178, 255 } "threshold"
+rect 554 210 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = false } }
+text 563 214 { 225, 230, 240, 255 } "-"
+text 498 214 { 225, 230, 240, 255 } "4.5 σ"
+rect 456 210 26 24 { 38, 43, 54, 255 } -> .{ .threshold = .{ .sigmas = true } }
+text 465 214 { 225, 230, 240, 255 } "+"
+text 136 214 { 150, 160, 178, 255 } "below zero, where it follows the noise"
+rect 12 240 776 1 { 48, 52, 62, 255 }
+rect 674 246 114 24 { 26, 30, 38, 255 } -> control_view: headstages []
+text 683 250 { 225, 230, 240, 255 } "? Headstages"
+text 252 250 { 150, 160, 178, 255 } "30000 Hz   0.58 Hz–7.60 kHz   DSP off   A1 16 of 32"
+rect 12 276 776 1 { 48, 52, 62, 255 }
+rect 706 282 82 24 { 26, 30, 38, 255 } -> control_view: [Port A]
+text 715 286 { 225, 230, 240, 255 } "? Port A"
+text 44 286 { 150, 160, 178, 255 } "triggered   -1.0 / +2.0 ms   400 µV/row   band 300–6000 Hz   on spikes, row 5"
+rect 12 312 776 1 { 48, 52, 62, 255 }
+rect 706 318 82 24 { 26, 30, 38, 255 } -> control_view: [Port B]
+text 715 322 { 225, 230, 240, 255 } "? Port B"
+text 220 322 { 150, 160, 178, 255 } "scroll   2.00 s   400 µV/row   band below 6000 Hz   CAR"
+rect 12 348 776 1 { 48, 52, 62, 255 }
+rect 730 354 58 24 { 26, 30, 38, 255 } -> control_view: [TTL]
+text 739 358 { 225, 230, 240, 255 } "? TTL"
+text 348 358 { 150, 160, 178, 255 } "triggered   -10.0 / +40.0 ms   on TTL 3"
+rect 12 384 776 1 { 48, 52, 62, 255 }
+text 172 394 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
