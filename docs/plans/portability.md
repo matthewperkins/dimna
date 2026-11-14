@@ -402,3 +402,195 @@ inferred from musl's static `dlopen` being a stub, not run with any `--driver`.
 **Not covered:** running anything on another distribution (that needs downloads and root,
 in the owner's `systemd-nspawn` plan); the musl GUI at all; `--driver d3xx` from either
 release; the board (rules); reproducible tarballs; any architecture other than x86_64.
+
+## Report: step 4
+
+Branch `worktree-agent-a53cfc3857095109f`; commits `e829ffd` (packaging, workflow,
+`build.zig` staging) and a second one with the docs and this report. Files: new
+`packaging/{60-dimna-ft60x.rules, 99-dimna-realtime.conf, dimna.desktop,
+dimna-desktop-launch.sh, install-user.sh, nfpm.yaml, package-postinstall.sh,
+package-postremove.sh, make-packages.sh, ci-build.sh, ci-test-install.sh, get-zig.sh}`, new
+`.github/workflows/release.yml`; `build.zig` (only `release_packaging` and one more staged
+file, `tools/dimna_read.py`); `docs/install.md`, `README.md`, this report. Nothing was changed
+in `build.zig` for Rocky: whether it needs a change is for the first run to show.
+
+**What was built.**
+- The udev rule: the rig's seven product IDs (601e 601f 602a 602b 602c 602d 602f), each
+  `GROUP="dimna", MODE="0660", TAG+="uaccess"`, with a comment on who gets access. The
+  limits file: `@realtime - rtprio 80`, `@realtime - memlock unlimited`.
+- The menu entry `packaging/dimna.desktop` (app ID and icon name `dimna`, as before) runs
+  `/usr/libexec/dimna/dimna-desktop-launch /usr/bin/dimna`: a launcher that keeps the log in
+  `~/.local/state/dimna/dimna.log`, as `dimna-launch.sh` did. Its "simulated board" action
+  uses `/usr/share/dimna/sim-config`. `install-user.sh` writes the same file with the
+  unpacked paths, quoted (a path containing `" ' \` $ \ % | &` or a newline is refused, not
+  escaped).
+- `nfpm.yaml` is run from inside the unpacked glibc release folder (`make-packages.sh`), so
+  every `src` is a path in the release. Version `${DIMNA_VERSION}`: for a tag, the tag must be
+  `v` + `build.zig.zon`'s version or packaging fails; otherwise `<version>-dev.g<commit>`.
+  Dependencies, `.deb`: `libc6 (>= 2.34)`, `libwayland-client0`, `libvulkan1`, `libfreetype6`,
+  `libfontconfig1`, `libxkbcommon0`, `libasound2 | libasound2t64`, `passwd`; `.rpm`: by
+  soname (`libwayland-client.so.0()(64bit)` and so on, `libc.so.6(GLIBC_2.34)(64bit)`), which
+  is what rpm records for the libraries whatever the package is called, plus `Requires(post)`
+  `shadow-utils` and `glibc-common` (groupadd, getent). Suggests: HarfBuzz, FriBidi, fonts.
+- Package scripts: post-install creates the system groups `dimna` and `realtime` if missing,
+  then, only if udevd runs (`/run/udev/control` is a socket), `udevadm control
+  --reload-rules` and `udevadm trigger --subsystem-match=usb --attr-match=idVendor=0403
+  --action=change`, and prints the `usermod` line. Post-remove only reloads the rules.
+  Nobody is added to a group; no group is deleted.
+- `install-user.sh` replaces `install-desktop.sh`/`dimna-launch.sh` in the tarball.
+  `install-desktop.sh` and `dimna-launch.sh` **stay in the repo** for checkout users: they
+  point at `zig-out/bin`, which a rebuild updates in place, and `install-desktop.sh` takes a
+  config folder (the rig's launcher uses one), which the tarball helper does not need.
+- `ci-test-install.sh`: `run BINDIR` and `tarball FILE` (no root, runnable anywhere),
+  `package DIR` (root, container), `xbps-libs` (Void). `ci-build.sh`: the build job.
+  `get-zig.sh`: written and read, **not run**.
+- The workflow, as the plan's "Release workflow": `build` in `rockylinux/rockylinux:9` (the
+  maintained image; Docker Hub's `library/rockylinux:9` was last updated 2024-05-30),
+  `test-package` (matrix of the six images), `test-musl` (`docker run` of
+  `ghcr.io/void-linux/void-musl:latest`: JavaScript actions cannot run inside a musl
+  container, so checkout and download happen on the runner), `release` (tag only,
+  `contents: write`, `gh release create --draft` with `SHA256SUMS`). Top-level
+  `permissions: contents: read`; only `github.token`; no `secrets.`.
+
+**Looked up (2026-11-14), and how.**
+- Zig 0.17.1 x86_64-linux sha256 `3581863e...b17a` from `ziglang.org/download/index.json`.
+  Zig's minisign key `RWSGOq2NVecA2UPNdBUZykf1CCb147pkmdtYxgb3Ti+JO/wCYvhbAb/U` from
+  `ziglang.org/download/` (the only such key on the page; the 0.17.1 `.minisig`'s key id
+  matches). Its trusted comment is tab-separated (`timestamp:...<TAB>file:zig-...tar.xz<TAB>hashed`);
+  `get-zig.sh`'s file-name check, run on that real `.minisig` text, accepts
+  `zig-x86_64-linux-0.17.1.tar.xz` and refuses 0.17 and 0.16.0.
+- nfpm **2.48.0** (2026-10-12; 2.49.0 is two days old, so not taken), `Linux_x86_64.tar.gz`
+  sha256 `6d7f9a28...1750` from the release's `checksums.txt`.
+- Action SHAs from the GitHub API, each cross-checked against the repository's tag list:
+  `actions/checkout` v7.0.1 `3d3c42e5aac5ba805825da76410c181273ba90b1`,
+  `actions/upload-artifact` v7.0.2 `cf430e030ddbb5b0abf93d22962f4752f3646cd9`,
+  `actions/download-artifact` v8.0.2 `9000827ccba6bdab643e8b6fd33ac0654aef8333`.
+  No placeholders are left.
+- `.deb` names via Debian's and Ubuntu's madison (bookworm, trixie, jammy, noble): every
+  runtime library name above exists in all four; only ALSA is renamed (`libasound2` in
+  bookworm and jammy, `libasound2t64` in trixie and noble). `libharfbuzz0b`, `libfribidi0`,
+  `fonts-noto-cjk`, `fonts-noto-core` (its file list has `NotoSansArabic-Regular.ttf`) are in
+  all four; `fonts-vazirmatn` only in trixie. The `-dev` names in docs/install.md are in all
+  four.
+- Rocky 9: every `-devel` the build installs is in **AppStream** (directory listing of
+  `dl.rockylinux.org/pub/rocky/9/AppStream`; none of them in CRB), so CRB is not enabled.
+  Runtime packages there: libwayland-client, vulkan-loader, libxkbcommon 1.0.3, alsa-lib
+  (AppStream), freetype (BaseOS); also `python3.11-numpy`, `google-noto-sans-cjk-ttc-fonts`.
+- Fedora (packages.fedoraproject.org): the six `-devel` names, `google-noto-sans-arabic-fonts`,
+  `minisign`. openSUSE Tumbleweed (repository listing): `wayland-devel vulkan-devel
+  freetype2-devel fontconfig-devel libxkbcommon-devel alsa-devel pkgconf-pkg-config`. Void
+  (void-packages templates): the six `-devel` names are subpackages of the six libraries;
+  `minisign`. Gentoo and Arch: the package pages exist (HTTP 200).
+- **Not confirmed:** Fedora's CJK font package name (the rpm suggests Rocky's
+  `google-noto-sans-cjk-ttc-fonts`); a Noto Arabic font package on Rocky 9; openSUSE Leap;
+  the Void base image's contents (whether `sed`, `grep`, `cksum`, `mktemp` are in
+  `void-musl`).
+
+**Evidence** (scratch under `/tmp/dimna-step4-573344`, removed at the end).
+- `udevadm verify` on the rule: the only complaint, seven times, is `Failed to resolve group
+  'dimna', ignoring: Unknown group` (there is no dimna group here); with `GROUP="users"`:
+  `Success: 1`; with `==` broken to `=`: `Fail: 1`. So the group must exist when udev loads
+  the rule, which is why the post-install creates the groups before it reloads. The ID lines,
+  with `GROUP="dimna", MODE="0660"` replaced by `MODE="0666"`, are byte-identical to the rig's
+  rule (`cmp`); the limits lines to the rig's `99-oers-realtime.conf`.
+- `nfpm.yaml` parses (PyYAML 6.0.3); all 26 `src` and script paths exist in the unpacked
+  `dimna-0.0.0-x86_64-linux-gnu/`, no duplicate `dst`. Broken: `tools/dimna_read.py` removed
+  from a copy: `MISSING tools/dimna_read.py`, exit 1. **nfpm itself was not run** (not
+  installed, no downloads): the first workflow run is its first run.
+- The workflow parses; a script reports the triggers `push: tags v*` and `workflow_dispatch`,
+  `permissions: contents: read` (the release job `contents: write`), 7 `uses:`, all pinned to
+  40-hex SHAs with a `# v` comment, no `secrets.`. Broken: `actions/checkout@v7` in a copy:
+  reported, exit 1. **actionlint is not installed**, so not run. shellcheck and dash are not
+  installed either: every script passed `bash --posix -n` only.
+- Tarball file list (`tar -tvzf`, gnu; musl the same with its binaries): `BUILD-INFO`,
+  `CHECK`, `COMMIT`, `README.md`, `bin/dimna`, `bin/dimna-headless`, `licenses/` (the 5 files
+  as before), `packaging/`: `60-dimna-ft60x.rules`, `99-dimna-realtime.conf`,
+  `ci-test-install.sh` (755), `dimna-desktop-launch.sh` (755), `dimna.desktop`, `icon/`
+  (`ICON-CREDITS.md`, 5 png, svg), `install-user.sh` (755), `nfpm.yaml`,
+  `package-postinstall.sh` (755), `package-postremove.sh` (755), `sim-config/dimna/config.toml`;
+  and `tools/dimna_read.py`. `install-desktop.sh` and `dimna-launch.sh` are gone;
+  `check-release.sh` stays out, as before. `CHECK` is as in step 3 (same NEEDED lists,
+  GLIBC 2.34 / none).
+- `ci-test-install.sh tarball dimna-0.0.0-x86_64-linux-gnu.tar.gz` with
+  `DIMNA_REQUIRE_READER=1`: `dimna --help: 73 lines, exit status 0`, `ldd: every library and
+  symbol found`, headless `CLEAN`, `recording: 48 channels, 150048 samples in 50 chunks, 26
+  TTL edges; sizes consistent, no gaps`, dimna_read.py `OK`, `PASS: tarball`. The musl tarball
+  with `--headless-only`: `150048 samples ... OK`, `PASS`. The musl `dimna --help` here:
+  `cannot execute: required file not found`, `FAIL ... status 127` (no musl loader on this
+  machine, as expected). No `/tmp/dimna-ci-*` folder was left behind.
+- Broken on purpose (a `dimna-headless` wrapper that runs the real one, then damages the
+  recording; each run exit 1): `samples.i16` truncated by 2 bytes: `samples.i16 is 14401534
+  bytes, [final] says 14401536`; `[final]` deleted: `meta.toml has no [final]`;
+  `ttl_word.u16` deleted: `the recording has no ttl_word.u16`; 4 s instead of 5: `120032
+  samples, expected 150000 ... within 2 %`; wrapper exiting 1: `dimna-headless exited with
+  status 1`; one byte of `samples.i16` overwritten: only the reader catches it (`PROBLEM:
+  chunk 3: CRC mismatch`, `dimna_read.py found problems`); with no Python the same damage
+  **passes** (`reader check skipped`), and with `DIMNA_REQUIRE_READER=1` it fails (`no reader
+  check`). Hence the package test requires the reader everywhere except Ubuntu 22.04
+  (Python 3.10, no `tomllib`). A `dimna` exiting 127: `dimna --help exited with status 127`.
+  A test program that runs (lazy binding) but whose library lacks a symbol it uses:
+  `undefined symbol: g`, `ldd: a library or symbol of dimna is missing`, which is what an
+  older library on Rocky would look like.
+- `install-user.sh` with `HOME` under the scratch folder and `XDG_*` empty: installed
+  `.local/share/applications/dimna.desktop` (plus `mimeinfo.cache`, `intent.cache` from
+  `update-desktop-database`), the five png and the svg under `icons/hicolor`, `index.theme`,
+  `icon-theme.cache`; `desktop-file-validate` passes on it and on `packaging/dimna.desktop`. It
+  printed the four root steps and the checks: `ok board (0403:601e) at /dev/bus/usb/002/002:
+  readable and writable` (the board is plugged in here; the node was only tested with
+  `[ -r ] && [ -w ]`, never opened), `ulimit -r` 80, `ulimit -l` unlimited, both fonts,
+  HarfBuzz, FriBidi, Wayland: `Nothing needs doing.` From a folder with a space in its name:
+  works, valid entry. From a folder with `'`: refused, exit 1.
+- `install-user.sh --check` broken on purpose: `FONTCONFIG_FILE` with no font folders,
+  `ulimit -r 10`, `ulimit -l 64`, no `WAYLAND_DISPLAY`, and a fake sysfs (`DIMNA_SYSFS_USB`)
+  with a 601f on a node that does not exist: four `TODO`s (board not accessible, rtprio 10 <
+  70, memlock 64 KiB, no Wayland), two font `note`s naming the languages and packages, `4
+  check(s) need action`, exit 1. A fake sysfs with only an FTDI serial adapter (6001): `note
+  no board plugged in`.
+- Post-install and post-remove in `bwrap` as user-namespace root, with a copy of `/etc/group`
+  bound over `/etc` and a tmpfs over `/run` (the real udev unreachable): created `dimna`
+  (`realtime` existed), a second run created nothing (idempotent), post-remove left both
+  groups. With a fake `/run/udev/control` socket and a fake `udevadm` first on `PATH`: it
+  called `control --reload-rules`, `trigger --subsystem-match=usb --attr-match=idVendor=0403
+  --action=change`, and on remove `control --reload-rules`.
+- `zig build test --summary all`: `22/22 steps succeeded; 273/275 tests passed (2 skipped)`
+  (133; 139 + 2 skipped; shader-check 1). The output also showed two `failed command:` lines
+  (the test and gui-test binaries) although both steps passed; run directly they print `All
+  133 tests passed.` and `139 passed; 2 skipped; 0 failed.` I took the lines as the runner
+  echoing commands whose tests wrote to stderr, not as failures. `zig fmt --check src
+  build.zig` printed nothing.
+
+**Only the first workflow run can confirm:**
+- that `build.zig`'s system-path handling finds Rocky 9's libraries and `.pc` files
+  (`/usr/lib64`, pkgconf), and that dimna compiles against Rocky's older headers (libxkbcommon
+  1.0.3, freetype 2.10.4, wayland 1.21): a function newer than those fails at compile time
+  there, or in the Rocky test's `ldd -r`;
+- the Rocky `dnf install` line (`curl-minimal` in the image, the package names), `git
+  describe` in the container (`safe.directory`), and the nfpm tarball's layout (`nfpm` at its
+  top);
+- nfpm: the `${DIMNA_VERSION}` expansion, the `-dev.g<sha>` prerelease becoming `~dev...` in
+  the `.deb`, `requires.post`, `suggests`, the `dir` entries, and the file names the tests glob
+  for (`dimna_*_amd64.deb`, `dimna-*.x86_64.rpm`);
+- that every dependency resolves on each of the six images, the post-install's groupadd in
+  each, that `apt purge` / `dnf remove` leave none of the files, and the `desktop-file-utils`
+  and Python/numpy installs (`python3.11-numpy` on Rocky);
+- the Void image (`ghcr.io/void-linux/void-musl:latest`; its tags exist in the registry)
+  having the tools the script uses, and the musl GUI's first run ever (`xbps-libs`, then
+  `dimna --help`; `continue-on-error` until it has passed once);
+- `gh release create --draft --verify-tag` on the runner.
+
+**Open, for the owner:**
+- `license:` in `nfpm.yaml` is a placeholder (`LicenseRef-dimna-no-licence-yet`) until dimna
+  has a licence; `maintainer:` is the commit identity I was given; `homepage:` is the
+  `origin` URL.
+- The simulator action's `XDG_CONFIG_HOME` is read-only in the package
+  (`/usr/share/dimna/sim-config`), so "Save view" cannot write there; the checkout's and the
+  tarball's entries point at a writable folder.
+- The trigger re-applies rules to every FTDI (0403) USB device, a serial adapter too, not just
+  the board: harmless (a `change` uevent), but wider than the board's product IDs.
+- An existing `/etc/udev/rules.d/60-open-ephys-ft600.rules` (as on the rig) still sets
+  `MODE="0666"` after ours; docs/install.md and install-user.sh say to remove it.
+
+**Not covered / not run:** nfpm, apt, dnf and any container (the package mode),
+`get-zig.sh`'s download and `minisign`, actionlint, shellcheck, dash, the GUI (only `dimna
+--help`), the board (only its sysfs entries were read and its node `test -r/-w`ed), openSUSE,
+Gentoo and Arch packages.

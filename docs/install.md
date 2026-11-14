@@ -1,13 +1,123 @@
-# Building dimna, reaching the board, and the headless tool
+# Installing and building dimna, reaching the board, and the headless tool
 
 [Back to the README](../README.md)
 
-## Build
+## Installing a release
 
-Zig 0.17.1 (pinned in `build.zig.zon`).
+Releases are on the repository's GitHub release page: a `.deb`, an `.rpm`, two tarballs and
+`SHA256SUMS`. They are made by the release workflow (`.github/workflows/release.yml`, below
+under "Release build"), never by hand. All are x86_64 only.
 
-    zig build --release=safe     # zig-out/bin/dimna-headless (safety checks stay on)
-    zig build test               # unit tests: the core (src/root.zig) and the GUI (src/gui/tests.zig)
+| file | for |
+|---|---|
+| `dimna_<version>-1_amd64.deb` | Debian 12 and 13, Ubuntu 22.04 and 24.04, and newer |
+| `dimna-<version>-1.x86_64.rpm` | Rocky, Alma and RHEL 9, Fedora |
+| `dimna-<version>-x86_64-linux-gnu.tar.gz` | any other glibc distribution (glibc 2.34 or newer) |
+| `dimna-<version>-x86_64-linux-musl.tar.gz` | Void musl (see "musl" below) |
+
+Check a download with `sha256sum -c --ignore-missing SHA256SUMS`.
+
+### The .deb or .rpm
+
+    sudo apt install ./dimna_<version>-1_amd64.deb      # Debian, Ubuntu
+    sudo dnf install ./dimna-<version>-1.x86_64.rpm     # Rocky, Alma, RHEL, Fedora
+
+apt or dnf installs the libraries dimna needs from the distribution's own repositories (the
+Wayland client library, the Vulkan loader, FreeType, fontconfig, xkbcommon, ALSA). The
+package installs:
+
+| where | what |
+|---|---|
+| `/usr/bin/dimna`, `/usr/bin/dimna-headless` | the programs |
+| `/usr/lib/udev/rules.d/60-dimna-ft60x.rules` | the board's udev rule (below) |
+| `/etc/security/limits.d/99-dimna-realtime.conf` | real-time priority 80 and unlimited locked memory for the `realtime` group |
+| `/usr/share/applications/dimna.desktop`, `/usr/share/icons/hicolor/*/apps/dimna.*` | the menu entry (with a "simulated board" action) and the icon |
+| `/usr/libexec/dimna/dimna-desktop-launch` | what the menu entry runs: `/usr/bin/dimna`, its output appended to `~/.local/state/dimna/dimna.log` |
+| `/usr/share/dimna/` | the simulator action's config; `tools/dimna_read.py`, the reference reader |
+| `/usr/share/doc/dimna/` | README, licences, the build's `BUILD-INFO`, `COMMIT` and `CHECK` |
+
+After installing, it creates the system groups `dimna` and `realtime` if they are missing,
+reloads udev's rules and re-applies them to USB devices of vendor 0403 (FTDI) only. It
+**never adds anyone to a group**. Who may open the board, per the udev rule:
+
+- whoever has the **active local session** (logged in at the machine), while it is active,
+  including programs they start over SSH or a VNC that shares that desktop (udev's
+  `uaccess`);
+- members of the **`dimna` group**, at any time, also with nobody logged in at the machine
+  (e.g. remotely after a reboot). The device node is root's, mode 0660; nobody else.
+
+To record with real-time priority you must be in `realtime`; to reach the board without a
+local session, in `dimna`. Add yourself to both, then **log out and in** (group membership
+and limits are read at login):
+
+    sudo usermod -aG dimna,realtime $USER
+
+Then check, after logging in again: `ulimit -r` prints 80, `ulimit -l` prints `unlimited`.
+An older rule for the same board (an Open Ephys install's `/etc/udev/rules.d/*ft600*.rules`
+with `MODE="0666"`) still applies alongside; remove it if only the `dimna` group should reach
+the board.
+
+Removing the package (`sudo apt purge dimna` or `sudo dnf remove dimna`) removes every file
+above. The groups stay, with their members: other programs may use them.
+
+### A tarball
+
+Unpack it anywhere (no root) and run `bin/dimna` or `bin/dimna-headless`. The machine needs
+the same libraries as above (not their development files). Then:
+
+    dimna-<version>-x86_64-linux-gnu/packaging/install-user.sh
+
+installs the menu entry and icon for you (`~/.local/share/applications/dimna.desktop`,
+`~/.local/share/icons/hicolor`), pointing at this unpacked folder (move it and run the script
+again). It does not use root: it **prints** the root steps for you to read and run (the two
+groups, the udev rule into `/etc/udev/rules.d/`, the limits file into
+`/etc/security/limits.d/`, `usermod`). It ends with checks, which
+`install-user.sh --check` runs alone (exit status 1 if something needs doing):
+
+- the board's device node is readable and writable by you, if the board is plugged in (found
+  through `/sys/bus/usb/devices`, vendor 0403; the node is never opened);
+- `ulimit -r` at least 70 (what the acquisition thread asks for) and `ulimit -l` unlimited;
+- the optional fonts: Noto Sans CJK SC, only for Chinese; Noto Sans Arabic or Vazirmatn,
+  and HarfBuzz and FriBidi, only for Persian;
+- a Wayland session (the windows need one; `dimna-headless` does not).
+
+In a source checkout, `packaging/install-desktop.sh` does the menu entry for `zig-out/bin`
+instead (it also takes a config folder: see the script).
+
+## Building from source, any distribution
+
+1. **Zig 0.17.1**, the version `build.zig.zon` pins. Most distributions do not package it;
+   ziglang.org's build is self-contained and needs no root: download
+   `zig-x86_64-linux-0.17.1.tar.xz` from https://ziglang.org/download/, check it (sha256 from
+   that page, or its minisign signature), unpack it anywhere and put the folder on `PATH`.
+   Several versions can sit side by side. `packaging/get-zig.sh` does this: it reads the
+   version from `build.zig.zon`, downloads it, checks the minisign signature against Zig's
+   public key (in the script) and unpacks it into `~/.local/opt/` (needs `minisign`).
+2. **The development files** of the six libraries, and pkg-config:
+
+   | distribution | packages |
+   |---|---|
+   | Debian 12/13, Ubuntu 22.04/24.04 | `libwayland-dev libvulkan-dev libfreetype-dev libfontconfig-dev libxkbcommon-dev libasound2-dev pkg-config` |
+   | Fedora, Rocky/Alma/RHEL 9 | `wayland-devel vulkan-loader-devel freetype-devel fontconfig-devel libxkbcommon-devel alsa-lib-devel pkgconf-pkg-config` (all in AppStream on Rocky 9; CRB is not needed) |
+   | openSUSE Tumbleweed | `wayland-devel vulkan-devel freetype2-devel fontconfig-devel libxkbcommon-devel alsa-devel pkgconf-pkg-config` |
+   | Void | `wayland-devel vulkan-loader-devel freetype-devel fontconfig-devel libxkbcommon-devel alsa-lib-devel pkg-config` |
+   | Arch | `wayland vulkan-icd-loader freetype2 fontconfig libxkbcommon alsa-lib pkgconf` |
+   | Gentoo | `dev-libs/wayland media-libs/vulkan-loader media-libs/freetype media-libs/fontconfig x11-libs/libxkbcommon media-libs/alsa-lib dev-util/pkgconf` |
+
+   The names were looked up in each distribution's package index (2026-11-14); only the
+   Rocky 9 build is exercised, by the release workflow. openSUSE Leap was not checked.
+3. Build (Zig fetches zig-wayland and vulkan-zig, named in `build.zig.zon`, on the first
+   build):
+
+       zig build --release=safe     # zig-out/bin/dimna and dimna-headless (safety checks stay on)
+       zig build test               # unit tests: the core (src/root.zig) and the GUI (src/gui/tests.zig)
+
+4. The machine setup as for a tarball: `packaging/60-dimna-ft60x.rules` into
+   `/etc/udev/rules.d/`, `packaging/99-dimna-realtime.conf` into `/etc/security/limits.d/`, the
+   `dimna` and `realtime` groups, `usermod`, log out and in (`install-user.sh` in a release
+   tarball prints the exact commands).
+
+## Build details
 
 The GUI's tests cover its pure logic only (typed notes, the tile grid, the widget layout, the
 control window's queue and snapshot); none opens a window, connects to Wayland, creates a
@@ -41,16 +151,44 @@ baseline x86-64 CPU (a normal build is for this machine's CPU):
 | `zig-out/release/dimna-<version>-x86_64-linux-musl.tar.gz` | musl (Void musl); see below |
 
 Each is also left unpacked beside it. A tarball holds `bin/dimna`, `bin/dimna-headless`,
-`packaging/`, `README.md`, `licenses/` (liboni, stb, zig-wayland, vulkan-zig; **dimna's own
-licence is missing**: there is none yet), `BUILD-INFO`, `COMMIT` (`git describe`) and `CHECK`.
-`<version>` is the one in `build.zig.zon`.
+`packaging/` (the files named in `build.zig`'s `release_packaging`: `install-user.sh`, the udev
+rule, the limits file, the menu entry, its launcher and icons, the simulator config,
+`nfpm.yaml` and the package scripts, `ci-test-install.sh`), `tools/dimna_read.py`,
+`README.md`, `licenses/` (liboni, stb, zig-wayland, vulkan-zig; **dimna's own licence is
+missing**: there is none yet), `BUILD-INFO`, `COMMIT` (`git describe`) and `CHECK`.
+`<version>` is the one in `build.zig.zon`. Using one: "A tarball", above.
 
-**Using one.** Unpack it anywhere and run `bin/dimna` or `bin/dimna-headless`. The target
-needs, as for a build from source, the Wayland client library, the Vulkan loader, FreeType,
-fontconfig, xkbcommon and ALSA (the libraries, not their development files), and the same
-machine setup (udev rule, real-time limits) as below. `packaging/install-desktop.sh` and
-`dimna-launch.sh` still point at a checkout's `zig-out/bin`, so they do not work from an
-unpacked tarball yet.
+**Testing one.** `packaging/ci-test-install.sh run <unpacked>/bin` (or `tarball FILE.tar.gz`)
+runs `dimna --help` (and `ldd -r` on it), then `dimna-headless --sim 32,16` for 5 s recording
+into a temporary folder, and checks the recording: `[final]` present, file sizes exactly as
+its counts say, no gaps, 5 s of samples, and `tools/dimna_read.py` (every chunk's CRC) where
+Python 3.11+ with numpy is installed. `--headless-only` skips `dimna` (for the musl tarball
+on a glibc machine). It never touches the board, and sets `HOME` and the `XDG_*` folders to a
+temporary folder.
+
+### Releases: the workflow
+
+A pushed tag `v<version>` (or a run started by hand from the Actions tab) runs
+`.github/workflows/release.yml`; the steps are scripts in `packaging/`, so they can be read
+without the YAML:
+
+1. **Build** in a `rockylinux/rockylinux:9` container (`packaging/ci-build.sh`), so dimna is
+   compiled against the oldest supported distribution's own headers and libraries: the
+   development packages, Zig and nfpm downloaded and checked against the sha256 written in
+   the workflow, `zig build test`, `zig build release`, then `packaging/make-packages.sh`
+   (nfpm, `packaging/nfpm.yaml`) writes the `.deb` and `.rpm` from the glibc release folder.
+   For a tag the tag must equal `v` + `build.zig.zon`'s version; an untagged run's packages are
+   versioned `<version>-dev.g<commit>`.
+2. **Test** in Ubuntu 22.04 and 24.04, Debian 12 and 13, Rocky 9 and Fedora containers
+   (`ci-test-install.sh package`): the package installs with apt or dnf from that
+   distribution's own repositories, every file is where the table above says and equal to the
+   checkout's, the groups exist, `dimna --help` and the recording test pass, and after removal
+   no file is left and the groups are kept. The musl tarball's `dimna-headless` is tested in
+   `ghcr.io/void-linux/void-musl`; its `dimna --help` too, but not yet as a requirement (it has
+   never been run). No GPU and no Wayland: the windows are not tested.
+3. **Release**, for a tag, only when everything passed: a **draft** GitHub release with the
+   tarballs, packages and `SHA256SUMS`. The owner reads and publishes it; the workflow never
+   publishes.
 
 **What the build machine needs:** what a normal build needs, plus `tar`, `gzip`, `readelf`
 and `objdump` (binutils) and GNU `sort`; `git` for `COMMIT` (it says `unknown` without).
@@ -98,8 +236,8 @@ not available there; the default `--driver usb` is built in. liboni includes gli
     dimna-headless ...                # --driver usb, the default: no FTDI code in the process
     dimna-headless --driver d3xx ...  # fallback: liboni's ft600 driver on FTDI's closed D3XX
 
-**`usb`** needs nothing installed beyond read/write access to the device node (the Open Ephys
-udev rule). Three layers, all in this repo:
+**`usb`** needs nothing installed beyond read/write access to the device node (the udev rule,
+`packaging/60-dimna-ft60x.rules`; see "Installing a release"). Three layers, all in this repo:
 
 - `src/usbfs.zig`: USB through the kernel's usbdevfs, in Zig, without libusb. Bulk transfers
   are asynchronous URBs, so a read that times out still reports the bytes that arrived.
