@@ -100,7 +100,20 @@ match the host driver).
   the checked-in ones; and show a build with glslc hidden from PATH (for example a PATH
   without `/usr/bin/glslc`: make a temporary folder of symlinks to what the build needs, or
   run with `bwrap` binding an empty file over glslc) succeeding.
-- **Step 3** (a second agent, after 1 and 2 are merged).
+- **Step 3** (a second agent, after 1 and 2 are merged): files you may change are
+  `build.zig`, `packaging/` (new files only, e.g. a release script if `zig build release`
+  cannot do all of it), `docs/install.md` and `README.md` (how to make and use a release).
+  The system libraries are linked by name; for a target that is not the native one, Zig
+  does not search the system's library and include folders by itself, so say how you
+  give it them (and the .pc files pkg-config reads for FreeType and fontconfig). The
+  musl build links against this machine's glibc-built libraries only to resolve symbols;
+  find out whether that works at all, and if it does not, say so and what it would need
+  (a Void musl root, say) rather than forcing it. dimna has no licence file yet: list it as
+  missing in the tarball, do not write one. Evidence: `readelf -d` NEEDED of each binary
+  (only the libraries in "Where it stands", plus libc/libm/ld-linux; never harfbuzz or
+  fribidi), `objdump -T` showing no GLIBC_ version above 2.34, the binaries running here
+  (`--help`, and `dimna-headless --sim --seconds 5 --no-audio` into a /tmp folder), and the
+  tarball's file list. Do not run the GUI.
 - **Steps 4 to 6**: after step 3, with the owner.
 
 ## Testing
