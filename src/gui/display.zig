@@ -98,12 +98,47 @@ pub const Status = struct {
     alarm_len: usize = 0,
     warning_buf: [120]u8 = undefined,
     warning_len: usize = 0,
+    /// A notice over the display while it lasts (`Notice.shown`).
+    notice: ?*const Notice = null,
 
     pub fn alarm(self: *const Status) []const u8 {
         return self.alarm_buf[0..self.alarm_len];
     }
     pub fn warning(self: *const Status) []const u8 {
         return self.warning_buf[0..self.warning_len];
+    }
+};
+
+/// A message over the display for its first seconds (where the colour scheme came from),
+/// two lines, then gone by itself.
+pub const Notice = struct {
+    line1_buf: [200]u8 = undefined,
+    line1_len: usize = 0,
+    line2_buf: [200]u8 = undefined,
+    line2_len: usize = 0,
+    /// When it goes (ns, the main loop's clock); 0: from the first frame that asks.
+    until_ns: i128 = 0,
+
+    /// How long it stays.
+    pub const seconds = 8;
+
+    pub fn set(self: *Notice, comptime f1: []const u8, a1: anytype, comptime f2: []const u8, a2: anytype) void {
+        self.line1_len = format.fmt(&self.line1_buf, f1, a1).len;
+        self.line2_len = format.fmt(&self.line2_buf, f2, a2).len;
+    }
+
+    pub fn line1(self: *const Notice) []const u8 {
+        return self.line1_buf[0..self.line1_len];
+    }
+    pub fn line2(self: *const Notice) []const u8 {
+        return self.line2_buf[0..self.line2_len];
+    }
+
+    /// Whether it is up at `now_ns`; the first call starts its time.
+    pub fn shown(self: *Notice, now_ns: i128) bool {
+        if (self.line1_len == 0) return false;
+        if (self.until_ns == 0) self.until_ns = now_ns + seconds * 1_000_000_000;
+        return now_ns < self.until_ns;
     }
 };
 
@@ -1057,6 +1092,7 @@ pub const Display = struct {
             if (o.line_h > 0) reviewBadge(&o, v, width, fs);
         }
         if (notes.editing and o.line_h > 0) noteDraft(&o, notes, height, fs);
+        if (status.notice) |n| if (o.line_h > 0) noticeBanner(&o, n, width, height);
         if (status.valid and o.line_h > 0) statusReadout(&o, status, width, height);
         if (self.set.len > 1) targetBar(&o, self.set.items[self.target].pixelRect(width, height));
         if (self.help and o.line_h > 0) helpPanel(&o, width, height);
@@ -1610,6 +1646,21 @@ fn alarmBar(o: *Output, status: Status, below_badge: bool, width: u32) void {
             theme.alarm_hint_text,
         );
     }
+}
+
+/// A notice: two centred lines on a dark box, a third of the way down the display.
+fn noticeBanner(o: *Output, n: *const Notice, width: u32, height: u32) void {
+    const batch = o.batch;
+    const line_h = o.line_h;
+    const w: f32 = @floatFromInt(width);
+    const t1 = n.line1();
+    const t2 = n.line2();
+    const box_w = @min(w, @max(batch.font.width(t1), batch.font.width(t2)) + 32);
+    const box_h = 2 * line_h + 20;
+    const y = @round(@as(f32, @floatFromInt(height)) / 3);
+    batch.rect((w - box_w) / 2, y, box_w, box_h, theme.help_backing);
+    _ = batch.text((w - batch.font.width(t1)) / 2, y + 8, t1, theme.text_bright);
+    _ = batch.text((w - batch.font.width(t2)) / 2, y + line_h + 12, t2, theme.text_dim);
 }
 
 /// In review, top centre. Unmistakable: this is not what the electrodes see now.
@@ -3625,4 +3676,15 @@ test "~: a neighbour that does not span the ADC panel's edge keeps its size, in 
     // A spans more than the ADC panel's width: unchanged. B is beside it: grows left.
     try testing.expect(lineWith(text, "draw 0 0 1000 420 ", "first_ch=7") != null);
     try testing.expect(lineWith(text, "draw 0 420 1000 280 ", "first_ch=39") != null);
+}
+
+test "a notice is up from the first frame that asks for its seconds, then gone; an empty one never" {
+    var n: Notice = .{};
+    try testing.expect(!n.shown(5));
+    n.set("colours taken from {s}", .{"x.jpg"}, "edit {s}", .{"~/c.toml"});
+    try testing.expectEqualStrings("colours taken from x.jpg", n.line1());
+    const t0: i128 = 1_000_000_000_000;
+    try testing.expect(n.shown(t0));
+    try testing.expect(n.shown(t0 + Notice.seconds * 1_000_000_000 - 1));
+    try testing.expect(!n.shown(t0 + Notice.seconds * 1_000_000_000));
 }

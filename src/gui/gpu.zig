@@ -46,8 +46,23 @@ pub const TraceParams = extern struct {
     dec_mask: u32 = 0,
 };
 
-/// The trace colours (`theme.trace`, 12 floats) follow `TraceParams` in the push constants.
-const palette_bytes = @sizeOf(@TypeOf(theme.trace));
+/// The trace colours follow `TraceParams` in the push constants: `theme.trace` (12
+/// floats), then `theme.off_scale` and `theme.clip` packed as RGBA8 (`unpackUnorm4x8`).
+const Palette = extern struct {
+    trace: [4][3]f32,
+    marks: [2]u32,
+
+    fn now() Palette {
+        return .{ .trace = theme.trace, .marks = .{ pack(theme.off_scale), pack(theme.clip) } };
+    }
+
+    fn pack(c: [3]f32) u32 {
+        var w: u32 = 0xFF00_0000;
+        for (c, 0..) |v, i| w |= @as(u32, @intFromFloat(@round(std.math.clamp(v, 0, 1) * 255))) << @intCast(8 * i);
+        return w;
+    }
+};
+const palette_bytes = @sizeOf(Palette);
 comptime {
     std.debug.assert(@sizeOf(TraceParams) + palette_bytes <= 128);
 }
@@ -1096,6 +1111,7 @@ pub const Gpu = struct {
             .p_clear_values = &[_]vk.ClearValue{.{ .color = .{ .float_32 = theme.background } }},
         }, .@"inline");
         if (self.hist_cap > 0 and panels.len > 0) {
+            const palette = Palette.now();
             dev.cmdBindPipeline(cmd, .graphics, self.pipeline);
             var bound_review: ?bool = null;
             for (panels) |pd| {
@@ -1124,7 +1140,7 @@ pub const Gpu = struct {
                 }});
                 dev.cmdSetScissor(cmd, 0, &[_]vk.Rect2D{r});
                 dev.cmdPushConstants(cmd, self.pipeline_layout, .{ .vertex = true }, 0, @sizeOf(TraceParams), @ptrCast(&pd.params));
-                dev.cmdPushConstants(cmd, self.pipeline_layout, .{ .vertex = true }, @sizeOf(TraceParams), palette_bytes, @ptrCast(&theme.trace));
+                dev.cmdPushConstants(cmd, self.pipeline_layout, .{ .vertex = true }, @sizeOf(TraceParams), palette_bytes, @ptrCast(&palette));
                 dev.cmdDraw(cmd, 2 * pd.params.cols, pd.params.rows, 0, 0);
             }
         }

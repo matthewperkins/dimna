@@ -68,3 +68,17 @@ pub fn saveBoard(io: Io, gpa: std.mem.Allocator, config_path: []const u8, settin
     f.close(io);
     try Io.Dir.rename(dir, tmp, dir, name, io);
 }
+
+/// `path` with `home` at its start written as `~` (for messages), else as it is.
+pub fn tildePath(buf: []u8, path: []const u8, home: []const u8) []const u8 {
+    if (home.len > 0 and std.mem.startsWith(u8, path, home) and path.len > home.len and path[home.len] == '/')
+        return std.fmt.bufPrint(buf, "~{s}", .{path[home.len..]}) catch path;
+    return path;
+}
+
+test "tildePath shortens the home folder only at the start and at a folder boundary" {
+    var buf: [64]u8 = undefined;
+    try std.testing.expectEqualStrings("~/.config/dimna/config.toml", tildePath(&buf, "/home/m/.config/dimna/config.toml", "/home/m"));
+    try std.testing.expectEqualStrings("/home/mx/c.toml", tildePath(&buf, "/home/mx/c.toml", "/home/m"));
+    try std.testing.expectEqualStrings("/etc/c.toml", tildePath(&buf, "/etc/c.toml", ""));
+}

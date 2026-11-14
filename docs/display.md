@@ -68,20 +68,28 @@ How: the picture is shrunk to at most 96x96 cells by box-averaging in linear lig
 cell becomes an Oklab colour, and k-means (8 clusters, k-means++ seeding from a fixed seed)
 finds its main colours. The same picture always gives the same scheme. The neutrals
 (background, panels, buttons, rules, text) take the hue of the heaviest cluster at fixed
-lightnesses and low chroma. The four trace colours (rows use them in turn, so neighbours
-differ) are the most chromatic, most present clusters whose hues are at least 40 degrees
-apart (25 if the picture does not have four such), the rest filled by rotating the first
-hue in 90 degree steps. The accent (a button that is on, the key colour in `?`, the bar over
-the panel that input goes to, the spike tiles' waveforms) takes the first trace colour's
-hue. Text, traces and the key colour are made lighter until they contrast with the
-background by at least 10 (bright text), 4.5 (dim text) or 6 (traces, keys), by the WCAG
-ratio.
+lightnesses and low chroma; the background is always dark. The four trace colours (rows
+use them in turn) are the picture's own colours, the most present and most colourful
+first, greys included; neighbours need only differ a little. Each is only lightened, as far
+as it must be to contrast with the background by 4.5 (WCAG ratio). Nothing is invented: a
+picture with fewer distinct colours gives lighter and darker shades of the ones it has, so
+a monotonous picture gives a monotonous display (pick another). Transparent pixels (an
+icon's corners) are left out. The accent (a button that is on, the key colour in `?`, the
+bar over the panel that input goes to) takes the first trace colour's hue; the spike tiles'
+waveforms take the first trace colour. Text is made lighter until it contrasts with the
+background by at least 10 (bright text) or 4.5 (dim text).
 
-**Never themed**, because the colour means something: the warning and alarm bars and their
-text, REC, the focus amber, notes, the detection threshold and the trigger level, the TTL
-tint, a row's own scale, the review badge, and in the shader the amber of an off-scale
-trace and the red at the converter's limits. Display only: nothing here touches
-acquisition or recordings.
+**Alarms clash on purpose.** The alarm (the alarm bar and its text, REC, and in the shader
+a trace at the converter's limits) takes the hue farthest from every colour of the picture
+and the traces; the warning (the warning bar and the REVIEW badge behind it, warning text,
+an off-scale trace's colour) the farthest at least 60 degrees from the alarm. The bars are
+dark enough for white text. A grey picture keeps red and amber. Never themed: the focus
+amber, notes, the detection threshold and the trigger level, the TTL tint, a row's own
+scale, the review badge's text.
+
+While a scheme is in use (or the picture named could not be used), a banner over the
+display says so for its first 8 seconds, with where to change it. Display only: nothing
+here touches acquisition or recordings.
 
     dimna --print-scheme picture.jpg [--swatch out.png]
 

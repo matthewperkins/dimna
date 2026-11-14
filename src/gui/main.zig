@@ -107,15 +107,23 @@ pub fn main(init: std.process.Init) !u8 {
     }
 
     // The colour scheme, if the config names an image. Before any window or thread draws;
-    // any failure is a warning and the built-in colours stay.
+    // any failure is a warning and the built-in colours stay. Either way a banner says so
+    // over the display for its first seconds, and where to change it.
+    var scheme_notice: display_mod.Notice = .{};
     if (args.scheme_image.len > 0) {
         var spath_buf: [std.fs.max_path_bytes]u8 = undefined;
         var sdiag: scheme.Diagnostics = .{};
+        var where_buf: [std.fs.max_path_bytes]u8 = undefined;
+        const where = files.tildePath(&where_buf, config_path, env.home);
         if (scheme.resolvePath(&spath_buf, args.scheme_image, env.home, std.fs.path.dirname(config_path) orelse ".")) |spath| {
             if (scheme.loadFile(io, gpa, spath, &sdiag)) |r| {
                 theme.apply(r.scheme);
                 log.info("colour scheme from {s}", .{spath});
-            } else log.warn("{s}; using the built-in colours", .{sdiag.message()});
+                scheme_notice.set("colours taken from {s}", .{std.fs.path.basename(spath)}, "to change them, edit scheme_image in {s} (remove it for the built-in colours)", .{where});
+            } else {
+                log.warn("{s}; using the built-in colours", .{sdiag.message()});
+                scheme_notice.set("{s}; the built-in colours are used", .{sdiag.message()}, "scheme_image is in {s}", .{where});
+            }
         } else log.warn("scheme image '{s}': the path is too long; using the built-in colours", .{args.scheme_image});
     }
 
@@ -516,6 +524,7 @@ pub fn main(init: std.process.Init) !u8 {
         }, recording.behind(pl.bs, pl.fs), &display.acknowledged)) snap_dirty = true;
         audio_shared.alarm.store(status.alarm_len > 0, .monotonic);
         status.recording = recording.active();
+        status.notice = if (scheme_notice.shown(nowNs())) &scheme_notice else null;
         status.rec_seconds = recording.seconds(nowNs());
         if (input.num_keys > 0 or input.scroll_x != 0 or input.scroll_y != 0 or input.pinch != 1 or
             display.target != snap_target) snap_dirty = true;

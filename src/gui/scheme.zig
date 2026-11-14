@@ -50,6 +50,14 @@ pub const Scheme = struct {
     heading_hover: Colour,
     /// The four trace colours (channel & 3), as the shader takes them.
     trace: [4][3]f32,
+    /// What an off-scale trace column is pulled towards, and a column at the converter's limits.
+    off_scale: [3]f32,
+    clip: [3]f32,
+    text_warn: Colour,
+    text_rec: Colour,
+    alarm_bar: Colour,
+    warning_bar: Colour,
+    alarm_hint_text: Colour,
 };
 
 /// One cluster of the image: its mean in Oklab and how many cells it holds.
@@ -62,6 +70,8 @@ pub const Result = struct {
     n_clusters: usize,
     /// The hue (degrees) of the heaviest cluster, which the neutrals take.
     base_hue: f32,
+    /// The alarm's and the warning's hues (degrees).
+    alarm_hues: [2]f32,
     /// How far, at most, any colour fell outside 0..1 before it was rounded (0 = every
     /// colour was inside sRGB as mapped).
     overshoot: f32,
@@ -170,11 +180,12 @@ pub const Cells = struct {
     n: usize,
 };
 
-/// Box-averages `rgb` (w x h, three bytes a pixel) in linear light into at most 96x96 cells
-/// and converts them to Oklab. Every cell holds about the same number of pixels, so a cell is
-/// one unit of weight.
-pub fn shrink(rgb: []const u8, w: usize, h: usize, cells: *Cells) void {
-    std.debug.assert(w > 0 and h > 0 and rgb.len >= w * h * 3);
+/// Box-averages `px` (w x h, `nc` bytes a pixel: RGB, or RGBA) in linear light into at most
+/// 96x96 cells and converts them to Oklab. Every cell holds about the same number of
+/// pixels, so a cell is one unit of weight. With alpha, pixels count by their opacity and a
+/// cell that is mostly transparent (an icon's corners) is left out.
+pub fn shrink(px: []const u8, w: usize, h: usize, nc: usize, cells: *Cells) void {
+    std.debug.assert(w > 0 and h > 0 and (nc == 3 or nc == 4) and px.len >= w * h * nc);
     var lut: [256]f32 = undefined;
     for (&lut, 0..) |*v, i| v.* = srgbToLinear(@as(f32, @floatFromInt(i)) / 255);
     const cw = @min(w, max_cells);
@@ -187,23 +198,29 @@ pub fn shrink(rgb: []const u8, w: usize, h: usize, cells: *Cells) void {
             const x0 = cx * w / cw;
             const x1 = (cx + 1) * w / cw;
             var sum = [3]f64{ 0, 0, 0 };
+            var opacity: f64 = 0;
             for (y0..y1) |y| {
-                const row = rgb[(y * w + x0) * 3 .. (y * w + x1) * 3];
+                const row = px[(y * w + x0) * nc .. (y * w + x1) * nc];
                 var r: f32 = 0;
                 var g: f32 = 0;
                 var b: f32 = 0;
+                var a: f32 = 0;
                 var i: usize = 0;
-                while (i < row.len) : (i += 3) {
-                    r += lut[row[i]];
-                    g += lut[row[i + 1]];
-                    b += lut[row[i + 2]];
+                while (i < row.len) : (i += nc) {
+                    const k: f32 = if (nc == 4) @as(f32, @floatFromInt(row[i + 3])) / 255 else 1;
+                    r += k * lut[row[i]];
+                    g += k * lut[row[i + 1]];
+                    b += k * lut[row[i + 2]];
+                    a += k;
                 }
                 sum[0] += r;
                 sum[1] += g;
                 sum[2] += b;
+                opacity += a;
             }
             const count: f64 = @floatFromInt((y1 - y0) * (x1 - x0));
-            cells.lab[n] = linearToLab(@floatCast(sum[0] / count), @floatCast(sum[1] / count), @floatCast(sum[2] / count));
+            if (opacity < 0.5 * count) continue;
+            cells.lab[n] = linearToLab(@floatCast(sum[0] / opacity), @floatCast(sum[1] / opacity), @floatCast(sum[2] / opacity));
             n += 1;
         }
     }
@@ -323,6 +340,23 @@ const Builder = struct {
         return .{ @as(f32, @floatFromInt(v[0])) / 255, @as(f32, @floatFromInt(v[1])) / 255, @as(f32, @floatFromInt(v[2])) / 255, 1 };
     }
 
+    fn rgbF(self: *Builder, l: f32, c: f32, h: f32) [3]f32 {
+        const v = self.rgb(l, c, h);
+        return .{ @as(f32, @floatFromInt(v[0])) / 255, @as(f32, @floatFromInt(v[1])) / 255, @as(f32, @floatFromInt(v[2])) / 255 };
+    }
+
+    /// A bar colour that white text reads on: the lightness lowered in 0.01 steps until
+    /// white contrasts with it by 4.5.
+    fn underWhite(self: *Builder, l0: f32, c: f32, h: f32, alpha: u8) Colour {
+        var l = l0;
+        var v = self.rgb(l, c, h);
+        while (contrast(v, .{ 255, 255, 255 }) < 4.5 and l > 0) {
+            l -= 0.01;
+            v = self.rgb(l, c, h);
+        }
+        return .{ v[0], v[1], v[2], alpha };
+    }
+
     /// Like `rgb`, with the lightness raised in 0.01 steps until it contrasts with `bg` by `min_ratio`.
     fn contrasting(self: *Builder, l0: f32, c: f32, h: f32, bg: [3]u8, min_ratio: f32) [3]u8 {
         var l = l0;
@@ -340,8 +374,40 @@ fn hueDistance(a: f32, b: f32) f32 {
     return @min(d, 360 - d);
 }
 
-fn wrapHue(h: f32) f32 {
-    return @mod(h, 360);
+/// How far apart (Oklab distance, as drawn) the trace colours must be: a little.
+const trace_apart = 0.04;
+/// The least contrast of a trace colour with the background.
+const trace_contrast = 4.5;
+
+fn labOf(v: [3]u8) Lab {
+    const f = [3]f32{ srgbToLinear(@as(f32, @floatFromInt(v[0])) / 255), srgbToLinear(@as(f32, @floatFromInt(v[1])) / 255), srgbToLinear(@as(f32, @floatFromInt(v[2])) / 255) };
+    return linearToLab(f[0], f[1], f[2]);
+}
+
+/// The whole degree farthest from every hue in `used` (its `l` field holds the weight),
+/// at least 60 degrees from `away` if given; ties go to the hue farthest from the
+/// weighted bulk. `used` is not empty.
+fn emptiestHue(used: []const Lch, away: ?f32) f32 {
+    var best: f32 = 0;
+    var best_gap: f32 = -1;
+    var best_bulk: f32 = -1;
+    var h: f32 = 0;
+    while (h < 360) : (h += 1) {
+        if (away) |a| if (hueDistance(h, a) < 60) continue;
+        var gap: f32 = 360;
+        var bulk: f32 = 0;
+        for (used) |u| {
+            const d = hueDistance(h, u.h);
+            gap = @min(gap, d);
+            bulk += d * u.l * u.c;
+        }
+        if (gap > best_gap + 0.5 or (@abs(gap - best_gap) <= 0.5 and bulk > best_bulk)) {
+            best = h;
+            best_gap = gap;
+            best_bulk = bulk;
+        }
+    }
+    return best;
 }
 
 /// The scheme for these clusters (heaviest first, at least one).
@@ -375,70 +441,112 @@ pub fn assign(clusters: []const Cluster) Result {
     s.text_dim = .{ td[0], td[1], td[2], 255 };
     s.tile_range_text = bld.colour(0.62, @min(bc, 0.025), bh, 255);
 
-    // Trace colours: the most chromatic, most present clusters, with hues apart.
+    // Trace colours: the image's own colours, most present and most colourful first, each
+    // only lightened as far as it must be to stand out from the background. Neighbours
+    // need only differ a little (`trace_apart`, in Oklab, as drawn); greys count. No
+    // colour is invented: an image with fewer distinct colours gives lighter and darker
+    // shades of the ones it has, so a monotonous image gives a monotonous display.
     var picks: [4]Lch = undefined;
+    var drawn: [4]Lab = undefined;
     var np: usize = 0;
     var used: [k_clusters]bool = @splat(false);
-    for ([_]f32{ 40, 25 }) |sep| {
-        while (np < 4) {
-            var best: ?usize = null;
-            var best_score: f32 = 0;
-            for (clusters, 0..) |c, i| {
-                if (used[i]) continue;
-                const lch = labToLch(c.lab);
-                if (lch.c < 0.04) continue;
-                var far = true;
-                for (picks[0..np]) |p| if (hueDistance(p.h, lch.h) < sep) {
-                    far = false;
-                };
-                if (!far) continue;
-                const score = lch.c * @sqrt(@as(f32, @floatFromInt(c.count)));
-                if (best == null or score > best_score) {
-                    best = i;
-                    best_score = score;
-                }
+    while (np < 4) {
+        var best: ?usize = null;
+        var best_score: f32 = 0;
+        for (clusters, 0..) |c, i| {
+            if (used[i]) continue;
+            const lch = labToLch(c.lab);
+            const lab = labOf(bld.contrasting(lch.l, lch.c, lch.h, bg3, trace_contrast));
+            var far = true;
+            for (drawn[0..np]) |d| if (@sqrt(dist2(d, lab)) < trace_apart) {
+                far = false;
+            };
+            if (!far) continue;
+            const score = (lch.c + 0.03) * @as(f32, @floatFromInt(c.count));
+            if (best == null or score > best_score) {
+                best = i;
+                best_score = score;
             }
-            const i = best orelse break;
-            used[i] = true;
-            picks[np] = labToLch(clusters[i].lab);
-            np += 1;
         }
+        const i = best orelse break;
+        used[i] = true;
+        picks[np] = labToLch(clusters[i].lab);
+        const lch = picks[np];
+        drawn[np] = labOf(bld.contrasting(lch.l, lch.c, lch.h, bg3, trace_contrast));
+        np += 1;
     }
-    // Still short (a dull image): rotate the first pick's hue (or the base hue) in 90 degree steps.
-    const first: Lch = if (np > 0) picks[0] else .{ .l = 0.80, .c = 0.12, .h = bh };
-    var step: f32 = 1;
+    // Short of four: shades of the picks, alternately lighter and darker.
+    const found = np;
     while (np < 4) : (np += 1) {
-        picks[np] = .{ .l = first.l, .c = first.c, .h = wrapHue(first.h + 90 * step) };
-        step += 1;
+        const from = picks[(np - found) % found];
+        const lighter = (np - found) % 2 == 0;
+        const lifted = labToLch(drawn[(np - found) % found]);
+        const l = if (lighter) @min(0.95, lifted.l + 0.12) else @max(0.0, lifted.l - 0.12);
+        picks[np] = .{ .l = l, .c = from.c, .h = from.h };
     }
     var trace_rgb: [4][3]u8 = undefined;
     for (picks, 0..) |p, i| {
-        const l = std.math.clamp(p.l, 0.74, 0.86);
-        const c = std.math.clamp(p.c, 0.09, 0.17);
-        trace_rgb[i] = bld.contrasting(l, c, p.h, bg3, 6);
+        trace_rgb[i] = bld.contrasting(p.l, p.c, p.h, bg3, trace_contrast);
         for (0..3) |k| s.trace[i][k] = @as(f32, @floatFromInt(trace_rgb[i][k])) / 255;
     }
     s.tile_wave = .{ trace_rgb[0][0], trace_rgb[0][1], trace_rgb[0][2], 255 };
 
-    // Accent: the first trace colour's hue.
+    // Accent: the first trace colour's hue, at least a little coloured.
     const ah = picks[0].h;
-    const ac = std.math.clamp(picks[0].c, 0.08, 0.14);
+    const ac = std.math.clamp(picks[0].c, 0.04, 0.14);
     s.button_on = bld.colour(0.45, ac, ah, 255);
     s.button_on_hover = bld.colour(0.52, ac, ah, 255);
     const hk = bld.contrasting(0.82, ac, ah, bg3, 6);
     s.help_key = .{ hk[0], hk[1], hk[2], 255 };
     s.target_bar = bld.fill(0.60, ac, ah);
 
-    var r: Result = .{ .scheme = s, .clusters = undefined, .n_clusters = clusters.len, .base_hue = bh, .overshoot = bld.overshoot };
+    // Alarms: the hues the image and the traces use least, so an alarm clashes with
+    // everything else. The alarm (samples lost, REC, a converter at its limit) takes the
+    // emptiest hue; the warning (the disk behind, off-scale) the emptiest at least 60
+    // degrees from it. A grey image keeps red and amber.
+    var hues: [k_clusters + 4]Lch = undefined;
+    var nh: usize = 0;
+    for (clusters) |c| {
+        const lch = labToLch(c.lab);
+        if (lch.c >= 0.03) {
+            hues[nh] = .{ .l = @floatFromInt(c.count), .c = lch.c, .h = lch.h };
+            nh += 1;
+        }
+    }
+    for (picks) |p| if (p.c >= 0.03) {
+        hues[nh] = .{ .l = @floatFromInt(clusters[0].count), .c = p.c, .h = p.h };
+        nh += 1;
+    };
+    const alarm_h: f32 = if (nh == 0) 29 else emptiestHue(hues[0..nh], null);
+    const warn_h: f32 = if (nh == 0) 70 else emptiestHue(hues[0..nh], alarm_h);
+    s.alarm_bar = bld.underWhite(0.50, 0.20, alarm_h, 245);
+    s.alarm_hint_text = bld.colour(0.90, 0.05, alarm_h, 255);
+    const rec = bld.contrasting(0.68, 0.20, alarm_h, bg3, 4.5);
+    s.text_rec = .{ rec[0], rec[1], rec[2], 255 };
+    s.clip = bld.rgbF(0.68, 0.22, alarm_h);
+    s.warning_bar = bld.underWhite(0.50, 0.14, warn_h, 235);
+    const tw = bld.contrasting(0.82, 0.15, warn_h, bg3, 6);
+    s.text_warn = .{ tw[0], tw[1], tw[2], 255 };
+    s.off_scale = bld.rgbF(0.80, 0.17, warn_h);
+    const alarm_hues: [2]f32 = .{ alarm_h, warn_h };
+
+    var r: Result = .{ .scheme = s, .clusters = undefined, .n_clusters = clusters.len, .base_hue = bh, .alarm_hues = alarm_hues, .overshoot = bld.overshoot };
     @memcpy(r.clusters[0..clusters.len], clusters);
     return r;
 }
 
 /// The scheme of an image: `rgb` is w x h pixels of three bytes. Null for an empty image.
 pub fn derive(rgb: []const u8, w: usize, h: usize) ?Result {
-    if (w == 0 or h == 0 or rgb.len < w * h * 3) return null;
+    return derivePixels(rgb, w, h, 3);
+}
+
+/// `derive` for `nc` bytes a pixel (3: RGB, 4: RGBA). Null for an empty or wholly
+/// transparent image.
+pub fn derivePixels(px: []const u8, w: usize, h: usize, nc: usize) ?Result {
+    if (w == 0 or h == 0 or px.len < w * h * nc) return null;
     var cells: Cells = undefined;
-    shrink(rgb, w, h, &cells);
+    shrink(px, w, h, nc, &cells);
+    if (cells.n == 0) return null;
     return deriveCells(&cells);
 }
 
@@ -453,7 +561,7 @@ pub fn deriveCells(cells: *const Cells) Result {
 pub const Image = struct {
     w: usize,
     h: usize,
-    /// Three bytes a pixel; freed with `deinit`.
+    /// Four bytes a pixel (RGBA; opaque where the file has no alpha); freed with `deinit`.
     rgb: []const u8,
 
     pub fn deinit(self: Image) void {
@@ -469,8 +577,8 @@ pub fn decode(bytes: []const u8) DecodeError!Image {
     var w: c_int = 0;
     var h: c_int = 0;
     var n: c_int = 0;
-    const p = stb.stbi_load_from_memory(bytes.ptr, @intCast(bytes.len), &w, &h, &n, 3) orelse return error.NotAnImage;
-    return .{ .w = @intCast(w), .h = @intCast(h), .rgb = p[0 .. @as(usize, @intCast(w)) * @as(usize, @intCast(h)) * 3] };
+    const p = stb.stbi_load_from_memory(bytes.ptr, @intCast(bytes.len), &w, &h, &n, 4) orelse return error.NotAnImage;
+    return .{ .w = @intCast(w), .h = @intCast(h), .rgb = p[0 .. @as(usize, @intCast(w)) * @as(usize, @intCast(h)) * 4] };
 }
 
 /// Why a scheme image could not be used: one line for the log.
@@ -520,8 +628,8 @@ pub fn loadImage(io: Io, gpa: std.mem.Allocator, path: []const u8, diag: *Diagno
 pub fn loadFile(io: Io, gpa: std.mem.Allocator, path: []const u8, diag: *Diagnostics) ?Result {
     const img = loadImage(io, gpa, path, diag) orelse return null;
     defer img.deinit();
-    return derive(img.rgb, img.w, img.h) orelse {
-        diag.set("scheme image '{s}': the image has no pixels", .{path});
+    return derivePixels(img.rgb, img.w, img.h, 4) orelse {
+        diag.set("scheme image '{s}': the image has no pixels (or none that are not transparent)", .{path});
         return null;
     };
 }
@@ -534,11 +642,15 @@ fn fillEntry(name: []const u8, f: Fill) Entry {
     return .{ .name = name, .rgb = .{ byte(f[0]), byte(f[1]), byte(f[2]) } };
 }
 
+fn rgbEntry(name: []const u8, f: [3]f32) Entry {
+    return .{ .name = name, .rgb = .{ byte(f[0]), byte(f[1]), byte(f[2]) } };
+}
+
 fn colourEntry(name: []const u8, c: Colour) Entry {
     return .{ .name = name, .rgb = .{ c[0], c[1], c[2] }, .alpha = c[3] };
 }
 
-pub const n_entries = 22;
+pub const n_entries = 29;
 
 /// Every themed colour with its name, for printing and the swatch.
 pub fn entries(s: *const Scheme) [n_entries]Entry {
@@ -565,6 +677,13 @@ pub fn entries(s: *const Scheme) [n_entries]Entry {
         colourEntry("tile_range_text", s.tile_range_text),
         colourEntry("help_key", s.help_key),
         colourEntry("tile_wave", s.tile_wave),
+        colourEntry("alarm_bar", s.alarm_bar),
+        colourEntry("alarm_hint_text", s.alarm_hint_text),
+        colourEntry("text_rec", s.text_rec),
+        rgbEntry("clip", s.clip),
+        colourEntry("warning_bar", s.warning_bar),
+        colourEntry("text_warn", s.text_warn),
+        rgbEntry("off_scale", s.off_scale),
     };
 }
 
@@ -595,6 +714,7 @@ pub fn describe(w: *Io.Writer, r: *const Result) !void {
     try w.print("contrast with the background: text_bright {d:.1}, text_dim {d:.1}, help_key {d:.1}\n", .{
         contrast(e[15].rgb, bg), contrast(e[18].rgb, bg), contrast(e[20].rgb, bg),
     });
+    try w.print("alarm hue {d:.0} deg, warning hue {d:.0} deg\n", .{ r.alarm_hues[0], r.alarm_hues[1] });
     try w.print("largest excursion outside sRGB before rounding: {d:.5}\n", .{r.overshoot});
 }
 
@@ -625,7 +745,7 @@ pub fn drawSwatch(pixels: []u8, s: *const Scheme) void {
     // Four traces, a random walk with spikes, each in its own band below the swatches.
     var prng = std.Random.DefaultPrng.init(0xc01);
     const rng = prng.random();
-    const top = 136;
+    const top = 176;
     const band = (swatch_h - top) / 4;
     for (0..4) |t| {
         const col = traceRgb(s, t);
@@ -675,7 +795,11 @@ pub fn printCommand(io: Io, gpa: std.mem.Allocator, image_path: []const u8, swat
     defer img.deinit();
     const t1 = dimna.clock.nowNs();
     var cells: Cells = undefined;
-    shrink(img.rgb, img.w, img.h, &cells);
+    shrink(img.rgb, img.w, img.h, 4, &cells);
+    if (cells.n == 0) {
+        std.debug.print("scheme image '{s}': no pixels that are not transparent\n", .{image_path});
+        return 1;
+    }
     const t2 = dimna.clock.nowNs();
     const r = deriveCells(&cells);
     const t3 = dimna.clock.nowNs();
@@ -760,7 +884,11 @@ fn checkGuarantees(r: Result) !void {
     try testing.expect(contrast(es[15].rgb, bg) >= 10); // text_bright
     try testing.expect(contrast(es[18].rgb, bg) >= 4.5); // text_dim
     try testing.expect(contrast(es[20].rgb, bg) >= 6); // help_key
-    for (0..4) |i| try testing.expect(contrast(traceRgb(&r.scheme, i), bg) >= 6);
+    for (0..4) |i| try testing.expect(contrast(traceRgb(&r.scheme, i), bg) >= trace_contrast);
+    const white = [3]u8{ 255, 255, 255 };
+    try testing.expect(contrast(white, .{ r.scheme.alarm_bar[0], r.scheme.alarm_bar[1], r.scheme.alarm_bar[2] }) >= 4.5);
+    try testing.expect(contrast(white, .{ r.scheme.warning_bar[0], r.scheme.warning_bar[1], r.scheme.warning_bar[2] }) >= 4.5);
+    try testing.expect(contrast(.{ r.scheme.text_rec[0], r.scheme.text_rec[1], r.scheme.text_rec[2] }, bg) >= 4.5);
     try testing.expect(r.overshoot <= 0.001);
 }
 
@@ -784,21 +912,21 @@ test "the same pixels give the same scheme" {
     try testing.expectEqualDeep(a.clusters, b.clusters);
 }
 
-test "trace hues are at least 25 degrees apart when the image has four distinct hues" {
-    const img = makeImage(120, 80, rainbow);
-    const r = derive(&img, 120, 80).?;
-    var hues: [4]f32 = undefined;
-    for (0..4) |i| {
-        const t = r.scheme.trace[i];
-        const lin = [3]f32{ srgbToLinear(t[0]), srgbToLinear(t[1]), srgbToLinear(t[2]) };
-        hues[i] = labToLch(linearToLab(lin[0], lin[1], lin[2])).h;
-    }
-    for (0..4) |i| for (i + 1..4) |j| try testing.expect(hueDistance(hues[i], hues[j]) >= 25);
+fn traceLch(r: *const Result, i: usize) Lch {
+    return labToLch(labOf(traceRgb(&r.scheme, i)));
 }
 
-test "trace hues stay apart when the image's strongest colours are close in hue" {
+test "the trace colours differ a little from each other when the image has several colours" {
+    const img = makeImage(120, 80, rainbow);
+    const r = derive(&img, 120, 80).?;
+    for (0..4) |i| for (i + 1..4) |j| {
+        try testing.expect(@sqrt(dist2(labOf(traceRgb(&r.scheme, i)), labOf(traceRgb(&r.scheme, j)))) >= trace_apart - 0.005);
+    };
+}
+
+test "the trace colours are the image's strongest colours, even when they are close in hue" {
     // Three oranges of nearly one hue make up most of the image; green, blue and magenta
-    // are small. Picking by strength alone would take the three oranges.
+    // are small. The oranges are what the image is: they lead.
     const f = struct {
         fn f(x: usize, _: usize) [3]u8 {
             return if (x < 25) .{ 230, 60, 40 } else if (x < 50) .{ 230, 90, 40 } else if (x < 75) .{ 230, 120, 40 } else if (x < 90) .{ 40, 200, 80 } else if (x < 105) .{ 50, 90, 230 } else .{ 200, 60, 200 };
@@ -806,12 +934,47 @@ test "trace hues stay apart when the image's strongest colours are close in hue"
     }.f;
     const img = makeImage(120, 80, f);
     const r = derive(&img, 120, 80).?;
-    var hues: [4]f32 = undefined;
+    var oranges: usize = 0;
     for (0..4) |i| {
-        const t = r.scheme.trace[i];
-        hues[i] = labToLch(linearToLab(srgbToLinear(t[0]), srgbToLinear(t[1]), srgbToLinear(t[2]))).h;
+        const h = traceLch(&r, i).h;
+        if (h > 20 and h < 75) oranges += 1;
     }
-    for (0..4) |i| for (i + 1..4) |j| try testing.expect(hueDistance(hues[i], hues[j]) >= 25);
+    try testing.expect(oranges >= 3);
+}
+
+test "a one-colour image gives shades of that colour, no invented hues" {
+    const img = makeImage(120, 80, plain);
+    const r = derive(&img, 120, 80).?;
+    const h0 = labToLch(r.clusters[0].lab).h;
+    var ls: [4]f32 = undefined;
+    for (0..4) |i| {
+        const t = traceLch(&r, i);
+        try testing.expect(hueDistance(t.h, h0) < 12);
+        ls[i] = t.l;
+    }
+    // Shades, not one colour four times.
+    try testing.expect(@abs(ls[0] - ls[1]) > 0.05);
+}
+
+test "the alarm and warning take the hues the image does not use" {
+    // Blue (hue about 265) and gold (about 85): the alarm and warning keep away from both,
+    // and from each other.
+    const img = makeImage(120, 80, twoHues);
+    const r = derive(&img, 120, 80).?;
+    // The alarm in the middle of one of the two empty half-circles; the warning, 60 degrees
+    // or more from it, still clear of both colours.
+    for (r.clusters[0..r.n_clusters]) |c| {
+        try testing.expect(hueDistance(r.alarm_hues[0], labToLch(c.lab).h) >= 80);
+        try testing.expect(hueDistance(r.alarm_hues[1], labToLch(c.lab).h) >= 30);
+    }
+    try testing.expect(hueDistance(r.alarm_hues[0], r.alarm_hues[1]) >= 60);
+}
+
+test "a grey image keeps a red alarm and an amber warning" {
+    const img = makeImage(120, 80, greys);
+    const r = derive(&img, 120, 80).?;
+    try testing.expectEqual(@as(f32, 29), r.alarm_hues[0]);
+    try testing.expectEqual(@as(f32, 70), r.alarm_hues[1]);
 }
 
 test "the first trace colour is the strongest pick, with the others apart from it" {
@@ -889,5 +1052,25 @@ test "a PNG written by the swatch encoder decodes back to the same pixels" {
     defer img.deinit();
     try testing.expectEqual(@as(usize, 4), img.w);
     try testing.expectEqual(@as(usize, 3), img.h);
-    try testing.expectEqualSlices(u8, &px, img.rgb);
+    // Read back with an opaque alpha added to every pixel.
+    for (0..12) |i| {
+        try testing.expectEqualSlices(u8, px[i * 3 ..][0..3], img.rgb[i * 4 ..][0..3]);
+        try testing.expectEqual(@as(u8, 255), img.rgb[i * 4 + 3]);
+    }
+}
+
+test "transparent pixels are left out: an icon's clear corners do not make black a colour of it" {
+    // A gold square on a transparent field (its RGB black, as icons often have).
+    const w = 40;
+    var px: [w * w * 4]u8 = @splat(0);
+    for (10..30) |y| for (10..30) |x| {
+        px[(y * w + x) * 4 ..][0..4].* = .{ 220, 170, 30, 255 };
+    };
+    var cells: Cells = undefined;
+    shrink(&px, w, w, 4, &cells);
+    try testing.expectEqual(@as(usize, 20 * 20), cells.n);
+    for (cells.lab[0..cells.n]) |c| try testing.expect(c[0] > 0.5); // no black cell
+    // Wholly transparent: no scheme.
+    const clear: [16 * 4]u8 = @splat(0);
+    try testing.expect(derivePixels(&clear, 4, 4, 4) == null);
 }
