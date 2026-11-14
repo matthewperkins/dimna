@@ -166,3 +166,57 @@ native speaker has not read anything. Hyphen "Bild↑/Bild↓" arrows rely on th
 
 **en.zig.** Nothing wrong, but `help_low_corner` / `help_high_corner` ("low corner down / up") and
 "stamp" are terse; I read them as filter cutoff lowered / raised and a note given the current sample.
+
+## Report: fa
+
+Branch `worktree-agent-a814c5158788ecf78`, translation commit `7cd6069` (on main at 241b0a4).
+Files: `src/gui/lang/fa.zig`, `docs/translations/fa.md` (and this report).
+
+- **Messages:** 267 written (all of `en.zig`'s 269 names, in its order and under its
+  headings; comments kept in English). Left out: `notice_language_missing` and
+  `notice_language_where` (always English). Persian counts 0 as `_one`, so every `_one`
+  form keeps its number except `alarm_quiet_times_one` ("once"; shown only for 1).
+- **Checked by script:** no Arabic ي (U+064A), ك (U+0643), ى or ة; no Persian or
+  Arabic-Indic digits; no raw U+200C (75 written as `\u{200C}`).
+- **Possibly too long** (characters, ZWNJ not counted; Persian letters are narrower than
+  Latin ones, so this may be fine): `tag_threshold` 3 → 6 (آستانه, no usual
+  abbreviation), `section_notes` 5 → 9, `notes_typing` 13 → 20, `board_restart_pending`
+  17 → 28, `label_cutoff` 6 → 10 (فرکانس قطع), `btn_32_ch` 5 → 8 (32 کانال), `btn_reset`
+  5 → 8. The longer sentences (`btn_apply`, `board_apply_after_stop`, `hint_keys`,
+  `notice_colours_change`) are near English's length.
+- **Choices to know about:** "> 300 Hz" / "< 6000 Hz" in titles became words
+  (بالای / زیر), since the signs would mirror in right-to-left text. Recording is ثبت (the
+  electrophysiology word), acquisition دریافت داده. Keys keep their Latin labels (Iranian
+  keyboards carry them); `key_left_right` is چپ / راست.
+- **Evidence:**
+  - `zig build test --summary all`: `Build Summary: 18/18 steps succeeded; 129/130 tests
+    passed (1 skipped)`. Its output also holds a `failed command: ./.zig-cache/.../gui-test`
+    line, as it did before my change; the build still succeeds. Not looked into.
+  - `zig fmt --check src build.zig`: printed nothing.
+  - `zig build --release=safe`: exit 0, `zig-out/bin/dimna` and `dimna-headless` built.
+  - Break 1, placeholder renamed (`alarm_disk_full_in`: `{[left]s}` → `{[lefft]s}`): the
+    build failed at compile time, `error: no argument with name 'lefft'` (from the
+    call through `i18n.fmt`), before the catalogue test could run. Reverted.
+  - Break 2, leading space (`title_review` "   " → "  "): the test failed with
+    `fa title_review: starts or ends with 2/0 spaces where English has 3/0`. Reverted.
+  - Break 3, plural form removed (`rec_gaps_one` deleted): `fa rec_gaps: no form 'one'`.
+    Reverted.
+  - Language really used: a temporary test at the end of `i18n.zig` (removed, not
+    committed) set `i18n.current = .fa` and printed:
+
+        FA1 توقف ثبت
+        FA2 دیسک تا حدود 12 min دیگر پر می‌شود
+        FA3 2 شکاف
+        FA4 برد یک بار ساکت ماند (0.5 s یا بیشتر بدون داده)
+        FA5 برد 3 بار ساکت ماند (0.5 s یا بیشتر بدون داده)
+        FA6 0 پیش‌تنظیم
+        FA7 تشخیص اسپایک و تریگر شیب همیشه از 300-6000 Hz استفاده می‌کنند،
+
+    (FA4/FA5: one counted message for 1 and 3; FA6: 0 takes `_one` and keeps its number.)
+- **Not covered:** nothing was drawn (no GUI run): fonts, shaping, right-to-left layout,
+  mixed Latin/Persian runs (`Ctrl+چرخ`, `µV/ردیف`, `l = زنده`) and whether texts fit are
+  unchecked. A native speaker has not reviewed the wording.
+- **In `en.zig` I would change:** nothing that blocks. `title_band_above` / `below` use
+  ">" and "<", which mirror in right-to-left text; worth a note to translators.
+  `alarm_quiet_times_one` without a number is fine for English but would be wrong in a
+  language whose `_one` includes 0, if the alarm could ever be shown for 0 (it cannot now).
