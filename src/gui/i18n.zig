@@ -164,7 +164,12 @@ fn countedOf(comptime cat: type, comptime base: []const u8, comptime f: Form) []
 /// Whose rule and forms `base` is shown with in `lang`: its own, if it has its own file
 /// with the message, else English's.
 fn countedSource(comptime lang: Language, comptime base: []const u8) Language {
-    return if (catalogue(lang) != en and hasCounted(catalogue(lang), base)) lang else .en;
+    return countedSourceOf(catalogue(lang), lang, base);
+}
+
+/// `countedSource` for `lang` whose file is `cat`.
+fn countedSourceOf(comptime cat: type, comptime lang: Language, comptime base: []const u8) Language {
+    return if (cat != en and hasCounted(cat, base)) lang else .en;
 }
 
 fn checkCounted(comptime base: []const u8) void {
@@ -579,9 +584,17 @@ test "text, fmt and print give the current language's message, cut at a characte
     w = .fixed(&buf);
     try printCount(&w, "alarm_quiet_times", 1, .{ .times = 1 });
     try testing.expect(std.mem.startsWith(u8, w.buffered(), "THE BOARD WENT QUIET ONCE"));
-    // A language without its own file counts by English's rule, not its own (French counts
-    // 0 as one; English's form for 0 is "other").
-    try testing.expectEqualStrings("0 gaps", countIn(.fr, &buf, "rec_gaps", 0, .{ .gaps = 0 }));
+    // A language whose file lacks a counted message shows English's, by English's rule
+    // (French counts 0 as one; English's form for 0 is "other"); one that has it, its own.
+    const Without = struct {
+        pub const btn_quit = "x";
+    };
+    const With = struct {
+        pub const rec_gaps_one = "{[gaps]d} x";
+    };
+    try testing.expectEqual(Language.en, comptime countedSourceOf(Without, .fr, "rec_gaps"));
+    try testing.expectEqual(Language.fr, comptime countedSourceOf(With, .fr, "rec_gaps"));
+    try testing.expectEqual(Language.en, comptime countedSourceOf(en, .en, "rec_gaps"));
 }
 
 test "the language: the config's value, then LANG, else English" {
