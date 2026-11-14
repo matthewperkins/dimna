@@ -98,7 +98,7 @@ listens to it (♪). Shift+wheel scrolls back in time, `l` returns to live.
     monitor = "DP-2"          # the display goes fullscreen there
     tearing = true            # lowest latency; needs the compositor's cooperation
     scheme_image = "~/Pictures/lab.jpg"   # optional: take the GUI's colours from this picture
-    language = "en"           # optional: the language of the GUI's texts (only en so far; docs/display.md)
+    language = "en"           # optional: en, de, fr, pt, pl, zh or fa (see Languages)
 
     [board]
     lower_hz = 0.1
@@ -114,6 +114,24 @@ What you change while running (scales, filters, thresholds, which sections are o
 kept in `views.toml` beside it by "Save view"; the config itself is never rewritten except
 for its `[board]` table, by "Save as default".
 
+## Languages
+
+The windows can show English, German (`de`), French (`fr`), Brazilian Portuguese (`pt`),
+Polish (`pl`), Simplified Chinese (`zh`) or Persian (`fa`): set `language` in the config,
+or leave it out to follow `LANG`. Only the windows' texts change: log messages, `--help`,
+config keys and recordings stay in English.
+
+- Nothing extra is needed for the Latin-script languages. Chinese needs a Chinese font
+  (Noto Sans CJK SC). Persian needs an Arabic-script font (Noto Sans Arabic or
+  Vazirmatn) and, to join its letters, HarfBuzz and FriBidi. These are loaded at run time
+  only when needed, never linked. Without them dimna says what is missing and shows
+  English.
+- In Persian the control window is mirrored and reads from the right. The neural display
+  and the spike tiles keep their left-to-right layout, since that is the direction of time.
+- The translations are drafts that native speakers have not yet reviewed. Each language's
+  notes for a reviewer are in `docs/translations/`, and corrections are welcome. The
+  messages are in `src/gui/lang/<code>.zig`.
+
 ## Recordings
 
 One session per press of Record, under `~/dimna-recordings/<date_time>/ephys/`, with
@@ -126,7 +144,7 @@ can write beside it. Raw int16 samples, TTL edges, typed notes and a text `meta.
 | | |
 |---|---|
 | [docs/install.md](docs/install.md) | building, the two ways to reach the FT600, the headless tool |
-| [docs/display.md](docs/display.md) | panels and their config, filters, reference, triggered sweeps, TTL, review, notes |
+| [docs/display.md](docs/display.md) | panels and their config, filters, reference, triggered sweeps, TTL, review, notes, languages |
 | [docs/tiles-and-audio.md](docs/tiles-and-audio.md) | spike tiles, focus and listening, thresholds, the audio chain |
 | [docs/control.md](docs/control.md) | the control window, recording, board settings, alarms, saving the view |
 | [docs/recording.md](docs/recording.md) | the session layout, the recording format, how the recorder is tested |
