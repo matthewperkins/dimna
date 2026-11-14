@@ -46,20 +46,12 @@ pub const TraceParams = extern struct {
     dec_mask: u32 = 0,
 };
 
-/// The trace colours follow `TraceParams` in the push constants: `theme.trace` (12
-/// floats), then `theme.off_scale` and `theme.clip` packed as RGBA8 (`unpackUnorm4x8`).
+/// The trace colours (`theme.trace`, 12 floats) follow `TraceParams` in the push constants.
 const Palette = extern struct {
     trace: [4][3]f32,
-    marks: [2]u32,
 
     fn now() Palette {
-        return .{ .trace = theme.trace, .marks = .{ pack(theme.off_scale), pack(theme.clip) } };
-    }
-
-    fn pack(c: [3]f32) u32 {
-        var w: u32 = 0xFF00_0000;
-        for (c, 0..) |v, i| w |= @as(u32, @intFromFloat(@round(std.math.clamp(v, 0, 1) * 255))) << @intCast(8 * i);
-        return w;
+        return .{ .trace = theme.trace };
     }
 };
 const palette_bytes = @sizeOf(Palette);

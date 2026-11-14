@@ -50,9 +50,6 @@ pub const Scheme = struct {
     heading_hover: Colour,
     /// The four trace colours (channel & 3), as the shader takes them.
     trace: [4][3]f32,
-    /// What an off-scale trace column is pulled towards, and a column at the converter's limits.
-    off_scale: [3]f32,
-    clip: [3]f32,
     text_warn: Colour,
     text_rec: Colour,
     alarm_bar: Colour,
@@ -340,11 +337,6 @@ const Builder = struct {
         return .{ @as(f32, @floatFromInt(v[0])) / 255, @as(f32, @floatFromInt(v[1])) / 255, @as(f32, @floatFromInt(v[2])) / 255, 1 };
     }
 
-    fn rgbF(self: *Builder, l: f32, c: f32, h: f32) [3]f32 {
-        const v = self.rgb(l, c, h);
-        return .{ @as(f32, @floatFromInt(v[0])) / 255, @as(f32, @floatFromInt(v[1])) / 255, @as(f32, @floatFromInt(v[2])) / 255 };
-    }
-
     /// A bar colour that white text reads on: the lightness lowered in 0.01 steps until
     /// white contrasts with it by 4.5.
     fn underWhite(self: *Builder, l0: f32, c: f32, h: f32, alpha: u8) Colour {
@@ -523,11 +515,9 @@ pub fn assign(clusters: []const Cluster) Result {
     s.alarm_hint_text = bld.colour(0.90, 0.05, alarm_h, 255);
     const rec = bld.contrasting(0.68, 0.20, alarm_h, bg3, 4.5);
     s.text_rec = .{ rec[0], rec[1], rec[2], 255 };
-    s.clip = bld.rgbF(0.68, 0.22, alarm_h);
     s.warning_bar = bld.underWhite(0.50, 0.14, warn_h, 235);
     const tw = bld.contrasting(0.82, 0.15, warn_h, bg3, 6);
     s.text_warn = .{ tw[0], tw[1], tw[2], 255 };
-    s.off_scale = bld.rgbF(0.80, 0.17, warn_h);
     const alarm_hues: [2]f32 = .{ alarm_h, warn_h };
 
     var r: Result = .{ .scheme = s, .clusters = undefined, .n_clusters = clusters.len, .base_hue = bh, .alarm_hues = alarm_hues, .overshoot = bld.overshoot };
@@ -642,15 +632,11 @@ fn fillEntry(name: []const u8, f: Fill) Entry {
     return .{ .name = name, .rgb = .{ byte(f[0]), byte(f[1]), byte(f[2]) } };
 }
 
-fn rgbEntry(name: []const u8, f: [3]f32) Entry {
-    return .{ .name = name, .rgb = .{ byte(f[0]), byte(f[1]), byte(f[2]) } };
-}
-
 fn colourEntry(name: []const u8, c: Colour) Entry {
     return .{ .name = name, .rgb = .{ c[0], c[1], c[2] }, .alpha = c[3] };
 }
 
-pub const n_entries = 29;
+pub const n_entries = 27;
 
 /// Every themed colour with its name, for printing and the swatch.
 pub fn entries(s: *const Scheme) [n_entries]Entry {
@@ -680,10 +666,8 @@ pub fn entries(s: *const Scheme) [n_entries]Entry {
         colourEntry("alarm_bar", s.alarm_bar),
         colourEntry("alarm_hint_text", s.alarm_hint_text),
         colourEntry("text_rec", s.text_rec),
-        rgbEntry("clip", s.clip),
         colourEntry("warning_bar", s.warning_bar),
         colourEntry("text_warn", s.text_warn),
-        rgbEntry("off_scale", s.off_scale),
     };
 }
 

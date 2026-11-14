@@ -79,10 +79,9 @@ bar over the panel that input goes to) takes the first trace colour's hue; the s
 waveforms take the first trace colour. Text is made lighter until it contrasts with the
 background by at least 10 (bright text) or 4.5 (dim text).
 
-**Alarms clash on purpose.** The alarm (the alarm bar and its text, REC, and in the shader
-a trace at the converter's limits) takes the hue farthest from every colour of the picture
-and the traces; the warning (the warning bar and the REVIEW badge behind it, warning text,
-an off-scale trace's colour) the farthest at least 60 degrees from the alarm. The bars are
+**Alarms clash on purpose.** The alarm (the alarm bar and its text, REC) takes the hue
+farthest from every colour of the picture and the traces; the warning (the warning bar and
+the REVIEW badge behind it, warning text) the farthest at least 60 degrees from the alarm. The bars are
 dark enough for white text. A grey picture keeps red and amber. Never themed: the focus
 amber, notes, the detection threshold and the trigger level, the TTL tint, a row's own
 scale, the review badge's text.
@@ -98,13 +97,12 @@ contrast ratios and the time it took, optionally draws a swatch PNG (every theme
 and four noise traces in the trace colours), and exits without opening a window or the
 board. That is how to judge a picture before putting it in the config.
 
-## Off scale and saturated
+## Off scale
 
-A trace may reach 1.5 rows from its row's centre. Where it
-is wholly beyond that, a dashed amber line near the row's own upper or lower edge shows
-which way it has gone, instead of a flat line in a neighbour's row. Samples at the
-converter's limits (a saturated amplifier or ADC, whatever the display's scale) are drawn
-red.
+A trace may reach 1.5 rows from its row's centre. Where it is wholly beyond that, a dashed
+line in the trace's own colour near the row's upper or lower edge shows which way it has
+gone, instead of a flat line in a neighbour's row. Nothing marks a saturated amplifier or
+converter on the traces.
 
 Keys go by what they are labelled in your keyboard layout (so on Dvorak, `r` is the key
 marked r), and reach dimna while its window has the keyboard focus (with Hyprland's

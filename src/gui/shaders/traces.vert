@@ -32,7 +32,6 @@ layout(push_constant) uniform Params {
     uint dec_mask;     // buckets in `dec` - 1; 0: draw from samples whatever the time base;
                        // all ones: `dec` holds one word per pixel column, from `newest` on
     float pal[12];     // the four trace colours (rgb each), by channel & 3: `theme.trace`
-    uint marks[2];     // RGBA8: off-scale pull, converter limits (`theme.off_scale`, `theme.clip`)
 } p;
 
 // Pixel columns that hold this many samples or more are drawn from buckets: 4 to some
@@ -141,8 +140,4 @@ void main() {
 
     uint pi = (ch & 3u) * 3u;
     colour = vec3(p.pal[pi], p.pal[pi + 1u], p.pal[pi + 2u]) * p.gain;
-    // Off scale: the row's colour pulled towards amber. At the converter's limits (the
-    // amplifier or ADC is saturated, whatever the display's scale): red.
-    if (off_scale) colour = mix(colour, unpackUnorm4x8(p.marks[0]).rgb * p.gain, 0.65);
-    if (mx >= 32767.0 || mn <= -32768.0) colour = unpackUnorm4x8(p.marks[1]).rgb * p.gain;
 }
