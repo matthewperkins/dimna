@@ -22,7 +22,7 @@ out=$(cd "$1" && pwd -P)
 # Every -devel package is in Rocky 9's AppStream (checked 2026-11-14), so CRB stays off.
 command -v curl >/dev/null 2>&1 || dnf install -y curl-minimal
 dnf install -y --setopt=install_weak_deps=False \
-    tar gzip xz binutils coreutils findutils pkgconf-pkg-config \
+    tar gzip xz binutils findutils pkgconf-pkg-config \
     wayland-devel vulkan-loader-devel freetype-devel fontconfig-devel \
     libxkbcommon-devel alsa-lib-devel
 
