@@ -1011,6 +1011,14 @@ pub const Display = struct {
         var trig_buf: [48]u8 = undefined;
         const trig_uv = if (p.triggerChannel()) |ch| self.thresholdUv(ch) else null;
         panelTitle(o, p, r, t.in_review, shown_sweeps, trigText(&trig_buf, p, trig_uv, self.thresholds.sigmas));
+        // In review with nothing to draw yet: say what is being waited for, where the
+        // traces would be.
+        if (t.waiting) {
+            const text = if (t.from_columns) "building the overview of this stretch" else "reading the recording";
+            const x = @as(f32, @floatFromInt(r.x)) + (@as(f32, @floatFromInt(r.w)) - o.batch.font.width(text)) / 2;
+            const y = @as(f32, @floatFromInt(r.y)) + (@as(f32, @floatFromInt(r.h)) - o.line_h) / 2;
+            _ = o.batch.text(@max(x, @as(f32, @floatFromInt(r.x)) + 4), y, text, theme.text_warn);
+        }
         if (p.mode == .triggered) timeAxis(o, p, r);
         self.rowLabels(o, p, r, scene.layout);
     }
@@ -1504,7 +1512,7 @@ fn reviewBadge(o: *Output, v: ReviewView, width: u32, fs: f64) void {
         .{
             v.behind_s,
             control.fmtClock(&clock_buf, @as(f64, @floatFromInt(v.end)) / fs),
-            if (v.ready) "" else "   (reading)",
+            if (!v.ready) "   (reading)" else if (v.columns & ~v.columns_ready != 0) "   (building the overview)" else "",
         },
     ) catch "REVIEW";
     const tw = batch.font.width(text);

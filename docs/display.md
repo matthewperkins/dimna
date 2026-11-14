@@ -251,7 +251,8 @@ through minutes is immediate. Back in the live view the time base returns to wha
 The overview is built from what the display shows as it arrives; what it missed, and
 everything after a change of a panel's filter, reference or rows, is made again from the
 file by a thread at idle priority (about 50 times real time on the rig's machine), nearest
-the stretch on screen first. Until that is done the panel is empty. It uses about 0.65 GB
+the stretch on screen first. Until that is done the panel says "building the overview of
+this stretch" in place of its traces, and the REVIEW badge says so too. It uses about 0.65 GB
 an hour at 72 traces, up to 1.5 GB; beyond that the finest detail of the oldest part is
 let go. It never touches acquisition or the recorder.
 

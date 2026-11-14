@@ -26,7 +26,6 @@ seen, so it can be told apart from a guess. Remove an entry when it is fixed or 
 - **The overview's backfill never makes a recording's last, partly filled bucket** (under
   64 samples), so after a panel change once acquisition has stopped, "building" stays
   true (`overview.zig`; found by the agent that wrote it). The live rows cover it otherwise.
-- **A review panel waiting for the overview is empty**, with no text saying why.
 - **In review past the overview's budget (about 2.3 h at 72 traces)** time bases of
   roughly 2 to 30 s on the oldest part have neither the fine levels nor, beyond 35 s,
   the samples: such a panel stays empty. Never run that long.

@@ -723,7 +723,7 @@ rect 702 674 38 18 { 8, 10, 14, 200 }
 text 705 675 { 150, 160, 178, 255 } "TTL8"
 rect 298 4 404 26 { 150, 100, 10, 235 }
 text 308 9 { 255, 240, 200, 255 } "REVIEW   12.5 s behind live   at 1:27   l = live"
-== review from the file, still reading: 10 draws, 5 fills, 55 text runs, 65 rects
+== review from the file, still reading: 10 draws, 5 fills, 58 text runs, 65 rects
 draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2959045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.20000002 gain_base=512 dec_mask=131071
 draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2965045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.25000003 gain_base=512 dec_mask=131071
 draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2971045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.3 gain_base=512 dec_mask=131071
@@ -747,6 +747,7 @@ rect 108.85 0 10 420 { 90, 150, 255, 30 }
 rect 8.85 0 10 420 { 90, 150, 255, 30 }
 rect 5 5 302 18 { 8, 10, 14, 200 }
 text 8 6 { 225, 230, 240, 255 } "Port A   5.00 s   400 µV/row   review"
+text 166 202 { 255, 190, 90, 255 } "reading the recording"
 rect 2 50 14 18 { 8, 10, 14, 200 }
 text 5 51 { 150, 160, 178, 255 } "5"
 rect 2 76 14 18 { 8, 10, 14, 200 }
@@ -780,6 +781,7 @@ rect 835 27 174 18 { 8, 10, 14, 200 }
 text 838 28 { 255, 225, 120, 255 } "in the review stretch"
 rect 505 5 302 18 { 8, 10, 14, 200 }
 text 508 6 { 225, 230, 240, 255 } "Port B   1.00 s   400 µV/row   review"
+text 666 202 { 255, 190, 90, 255 } "reading the recording"
 rect 502 30 14 18 { 8, 10, 14, 200 }
 text 505 31 { 150, 160, 178, 255 } "2"
 rect 502 57 14 18 { 8, 10, 14, 200 }
@@ -841,6 +843,7 @@ text 5 679 { 150, 160, 178, 255 } "31"
 rect 950 420 1 280 { 255, 225, 120, 190 }
 rect 821 425 174 18 { 8, 10, 14, 200 }
 text 824 426 { 225, 230, 240, 255 } "TTL   2.00 s   review"
+text 766 552 { 255, 190, 90, 255 } "reading the recording"
 rect 702 429 38 18 { 8, 10, 14, 200 }
 text 705 430 { 150, 160, 178, 255 } "TTL1"
 rect 702 464 46 18 { 8, 10, 14, 200 }
@@ -3105,7 +3108,7 @@ text 676 352 { 150, 200, 255, 255 } "drag the red line"
 text 828 352 { 175, 184, 200, 255 } "its threshold, fixed (uV)"
 text 676 368 { 150, 200, 255, 255 } "the chips"
 text 828 368 { 175, 184, 200, 255 } "one port's tiles, or all"
-== review from the file: Port A from the overview's pixel columns, Port B's not there yet: 12 draws, 5 fills, 55 text runs, 65 rects
+== review from the file: Port A from the overview's pixel columns, Port B's not there yet: 12 draws, 5 fills, 56 text runs, 65 rects
 draw 0 0 500 420 review=true nch=62 cap_mask=1048575 newest=0 first_ch=7 cols=500 rows=32 span=150000 lsb_per_row=2051.282 half_px=0.0035714286 phase=-1 future=0 gain=1 gain_base=0 dec_mask=4294967295
 draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2959045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.20000002 gain_base=512 dec_mask=131071
 draw 0 420 700 280 review=false nch=62 cap_mask=1048575 newest=2965045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005357143 phase=-1 future=0 gain=0.25000003 gain_base=512 dec_mask=131071
@@ -3164,6 +3167,7 @@ rect 835 27 174 18 { 8, 10, 14, 200 }
 text 838 28 { 255, 225, 120, 255 } "in the review stretch"
 rect 505 5 302 18 { 8, 10, 14, 200 }
 text 508 6 { 225, 230, 240, 255 } "Port B   1.00 s   400 µV/row   review"
+text 602 202 { 255, 190, 90, 255 } "building the overview of this stretch"
 rect 502 30 14 18 { 8, 10, 14, 200 }
 text 505 31 { 150, 160, 178, 255 } "2"
 rect 502 57 14 18 { 8, 10, 14, 200 }
@@ -3241,5 +3245,5 @@ rect 702 639 38 18 { 8, 10, 14, 200 }
 text 705 640 { 150, 160, 178, 255 } "TTL7"
 rect 702 674 38 18 { 8, 10, 14, 200 }
 text 705 675 { 150, 160, 178, 255 } "TTL8"
-rect 298 4 404 26 { 150, 100, 10, 235 }
-text 308 9 { 255, 240, 200, 255 } "REVIEW   12.5 s behind live   at 1:27   l = live"
+rect 194 4 612 26 { 150, 100, 10, 235 }
+text 204 9 { 255, 240, 200, 255 } "REVIEW   12.5 s behind live   at 1:27   (building the overview)   l = live"
