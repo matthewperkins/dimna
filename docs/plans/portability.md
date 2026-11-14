@@ -77,14 +77,13 @@ match the host driver).
        package never adds a user to a group: it says how (`usermod -aG realtime $USER`,
        then log out and in), in the package description and in `docs/install.md`;
      - the desktop entry and icons under `/usr/share`, pointing at `/usr/bin/dimna`.
-     - Built from one description with nfpm (a single Go binary; it is not in Arch's main
-       repositories, so fetching it is a download the owner approves) or, if the owner
-       prefers no new tool, `dpkg-deb` and `rpmbuild` (both in Arch's repositories). Either
-       way it runs from `zig build release` or a `packaging/` script beside it, and the
-       packages go into `zig-out/release` beside the tarballs.
-     - Evidence: `dpkg-deb --info/--contents` and `rpm -qip/-qlp` listings; declared
-       dependencies match the NEEDED list in CHECK. Installing them is a test on Ubuntu
-       22.04 and Rocky 9 (see Testing), not something done on the rig.
+     - Both are described once, in `packaging/nfpm.yaml` (nfpm writes `.deb` and `.rpm`
+       from one file). Dependencies are package names, so they are written per format and
+       must allow for renames: Debian 13 and Ubuntu 24.04 call ALSA's library
+       `libasound2t64`, older releases `libasound2`, so the `.deb` depends on
+       `libasound2 | libasound2t64`; check every other name the same way.
+     - **Built and tested by GitHub Actions, not on the rig** (decided with the owner,
+       2026-11-14). See "Release workflow" below.
      - Downloads from the GitHub release page at first. An apt/dnf repository (or a PPA
        or COPR) for updates comes later, once other labs use dimna.
    - **Building from source, any distribution**: a section in `docs/install.md` and
@@ -152,22 +151,56 @@ match the host driver).
   fribidi), `objdump -T` showing no GLIBC_ version above 2.34, the binaries running here
   (`--help`, and `dimna-headless --sim --seconds 5 --no-audio` into a /tmp folder), and the
   tarball's file list. Do not run the GUI.
-- **Steps 4 to 6**: after step 3, with the owner. Step 4's open questions for the owner:
-  nfpm or `dpkg-deb`/`rpmbuild`. (The udev rule's access is decided: `dimna` group,
-  0660, uaccess.)
+- **Steps 4 to 6**: after step 3, with the owner. Decided for step 4: the udev rule's
+  access (`dimna` group, 0660, uaccess) and packages built with nfpm in GitHub Actions.
+  An agent writes the workflow and `packaging/nfpm.yaml` and checks them locally as far as
+  it can without downloads (`actionlint` if installed, YAML parsing, the file lists against
+  the tarball's); it never pushes, tags or starts a workflow. The owner pushes; the first
+  run's log is the evidence.
+
+## Release workflow (`.github/workflows/release.yml`)
+
+Runs on a pushed version tag (`v*`) and by hand (`workflow_dispatch`). Never touches a
+board; there is none.
+
+1. **Build** in a `rockylinux:9` container, so dimna is compiled against the oldest target's
+   own headers and libraries (this removes step 3's caveat that Arch's headers could hide a
+   function Rocky 9 lacks). Install the `-devel` packages and git; download Zig 0.17.1 and
+   nfpm from their release pages, each checked against a sha256 written in the workflow;
+   `zig build test`, then `zig build release` (its readelf/objdump CHECK must pass); nfpm
+   makes the `.deb` and `.rpm` from the gnu binaries. Upload everything as artifacts.
+   - Whether `zig build release`'s system-paths handling (written for Arch) finds Rocky's
+     libraries and `.pc` files as it is, or needs a change in `build.zig`, is the first
+     thing to find out; the fix goes in `build.zig`, not in workflow tricks.
+   - The musl tarball is built in the same job, as now.
+2. **Test**, a matrix of containers: `ubuntu:22.04`, `ubuntu:24.04`, `debian:12`,
+   `debian:13`, `rockylinux:9`, `fedora:latest`. In each: install the package with apt or
+   dnf (dependencies must resolve from that distribution's own repositories); `dimna
+   --help` (every library loads); `dimna-headless --sim` for 5 s recording into a temporary
+   folder, then check the recording is complete (the same check as step 3's report);
+   check the udev rule, limits file, desktop entry and icons are where step 4 lists and the
+   `dimna` group exists; remove the package and check the files are gone. Also the musl
+   tarball's `dimna-headless --sim` in a Void musl container, if Void publishes one.
+   No GPU or Wayland: the GUI is not run in CI.
+3. **Release**: only when the build and every test pass, create a **draft** GitHub release
+   for the tag with the tarballs, `.deb`, `.rpm` and a SHA256SUMS file. The owner reads
+   it and publishes it; the workflow never publishes.
+
+Rules for the workflow file: third-party actions pinned to a full commit SHA (with the
+version in a comment); `permissions:` least needed (`contents: read`, and `contents:
+write` only on the release job); no secrets beyond the built-in `GITHUB_TOKEN`. The
+private repository's Actions quota (2,000 minutes a month on the free plan) is ample for
+a run of perhaps 10–15 minutes.
 
 ## Testing
 
 There are no containers on the rig (no podman, docker or distrobox), but `systemd-nspawn`
 and `bwrap` are installed. Steps 1-3 are checked on the rig (identical generated bindings,
-readelf/objdump, all tests). The release binary can then be run on other distributions in
-`systemd-nspawn` containers made from their published root filesystem images (Debian 12,
-Ubuntu 22.04, Rocky 9, Fedora, openSUSE, Void musl), with the owner's Wayland socket bound
-in for a windowed `--sim` run. The `.deb` is installed with apt in the Ubuntu 22.04 and
-Debian 12 containers and the `.rpm` with dnf in Rocky 9 and Fedora: dependencies resolve,
-the files land where listed, `dimna-headless --sim` runs, and removing the package
-removes them. That needs downloads and root, so the owner does it or
-approves it; an agent never does. Other compositors need a session the owner provides:
+readelf/objdump, all tests). Installing and running the packages on other distributions is
+done by the release workflow's test matrix, not on the rig. What CI cannot do is draw: a
+windowed `--sim` run on another distribution (for example in a `systemd-nspawn`
+container with the owner's Wayland socket bound in) needs downloads and root, so the owner
+does it or approves it; an agent never does. Other compositors need a session the owner provides:
 list per distro and compositor what was actually run and what was not. Never run the GUI
 against the board on someone else's machine without its owner present.
 
