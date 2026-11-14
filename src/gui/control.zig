@@ -22,6 +22,7 @@ const theme = @import("theme.zig");
 const Env = @import("env.zig").Env;
 const Status = @import("display.zig").Status;
 const format = @import("format.zig");
+const i18n = @import("i18n.zig");
 const Atomic = std.atomic.Value;
 const log = std.log.scoped(.control);
 
@@ -50,6 +51,10 @@ pub const RecStatus = struct {
     }
     pub fn setNote(self: *RecStatus, comptime fmt: []const u8, args: anytype) void {
         self.note_len = format.fmt(&self.note_buf, fmt, args).len;
+    }
+    /// The same, from a message of the catalogue.
+    pub fn say(self: *RecStatus, comptime id: i18n.Id, args: anytype) void {
+        self.note_len = i18n.fmt(&self.note_buf, id, args).len;
     }
 };
 
@@ -143,6 +148,10 @@ pub const BoardStatus = struct {
     pub fn setNote(self: *BoardStatus, comptime fmt: []const u8, args: anytype) void {
         self.note_len = format.fmt(&self.note_buf, fmt, args).len;
     }
+    /// The same, from a message of the catalogue.
+    pub fn say(self: *BoardStatus, comptime id: i18n.Id, args: anytype) void {
+        self.note_len = i18n.fmt(&self.note_buf, id, args).len;
+    }
 };
 
 /// A change to the board's settings.
@@ -172,6 +181,15 @@ pub const QuitPrompt = struct {
     path_buf: [200]u8 = undefined,
     path_len: usize = 0,
 };
+
+/// A display mode's name, as the buttons and the summary show it.
+pub fn modeText(m: panels.Mode) []const u8 {
+    return switch (m) {
+        .scroll => i18n.text(.mode_scroll),
+        .sweep => i18n.text(.mode_sweep),
+        .triggered => i18n.text(.mode_triggered),
+    };
+}
 
 /// "0.58 Hz", "300 Hz", "7.60 kHz".
 pub fn fmtHz(buf: []u8, hz: f64) []const u8 {
@@ -456,7 +474,7 @@ fn build(ui: *ui_mod.Ui, cfg: *const Config, snap: *const Snapshot, shared: *Sha
     thresholdSection(ui, &snap.thresholds, shared);
     boardSection(ui, &snap.board, snap.rec.state, shared, &view.headstages);
     for (snap.set.items[0..snap.set.len], 0..) |*p, i| panelSection(ui, p, i, snap, shared, view);
-    ui.text("Press ? on the display for its keys and mouse actions, and the tile window's.", theme.text_dim);
+    ui.text(i18n.text(.hint_keys), theme.text_dim);
 }
 
 /// Multiplies the scale or the time base, one stepper click.
@@ -485,7 +503,7 @@ fn titleSection(ui: *ui_mod.Ui, snap: *const Snapshot, shared: *Shared) void {
         ui.batch.rect(0, ui.y - 2, ui.width, ui.rowHeight() + 2, theme.alarm_bar);
         ui.text(snap.status.alarm(), theme.text_bright);
         ui.x = @max(ui.x, ui.width - 130);
-        if (ui.button("Acknowledge", false)) shared.push(.acknowledge);
+        if (ui.button(i18n.text(.btn_acknowledge), false)) shared.push(.acknowledge);
         ui.newline();
     } else if (snap.status.warning_len > 0) {
         ui.text(snap.status.warning(), theme.text_warn);
@@ -496,7 +514,7 @@ fn titleSection(ui: *ui_mod.Ui, snap: *const Snapshot, shared: *Shared) void {
 /// Shown instead of everything below the title when quitting with changed board settings.
 fn quitPrompt(ui: *ui_mod.Ui, q: *const QuitPrompt, shared: *Shared) void {
     ui.separator();
-    ui.text("Settings changed since they were last saved:", theme.text_bright);
+    ui.text(i18n.text(.quit_heading), theme.text_bright);
     ui.newline();
     for (0..q.changes.count) |i| {
         ui.space(16);
@@ -505,9 +523,9 @@ fn quitPrompt(ui: *ui_mod.Ui, q: *const QuitPrompt, shared: *Shared) void {
     }
     ui.text(q.path_buf[0..q.path_len], theme.text_dim);
     ui.newline();
-    if (ui.button("Save as default and quit", true)) shared.push(.{ .quit_answer = .save });
-    if (ui.button("Quit without saving", false)) shared.push(.{ .quit_answer = .discard });
-    if (ui.button("Cancel", false)) shared.push(.{ .quit_answer = .cancel });
+    if (ui.button(i18n.text(.btn_save_and_quit), true)) shared.push(.{ .quit_answer = .save });
+    if (ui.button(i18n.text(.btn_quit_without_saving), false)) shared.push(.{ .quit_answer = .discard });
+    if (ui.button(i18n.text(.btn_cancel), false)) shared.push(.{ .quit_answer = .cancel });
 }
 
 /// The display's latency and losses, and Save view / Quit.
@@ -516,16 +534,16 @@ fn statusSection(ui: *ui_mod.Ui, snap: *const Snapshot, shared: *Shared) void {
     const st = snap.status;
     if (st.valid) {
         ui.text(
-            format.fmt(&buf, "display {d:.1} ms   {d} fps   running {d:.0} s", .{ st.latency_ms, st.fps, snap.seconds }),
+            i18n.fmt(&buf, .status_display, .{ .ms = st.latency_ms, .fps = st.fps, .seconds = snap.seconds }),
             theme.text_dim,
         );
-    } else ui.text("starting", theme.text_dim);
-    if (st.lost > 0) ui.text(format.fmt(&buf, "display skipped {d} blocks", .{st.lost}), theme.text_warn);
-    if (snap.ring_overflow > 0) ui.text(format.fmt(&buf, "ACQUISITION RING OVERFLOW {d}", .{snap.ring_overflow}), theme.text_warn);
+    } else ui.text(i18n.text(.status_starting), theme.text_dim);
+    if (st.lost > 0) ui.text(i18n.fmt(&buf, .status_display_skipped, .{ .blocks = st.lost }), theme.text_warn);
+    if (snap.ring_overflow > 0) ui.text(i18n.fmt(&buf, .status_ring_overflow, .{ .count = snap.ring_overflow }), theme.text_warn);
     ui.x = @max(ui.x, ui.width - 170);
     // Lit while the panels' settings differ from what is saved.
-    if (ui.button("Save view", snap.view_unsaved)) shared.push(.save_view);
-    if (ui.button("Quit", false)) shared.push(.quit);
+    if (ui.button(i18n.text(.btn_save_view), snap.view_unsaved)) shared.push(.save_view);
+    if (ui.button(i18n.text(.btn_quit), false)) shared.push(.quit);
     ui.newline();
     ui.separator();
 }
@@ -534,25 +552,25 @@ fn statusSection(ui: *ui_mod.Ui, snap: *const Snapshot, shared: *Shared) void {
 fn recordSection(ui: *ui_mod.Ui, rec: *const RecStatus, shared: *Shared) void {
     var buf: [160]u8 = undefined;
     switch (rec.state) {
-        .idle, .failed => if (ui.button("Record", false)) shared.push(.{ .record = true }),
-        .recording => if (ui.button("Stop recording", true)) shared.push(.{ .record = false }),
-        .stopping => ui.text("finishing the recording", theme.text_dim),
+        .idle, .failed => if (ui.button(i18n.text(.btn_record), false)) shared.push(.{ .record = true }),
+        .recording => if (ui.button(i18n.text(.btn_stop_recording), true)) shared.push(.{ .record = false }),
+        .stopping => ui.text(i18n.text(.rec_finishing), theme.text_dim),
     }
     if (rec.state == .recording or rec.state == .stopping) {
         var clock_buf: [16]u8 = undefined;
         ui.text(
-            format.fmt(&buf, "REC {s}   {d:.2} GB   {d:.1} M samples", .{
-                fmtClock(&clock_buf, rec.seconds),
-                @as(f64, @floatFromInt(rec.bytes)) / 1e9,
-                @as(f64, @floatFromInt(rec.samples)) / 1e6,
+            i18n.fmt(&buf, .rec_status, .{
+                .clock = fmtClock(&clock_buf, rec.seconds),
+                .gb = @as(f64, @floatFromInt(rec.bytes)) / 1e9,
+                .msamples = @as(f64, @floatFromInt(rec.samples)) / 1e6,
             }),
             theme.text_rec,
         );
-        if (rec.behind_s > 1.0) ui.text(format.fmt(&buf, "disk is {d:.1} s behind", .{rec.behind_s}), theme.text_warn);
-        if (rec.gaps > 0) ui.text(format.fmt(&buf, "{d} gaps", .{rec.gaps}), theme.text_warn);
+        if (rec.behind_s > 1.0) ui.text(i18n.fmt(&buf, .rec_disk_behind, .{ .behind = rec.behind_s }), theme.text_warn);
+        if (rec.gaps > 0) ui.text(i18n.fmt(&buf, .rec_gaps, .{ .gaps = rec.gaps }), theme.text_warn);
     } else if (rec.state == .failed) {
-        ui.text("RECORDING FAILED", theme.text_warn);
-    } else ui.text("not recording", theme.text_dim);
+        ui.text(i18n.text(.rec_failed), theme.text_warn);
+    } else ui.text(i18n.text(.rec_idle), theme.text_dim);
     ui.newline();
     if (rec.note_len > 0) {
         ui.text(rec.note(), if (rec.state == .failed) theme.text_warn else theme.text_dim);
@@ -569,7 +587,7 @@ fn recordSection(ui: *ui_mod.Ui, rec: *const RecStatus, shared: *Shared) void {
 /// newest notes.
 fn notesSection(ui: *ui_mod.Ui, nt: *const NotesStatus, shared: *Shared, open: *bool) void {
     var buf: [160]u8 = undefined;
-    if (!sectionHeading(ui, "Notes", open, notesSummary(&buf, nt))) return ui.separator();
+    if (!sectionHeading(ui, i18n.text(.section_notes), open, notesSummary(&buf, nt))) return ui.separator();
     ui.column(64);
     var any_preset = false;
     for (&nt.presets, 1..) |*pr, n| {
@@ -578,9 +596,9 @@ fn notesSection(ui: *ui_mod.Ui, nt: *const NotesStatus, shared: *Shared, open: *
         if (ui.button(format.fmt(&buf, "{d} {s}", .{ n, pr.buf[0..pr.len] }), false))
             shared.push(.{ .note_preset = @intCast(n) });
     }
-    if (!any_preset) ui.text("on the display: / types a note, Enter saves it", theme.text_dim);
-    if (nt.editing) ui.text("typing a note", theme.text_warn);
-    if (nt.num_drafts > 0) ui.text(format.fmt(&buf, "{d} drafts (` stamps one)", .{nt.num_drafts}), theme.text_dim);
+    if (!any_preset) ui.text(i18n.text(.notes_hint), theme.text_dim);
+    if (nt.editing) ui.text(i18n.text(.notes_typing), theme.text_warn);
+    if (nt.num_drafts > 0) ui.text(i18n.fmt(&buf, .notes_drafts, .{ .count = nt.num_drafts }), theme.text_dim);
     ui.newline();
     for (nt.recent[0..nt.num_recent]) |*line| {
         var clock_buf: [16]u8 = undefined;
@@ -595,66 +613,72 @@ fn notesSection(ui: *ui_mod.Ui, nt: *const NotesStatus, shared: *Shared, open: *
 fn notesSummary(buf: []u8, nt: *const NotesStatus) []const u8 {
     var presets: usize = 0;
     for (&nt.presets) |*pr| presets += @intFromBool(pr.len > 0);
-    const plural = if (presets == 1) "" else "s";
-    if (nt.num_recent == 0) return format.fmt(buf, "{d} preset{s}   no notes yet", .{ presets, plural });
+    var presets_buf: [48]u8 = undefined;
+    const counted = if (presets == 1)
+        i18n.fmt(&presets_buf, .presets_one, .{ .count = presets })
+    else
+        i18n.fmt(&presets_buf, .presets_many, .{ .count = presets });
+    if (nt.num_recent == 0) return i18n.fmt(buf, .notes_summary_empty, .{ .presets = counted });
     var clock_buf: [16]u8 = undefined;
     const last = &nt.recent[0];
-    return format.fmt(buf, "{d} preset{s}   last note {s}  {s}", .{
-        presets, plural, fmtClock(&clock_buf, last.seconds), last.buf[0..last.len],
+    return i18n.fmt(buf, .notes_summary_last, .{
+        .presets = counted,
+        .clock = fmtClock(&clock_buf, last.seconds),
+        .text = last.buf[0..last.len],
     });
 }
 
 /// The audio monitor: on or off, volume, what is listened to, latency; open, its controls.
 fn audioSection(ui: *ui_mod.Ui, au: *const AudioStatus, shared: *Shared, open: *bool) void {
     var buf: [160]u8 = undefined;
-    if (!sectionHeading(ui, "Audio", open, audioSummary(&buf, au))) return ui.separator();
+    if (!sectionHeading(ui, i18n.text(.section_audio), open, audioSummary(&buf, au))) return ui.separator();
     ui.column(64);
-    if (ui.button("on", au.settings.enabled) and !au.settings.enabled) shared.push(.{ .audio = .{ .enabled = true } });
-    if (ui.button("off", !au.settings.enabled) and au.settings.enabled) shared.push(.{ .audio = .{ .enabled = false } });
-    if (ui.button("mute", au.settings.mute)) shared.push(.{ .audio = .{ .mute = !au.settings.mute } });
-    const dvol = ui.stepper("volume", format.fmt(&buf, "{d:.0} dB", .{au.settings.volume_db}), 60);
+    if (ui.button(i18n.text(.toggle_on), au.settings.enabled) and !au.settings.enabled) shared.push(.{ .audio = .{ .enabled = true } });
+    if (ui.button(i18n.text(.toggle_off), !au.settings.enabled) and au.settings.enabled) shared.push(.{ .audio = .{ .enabled = false } });
+    if (ui.button(i18n.text(.btn_mute), au.settings.mute)) shared.push(.{ .audio = .{ .mute = !au.settings.mute } });
+    const dvol = ui.stepper(i18n.text(.label_volume), format.fmt(&buf, "{d:.0} dB", .{au.settings.volume_db}), 60);
     if (dvol != 0) shared.push(.{ .audio = .{ .volume = dvol > 0 } });
     // "plain" is the linear reference chain, for comparing by ear.
-    if (ui.button("shaped", !au.settings.reference) and au.settings.reference)
+    if (ui.button(i18n.text(.btn_shaped), !au.settings.reference) and au.settings.reference)
         shared.push(.{ .audio = .{ .reference = false } });
-    if (ui.button("plain", au.settings.reference) and !au.settings.reference)
+    if (ui.button(i18n.text(.btn_plain), au.settings.reference) and !au.settings.reference)
         shared.push(.{ .audio = .{ .reference = true } });
-    if (ui.button("CAR", au.car)) shared.push(.{ .audio = .{ .car = !au.car } });
-    if (ui.button("recalibrate", false)) shared.push(.{ .audio = .recalibrate });
+    if (ui.button(i18n.text(.label_car), au.car)) shared.push(.{ .audio = .{ .car = !au.car } });
+    if (ui.button(i18n.text(.btn_recalibrate), false)) shared.push(.{ .audio = .recalibrate });
     ui.newline();
     if (!au.running) {
-        ui.text("no audio output", theme.text_dim);
+        ui.text(i18n.text(.audio_no_output), theme.text_dim);
     } else if (au.settings.enabled) {
         ui.text(
-            format.fmt(
+            i18n.fmt(
                 &buf,
-                "listening to {s}",
-                .{if (au.listen_len > 0) au.listen_buf[0..au.listen_len] else "nothing (click a row on the display)"},
+                .audio_listening,
+                .{ .what = if (au.listen_len > 0) au.listen_buf[0..au.listen_len] else i18n.text(.audio_listening_nothing) },
             ),
             theme.text_dim,
         );
         if (au.listen_len > 0) {
             if (au.sigma_uv > 0)
-                ui.text(format.fmt(&buf, "noise {d:.1} µV, held", .{au.sigma_uv}), theme.text_dim)
+                ui.text(i18n.fmt(&buf, .audio_noise_held, .{ .sigma = au.sigma_uv }), theme.text_dim)
             else
-                ui.text("measuring the noise (3 s)", theme.text_warn);
+                ui.text(i18n.text(.audio_measuring), theme.text_warn);
             ui.text(format.fmt(&buf, "{d:.0} ms", .{au.latency_ms}), theme.text_dim);
         }
-        if (au.underruns > 0) ui.text(format.fmt(&buf, "{d} gaps in the sound", .{au.underruns}), theme.text_dim);
-    } else ui.text("off", theme.text_dim);
+        if (au.underruns > 0) ui.text(i18n.fmt(&buf, .audio_gaps, .{ .count = au.underruns }), theme.text_dim);
+    } else ui.text(i18n.text(.toggle_off), theme.text_dim);
     ui.newline();
     ui.separator();
 }
 
 /// "on, muted   -6 dB   listening to A1-5   9 ms".
 fn audioSummary(buf: []u8, au: *const AudioStatus) []const u8 {
-    if (!au.running) return "no audio output";
-    const muted = if (au.settings.mute) ", muted" else "";
+    if (!au.running) return i18n.text(.audio_no_output);
+    const muted = if (au.settings.mute) i18n.text(.audio_muted) else "";
     const db = au.settings.volume_db;
-    if (!au.settings.enabled) return format.fmt(buf, "off{s}   {d:.0} dB", .{ muted, db });
-    if (au.listen_len == 0) return format.fmt(buf, "on{s}   {d:.0} dB   listening to nothing", .{ muted, db });
+    if (!au.settings.enabled) return i18n.fmt(buf, .audio_summary_off, .{ .muted = muted, .db = db });
+    if (au.listen_len == 0) return i18n.fmt(buf, .audio_summary_nothing, .{ .muted = muted, .db = db });
     const listen = au.listen_buf[0..au.listen_len];
-    return format.fmt(buf, "on{s}   {d:.0} dB   listening to {s}   {d:.0} ms", .{ muted, db, listen, au.latency_ms });
+    return i18n.fmt(buf, .audio_summary_on, .{ .muted = muted, .db = db, .what = listen, .ms = au.latency_ms });
 }
 
 /// The spike detection threshold of every channel that follows the noise: how many sigmas
@@ -663,11 +687,11 @@ fn thresholdSection(ui: *ui_mod.Ui, th: *const dimna.thresholds.Thresholds, shar
     var buf: [32]u8 = undefined;
     // Where a heading's text starts, though this one does not open.
     ui.space(9);
-    ui.text("Spikes", theme.text_bright);
+    ui.text(i18n.text(.section_spikes), theme.text_bright);
     ui.column(summary_column);
-    const ds = ui.stepper("threshold", format.fmt(&buf, "{d} σ", .{th.sigmas}), 60);
+    const ds = ui.stepper(i18n.text(.label_threshold), format.fmt(&buf, "{d} σ", .{th.sigmas}), 60);
     if (ds != 0) shared.push(.{ .threshold = .{ .sigmas = ds > 0 } });
-    ui.text("below zero, where it follows the noise", theme.text_dim);
+    ui.text(i18n.text(.hint_below_zero), theme.text_dim);
     ui.newline();
     ui.separator();
 }
@@ -679,10 +703,10 @@ fn boardSection(ui: *ui_mod.Ui, bd: *const BoardStatus, rec: RecStatus.State, sh
     var buf: [160]u8 = undefined;
     // Open by itself while "Apply" or "Save as default" matters; a click then does nothing.
     const forced = bd.restartPending() or bd.unsaved;
-    if (ui.heading("Headstages", open.* or forced) and !forced) open.* = !open.*;
+    if (ui.heading(i18n.text(.section_headstages), open.* or forced) and !forced) open.* = !open.*;
     ui.column(summary_column);
     ui.text(boardSummary(&buf, bd), theme.text_dim);
-    if (forced) ui.text(if (bd.restartPending()) "(restart pending)" else "(not saved as default)", theme.text_warn);
+    if (forced) ui.text(if (bd.restartPending()) i18n.text(.board_restart_pending) else i18n.text(.board_not_saved), theme.text_warn);
     ui.newline();
     if (open.* or forced) boardControls(ui, bd, rec, shared);
     // Shown open or closed: it answers a click (Save view, Save as default).
@@ -699,12 +723,18 @@ fn boardSummary(buf: []u8, bd: *const BoardStatus) []const u8 {
     var lo_buf: [24]u8 = undefined;
     var hi_buf: [24]u8 = undefined;
     // Cut where the buffer ends (the writer keeps what fit).
-    w.print("{d} Hz   {s}–{s}   DSP ", .{
-        bd.settings.sample_rate, fmtHz(&lo_buf, bd.lower_actual), fmtHz(&hi_buf, bd.upper_actual),
+    i18n.print(&w, .board_summary_head, .{
+        .rate = bd.settings.sample_rate,
+        .lower = fmtHz(&lo_buf, bd.lower_actual),
+        .upper = fmtHz(&hi_buf, bd.upper_actual),
     }) catch {};
-    if (bd.settings.dsp_enabled) w.print("on, {s}", .{fmtHz(&lo_buf, bd.dsp_actual)}) catch {} else w.writeAll("off") catch {};
+    if (bd.settings.dsp_enabled)
+        i18n.print(&w, .board_summary_dsp_on, .{ .cutoff = fmtHz(&lo_buf, bd.dsp_actual) }) catch {}
+    else
+        w.writeAll(i18n.text(.toggle_off)) catch {};
     for (bd.headstages[0..bd.num_headstages]) |h| {
-        if (h.rhd2132 and bd.settings.rhd2132_16ch[h.slot]) w.print("   {s} 16 of 32", .{dimna.types.headstage_names[h.slot]}) catch {};
+        if (h.rhd2132 and bd.settings.rhd2132_16ch[h.slot])
+            i18n.print(&w, .board_summary_half, .{ .headstage = dimna.types.headstage_names[h.slot] }) catch {};
     }
     return w.buffered();
 }
@@ -713,28 +743,28 @@ fn boardSummary(buf: []u8, bd: *const BoardStatus) []const u8 {
 fn boardControls(ui: *ui_mod.Ui, bd: *const BoardStatus, rec: RecStatus.State, shared: *Shared) void {
     var buf: [160]u8 = undefined;
     var hz_buf: [24]u8 = undefined;
-    ui.text("(these change what is recorded)", theme.text_dim);
+    ui.text(i18n.text(.board_these_change), theme.text_dim);
     ui.newline();
-    ui.text("amplifier band", theme.text_dim);
+    ui.text(i18n.text(.label_amplifier_band), theme.text_dim);
     ui.column(120);
-    const dlo = ui.stepper("from", fmtHz(&hz_buf, bd.lower_actual), 80);
+    const dlo = ui.stepper(i18n.text(.label_from), fmtHz(&hz_buf, bd.lower_actual), 80);
     if (dlo != 0) shared.push(.{ .board = .{ .lower = dlo > 0 } });
-    const dhi = ui.stepper("to", fmtHz(&hz_buf, bd.upper_actual), 80);
+    const dhi = ui.stepper(i18n.text(.label_to), fmtHz(&hz_buf, bd.upper_actual), 80);
     if (dhi != 0) shared.push(.{ .board = .{ .upper = dhi > 0 } });
     ui.newline();
-    ui.text("DSP high-pass", theme.text_dim);
+    ui.text(i18n.text(.label_dsp_highpass), theme.text_dim);
     ui.column(120);
-    if (ui.button("off", !bd.settings.dsp_enabled) and bd.settings.dsp_enabled) shared.push(.{ .board = .{ .dsp = false } });
-    if (ui.button("on", bd.settings.dsp_enabled) and !bd.settings.dsp_enabled) shared.push(.{ .board = .{ .dsp = true } });
+    if (ui.button(i18n.text(.toggle_off), !bd.settings.dsp_enabled) and bd.settings.dsp_enabled) shared.push(.{ .board = .{ .dsp = false } });
+    if (ui.button(i18n.text(.toggle_on), bd.settings.dsp_enabled) and !bd.settings.dsp_enabled) shared.push(.{ .board = .{ .dsp = true } });
     if (bd.settings.dsp_enabled) {
         ui.space(14);
-        const dc = ui.stepper("cutoff", fmtHz(&hz_buf, bd.dsp_actual), 80);
+        const dc = ui.stepper(i18n.text(.label_cutoff), fmtHz(&hz_buf, bd.dsp_actual), 80);
         if (dc != 0) shared.push(.{ .board = .{ .dsp_cutoff = dc > 0 } });
     }
     ui.newline();
     // Sample rate and half-channel mode change the shape of the data: chosen here, then
     // applied together by restarting acquisition (not while recording).
-    ui.text("sample rate", theme.text_dim);
+    ui.text(i18n.text(.label_sample_rate), theme.text_dim);
     ui.column(120);
     const dr = ui.stepper("", format.fmt(&buf, "{d} Hz", .{bd.pending.sample_rate}), 80);
     if (dr != 0) shared.push(.{ .board = .{ .rate = dr > 0 } });
@@ -742,20 +772,20 @@ fn boardControls(ui: *ui_mod.Ui, bd: *const BoardStatus, rec: RecStatus.State, s
         if (!h.rhd2132) continue;
         const half = bd.pending.rhd2132_16ch[h.slot];
         ui.text(dimna.types.headstage_names[h.slot], theme.text_dim);
-        if (ui.button("32 ch", !half) and half) shared.push(.{ .board = .{ .half = h.slot } });
-        if (ui.button("16 of 32", half) and !half) shared.push(.{ .board = .{ .half = h.slot } });
+        if (ui.button(i18n.text(.btn_32_ch), !half) and half) shared.push(.{ .board = .{ .half = h.slot } });
+        if (ui.button(i18n.text(.btn_16_of_32), half) and !half) shared.push(.{ .board = .{ .half = h.slot } });
         ui.space(8);
     }
     ui.newline();
     if (bd.restartPending()) {
         if (rec == .idle or rec == .failed) {
-            if (ui.button("Apply (restarts acquisition)", true)) shared.push(.{ .board = .apply });
-        } else ui.text("sample rate and channels can change once the recording is stopped", theme.text_warn);
+            if (ui.button(i18n.text(.btn_apply), true)) shared.push(.{ .board = .apply });
+        } else ui.text(i18n.text(.board_apply_after_stop), theme.text_warn);
         ui.newline();
     }
     if (bd.unsaved) {
-        if (ui.button("Save as default", false)) shared.push(.{ .board = .save });
-        ui.text("these settings differ from the config file", theme.text_dim);
+        if (ui.button(i18n.text(.btn_save_default), false)) shared.push(.{ .board = .save });
+        ui.text(i18n.text(.board_differs), theme.text_dim);
         ui.newline();
     }
 }
@@ -769,7 +799,7 @@ fn panelSection(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, snap: *const S
     ui.text(panelSummary(&buf, p), theme.text_dim);
     if (open) {
         ui.x = @max(ui.x, ui.width - 78);
-        if (ui.button("reset", false)) shared.push(.{ .panel = .{ .index = i, .action = .reset } });
+        if (ui.button(i18n.text(.btn_reset), false)) shared.push(.{ .panel = .{ .index = i, .action = .reset } });
     }
     ui.newline();
     if (open) {
@@ -792,25 +822,25 @@ fn panelSummary(buf: []u8, p: *const panels.Panel) []const u8 {
         format.fmt(&value_buf, "-{d:.1} / +{d:.1} ms", .{ p.trigger.pre_ms, p.trigger.post_ms })
     else
         format.fmtSpan(&value_buf, p.span_s);
-    w.print("{t}   {s}", .{ p.mode, time_text }) catch {};
-    if (p.kind != .ttl) w.print("   {s}/row", .{format.fmtScale(&value_buf, p.kind, p.scale)}) catch {};
+    w.print("{s}   {s}", .{ modeText(p.mode), time_text }) catch {};
+    if (p.kind != .ttl) i18n.print(&w, .title_per_row, .{ .scale = format.fmtScale(&value_buf, p.kind, p.scale) }) catch {};
     if (p.kind == .electrode) {
         const f = p.filter;
         if (!f.on) {
-            w.writeAll("   raw") catch {};
+            w.writeAll(i18n.text(.title_raw)) catch {};
         } else if (f.low_hz > 0 and f.high_hz > 0) {
-            w.print("   band {d}–{d} Hz", .{ f.low_hz, f.high_hz }) catch {};
+            i18n.print(&w, .summary_band_range, .{ .low = f.low_hz, .high = f.high_hz }) catch {};
         } else if (f.high_hz > 0) {
-            w.print("   band below {d} Hz", .{f.high_hz}) catch {};
+            i18n.print(&w, .summary_band_below, .{ .high = f.high_hz }) catch {};
         } else if (f.low_hz > 0) {
-            w.print("   band above {d} Hz", .{f.low_hz}) catch {};
-        } else w.writeAll("   band (no corners)") catch {};
-        if (p.reference.on) w.writeAll("   CAR") catch {};
+            i18n.print(&w, .summary_band_above, .{ .low = f.low_hz }) catch {};
+        } else w.writeAll(i18n.text(.summary_band_none)) catch {};
+        if (p.reference.on) w.writeAll(i18n.text(.title_car)) catch {};
     }
     if (p.mode == .triggered) {
         if (p.trigger.source == .ttl) {
-            w.print("   on TTL {d}", .{p.trigger.line}) catch {};
-        } else w.print("   on spikes, row {d}", .{p.trigger.row + 1}) catch {};
+            i18n.print(&w, .summary_on_ttl, .{ .line = p.trigger.line }) catch {};
+        } else i18n.print(&w, .summary_on_spikes, .{ .row = p.trigger.row + 1 }) catch {};
     }
     return w.buffered();
 }
@@ -818,10 +848,10 @@ fn panelSummary(buf: []u8, p: *const panels.Panel) []const u8 {
 /// The panel's mode, time base and scale.
 fn panelView(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Shared) void {
     var buf: [160]u8 = undefined;
-    ui.text("view", theme.text_dim);
+    ui.text(i18n.text(.label_view), theme.text_dim);
     ui.column(64);
     inline for (.{ panels.Mode.scroll, panels.Mode.sweep, panels.Mode.triggered }) |m| {
-        if (ui.button(@tagName(m), p.mode == m) and p.mode != m) shared.push(.{ .panel = .{ .index = i, .action = .{ .mode = m } } });
+        if (ui.button(modeText(m), p.mode == m) and p.mode != m) shared.push(.{ .panel = .{ .index = i, .action = .{ .mode = m } } });
     }
     ui.space(14);
     var value_buf: [48]u8 = undefined;
@@ -829,11 +859,11 @@ fn panelView(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Shared) 
         format.fmt(&value_buf, "-{d:.1} / +{d:.1} ms", .{ p.trigger.pre_ms, p.trigger.post_ms })
     else
         format.fmtSpan(&value_buf, p.span_s);
-    const dt = ui.stepper(if (p.mode == .triggered) "window" else "time", time_text, 130);
+    const dt = ui.stepper(if (p.mode == .triggered) i18n.text(.label_window) else i18n.text(.label_time), time_text, 130);
     if (dt != 0) shared.push(.{ .panel = .{ .index = i, .action = .{ .zoom = if (dt > 0) step_up else 1.0 / step_up } } });
     if (p.kind != .ttl) {
         var scale_buf: [32]u8 = undefined;
-        const ds = ui.stepper("scale", format.fmt(&buf, "{s}/row", .{format.fmtScale(&scale_buf, p.kind, p.scale)}), 110);
+        const ds = ui.stepper(i18n.text(.label_scale), i18n.fmt(&buf, .stepper_per_row, .{ .scale = format.fmtScale(&scale_buf, p.kind, p.scale) }), 110);
         if (ds != 0) shared.push(.{ .panel = .{ .index = i, .action = .{ .scale = if (ds > 0) step_up else 1.0 / step_up } } });
     }
     ui.newline();
@@ -843,20 +873,21 @@ fn panelView(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Shared) 
 /// rows are shown and (filter on) which go through the filter.
 fn panelFilter(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Shared) void {
     var value_buf: [48]u8 = undefined;
-    ui.text("filter", theme.text_dim);
+    ui.text(i18n.text(.label_filter), theme.text_dim);
     ui.column(64);
-    if (ui.button("raw", !p.filter.on) and p.filter.on) shared.push(.{ .panel = .{ .index = i, .action = .{ .filter = false } } });
-    if (ui.button("band", p.filter.on) and !p.filter.on) shared.push(.{ .panel = .{ .index = i, .action = .{ .filter = true } } });
+    if (ui.button(i18n.text(.tag_raw), !p.filter.on) and p.filter.on) shared.push(.{ .panel = .{ .index = i, .action = .{ .filter = false } } });
+    if (ui.button(i18n.text(.btn_band), p.filter.on) and !p.filter.on) shared.push(.{ .panel = .{ .index = i, .action = .{ .filter = true } } });
     if (p.filter.on) {
         ui.space(14);
-        const lo = ui.stepper("from", if (p.filter.low_hz > 0) format.fmt(&value_buf, "{d} Hz", .{p.filter.low_hz}) else "off", 80);
+        const lo = ui.stepper(i18n.text(.label_from), if (p.filter.low_hz > 0) format.fmt(&value_buf, "{d} Hz", .{p.filter.low_hz}) else i18n.text(.toggle_off), 80);
         if (lo != 0) shared.push(.{ .panel = .{ .index = i, .action = .{ .corner = .{ .high = false, .up = lo > 0 } } } });
-        const hi = ui.stepper("to", if (p.filter.high_hz > 0) format.fmt(&value_buf, "{d} Hz", .{p.filter.high_hz}) else "off", 80);
+        const hi = ui.stepper(i18n.text(.label_to), if (p.filter.high_hz > 0) format.fmt(&value_buf, "{d} Hz", .{p.filter.high_hz}) else i18n.text(.toggle_off), 80);
         if (hi != 0) shared.push(.{ .panel = .{ .index = i, .action = .{ .corner = .{ .high = true, .up = hi > 0 } } } });
     }
     ui.newline();
     // Row by row: which are shown, and (filter on) which go through the filter.
-    inline for (.{ "rows shown", "filtered" }, .{ true, false }) |label, is_shown| {
+    inline for (.{ i18n.Id.label_rows_shown, i18n.Id.label_filtered }, .{ true, false }) |label_id, is_shown| {
+        const label = i18n.text(label_id);
         if (is_shown or p.filter.on) {
             ui.text(label, theme.text_dim);
             ui.column(104);
@@ -877,21 +908,22 @@ fn panelFilter(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Shared
 /// An electrode panel's common average reference: which rows are averaged, which lose
 /// the average.
 fn panelCar(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Shared) void {
-    ui.text("CAR", theme.text_dim);
+    ui.text(i18n.text(.label_car), theme.text_dim);
     ui.column(64);
-    if (ui.button("off", !p.reference.on) and p.reference.on) shared.push(.{ .panel = .{ .index = i, .action = .{ .car = false } } });
-    if (ui.button("on", p.reference.on) and !p.reference.on) shared.push(.{ .panel = .{ .index = i, .action = .{ .car = true } } });
+    if (ui.button(i18n.text(.toggle_off), !p.reference.on) and p.reference.on) shared.push(.{ .panel = .{ .index = i, .action = .{ .car = false } } });
+    if (ui.button(i18n.text(.toggle_on), p.reference.on) and !p.reference.on) shared.push(.{ .panel = .{ .index = i, .action = .{ .car = true } } });
     if (p.reference.on) {
         ui.newline();
-        inline for (.{ "average of", "subtract from" }, .{ true, false }) |label, is_ref| {
+        inline for (.{ i18n.Id.label_average_of, i18n.Id.label_subtract_from }, .{ true, false }) |label_id, is_ref| {
+            const label = i18n.text(label_id);
             const rows = if (is_ref) &p.reference.ref else &p.reference.sub;
             ui.text(label, theme.text_dim);
             ui.column(104);
             const saved_indent = ui.indent;
             ui.indent = 104;
-            if (ui.button("all", false))
+            if (ui.button(i18n.text(.btn_all), false))
                 shared.push(.{ .panel = .{ .index = i, .action = if (is_ref) .{ .car_ref_all = true } else .{ .car_sub_all = true } } });
-            if (ui.button("none", false))
+            if (ui.button(i18n.text(.btn_none), false))
                 shared.push(.{ .panel = .{ .index = i, .action = if (is_ref) .{ .car_ref_all = false } else .{ .car_sub_all = false } } });
             ui.space(6);
             for (0..@min(p.rows, panels.max_rows)) |r| {
@@ -910,12 +942,12 @@ fn panelCar(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, shared: *Shared) v
 /// pair flips.
 fn panelTrigger(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, snap: *const Snapshot, shared: *Shared) void {
     var value_buf: [48]u8 = undefined;
-    ui.text("trigger", theme.text_dim);
+    ui.text(i18n.text(.label_trigger), theme.text_dim);
     ui.column(64);
     if (p.kind == .electrode) {
-        if (ui.button("TTL", p.trigger.source == .ttl) and p.trigger.source != .ttl)
+        if (ui.button(i18n.text(.btn_ttl), p.trigger.source == .ttl) and p.trigger.source != .ttl)
             shared.push(.{ .panel = .{ .index = i, .action = .{ .trig_source = .ttl } } });
-        if (ui.button("spikes", p.trigger.source == .channel) and p.trigger.source != .channel)
+        if (ui.button(i18n.text(.btn_spikes), p.trigger.source == .channel) and p.trigger.source != .channel)
             shared.push(.{ .panel = .{ .index = i, .action = .{ .trig_source = .channel } } });
         ui.space(8);
     }
@@ -926,17 +958,17 @@ fn panelTrigger(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, snap: *const S
                 .trig_line = @intCast(std.math.clamp(@as(i32, p.trigger.line) + dl, 1, 8)),
             } } });
     } else {
-        const dw = ui.stepper("", format.fmt(&value_buf, "row {d}", .{p.trigger.row + 1}), 60);
+        const dw = ui.stepper("", i18n.fmt(&value_buf, .trigger_row_value, .{ .row = p.trigger.row + 1 }), 60);
         if (dw != 0) shared.push(.{ .panel = .{ .index = i, .action = .{ .trig_row = dw } } });
         // The trigger channel's threshold, if known (it is latched once known); until then
         // it follows the noise, falling.
         const ch = p.first_ch + p.trigger.row;
         const uv = snap.thresholds.known(&snap.reported, ch);
         const rising = if (uv) |v| v > 0 else false;
-        if (ui.button("falling", !rising) and rising) shared.push(.{ .threshold = .{ .flip = ch } });
-        if (ui.button("rising", rising) and !rising) shared.push(.{ .threshold = .{ .flip = ch } });
+        if (ui.button(i18n.text(.slope_falling), !rising) and rising) shared.push(.{ .threshold = .{ .flip = ch } });
+        if (ui.button(i18n.text(.slope_rising), rising) and !rising) shared.push(.{ .threshold = .{ .flip = ch } });
         ui.newline();
-        ui.text("level", theme.text_dim);
+        ui.text(i18n.text(.label_level), theme.text_dim);
         ui.column(64);
         // "+" makes the level larger in size, whichever its sign.
         const level_text = if (uv) |v|
@@ -945,10 +977,10 @@ fn panelTrigger(ui: *ui_mod.Ui, p: *const panels.Panel, i: usize, snap: *const S
             format.fmt(&value_buf, "{d} σ", .{snap.thresholds.sigmas});
         const dv = ui.stepper("", level_text, 70);
         if (dv != 0) shared.push(.{ .threshold = .{ .scale = .{ .channel = ch, .factor = if (dv > 0) 1.15 else 1.0 / 1.15 } } });
-        const dh = ui.stepper("holdoff", format.fmt(&value_buf, "{d} ms", .{p.trigger.holdoff_ms}), 60);
+        const dh = ui.stepper(i18n.text(.label_holdoff), format.fmt(&value_buf, "{d} ms", .{p.trigger.holdoff_ms}), 60);
         if (dh != 0) shared.push(.{ .panel = .{ .index = i, .action = .{ .trig_holdoff = dh > 0 } } });
     }
-    const dn = ui.stepper("overlaid", format.fmt(&value_buf, "{d} sweeps", .{p.trigger.overlay}), 90);
+    const dn = ui.stepper(i18n.text(.label_overlaid), i18n.fmt(&value_buf, .stepper_sweeps, .{ .count = p.trigger.overlay }), 90);
     if (dn != 0)
         shared.push(.{ .panel = .{ .index = i, .action = .{
             .overlay = @intCast(std.math.clamp(@as(i32, @intCast(p.trigger.overlay)) + dn, 1, dimna.sweeps.max_sweeps)),

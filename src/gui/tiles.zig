@@ -57,6 +57,7 @@ const gpu_mod = @import("gpu.zig");
 const font = @import("font.zig");
 const theme = @import("theme.zig");
 const format = @import("format.zig");
+const i18n = @import("i18n.zig");
 const Atomic = std.atomic.Value;
 const log = std.log.scoped(.tiles);
 
@@ -570,12 +571,12 @@ fn strip(ui: *Ui, view: *const View) ?Chosen {
         const label = [1]u8{'A' + p};
         if (ui.chip(&label, view.port == p)) chosen = .{ .port = p };
     }
-    if (ui.chip("All", view.port == null)) chosen = .{ .port = null };
+    if (ui.chip(i18n.text(.tiles_all), view.port == null)) chosen = .{ .port = null };
     ui.space(10);
     var buf: [32]u8 = undefined;
     ui.text(switch (view.scale.summary(view.sel())) {
-        .auto => "auto",
-        .mixed => "mixed",
+        .auto => i18n.text(.tiles_range_auto),
+        .mixed => i18n.text(.tiles_range_mixed),
         .common => |r| rangeText(&buf, r),
     }, theme.text_dim);
     return chosen;

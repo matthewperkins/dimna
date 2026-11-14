@@ -27,6 +27,7 @@ const gpu_mod = @import("gpu.zig");
 const Gpu = gpu_mod.Gpu;
 const font = @import("font.zig");
 const format = @import("format.zig");
+const i18n = @import("i18n.zig");
 const fmtSpan = format.fmtSpan;
 const fmtScale = format.fmtScale;
 const control = @import("control.zig");
@@ -93,6 +94,8 @@ pub fn main(init: std.process.Init) !u8 {
         return 2;
     };
     var args = parseArgs(argv, doc) catch |e| return if (e == error.Help) 0 else 2;
+    // The language of every text, before any window draws.
+    i18n.current = i18n.pick(args.language, init.environ_map.get("LANG") orelse "");
     // `--print-scheme`: derive and print the colours of an image, without a window or the board.
     if (args.print_scheme.len > 0) return scheme.printCommand(io, gpa, args.print_scheme, args.swatch);
     // The view file sits beside the config.
@@ -119,10 +122,10 @@ pub fn main(init: std.process.Init) !u8 {
             if (scheme.loadFile(io, gpa, spath, &sdiag)) |r| {
                 theme.apply(r.scheme);
                 log.info("colour scheme from {s}", .{spath});
-                scheme_notice.set("colours taken from {s}", .{std.fs.path.basename(spath)}, "to change them, edit scheme_image in {s} (remove it for the built-in colours)", .{where});
+                scheme_notice.say(.notice_colours_from, .{ .name = std.fs.path.basename(spath) }, .notice_colours_change, .{ .where = where });
             } else {
                 log.warn("{s}; using the built-in colours", .{sdiag.message()});
-                scheme_notice.set("{s}; the built-in colours are used", .{sdiag.message()}, "scheme_image is in {s}", .{where});
+                scheme_notice.say(.notice_colours_failed, .{ .reason = sdiag.message() }, .notice_colours_where, .{ .where = where });
             }
         } else log.warn("scheme image '{s}': the path is too long; using the built-in colours", .{args.scheme_image});
     }
@@ -384,8 +387,8 @@ pub fn main(init: std.process.Init) !u8 {
                 .acknowledge => display.acknowledged = true,
                 .control_view => |v| control_view = v,
                 .save_view => if (view_file.save(io, views_path, view)) |_| {
-                    board_ctl.status.setNote("view saved to {s}", .{views_path});
-                } else |err| board_ctl.status.setNote("could not save {s}: {t}", .{ views_path, err }),
+                    board_ctl.status.say(.note_view_saved, .{ .path = views_path });
+                } else |err| board_ctl.status.say(.note_cannot_save, .{ .path = views_path, .err = err }),
                 .quit_answer => |answer| quit_answer = answer,
                 .quit => quit = true,
             }
@@ -475,7 +478,7 @@ pub fn main(init: std.process.Init) !u8 {
                         if (view_file.save(io, views_path, view)) |_| {
                             log.info("view saved to {s}", .{views_path});
                         } else |err| {
-                            board_ctl.status.setNote("could not save {s}: {t}", .{ views_path, err });
+                            board_ctl.status.say(.note_cannot_save, .{ .path = views_path, .err = err });
                             view_ok = false;
                         }
                     }
@@ -501,7 +504,7 @@ pub fn main(init: std.process.Init) !u8 {
             board_ctl.restart_asked = false;
             snap_dirty = true;
             if (recording.active()) {
-                board_ctl.status.setNote("stop the recording first: this changes the shape of the data", .{});
+                board_ctl.status.say(.note_stop_recording_first, .{});
             } else {
                 // Review looks into a history that is about to be replaced.
                 review.drop();
@@ -509,7 +512,7 @@ pub fn main(init: std.process.Init) !u8 {
                 // The tile window starts again: with the view it had.
                 tiles_shared.initial_view = tile_view;
                 if (try pl.restart(board_ctl.pending)) |refused| {
-                    board_ctl.status.setNote("the board refused the new settings: {t}", .{refused});
+                    board_ctl.status.say(.note_board_refused, .{ .err = refused });
                 }
                 // The overview is for the new shape of the data.
                 overview.deinit();
@@ -567,6 +570,14 @@ pub fn main(init: std.process.Init) !u8 {
         if (snap_dirty and control_thread != null) {
             snap_dirty = false;
             snap_target = display.target;
+            // The line about the source (cut to the buffer, whose rest is not read).
+            var about_b: [160]u8 = undefined;
+            const about_len = i18n.fmt(&about_b, .about_source, .{
+                .source = if (sim != null) i18n.text(.source_simulated) else i18n.text(.source_board),
+                .channels = pl.nch,
+                .electrodes = layout.num_electrodes,
+                .rate = pl.fs,
+            }).len;
             shared.publish(&.{
                 .set = display.set,
                 .thresholds = display.thresholds,
@@ -580,20 +591,8 @@ pub fn main(init: std.process.Init) !u8 {
                 .view_unsaved = view_file.unsaved(view),
                 .notes = session.notesStatus(&notes, pl.fs),
                 .audio = session.audioStatus(display, &audio_shared, layout),
-                .about_buf = about: {
-                    var b: [160]u8 = undefined;
-                    _ = format.fmt(
-                        &b,
-                        "{s}   {d} channels ({d} electrode) at {d} Hz",
-                        .{ if (sim != null) "simulated board" else "Open Ephys acquisition board", pl.nch, layout.num_electrodes, pl.fs },
-                    );
-                    break :about b;
-                },
-                // Never more than the buffer holds (the text above is cut to fit).
-                .about_len = @min(160, std.fmt.count(
-                    "{s}   {d} channels ({d} electrode) at {d} Hz",
-                    .{ if (sim != null) "simulated board" else "Open Ephys acquisition board", pl.nch, layout.num_electrodes, pl.fs },
-                )),
+                .about_buf = about_b,
+                .about_len = about_len,
                 .board = board_ctl.statusNow(&acq.requested, layout),
                 .rec = recording.statusNow(nowNs(), pl.bs, pl.fs),
             });
@@ -656,12 +655,17 @@ pub fn main(init: std.process.Init) !u8 {
                 if (audio_shared.held_sigma_c.load(.monotonic) == 0) " (measuring)" else " held",
             });
             if (!env.no_title) {
-                if (std.fmt.bufPrintSentinel(
-                    &title_buf,
-                    "dimna   {s}: {d:.2} s  {d:.1} {s}/row   latency {d:.1} ms   {d} fps",
-                    .{ tp.name(), tp.span_s, tp.scale, tp.unit(), r.avg_ms, r.frames },
-                    0,
-                )) |t| win.setTitle(t) else |_| {}
+                // Zero-terminated for the window system; the text is cut to leave room.
+                const t = i18n.fmt(title_buf[0 .. title_buf.len - 1], .window_title_status, .{
+                    .panel = tp.name(),
+                    .span = tp.span_s,
+                    .scale = tp.scale,
+                    .unit = tp.unit(),
+                    .ms = r.avg_ms,
+                    .fps = r.frames,
+                });
+                title_buf[t.len] = 0;
+                win.setTitle(title_buf[0..t.len :0]);
             }
             next_report += std.time.ns_per_s;
         }
