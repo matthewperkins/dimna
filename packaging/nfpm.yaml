@@ -1,0 +1,230 @@
+# The .deb and .rpm of dimna, written by nfpm (https://nfpm.goreleaser.com) from the glibc
+# release that `zig build release` makes. Both packages hold the same binaries; only the
+# wrapper and the dependency names differ.
+#
+# Run by packaging/make-packages.sh from inside the unpacked release folder
+# (zig-out/release/dimna-<version>-x86_64-linux-gnu/), so every `src` below is a path in that
+# folder; DIMNA_VERSION is set by that script (the tag's version, or build.zig.zon's with a
+# -dev suffix for an untagged build).
+name: dimna
+arch: amd64
+platform: linux
+version: ${DIMNA_VERSION}
+version_schema: semver
+release: 1
+section: science
+priority: optional
+maintainer: Matthew Perkins <matthew.perkins@mssm.edu>
+vendor: dimna
+homepage: https://github.com/matthewperkins/dimna
+# dimna has no licence file yet (licenses/README in the package says so); the third-party
+# licences are in /usr/share/doc/dimna/licenses.
+license: LicenseRef-dimna-no-licence-yet
+description: |-
+  Acquisition, display and recording for the Open Ephys acquisition board
+  dimna acquires, displays and records electrophysiology from the Open Ephys acquisition
+  board (ECP5 / FT600 USB 3 / ONI), on Wayland with Vulkan. dimna-headless records
+  without windows.
+  .
+  The package installs a udev rule that lets the active local session and the members of
+  the dimna group open the board, and real-time limits for the members of the realtime
+  group. It creates both groups if missing but adds nobody to them. To use the board
+  without being logged in at the machine and to record with real-time priority:
+    sudo usermod -aG dimna,realtime $USER
+  then log out and in.
+
+# Runtime libraries, by the names each distribution family uses (checked against Debian 12
+# and 13, Ubuntu 22.04 and 24.04, Rocky 9 and Fedora; see docs/plans/portability.md, report
+# of step 4). These are the libraries packaging/check-release.sh allows dimna to link.
+overrides:
+  deb:
+    depends:
+      - libc6 (>= 2.34)
+      - libwayland-client0
+      - libvulkan1
+      - libfreetype6
+      - libfontconfig1
+      - libxkbcommon0
+      # Debian 13 and Ubuntu 24.04 renamed it in the 64-bit time_t transition.
+      - libasound2 | libasound2t64
+      # groupadd and getent, for the post-install script (both essential on Debian/Ubuntu).
+      - passwd
+    suggests:
+      # Persian: joining its letters (opened at run time if present, never linked).
+      - libharfbuzz0b
+      - libfribidi0
+      # Chinese (Noto Sans CJK SC) and Persian (Noto Sans Arabic).
+      - fonts-noto-cjk
+      - fonts-noto-core
+  rpm:
+    # By soname, as rpm itself records what a library provides: the same on Rocky/RHEL 9
+    # and Fedora whatever the package is called (libwayland-client, vulkan-loader,
+    # freetype, fontconfig, libxkbcommon, alsa-lib).
+    depends:
+      - libc.so.6(GLIBC_2.34)(64bit)
+      - libwayland-client.so.0()(64bit)
+      - libvulkan.so.1()(64bit)
+      - libfreetype.so.6()(64bit)
+      - libfontconfig.so.1()(64bit)
+      - libxkbcommon.so.0()(64bit)
+      - libasound.so.2()(64bit)
+    suggests:
+      - harfbuzz
+      - fribidi
+      - google-noto-sans-cjk-ttc-fonts
+
+rpm:
+  summary: Acquisition, display and recording for the Open Ephys acquisition board
+  compression: xz
+  requires:
+    # groupadd and getent, for the post-install script.
+    post:
+      - shadow-utils
+      - glibc-common
+
+deb:
+  compression: xz
+
+contents:
+  - src: bin/dimna
+    dst: /usr/bin/dimna
+    file_info:
+      mode: 0755
+  - src: bin/dimna-headless
+    dst: /usr/bin/dimna-headless
+    file_info:
+      mode: 0755
+
+  # The board's device node: active session (uaccess) and the dimna group, 0660.
+  - src: packaging/60-dimna-ft60x.rules
+    dst: /usr/lib/udev/rules.d/60-dimna-ft60x.rules
+    file_info:
+      mode: 0644
+  # rtprio 80 and unlimited locked memory for the realtime group. A configuration file: an
+  # administrator's edits survive upgrades.
+  - src: packaging/99-dimna-realtime.conf
+    dst: /etc/security/limits.d/99-dimna-realtime.conf
+    type: config|noreplace
+    file_info:
+      mode: 0644
+
+  # The menu entry, its launcher (keeps a log in ~/.local/state/dimna/dimna.log) and the
+  # simulator action's configuration.
+  - src: packaging/dimna.desktop
+    dst: /usr/share/applications/dimna.desktop
+    file_info:
+      mode: 0644
+  - src: packaging/dimna-desktop-launch.sh
+    dst: /usr/libexec/dimna/dimna-desktop-launch
+    file_info:
+      mode: 0755
+  - src: packaging/sim-config/dimna/config.toml
+    dst: /usr/share/dimna/sim-config/dimna/config.toml
+    file_info:
+      mode: 0644
+
+  - src: packaging/icon/dimna-32.png
+    dst: /usr/share/icons/hicolor/32x32/apps/dimna.png
+    file_info:
+      mode: 0644
+  - src: packaging/icon/dimna-48.png
+    dst: /usr/share/icons/hicolor/48x48/apps/dimna.png
+    file_info:
+      mode: 0644
+  - src: packaging/icon/dimna-64.png
+    dst: /usr/share/icons/hicolor/64x64/apps/dimna.png
+    file_info:
+      mode: 0644
+  - src: packaging/icon/dimna-128.png
+    dst: /usr/share/icons/hicolor/128x128/apps/dimna.png
+    file_info:
+      mode: 0644
+  - src: packaging/icon/dimna-256.png
+    dst: /usr/share/icons/hicolor/256x256/apps/dimna.png
+    file_info:
+      mode: 0644
+  - src: packaging/icon/dimna-icon.svg
+    dst: /usr/share/icons/hicolor/scalable/apps/dimna.svg
+    file_info:
+      mode: 0644
+
+  # The reference reader for recordings (needs Python 3.11+ and numpy).
+  - src: tools/dimna_read.py
+    dst: /usr/share/dimna/tools/dimna_read.py
+    file_info:
+      mode: 0644
+
+  - src: README.md
+    dst: /usr/share/doc/dimna/README.md
+    file_info:
+      mode: 0644
+  - src: BUILD-INFO
+    dst: /usr/share/doc/dimna/BUILD-INFO
+    file_info:
+      mode: 0644
+  - src: COMMIT
+    dst: /usr/share/doc/dimna/COMMIT
+    file_info:
+      mode: 0644
+  - src: CHECK
+    dst: /usr/share/doc/dimna/CHECK
+    file_info:
+      mode: 0644
+  - src: packaging/icon/ICON-CREDITS.md
+    dst: /usr/share/doc/dimna/ICON-CREDITS.md
+    file_info:
+      mode: 0644
+  - src: licenses/README
+    dst: /usr/share/doc/dimna/licenses/README
+    file_info:
+      mode: 0644
+  - src: licenses/liboni.LICENSE
+    dst: /usr/share/doc/dimna/licenses/liboni.LICENSE
+    file_info:
+      mode: 0644
+  - src: licenses/stb.LICENSE
+    dst: /usr/share/doc/dimna/licenses/stb.LICENSE
+    file_info:
+      mode: 0644
+  - src: licenses/zig-wayland.LICENSE
+    dst: /usr/share/doc/dimna/licenses/zig-wayland.LICENSE
+    file_info:
+      mode: 0644
+  - src: licenses/vulkan-zig.LICENSE
+    dst: /usr/share/doc/dimna/licenses/vulkan-zig.LICENSE
+    file_info:
+      mode: 0644
+
+  # The directories only dimna uses, so that removing the package removes them.
+  - dst: /usr/libexec/dimna
+    type: dir
+    file_info:
+      mode: 0755
+  - dst: /usr/share/dimna
+    type: dir
+    file_info:
+      mode: 0755
+  - dst: /usr/share/doc/dimna
+    type: dir
+    file_info:
+      mode: 0755
+  - dst: /usr/share/doc/dimna/licenses
+    type: dir
+    file_info:
+      mode: 0755
+  - dst: /usr/share/dimna/tools
+    type: dir
+    file_info:
+      mode: 0755
+  - dst: /usr/share/dimna/sim-config
+    type: dir
+    file_info:
+      mode: 0755
+  - dst: /usr/share/dimna/sim-config/dimna
+    type: dir
+    file_info:
+      mode: 0755
+
+scripts:
+  postinstall: packaging/package-postinstall.sh
+  postremove: packaging/package-postremove.sh
