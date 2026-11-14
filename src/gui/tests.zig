@@ -12,6 +12,7 @@ test {
     _ = @import("i18n.zig");
     _ = @import("notes.zig");
     _ = @import("scheme.zig");
+    _ = @import("shape.zig");
     _ = @import("theme.zig");
     _ = @import("tiles.zig");
     _ = @import("ui.zig");

@@ -141,6 +141,17 @@ pub const Gpu = struct {
     text_buf: vk.Buffer = .null,
     text_mem: vk.DeviceMemory = .null,
     text_vertices: []font.Vertex = &.{},
+    /// The font whose atlas this is (`textFont`): glyphs it draws on demand are copied to
+    /// the atlas image before the frame that uses them, only the rows that changed, through
+    /// a staging buffer made the first time.
+    text_font: ?*const font.Font = null,
+    atlas_size: u32 = 0,
+    /// Rows of the atlas not yet copied: [first, end).
+    atlas_pending: ?[2]u32 = null,
+    atlas_staging: vk.Buffer = .null,
+    atlas_staging_mem: vk.DeviceMemory = .null,
+    atlas_staging_ptr: [*]u8 = undefined,
+    atlas_staging_failed: bool = false,
 
     /// A factor on the vertical scale for every row of every panel (1 = the panel's own
     /// scale): panel `i`'s rows start at `i * max_rows`. Mapped; the shader reads it.
@@ -411,6 +422,11 @@ pub const Gpu = struct {
             dev.destroyDescriptorPool(self.text_pool, null);
             dev.destroyDescriptorSetLayout(self.text_set_layout, null);
         }
+        if (self.atlas_staging != .null) {
+            dev.unmapMemory(self.atlas_staging_mem);
+            dev.destroyBuffer(self.atlas_staging, null);
+            dev.freeMemory(self.atlas_staging_mem, null);
+        }
         dev.destroyPipeline(self.pipeline, null);
         dev.destroyPipelineLayout(self.pipeline_layout, null);
         dev.destroyDescriptorPool(self.desc_pool, null);
@@ -577,6 +593,7 @@ pub const Gpu = struct {
         const host: vk.MemoryPropertyFlags = .{ .host_visible = true, .host_coherent = true };
 
         try self.createAtlas(atlas, size);
+        self.atlas_size = size;
         try self.createSampler();
 
         // The vertex buffer, mapped for good.
@@ -656,6 +673,77 @@ pub const Gpu = struct {
             .alpha_blend_op = .add,
             .color_write_mask = .{ .r = true, .g = true, .b = true, .a = true },
         }, self.text_layout);
+    }
+
+    /// The font whose atlas `createText` uploaded (it must outlive the drawing): glyphs it
+    /// rasterizes later are copied to the GPU by `draw`.
+    pub fn textFont(self: *Gpu, f: *const font.Font) void {
+        self.text_font = f;
+    }
+
+    /// Records the copy of atlas rows [rows[0], rows[1]) from the font's atlas into the
+    /// image (outside a render pass; the previous frame is finished, so the staging buffer
+    /// is free). The image goes from sampled to transfer and back.
+    fn recordAtlasRows(self: *Gpu, cmd: vk.CommandBuffer, atlas: []const u8, rows: [2]u32) !void {
+        const dev = self.dev;
+        const size = self.atlas_size;
+        if (self.atlas_staging == .null) {
+            const host: vk.MemoryPropertyFlags = .{ .host_visible = true, .host_coherent = true };
+            const bytes: vk.DeviceSize = @as(vk.DeviceSize, size) * size;
+            const staging = try dev.createBuffer(&.{ .size = bytes, .usage = .{ .transfer_src = true }, .sharing_mode = .exclusive }, null);
+            errdefer dev.destroyBuffer(staging, null);
+            const sreq = dev.getBufferMemoryRequirements(staging);
+            const smem = try dev.allocateMemory(&.{
+                .allocation_size = sreq.size,
+                .memory_type_index = self.findMemoryType(sreq.memory_type_bits, host) orelse return error.NoHostVisibleMemory,
+            }, null);
+            errdefer dev.freeMemory(smem, null);
+            try dev.bindBufferMemory(staging, smem, 0);
+            self.atlas_staging_ptr = @ptrCast((try dev.mapMemory(smem, 0, vk.WHOLE_SIZE, .{})) orelse return error.MapFailed);
+            self.atlas_staging = staging;
+            self.atlas_staging_mem = smem;
+        }
+        const first = @min(rows[0], size);
+        const end = @min(rows[1], size);
+        if (end <= first or atlas.len < @as(usize, size) * size) return;
+        const from = @as(usize, first) * size;
+        const to = @as(usize, end) * size;
+        @memcpy(self.atlas_staging_ptr[from..to], atlas[from..to]);
+        const range: vk.ImageSubresourceRange = .{
+            .aspect_mask = .{ .color = true },
+            .base_mip_level = 0,
+            .level_count = 1,
+            .base_array_layer = 0,
+            .layer_count = 1,
+        };
+        dev.cmdPipelineBarrier(cmd, .{ .fragment_shader = true }, .{ .transfer = true }, .{}, null, null, &[_]vk.ImageMemoryBarrier{.{
+            .src_access_mask = .{ .shader_read = true },
+            .dst_access_mask = .{ .transfer_write = true },
+            .old_layout = .shader_read_only_optimal,
+            .new_layout = .transfer_dst_optimal,
+            .src_queue_family_index = vk.QUEUE_FAMILY_IGNORED,
+            .dst_queue_family_index = vk.QUEUE_FAMILY_IGNORED,
+            .image = self.atlas_image,
+            .subresource_range = range,
+        }});
+        dev.cmdCopyBufferToImage(cmd, self.atlas_staging, self.atlas_image, .transfer_dst_optimal, &[_]vk.BufferImageCopy{.{
+            .buffer_offset = from,
+            .buffer_row_length = 0,
+            .buffer_image_height = 0,
+            .image_subresource = .{ .aspect_mask = .{ .color = true }, .mip_level = 0, .base_array_layer = 0, .layer_count = 1 },
+            .image_offset = .{ .x = 0, .y = @intCast(first), .z = 0 },
+            .image_extent = .{ .width = size, .height = end - first, .depth = 1 },
+        }});
+        dev.cmdPipelineBarrier(cmd, .{ .transfer = true }, .{ .fragment_shader = true }, .{}, null, null, &[_]vk.ImageMemoryBarrier{.{
+            .src_access_mask = .{ .transfer_write = true },
+            .dst_access_mask = .{ .shader_read = true },
+            .old_layout = .transfer_dst_optimal,
+            .new_layout = .shader_read_only_optimal,
+            .src_queue_family_index = vk.QUEUE_FAMILY_IGNORED,
+            .dst_queue_family_index = vk.QUEUE_FAMILY_IGNORED,
+            .image = self.atlas_image,
+            .subresource_range = range,
+        }});
     }
 
     /// The glyph atlas (`size` x `size` coverage bytes): image, filled through a staging
@@ -1084,6 +1172,10 @@ pub const Gpu = struct {
     ) !DrawResult {
         const dev = self.dev;
         _ = try dev.waitForFences(&[_]vk.Fence{self.in_flight}, .true, std.math.maxInt(u64));
+        // Glyphs drawn on demand since the last frame: their rows, kept until copied.
+        if (self.text_font) |f| if (f.takeDirty()) |d| {
+            self.atlas_pending = if (self.atlas_pending) |p| .{ @min(p[0], d[0]), @max(p[1], d[1]) } else d;
+        };
         const acquired = dev.acquireNextImageKHR(self.swapchain, 0, self.image_available, .null) catch |e| switch (e) {
             error.OutOfDateKHR => return .out_of_date,
             else => return e,
@@ -1094,6 +1186,14 @@ pub const Gpu = struct {
         const cmd = self.cmd;
         try dev.resetCommandBuffer(cmd, .{});
         try dev.beginCommandBuffer(cmd, &.{ .flags = .{ .one_time_submit = true } });
+        if (self.atlas_pending) |rows| if (self.text_font) |f| if (self.atlas_image != .null and !self.atlas_staging_failed) {
+            self.recordAtlasRows(cmd, f.atlas, rows) catch |e| {
+                // Without it, glyphs drawn from now on show as blanks; text already there stays.
+                log.warn("cannot update the glyph atlas ({t}): new glyphs will not show", .{e});
+                self.atlas_staging_failed = true;
+            };
+        };
+        self.atlas_pending = null;
         const area: vk.Rect2D = .{ .offset = .{ .x = 0, .y = 0 }, .extent = self.extent };
         dev.cmdBeginRenderPass(cmd, &.{
             .render_pass = self.render_pass,

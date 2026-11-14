@@ -227,6 +227,8 @@ pub fn main(init: std.process.Init) !u8 {
     var text: Text = .{};
     text.init(gpa, &gpu, args);
     defer text.deinit(gpa);
+    // Glyphs the display's font draws on demand go to the GPU before the frame that uses them.
+    if (text.vertices.len > 0) gpu.textFont(&text.font);
     var batch = text.batch();
     var status: Status = .{};
 

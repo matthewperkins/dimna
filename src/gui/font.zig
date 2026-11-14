@@ -1,8 +1,10 @@
 //! Text for the display: one font at one pixel size, rasterized by FreeType into a
-//! single-channel atlas (Latin-1: enough for labels, numbers and units such as µV), and laid
-//! out as textured quads. No shaping: one glyph per code point, left to right. A second,
-//! fixed-width set of ASCII glyphs can be added to the same atlas (`addMono`), for text
-//! laid out in columns (`Batch.textMono`).
+//! single-channel atlas, and laid out as textured quads. Latin-1 and a few symbols are
+//! rasterized at startup (the fixed glyphs); a string made only of those is laid out as it
+//! always was: one glyph per code point, left to right, no kerning. Any other string is
+//! shaped (`shape.zig`: bidi, font fallback, HarfBuzz), its glyphs rasterized into the atlas
+//! the first time they are drawn. A second, fixed-width set of ASCII glyphs can be added to
+//! the same atlas (`addMono`), for text laid out in columns (`Batch.textMono`, never shaped).
 //!
 //! The atlas's top-left corner holds a block of full coverage, so solid rectangles go
 //! through the same pipeline as text (`Batch.rect`).
@@ -10,9 +12,11 @@
 const std = @import("std");
 const c = @import("gui_c");
 const theme = @import("theme.zig");
+const shape = @import("shape.zig");
 const log = std.log.scoped(.font);
 
-pub const atlas_size = 512;
+/// Pixels each side; room for the fixed glyphs and a few thousand drawn on demand.
+pub const atlas_size = 2048;
 const first_cp = 32;
 const last_cp = 255;
 /// A few characters beyond Latin-1 that labels use: sigma, en dash, right arrow, a note,
@@ -57,6 +61,9 @@ pub const Font = struct {
     has_mono: bool = false,
     /// Where the next glyph goes in the atlas.
     pen: Pen = .{},
+    /// Shaping, font fallback and glyphs on demand; null (a font made by hand, or one
+    /// HarfBuzz could not take) draws only the fixed glyphs, anything else as "?".
+    engine: ?*shape.Engine = null,
 
     /// Loads the font fontconfig picks for `family` (e.g. "sans-serif", "monospace",
     /// "Lato") at `px` pixels.
@@ -66,13 +73,18 @@ pub const Font = struct {
 
         var lib: c.FT_Library = null;
         if (c.FT_Init_FreeType(&lib) != 0) return error.FreeType;
-        defer _ = c.FT_Done_FreeType(lib);
         var face: c.FT_Face = null;
         if (c.FT_New_Face(lib, path.ptr, 0, &face) != 0) {
+            _ = c.FT_Done_FreeType(lib);
             log.err("cannot load font {s}", .{path});
             return error.FontNotLoaded;
         }
-        defer _ = c.FT_Done_Face(face);
+        // Both are closed here unless the shaping engine takes them.
+        var owned = true;
+        defer if (owned) {
+            _ = c.FT_Done_Face(face);
+            _ = c.FT_Done_FreeType(lib);
+        };
         if (c.FT_Set_Pixel_Sizes(face, 0, px) != 0) return error.FreeType;
 
         const atlas = try gpa.alloc(u8, atlas_size * atlas_size);
@@ -111,6 +123,11 @@ pub const Font = struct {
         }
         font.pen = pen;
         log.info("font {s} at {d} px", .{ path, px });
+        font.engine = shape.Engine.create(gpa, lib, face, &font) catch |e| blk: {
+            log.warn("no text shaping ({t}): characters beyond Latin-1 draw as '?'", .{e});
+            break :blk null;
+        };
+        if (font.engine != null) owned = false;
         return font;
     }
 
@@ -129,7 +146,7 @@ pub const Font = struct {
         if (c.FT_New_Face(lib, path.ptr, 0, &face) != 0) return error.FontNotLoaded;
         defer _ = c.FT_Done_Face(face);
         if (c.FT_Set_Pixel_Sizes(face, 0, self.px) != 0) return error.FreeType;
-        var pen = self.pen;
+        var pen = if (self.engine) |e| e.pen else self.pen;
         var glyphs: @TypeOf(self.mono) = @splat(.{});
         for (&glyphs, mono_first..) |*g, cp| {
             g.* = self.render(face, @intCast(cp), &pen) catch |e| switch (e) {
@@ -140,22 +157,55 @@ pub const Font = struct {
         self.mono = glyphs;
         self.has_mono = true;
         self.pen = pen;
+        if (self.engine) |e| e.pen = pen;
         log.info("fixed-width font {s} at {d} px", .{ path, self.px });
     }
 
     pub fn deinit(self: *Font, gpa: std.mem.Allocator) void {
+        if (self.engine) |e| e.destroy();
+        self.engine = null;
         gpa.free(self.atlas);
     }
 
+    /// The rows of the atlas that glyphs drawn on demand changed since the last call
+    /// ([first, end)), for the GPU's copy to be brought up to date before it draws them.
+    pub fn takeDirty(self: *const Font) ?[2]u32 {
+        const e = self.engine orelse return null;
+        return e.takeDirty();
+    }
+
+    /// `text` shaped, if it is not one for the fixed glyphs alone (and the font can shape).
+    fn shaped(self: *const Font, text: []const u8) ?shape.Shaped {
+        const e = self.engine orelse return null;
+        if (!self.needsShaping(text)) return null;
+        return e.layout(self.atlas, text);
+    }
+
+    /// False if every code point of `text` is drawn by the fixed glyphs as it always was:
+    /// Latin-1 (and below), and the extra symbols the font found.
+    fn needsShaping(self: *const Font, text: []const u8) bool {
+        for (text) |b| {
+            if (b >= 0x80) break;
+        } else return false;
+        var it: Codepoints = .{ .bytes = text };
+        while (it.next()) |cp| {
+            if (cp <= last_cp) continue;
+            for (extra_cps, last_cp - first_cp + 1..) |extra, at| {
+                if (extra == cp and self.glyphs[at].advance > 0) break;
+            } else return true;
+        }
+        return false;
+    }
+
     /// Where the next glyph goes in the atlas.
-    const Pen = struct {
+    pub const Pen = struct {
         x: usize = white_block + 1,
         y: usize = 1,
         shelf_h: usize = white_block,
 
         /// Where a glyph of `w` x `h` pixels goes (shelf packing, one pixel of padding),
         /// the pen moved on past it; null if the atlas has no room left for it.
-        fn fit(pen: *Pen, w: usize, h: usize) ?[2]usize {
+        pub fn fit(pen: *Pen, w: usize, h: usize) ?[2]usize {
             if (pen.x + w + 1 > atlas_size) {
                 pen.x = 1;
                 pen.y += pen.shelf_h + 1;
@@ -170,7 +220,7 @@ pub const Font = struct {
     };
 
     /// The code point of glyph slot `index`.
-    fn codepointAt(index: usize) u32 {
+    pub fn codepointAt(index: usize) u32 {
         return if (index <= last_cp - first_cp) @intCast(first_cp + index) else extra_cps[index - (last_cp - first_cp + 1)];
     }
 
@@ -237,6 +287,7 @@ pub const Font = struct {
     }
 
     fn widthOf(self: *const Font, text: []const u8, mono: bool) f32 {
+        if (!mono) if (self.shaped(text)) |s| return s.width;
         var w: f32 = 0;
         var it: Codepoints = .{ .bytes = text };
         while (it.next()) |cp| w += self.glyphOf(cp, mono).advance;
@@ -348,28 +399,43 @@ pub const Batch = struct {
     }
 
     fn textWith(self: *Batch, x: f32, y: f32, string: []const u8, colour: Colour, mono: bool) f32 {
+        if (!mono) if (self.font.shaped(string)) |s| return self.textShaped(x, y, s, colour);
         var pen = @round(x);
         const baseline = @round(y) + @round(self.font.ascent);
         var it: Codepoints = .{ .bytes = string };
         while (it.next()) |cp| {
             const g = self.font.glyphOf(cp, mono);
             if (g.w > 0 and g.h > 0) {
-                const gx = pen + @as(f32, @floatFromInt(g.left));
-                const gy = baseline - @as(f32, @floatFromInt(g.top));
-                const s: f32 = atlas_size;
-                self.quad(
-                    gx,
-                    gy,
-                    gx + @as(f32, @floatFromInt(g.w)),
-                    gy + @as(f32, @floatFromInt(g.h)),
-                    .{ @as(f32, @floatFromInt(g.x)) / s, @as(f32, @floatFromInt(g.y)) / s },
-                    .{ @as(f32, @floatFromInt(g.x + g.w)) / s, @as(f32, @floatFromInt(g.y + g.h)) / s },
-                    colour,
-                );
+                self.glyphQuad(pen + @as(f32, @floatFromInt(g.left)), baseline - @as(f32, @floatFromInt(g.top)), g.*, colour);
             }
             pen += @round(g.advance);
         }
         return pen;
+    }
+
+    /// A shaped string's glyphs, the origin and baseline snapped as in `textWith`.
+    fn textShaped(self: *Batch, x: f32, y: f32, s: shape.Shaped, colour: Colour) f32 {
+        const origin = @round(x);
+        const baseline = @round(y) + @round(self.font.ascent);
+        for (s.glyphs) |p| {
+            if (p.g.w == 0 or p.g.h == 0) continue;
+            self.glyphQuad(origin + @as(f32, @floatFromInt(p.x + p.g.left)), baseline - @as(f32, @floatFromInt(p.y + p.g.top)), p.g, colour);
+        }
+        return origin + s.width;
+    }
+
+    /// Glyph `g` with its bitmap's top-left corner at (gx, gy).
+    fn glyphQuad(self: *Batch, gx: f32, gy: f32, g: Glyph, colour: Colour) void {
+        const s: f32 = atlas_size;
+        self.quad(
+            gx,
+            gy,
+            gx + @as(f32, @floatFromInt(g.w)),
+            gy + @as(f32, @floatFromInt(g.h)),
+            .{ @as(f32, @floatFromInt(g.x)) / s, @as(f32, @floatFromInt(g.y)) / s },
+            .{ @as(f32, @floatFromInt(g.x + g.w)) / s, @as(f32, @floatFromInt(g.y + g.h)) / s },
+            colour,
+        );
     }
 
     /// Text on a dark backing, so it stays readable over traces. Returns the x after it.
