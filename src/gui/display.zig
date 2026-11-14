@@ -179,6 +179,14 @@ pub fn refilterSamples(set: *const panels_mod.Set, fs: f64) usize {
 pub const threshold_low_hz = [2]f64{ 250, 350 };
 pub const threshold_high_hz = [2]f64{ 5000, 7000 };
 
+/// Whether panel `p` is filtered with about the detector's band (`threshold_low_hz`).
+pub fn bandIsDetectors(p: *const Panel) bool {
+    const lo = p.filter.low_hz;
+    const hi = p.filter.high_hz;
+    return p.filter.on and lo >= threshold_low_hz[0] and lo <= threshold_low_hz[1] and
+        hi >= threshold_high_hz[0] and hi <= threshold_high_hz[1];
+}
+
 /// Whether `row` of `p` shows about the detector's band (see `threshold_low_hz`).
 pub fn showsDetectorBand(p: *const Panel, row: usize) bool {
     const lo = p.filter.low_hz;
@@ -350,6 +358,8 @@ pub const Display = struct {
     /// under it, and whether it is over the panel input goes to).
     pointer_fy: f64 = 0,
     pointer_fx: f64 = 0,
+    /// The pointer is over the display's window (for hover tips).
+    pointer_inside: bool = false,
     scripted_pointer: bool = false,
     /// A test script holds the left button down (`press` until `release`).
     scripted_left: bool = false,
@@ -1095,6 +1105,7 @@ pub const Display = struct {
         if (status.notice) |n| if (o.line_h > 0) noticeBanner(&o, n, width, height);
         if (status.valid and o.line_h > 0) statusReadout(&o, status, width, height);
         if (self.set.len > 1) targetBar(&o, self.set.items[self.target].pixelRect(width, height));
+        if (o.band_tip) |p| bandTip(&o, p, self.pointer_fx * @as(f64, @floatFromInt(width)), self.pointer_fy * @as(f64, @floatFromInt(height)), width);
         if (self.help and o.line_h > 0) helpPanel(&o, width, height);
         return .{ .draws = draws[0..o.nd], .fills = fills[0..o.nf], .text = batch.vertices[0..batch.len] };
     }
@@ -1126,7 +1137,11 @@ pub const Display = struct {
         if (o.line_h <= 0) return;
         var trig_buf: [48]u8 = undefined;
         const trig_uv = if (p.triggerChannel()) |ch| self.thresholdUv(ch) else null;
-        panelTitle(o, p, r, t.in_review, shown_sweeps, trigText(&trig_buf, p, trig_uv, self.thresholds.sigmas));
+        if (panelTitle(o, p, r, t.in_review, shown_sweeps, trigText(&trig_buf, p, trig_uv, self.thresholds.sigmas))) |hot| {
+            const fx: f32 = @floatCast(self.pointer_fx * @as(f64, @floatFromInt(self.size[0])));
+            const fy: f32 = @floatCast(self.pointer_fy * @as(f64, @floatFromInt(self.size[1])));
+            if (self.pointer_inside and fx >= hot.x and fx < hot.x + hot.w and fy >= hot.y and fy < hot.y + hot.h) o.band_tip = p;
+        }
         // In review with nothing to draw yet: say what is being waited for, where the
         // traces would be.
         if (t.waiting) {
@@ -1311,6 +1326,8 @@ const Output = struct {
     nf: usize = 0,
     /// The font's line height in whole pixels; 0 without a font, and then no text.
     line_h: f32,
+    /// The pointer is over a triggered panel's filter text: the tip to draw, last.
+    band_tip: ?*const Panel = null,
 };
 
 /// What one frame is drawn from, besides the display's own state.
@@ -1547,7 +1564,71 @@ pub fn fmtTitleScale(buf: []u8, p: *const Panel) []const u8 {
 
 /// A panel's title, top left (a TTL lane strip's and a triggered panel's top right): what it
 /// shows (its short label), time base or what triggers it, scale and band.
-fn panelTitle(o: *Output, p: *const Panel, r: panels_mod.Rect, in_review: bool, shown_sweeps: usize, trig: []const u8) void {
+/// Where on the display a piece of text is (for the pointer).
+const HotRect = struct { x: f32, y: f32, w: f32, h: f32 };
+
+/// A triggered electrode panel's title: its filter text (the band, or "raw"), in the
+/// warning colour when it is not about the detector's band, and where that text is.
+fn triggeredTitle(o: *Output, p: *const Panel, r: panels_mod.Rect, shown_sweeps: usize, trig: []const u8, per_row: []const u8) ?HotRect {
+    const batch = o.batch;
+    const face = batch.font;
+    var head_buf: [128]u8 = undefined;
+    var band_buf: [48]u8 = undefined;
+    var tail_buf: [64]u8 = undefined;
+    const head = format.fmt(&head_buf, "{s}   {s}{s}", .{ p.shortLabel(), trig, per_row });
+    const electrode = p.kind == .electrode;
+    // The filter text, with the three spaces before it apart (they are not the hot part).
+    const band_all = if (!electrode) "" else if (p.filter.on) fmtBand(&band_buf, p) else if (p.carActive()) "   raw   CAR" else "   raw";
+    const gap = "   ";
+    const band = if (std.mem.startsWith(u8, band_all, gap)) band_all[gap.len..] else band_all;
+    const tail = format.fmt(&tail_buf, "   {d} sweeps{s}", .{ shown_sweeps, if (shown_sweeps == 0) " (waiting for a trigger)" else "" });
+    const px: f32 = @floatFromInt(r.x);
+    const y = @as(f32, @floatFromInt(r.y)) + 6;
+    const gap_w = if (band.len > 0) face.width(gap) else 0;
+    const total = face.width(head) + gap_w + face.width(band) + face.width(tail);
+    // Right-aligned in the strip kept for it; one wider than the panel starts at its left
+    // edge and runs off the right, rather than off the left.
+    const x = @max(px + @as(f32, @floatFromInt(r.w)) - total - 8, px + 4);
+    batch.rect(@round(x) - 3, @round(y) - 1, @round(total) + 6, @round(face.line_height) + 2, theme.label_backing);
+    var pen = batch.text(x, y, head, theme.text_bright);
+    var hot: ?HotRect = null;
+    if (band.len > 0) {
+        pen += gap_w;
+        const warn = !bandIsDetectors(p);
+        const bx = pen;
+        pen = batch.text(pen, y, band, if (warn) theme.text_warn else theme.text_bright);
+        if (warn) hot = .{ .x = bx, .y = y - 1, .w = pen - bx, .h = face.line_height + 2 };
+    }
+    _ = batch.text(pen, y, tail, theme.text_bright);
+    return hot;
+}
+
+/// Over a triggered panel's filter text in the warning colour: why it is that colour.
+fn bandTip(o: *Output, p: *const Panel, at_x: f64, at_y: f64, width: u32) void {
+    const batch = o.batch;
+    const face = batch.font;
+    var b1: [96]u8 = undefined;
+    var band_buf: [48]u8 = undefined;
+    const band = if (p.filter.on) std.mem.trimStart(u8, fmtBand(&band_buf, p), " ") else "none (raw)";
+    const lines = [_][]const u8{
+        format.fmt(&b1, "These sweeps are drawn through this panel's filter: {s}.", .{band}),
+        "Spike detection and the slope trigger always use 300-6000 Hz,",
+        "so the sweeps may not look like the spike tiles' waveforms.",
+    };
+    var w: f32 = 0;
+    for (lines) |l| w = @max(w, face.width(l));
+    const pad: f32 = 8;
+    const box_w = w + 2 * pad;
+    const box_h = @as(f32, @floatFromInt(lines.len)) * (o.line_h + 2) + 2 * pad;
+    const x = std.math.clamp(@as(f32, @floatCast(at_x)) - box_w / 2, 0, @max(0, @as(f32, @floatFromInt(width)) - box_w));
+    const y = @as(f32, @floatCast(at_y)) + o.line_h + 4;
+    batch.rect(x, y, box_w, box_h, theme.help_backing);
+    for (lines, 0..) |l, k| _ = batch.text(x + pad, y + pad + @as(f32, @floatFromInt(k)) * (o.line_h + 2), l, if (k == 0) theme.text_warn else theme.text_bright);
+}
+
+/// A panel's title; for a triggered electrode panel, where its warning-coloured filter
+/// text is (`triggeredTitle`).
+fn panelTitle(o: *Output, p: *const Panel, r: panels_mod.Rect, in_review: bool, shown_sweeps: usize, trig: []const u8) ?HotRect {
     const batch = o.batch;
     const px: f32 = @floatFromInt(r.x);
     const py: f32 = @floatFromInt(r.y);
@@ -1557,6 +1638,7 @@ fn panelTitle(o: *Output, p: *const Panel, r: panels_mod.Rect, in_review: bool, 
     var band_buf: [48]u8 = undefined;
     var per_row_buf: [40]u8 = undefined;
     const per_row = fmtTitleScale(&per_row_buf, p);
+    if (p.mode == .triggered) return triggeredTitle(o, p, r, shown_sweeps, trig, per_row);
     const title = if (p.mode == .triggered)
         format.fmt(&title_buf, "{s}   {s}{s}{s}   {d} sweeps{s}", .{
             p.shortLabel(),
@@ -1588,6 +1670,7 @@ fn panelTitle(o: *Output, p: *const Panel, r: panels_mod.Rect, in_review: bool, 
     // the right, rather than off the left (where the display's edge would cut its start).
     if (p.mode == .triggered) x = @max(x, px + 4);
     _ = batch.label(x, title_y, title, theme.text_bright);
+    return null;
 }
 
 const AxisLabel = struct { text: []const u8, x: f32 };
@@ -3491,7 +3574,8 @@ test "a triggered panel: the title ends 8 px from the right edge, without the wi
     defer testing.allocator.free(text);
     // Panel 0 is 600 px wide, at x 0: the title's backing rectangle (3 px each side of the
     // text, which is 8 px per character) ends at 600 - 8 + 3.
-    const title = lineWith(text, "text ", "\"A   TTL2   400µV/row   300-6000 Hz   6 sweeps\"").?;
+    // Drawn in pieces (the filter text may be in another colour); the first starts the title.
+    const title = lineWith(text, "text ", "\"A   TTL2   400µV/row\"").?;
     try testing.expect(std.mem.indexOf(u8, text, "-10.0/+40.0") == null);
     var it = std.mem.tokenizeScalar(u8, title, ' ');
     _ = it.next();
@@ -3687,4 +3771,57 @@ test "a notice is up from the first frame that asks for its seconds, then gone; 
     try testing.expect(n.shown(t0));
     try testing.expect(n.shown(t0 + Notice.seconds * 1_000_000_000 - 1));
     try testing.expect(!n.shown(t0 + Notice.seconds * 1_000_000_000));
+}
+
+test "a triggered panel's filter text is in the warning colour unless it is the detector's band" {
+    const st = try testing.allocator.create(FrameState);
+    defer testing.allocator.destroy(st);
+    frameState(st, 2);
+    st.display.set.items[0].filter.low_hz = 100;
+    st.display.set.items[0].filter.high_hz = 3000;
+    const text = try frameText(testing.allocator, st);
+    defer testing.allocator.free(text);
+    try testing.expect(lineWith(text, "text ", "{ 255, 190, 90, 255 } \"100-3000 Hz\"") != null);
+    // The detector's band: in the title's own colour.
+    st.display.set.items[0].filter.low_hz = 300;
+    st.display.set.items[0].filter.high_hz = 6000;
+    const plain = try frameText(testing.allocator, st);
+    defer testing.allocator.free(plain);
+    try testing.expect(lineWith(plain, "text ", "{ 225, 230, 240, 255 } \"300-6000 Hz   6 sweeps\"") != null);
+}
+
+test "over the warning-coloured filter text, a tip says why; not when the pointer is elsewhere or gone" {
+    const st = try testing.allocator.create(FrameState);
+    defer testing.allocator.destroy(st);
+    frameState(st, 2);
+    st.display.set.items[0].filter.low_hz = 100;
+    st.display.set.items[0].filter.high_hz = 3000;
+    const first = try frameText(testing.allocator, st);
+    defer testing.allocator.free(first);
+    // Where the band text is: its line gives x and y.
+    const line = lineWith(first, "text ", "\"100-3000 Hz\"").?;
+    var it = std.mem.tokenizeScalar(u8, line, ' ');
+    _ = it.next();
+    const bx = try std.fmt.parseFloat(f64, it.next().?);
+    const by = try std.fmt.parseFloat(f64, it.next().?);
+    const tip = "Spike detection and the slope trigger always use 300-6000 Hz,";
+    st.display.pointer_fx = (bx + 10) / @as(f64, @floatFromInt(st.width));
+    st.display.pointer_fy = (by + 5) / @as(f64, @floatFromInt(st.height));
+    st.display.scripted_pointer = true;
+    st.display.pointer_inside = true;
+    const over = try frameText(testing.allocator, st);
+    defer testing.allocator.free(over);
+    try testing.expect(std.mem.indexOf(u8, over, tip) != null);
+    try testing.expect(std.mem.indexOf(u8, over, "filter: 100-3000 Hz.") != null);
+    // The pointer has left the window: no tip.
+    st.display.pointer_inside = false;
+    const gone = try frameText(testing.allocator, st);
+    defer testing.allocator.free(gone);
+    try testing.expect(std.mem.indexOf(u8, gone, tip) == null);
+    // Over the title but not its filter text: no tip.
+    st.display.pointer_inside = true;
+    st.display.pointer_fx = (bx - 60) / @as(f64, @floatFromInt(st.width));
+    const beside = try frameText(testing.allocator, st);
+    defer testing.allocator.free(beside);
+    try testing.expect(std.mem.indexOf(u8, beside, tip) == null);
 }

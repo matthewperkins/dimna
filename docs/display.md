@@ -132,6 +132,12 @@ trigger line it loses its ` ms`, and when even that does not fit it is put at th
 left edge, over the row labels (better than leaving it out). With the trigger at the left
 edge (no time before it) there is no left label.
 
+The sweeps are drawn through the panel's own display filter, while spike detection and the
+slope trigger always use 300-6000 Hz. So the title's filter text (the band, or "raw") is in
+the warning colour when it is not about the detector's band (low corner 250-350 Hz, high
+5-7 kHz, as for the threshold line): the sweeps may then not look like the spike tiles'
+waveforms. With the pointer over that text a tip says so.
+
 ## Slope trigger (spikes)
 
 A triggered panel of electrodes can start its sweeps where one

@@ -121,6 +121,8 @@ pub const Input = struct {
     alt: bool = false,
     pointer_x: f64 = 0,
     pointer_y: f64 = 0,
+    /// The pointer is over the window (between its enter and leave).
+    pointer_inside: bool = false,
 };
 
 /// A frame that reached the screen.
@@ -517,12 +519,16 @@ pub const Window = struct {
             .enter => |e| {
                 self.input.pointer_x = e.surface_x.toDouble();
                 self.input.pointer_y = e.surface_y.toDouble();
+                self.input.pointer_inside = true;
                 // A client must say what the pointer looks like over its surface, at
                 // every enter.
                 self.enter_serial = e.serial;
                 self.applyCursor();
             },
-            .leave => self.input.left_down = false,
+            .leave => {
+                self.input.left_down = false;
+                self.input.pointer_inside = false;
+            },
             .motion => |m| {
                 self.input.pointer_x = m.surface_x.toDouble();
                 self.input.pointer_y = m.surface_y.toDouble();

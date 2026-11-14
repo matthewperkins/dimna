@@ -331,6 +331,7 @@ pub fn main(init: std.process.Init) !u8 {
         else
             0;
         // ? (the key summary) before the notes: it must not start a note as / does.
+        display.pointer_inside = input.pointer_inside;
         if (!notes.editing) {
             display.helpKey(&input);
             display.adcKey(&input);

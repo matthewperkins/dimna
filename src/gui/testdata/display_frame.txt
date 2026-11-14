@@ -194,7 +194,7 @@ rect 502 639 38 18 { 8, 10, 14, 200 }
 text 505 640 { 150, 160, 178, 255 } "TTL7"
 rect 502 674 38 18 { 8, 10, 14, 200 }
 text 505 675 { 150, 160, 178, 255 } "TTL8"
-== triggered on TTL: sweeps, the newest part-filled, pulse shading: 10 draws, 3 fills, 39 text runs, 44 rects
+== triggered on TTL: sweeps, the newest part-filled, pulse shading: 10 draws, 3 fills, 40 text runs, 44 rects
 draw 0 26 600 464 review=false nch=62 cap_mask=65535 newest=2983045 first_ch=7 cols=600 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.0032327587 phase=-1 future=0 gain=0.44000003 gain_base=0 dec_mask=131071
 draw 0 26 600 464 review=false nch=62 cap_mask=65535 newest=2989045 first_ch=7 cols=600 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.0032327587 phase=-1 future=0 gain=0.48000002 gain_base=0 dec_mask=131071
 draw 0 26 600 464 review=false nch=62 cap_mask=65535 newest=2995045 first_ch=7 cols=600 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.0032327587 phase=-1 future=0 gain=0.52000004 gain_base=0 dec_mask=131071
@@ -211,7 +211,8 @@ fill 0 0 600 3 0.3 0.55 0.95 1
 rect 120 26 200 464 { 90, 150, 255, 30 }
 rect 120 26 1 464 { 200, 210, 230, 150 }
 rect 229 5 366 18 { 8, 10, 14, 200 }
-text 232 6 { 225, 230, 240, 255 } "A   TTL2   400µV/row   300-6000 Hz   6 sweeps"
+text 232 6 { 225, 230, 240, 255 } "A   TTL2   400µV/row"
+text 416 6 { 225, 230, 240, 255 } "300-6000 Hz   6 sweeps"
 rect 525 469 70 18 { 8, 10, 14, 200 }
 text 528 470 { 150, 160, 178, 255 } "+40.0 ms"
 rect 121 469 14 18 { 8, 10, 14, 200 }
@@ -291,7 +292,7 @@ rect 2 599 46 18 { 8, 10, 14, 200 }
 text 5 600 { 150, 160, 178, 255 } "laser"
 rect 2 660 38 18 { 8, 10, 14, 200 }
 text 5 661 { 150, 160, 178, 255 } "TTL3"
-== triggered on a slope: a fixed level, and one latched from following the noise: 15 draws, 2 fills, 56 text runs, 142 rects
+== triggered on a slope: a fixed level, and one latched from following the noise: 15 draws, 2 fills, 59 text runs, 142 rects
 draw 0 26 500 674 review=false nch=62 cap_mask=1048575 newest=2992545 first_ch=7 cols=500 rows=31 span=90 lsb_per_row=2051.282 half_px=0.0022255194 phase=-1 future=0 gain=0.20000002 gain_base=0 dec_mask=131071
 draw 0 26 500 674 review=false nch=62 cap_mask=1048575 newest=2994548 first_ch=7 cols=500 rows=31 span=90 lsb_per_row=2051.282 half_px=0.0022255194 phase=-1 future=0 gain=0.25000003 gain_base=0 dec_mask=131071
 draw 0 26 500 674 review=false nch=62 cap_mask=1048575 newest=2996551 first_ch=7 cols=500 rows=31 span=90 lsb_per_row=2051.282 half_px=0.0022255194 phase=-1 future=0 gain=0.3 gain_base=0 dec_mask=131071
@@ -354,7 +355,8 @@ rect 480 104 6 1 { 225, 80, 75, 210 }
 rect 492 104 6 1 { 225, 80, 75, 210 }
 rect 167 26 1 674 { 200, 210, 230, 150 }
 rect 1 5 502 18 { 8, 10, 14, 200 }
-text 4 6 { 225, 230, 240, 255 } "A   row 5 falling -62 µV   400µV/row   300-6000 Hz   10 sweeps"
+text 4 6 { 225, 230, 240, 255 } "A   row 5 falling -62 µV   400µV/row"
+text 316 6 { 225, 230, 240, 255 } "300-6000 Hz   10 sweeps"
 rect 433 679 62 18 { 8, 10, 14, 200 }
 text 436 680 { 150, 160, 178, 255 } "+2.0 ms"
 rect 168 679 14 18 { 8, 10, 14, 200 }
@@ -468,8 +470,10 @@ rect 968 135 6 1 { 225, 80, 75, 210 }
 rect 980 135 6 1 { 225, 80, 75, 210 }
 rect 992 135 6 1 { 225, 80, 75, 210 }
 rect 667 26 1 674 { 200, 210, 230, 150 }
-rect 613 5 382 18 { 8, 10, 14, 200 }
-text 616 6 { 225, 230, 240, 255 } "B   row 3 falling -41 µV   400µV/row   5 sweeps"
+rect 565 5 430 18 { 8, 10, 14, 200 }
+text 568 6 { 225, 230, 240, 255 } "B   row 3 falling -41 µV   400µV/row"
+text 880 6 { 255, 190, 90, 255 } "raw"
+text 904 6 { 225, 230, 240, 255 } "   5 sweeps"
 rect 933 679 62 18 { 8, 10, 14, 200 }
 text 936 680 { 150, 160, 178, 255 } "+2.0 ms"
 rect 668 679 14 18 { 8, 10, 14, 200 }
@@ -596,7 +600,7 @@ rect 2 680 22 18 { 8, 10, 14, 200 }
 text 5 681 { 150, 160, 178, 255 } "16"
 rect 7 653 238 18 { 8, 10, 14, 200 }
 text 10 654 { 255, 235, 170, 255 } "note at 1:40:  spike at 2 µm_"
-== review from the file: 13 draws, 5 fills, 57 text runs, 67 rects
+== review from the file: 13 draws, 5 fills, 59 text runs, 67 rects
 draw 0 0 500 420 review=true nch=62 cap_mask=1048575 newest=2637345 first_ch=7 cols=500 rows=32 span=150000 lsb_per_row=2051.282 half_px=0.0035714286 phase=-1 future=0 gain=1 gain_base=0 dec_mask=0
 draw 500 0 500 420 review=true nch=62 cap_mask=1048575 newest=2637345 first_ch=39 cols=500 rows=16 span=30000 lsb_per_row=2051.282 half_px=0.0035714286 phase=-1 future=0 gain=1 gain_base=256 dec_mask=0
 draw 0 446 700 254 review=false nch=62 cap_mask=1048575 newest=2959045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005905512 phase=-1 future=0 gain=0.20000002 gain_base=512 dec_mask=131071
@@ -688,8 +692,10 @@ rect 502 398 22 18 { 8, 10, 14, 200 }
 text 505 399 { 150, 160, 178, 255 } "16"
 rect 140 446 233.33334 254 { 90, 150, 255, 30 }
 rect 140 446 1 254 { 200, 210, 230, 150 }
-rect 433 425 262 18 { 8, 10, 14, 200 }
-text 436 426 { 225, 230, 240, 255 } "A   TTL2   400µV/row   10 sweeps"
+rect 385 425 310 18 { 8, 10, 14, 200 }
+text 388 426 { 225, 230, 240, 255 } "A   TTL2   400µV/row"
+text 572 426 { 255, 190, 90, 255 } "raw"
+text 596 426 { 225, 230, 240, 255 } "   10 sweeps"
 rect 625 679 70 18 { 8, 10, 14, 200 }
 text 628 680 { 150, 160, 178, 255 } "+40.0 ms"
 rect 141 679 14 18 { 8, 10, 14, 200 }
@@ -739,7 +745,7 @@ rect 702 674 38 18 { 8, 10, 14, 200 }
 text 705 675 { 150, 160, 178, 255 } "TTL8"
 rect 298 4 404 26 { 150, 100, 10, 235 }
 text 308 9 { 255, 240, 200, 255 } "REVIEW   12.5 s behind live   at 1:27   l = live"
-== review from the file, still reading: 10 draws, 5 fills, 60 text runs, 67 rects
+== review from the file, still reading: 10 draws, 5 fills, 62 text runs, 67 rects
 draw 0 446 700 254 review=false nch=62 cap_mask=1048575 newest=2959045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005905512 phase=-1 future=0 gain=0.20000002 gain_base=512 dec_mask=131071
 draw 0 446 700 254 review=false nch=62 cap_mask=1048575 newest=2965045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005905512 phase=-1 future=0 gain=0.25000003 gain_base=512 dec_mask=131071
 draw 0 446 700 254 review=false nch=62 cap_mask=1048575 newest=2971045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005905512 phase=-1 future=0 gain=0.3 gain_base=512 dec_mask=131071
@@ -830,8 +836,10 @@ rect 502 398 22 18 { 8, 10, 14, 200 }
 text 505 399 { 150, 160, 178, 255 } "16"
 rect 140 446 233.33334 254 { 90, 150, 255, 30 }
 rect 140 446 1 254 { 200, 210, 230, 150 }
-rect 433 425 262 18 { 8, 10, 14, 200 }
-text 436 426 { 225, 230, 240, 255 } "A   TTL2   400µV/row   10 sweeps"
+rect 385 425 310 18 { 8, 10, 14, 200 }
+text 388 426 { 225, 230, 240, 255 } "A   TTL2   400µV/row"
+text 572 426 { 255, 190, 90, 255 } "raw"
+text 596 426 { 225, 230, 240, 255 } "   10 sweeps"
 rect 625 679 70 18 { 8, 10, 14, 200 }
 text 628 680 { 150, 160, 178, 255 } "+40.0 ms"
 rect 141 679 14 18 { 8, 10, 14, 200 }
@@ -882,7 +890,7 @@ rect 702 674 38 18 { 8, 10, 14, 200 }
 text 705 675 { 150, 160, 178, 255 } "TTL8"
 rect 250 4 500 26 { 150, 100, 10, 235 }
 text 260 9 { 255, 240, 200, 255 } "REVIEW   12.5 s behind live   at 1:27   (reading)   l = live"
-== review frozen, without a file; warning bar: 13 draws, 5 fills, 58 text runs, 68 rects
+== review frozen, without a file; warning bar: 13 draws, 5 fills, 60 text runs, 68 rects
 draw 0 0 500 420 review=false nch=62 cap_mask=1048575 newest=2637345 first_ch=7 cols=500 rows=32 span=150000 lsb_per_row=2051.282 half_px=0.0035714286 phase=-1 future=0 gain=1 gain_base=0 dec_mask=131071
 draw 500 0 500 420 review=false nch=62 cap_mask=1048575 newest=2637345 first_ch=39 cols=500 rows=16 span=30000 lsb_per_row=2051.282 half_px=0.0035714286 phase=-1 future=0 gain=1 gain_base=256 dec_mask=131071
 draw 0 446 700 254 review=false nch=62 cap_mask=1048575 newest=2959045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005905512 phase=-1 future=0 gain=0.20000002 gain_base=512 dec_mask=131071
@@ -974,8 +982,10 @@ rect 502 398 22 18 { 8, 10, 14, 200 }
 text 505 399 { 150, 160, 178, 255 } "16"
 rect 140 446 233.33334 254 { 90, 150, 255, 30 }
 rect 140 446 1 254 { 200, 210, 230, 150 }
-rect 433 425 262 18 { 8, 10, 14, 200 }
-text 436 426 { 225, 230, 240, 255 } "A   TTL2   400µV/row   10 sweeps"
+rect 385 425 310 18 { 8, 10, 14, 200 }
+text 388 426 { 225, 230, 240, 255 } "A   TTL2   400µV/row"
+text 572 426 { 255, 190, 90, 255 } "raw"
+text 596 426 { 225, 230, 240, 255 } "   10 sweeps"
 rect 625 679 70 18 { 8, 10, 14, 200 }
 text 628 680 { 150, 160, 178, 255 } "+40.0 ms"
 rect 141 679 14 18 { 8, 10, 14, 200 }
@@ -1541,7 +1551,7 @@ rect 645 677 350 18 { 8, 10, 14, 200 }
 text 648 678 { 255, 190, 90, 255 } "4.3 ms   144 fps   display skipped 7 blocks"
 rect 543 677 94 18 { 8, 10, 14, 200 }
 text 546 678 { 255, 96, 96, 255 } "REC 1:02:05"
-== small window: 12 draws, 4 fills, 20 text runs, 22 rects
+== small window: 12 draws, 4 fills, 22 text runs, 22 rects
 draw 0 26 160 154 review=false nch=62 cap_mask=1048575 newest=2959045 first_ch=7 cols=160 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.0097402595 phase=-1 future=0 gain=0.20000002 gain_base=0 dec_mask=131071
 draw 0 26 160 154 review=false nch=62 cap_mask=1048575 newest=2965045 first_ch=7 cols=160 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.0097402595 phase=-1 future=0 gain=0.25000003 gain_base=0 dec_mask=131071
 draw 0 26 160 154 review=false nch=62 cap_mask=1048575 newest=2971045 first_ch=7 cols=160 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.0097402595 phase=-1 future=0 gain=0.3 gain_base=0 dec_mask=131071
@@ -1560,8 +1570,10 @@ fill 160 90 160 1 0.22 0.24 0.28 1
 fill 0 0 160 3 0.3 0.55 0.95 1
 rect 32 26 53.333336 154 { 90, 150, 255, 30 }
 rect 32 26 1 154 { 200, 210, 230, 150 }
-rect 1 5 262 18 { 8, 10, 14, 200 }
-text 4 6 { 225, 230, 240, 255 } "A   TTL2   400µV/row   10 sweeps"
+rect 1 5 310 18 { 8, 10, 14, 200 }
+text 4 6 { 225, 230, 240, 255 } "A   TTL2   400µV/row"
+text 188 6 { 255, 190, 90, 255 } "raw"
+text 212 6 { 225, 230, 240, 255 } "   10 sweeps"
 rect 85 159 70 18 { 8, 10, 14, 200 }
 text 88 160 { 150, 160, 178, 255 } "+40.0 ms"
 rect 33 159 14 18 { 8, 10, 14, 200 }
@@ -2139,7 +2151,7 @@ rect 2 657 22 18 { 8, 10, 14, 200 }
 text 5 658 { 150, 160, 178, 255 } "31"
 rect 2 680 22 18 { 8, 10, 14, 200 }
 text 5 681 { 150, 160, 178, 255 } "32"
-== focus in a triggered panel and a sweep panel: 11 draws, 4 fills, 67 text runs, 71 rects
+== focus in a triggered panel and a sweep panel: 11 draws, 4 fills, 68 text runs, 71 rects
 draw 0 26 500 674 review=false nch=62 cap_mask=1048575 newest=2959045 first_ch=7 cols=500 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.0022255194 phase=-1 future=0 gain=0.20000002 gain_base=0 dec_mask=131071
 draw 0 26 500 674 review=false nch=62 cap_mask=1048575 newest=2965045 first_ch=7 cols=500 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.0022255194 phase=-1 future=0 gain=0.25000003 gain_base=0 dec_mask=131071
 draw 0 26 500 674 review=false nch=62 cap_mask=1048575 newest=2971045 first_ch=7 cols=500 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.0022255194 phase=-1 future=0 gain=0.3 gain_base=0 dec_mask=131071
@@ -2159,7 +2171,8 @@ rect 100 26 166.66666 674 { 90, 150, 255, 30 }
 rect 100 26 1 674 { 200, 210, 230, 150 }
 rect 0 144 500 1 { 225, 80, 75, 210 }
 rect 121 5 374 18 { 8, 10, 14, 200 }
-text 124 6 { 225, 230, 240, 255 } "A   TTL2   400µV/row   300-6000 Hz   10 sweeps"
+text 124 6 { 225, 230, 240, 255 } "A   TTL2   400µV/row"
+text 308 6 { 225, 230, 240, 255 } "300-6000 Hz   10 sweeps"
 rect 425 679 70 18 { 8, 10, 14, 200 }
 text 428 680 { 150, 160, 178, 255 } "+40.0 ms"
 rect 101 679 14 18 { 8, 10, 14, 200 }
@@ -2448,7 +2461,7 @@ rect 2 657 22 18 { 8, 10, 14, 200 }
 text 5 658 { 150, 160, 178, 255 } "31"
 rect 2 680 22 18 { 8, 10, 14, 200 }
 text 5 681 { 150, 160, 178, 255 } "32"
-== the trigger row in focus: one line, dashed, in the threshold's colour: 10 draws, 0 fills, 36 text runs, 121 rects
+== the trigger row in focus: one line, dashed, in the threshold's colour: 10 draws, 0 fills, 37 text runs, 121 rects
 draw 0 26 1000 674 review=false nch=62 cap_mask=1048575 newest=3000557 first_ch=7 cols=1000 rows=32 span=90 lsb_per_row=2051.282 half_px=0.0022255194 phase=-1 future=0 gain=0.20000002 gain_base=0 dec_mask=131071
 draw 0 26 1000 674 review=false nch=62 cap_mask=1048575 newest=3002560 first_ch=7 cols=1000 rows=32 span=90 lsb_per_row=2051.282 half_px=0.0022255194 phase=-1 future=0 gain=0.25000003 gain_base=0 dec_mask=131071
 draw 0 26 1000 674 review=false nch=62 cap_mask=1048575 newest=3002598 first_ch=7 cols=1000 rows=32 span=90 lsb_per_row=2051.282 half_px=0.0022255194 phase=-1 future=0 gain=0.3 gain_base=0 dec_mask=131071
@@ -2545,7 +2558,8 @@ rect 984 123 6 1 { 225, 80, 75, 210 }
 rect 996 123 6 1 { 225, 80, 75, 210 }
 rect 333 26 1 674 { 200, 210, 230, 150 }
 rect 493 5 502 18 { 8, 10, 14, 200 }
-text 496 6 { 225, 230, 240, 255 } "A   row 5 falling -50 µV   400µV/row   300-6000 Hz   10 sweeps"
+text 496 6 { 225, 230, 240, 255 } "A   row 5 falling -50 µV   400µV/row"
+text 808 6 { 225, 230, 240, 255 } "300-6000 Hz   10 sweeps"
 rect 933 679 62 18 { 8, 10, 14, 200 }
 text 936 680 { 150, 160, 178, 255 } "+2.0 ms"
 rect 334 679 14 18 { 8, 10, 14, 200 }
@@ -2616,7 +2630,7 @@ rect 2 659 22 18 { 8, 10, 14, 200 }
 text 5 660 { 150, 160, 178, 255 } "31"
 rect 2 680 22 18 { 8, 10, 14, 200 }
 text 5 681 { 150, 160, 178, 255 } "32"
-== review entered by Shift+wheel: three clicks back over Port A (5 s): 1.5 s behind: 13 draws, 5 fills, 56 text runs, 63 rects
+== review entered by Shift+wheel: three clicks back over Port A (5 s): 1.5 s behind: 13 draws, 5 fills, 58 text runs, 63 rects
 draw 0 0 500 420 review=false nch=62 cap_mask=1048575 newest=2967345 first_ch=7 cols=500 rows=32 span=150000 lsb_per_row=2051.282 half_px=0.0035714286 phase=-1 future=0 gain=1 gain_base=0 dec_mask=131071
 draw 500 0 500 420 review=false nch=62 cap_mask=1048575 newest=2967345 first_ch=39 cols=500 rows=16 span=30000 lsb_per_row=2051.282 half_px=0.0035714286 phase=-1 future=0 gain=1 gain_base=256 dec_mask=131071
 draw 0 446 700 254 review=false nch=62 cap_mask=1048575 newest=2959045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005905512 phase=-1 future=0 gain=0.20000002 gain_base=512 dec_mask=131071
@@ -2704,8 +2718,10 @@ rect 502 398 22 18 { 8, 10, 14, 200 }
 text 505 399 { 150, 160, 178, 255 } "16"
 rect 140 446 233.33334 254 { 90, 150, 255, 30 }
 rect 140 446 1 254 { 200, 210, 230, 150 }
-rect 433 425 262 18 { 8, 10, 14, 200 }
-text 436 426 { 225, 230, 240, 255 } "A   TTL2   400µV/row   10 sweeps"
+rect 385 425 310 18 { 8, 10, 14, 200 }
+text 388 426 { 225, 230, 240, 255 } "A   TTL2   400µV/row"
+text 572 426 { 255, 190, 90, 255 } "raw"
+text 596 426 { 225, 230, 240, 255 } "   10 sweeps"
 rect 625 679 70 18 { 8, 10, 14, 200 }
 text 628 680 { 150, 160, 178, 255 } "+40.0 ms"
 rect 141 679 14 18 { 8, 10, 14, 200 }
@@ -3156,7 +3172,7 @@ text 676 344 { 150, 200, 255, 255 } "drag the red line"
 text 828 344 { 175, 184, 200, 255 } "its threshold, fixed (uV)"
 text 676 360 { 150, 200, 255, 255 } "the chips"
 text 828 360 { 175, 184, 200, 255 } "one port's tiles, or all"
-== review from the file: Port A from the overview's pixel columns, Port B's not there yet: 12 draws, 5 fills, 58 text runs, 67 rects
+== review from the file: Port A from the overview's pixel columns, Port B's not there yet: 12 draws, 5 fills, 60 text runs, 67 rects
 draw 0 0 500 420 review=true nch=62 cap_mask=1048575 newest=0 first_ch=7 cols=500 rows=32 span=150000 lsb_per_row=2051.282 half_px=0.0035714286 phase=-1 future=0 gain=1 gain_base=0 dec_mask=4294967295
 draw 0 446 700 254 review=false nch=62 cap_mask=1048575 newest=2959045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005905512 phase=-1 future=0 gain=0.20000002 gain_base=512 dec_mask=131071
 draw 0 446 700 254 review=false nch=62 cap_mask=1048575 newest=2965045 first_ch=7 cols=700 rows=32 span=1500 lsb_per_row=2051.282 half_px=0.005905512 phase=-1 future=0 gain=0.25000003 gain_base=512 dec_mask=131071
@@ -3248,8 +3264,10 @@ rect 502 398 22 18 { 8, 10, 14, 200 }
 text 505 399 { 150, 160, 178, 255 } "16"
 rect 140 446 233.33334 254 { 90, 150, 255, 30 }
 rect 140 446 1 254 { 200, 210, 230, 150 }
-rect 433 425 262 18 { 8, 10, 14, 200 }
-text 436 426 { 225, 230, 240, 255 } "A   TTL2   400µV/row   10 sweeps"
+rect 385 425 310 18 { 8, 10, 14, 200 }
+text 388 426 { 225, 230, 240, 255 } "A   TTL2   400µV/row"
+text 572 426 { 255, 190, 90, 255 } "raw"
+text 596 426 { 225, 230, 240, 255 } "   10 sweeps"
 rect 625 679 70 18 { 8, 10, 14, 200 }
 text 628 680 { 150, 160, 178, 255 } "+40.0 ms"
 rect 141 679 14 18 { 8, 10, 14, 200 }
