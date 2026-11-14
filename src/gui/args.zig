@@ -17,6 +17,13 @@ pub const Args = struct {
     script: []const u8 = "",
     monitor: []const u8 = "",
     tearing: bool = false,
+    /// An image the GUI's colours are taken from (`scheme_image` in the config; "" = the
+    /// built-in colours). Not resolved: see `scheme.resolvePath`.
+    scheme_image: []const u8 = "",
+    /// `--print-scheme`: print the scheme of this image and exit ("" = no).
+    print_scheme: []const u8 = "",
+    /// `--swatch`: also write a swatch PNG of it here.
+    swatch: []const u8 = "",
     /// Where recordings go: one session folder per recording beneath it.
     record_dir: []const u8 = "~/dimna-recordings",
     /// The spike tiles (a third window).
@@ -49,6 +56,9 @@ pub const usage =
     \\  --aux, --adc        also acquire the auxiliary inputs, the board's ADC inputs
     \\  --driver usb|d3xx   how to reach the FT600: our own USB code (default) or FTDI's D3XX
     \\  --monitor DP-2      fullscreen on that monitor (the neural display)
+    \\  --print-scheme IMG  print the colours derived from a JPEG or PNG and exit (no window,
+    \\                      no board); with --swatch OUT.png also draw them
+    \\  --swatch OUT.png    where --print-scheme writes its swatch
     \\  --tearing           show each frame at once, mid-scan (lowest latency; implies
     \\                      --present immediate and --free 2; see docs/latency.md)
     \\  --free MS           draw whenever new samples have arrived, at most every MS ms
@@ -146,6 +156,8 @@ pub fn applyConfig(a: *Args, doc: dimna.toml.Document) void {
             a.control = e.value.boolean;
         } else if (std.mem.eql(u8, e.key, "mode")) {
             // Read with the panels.
+        } else if (std.mem.eql(u8, e.key, "scheme_image") and e.value == .string) {
+            a.scheme_image = e.value.string;
         } else if (std.mem.eql(u8, e.key, "tearing") and e.value == .boolean) {
             a.tearing = e.value.boolean;
             if (a.tearing) a.present = .immediate;
@@ -182,6 +194,10 @@ pub fn parseArgs(args: []const [:0]const u8, doc: dimna.toml.Document) !Args {
             a.seconds = try std.fmt.parseFloat(f64, try next(args, &i, arg));
         } else if (std.mem.eql(u8, arg, "--monitor")) {
             a.monitor = try next(args, &i, arg);
+        } else if (std.mem.eql(u8, arg, "--print-scheme")) {
+            a.print_scheme = try next(args, &i, arg);
+        } else if (std.mem.eql(u8, arg, "--swatch")) {
+            a.swatch = try next(args, &i, arg);
         } else if (std.mem.eql(u8, arg, "--tearing")) {
             a.tearing = true;
             a.present = .immediate;
@@ -245,6 +261,17 @@ pub fn parseArgs(args: []const [:0]const u8, doc: dimna.toml.Document) !Args {
     // Tearing shows frames as they are presented, so draw as samples arrive.
     if (a.tearing and a.free_ms < 0) a.free_ms = 2;
     return a;
+}
+
+test "scheme_image is read from the config, and the scheme options from the command line" {
+    var diag: dimna.toml.Diagnostics = .{};
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const doc = try dimna.toml.parse(arena.allocator(), "scheme_image = \"~/pics/lab.jpg\"\n", &diag);
+    const a = try parseArgs(&.{ "dimna", "--print-scheme", "x.png", "--swatch", "out.png" }, doc);
+    try std.testing.expectEqualStrings("~/pics/lab.jpg", a.scheme_image);
+    try std.testing.expectEqualStrings("x.png", a.print_scheme);
+    try std.testing.expectEqualStrings("out.png", a.swatch);
 }
 
 test "the usage text lists every option the parser accepts" {

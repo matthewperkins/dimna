@@ -88,6 +88,9 @@ pub fn build(b: *std.Build) void {
         }
     }
     const gui_c_mod = gui_c.createModule();
+    // stb_image / stb_image_write (vendor/stb): the colour scheme's image and the swatch.
+    const stb_c = b.addTranslateC(.{ .root_source_file = b.path("vendor/stb/stb.h"), .target = target, .optimize = optimize });
+    const stb_mod = stb_c.createModule();
     const gui_mod = b.createModule(.{
         .root_source_file = b.path("src/gui/main.zig"),
         .target = target,
@@ -105,6 +108,12 @@ pub fn build(b: *std.Build) void {
         m.addImport("wayland", wayland);
         m.addImport("vulkan", vulkan);
         m.addImport("gui_c", gui_c_mod);
+        m.addImport("stb", stb_mod);
+        m.addCSourceFile(.{
+            .file = b.path("vendor/stb/stb_impl.c"),
+            .flags = &.{ "-DNDEBUG", "-w", "-fno-sanitize=undefined" },
+        });
+        m.addIncludePath(b.path("vendor/stb"));
         m.linkSystemLibrary("wayland-client", .{});
         m.linkSystemLibrary("vulkan", .{});
         // Text: fontconfig finds the font, FreeType rasterizes it.

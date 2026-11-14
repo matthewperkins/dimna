@@ -10,6 +10,8 @@ test {
     _ = @import("font.zig");
     _ = @import("format.zig");
     _ = @import("notes.zig");
+    _ = @import("scheme.zig");
+    _ = @import("theme.zig");
     _ = @import("tiles.zig");
     _ = @import("ui.zig");
     _ = @import("window.zig");

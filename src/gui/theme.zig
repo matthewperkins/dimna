@@ -6,24 +6,66 @@
 //! reds). They are kept apart on purpose until someone decides they should be one: each
 //! name here says what it colours, not that it is the only colour of its kind.
 //!
-//! The trace colours themselves are not here: `shaders/traces.vert` has its own palette
-//! (four colours by channel, an amber pull for off-scale columns, red at the converter's
-//! limits). Constants that must match a value outside this file say so.
+//! The themed colours are `var`s holding today's values; `apply` replaces them once, at
+//! startup, before any window or thread draws (a scheme taken from an image, `scheme.zig`).
+//! The colours that mean something (warnings, the recording, focus, notes, the detection
+//! threshold) are `const` and never change. The four trace colours are `trace`, which
+//! `gpu.zig` pushes to `shaders/traces.vert`; its amber pull for off-scale columns and red at
+//! the converter's limits are fixed in the shader. Constants that must match a value outside
+//! this file say so.
 
+const std = @import("std");
 const Colour = @import("font.zig").Colour;
+const scheme_mod = @import("scheme.zig");
+
+/// The four trace colours, by channel & 3 (0..1 each).
+pub var trace: [4][3]f32 = .{ .{ 0.55, 0.85, 1.0 }, .{ 1.0, 0.82, 0.45 }, .{ 0.6, 1.0, 0.65 }, .{ 1.0, 0.6, 0.75 } };
+
+const themed = .{
+    "text_bright",     "text_dim",   "label_backing",   "help_backing",  "help_title",   "help_key",
+    "help_text",       "background", "sweep_cursor",    "panel_divider", "target_bar",   "tile_bg",
+    "tile_bg_hover",   "tile_wave",  "tile_range_text", "button_idle",   "button_hover", "button_on",
+    "button_on_hover", "rule",       "heading_idle",    "heading_hover", "trace",
+};
+
+/// Sets every themed colour from `s`. Call it once at startup, before anything draws.
+pub fn apply(s: scheme_mod.Scheme) void {
+    inline for (themed) |name| @field(@This(), name) = @field(s, name);
+}
+
+/// The colours in use, as a scheme.
+pub fn current() scheme_mod.Scheme {
+    var s: scheme_mod.Scheme = undefined;
+    inline for (themed) |name| @field(s, name) = @field(@This(), name);
+    return s;
+}
+
+test "apply sets every themed colour and current reads them back" {
+    const saved = current();
+    defer apply(saved);
+    var s = saved;
+    inline for (@typeInfo(scheme_mod.Scheme).@"struct".field_names) |name| {
+        // Change every field to something no default has.
+        const T = @TypeOf(@field(s, name));
+        if (T == Colour) @field(s, name) = .{ 1, 2, 3, 77 } else if (T == [4]f32) @field(s, name) = .{ 0.5, 0.25, 0.125, 1 } else @field(s, name) = .{ .{ 0.1, 0.2, 0.3 }, .{ 0.4, 0.5, 0.6 }, .{ 0.7, 0.8, 0.9 }, .{ 0.15, 0.25, 0.35 } };
+    }
+    apply(s);
+    try std.testing.expectEqualDeep(s, current());
+    try std.testing.expectEqual(@as(u8, 77), tile_bg_hover[3]);
+}
 
 // Text.
 
 /// Headings, panel titles, button labels, values that matter.
-pub const text_bright: Colour = .{ 225, 230, 240, 255 };
+pub var text_bright: Colour = .{ 225, 230, 240, 255 };
 /// Everything else: notes to the user, row labels, axis labels, read-outs.
-pub const text_dim: Colour = .{ 150, 160, 178, 255 };
+pub var text_dim: Colour = .{ 150, 160, 178, 255 };
 /// Something to look at: blocks the display skipped, the disk behind, a failed recording.
 pub const text_warn: Colour = .{ 255, 190, 90, 255 };
 /// "REC" while recording.
 pub const text_rec: Colour = .{ 255, 96, 96, 255 };
 /// The dark box behind a label on the display, so it reads over the traces.
-pub const label_backing: Colour = .{ 8, 10, 14, 200 };
+pub var label_backing: Colour = .{ 8, 10, 14, 200 };
 
 // The channels listened to.
 
@@ -75,52 +117,52 @@ pub const review_badge_text: Colour = .{ 255, 240, 200, 255 };
 // Display: the key summary (`?`).
 
 /// The box behind it: nearly opaque, so the traces do not show through the text.
-pub const help_backing: Colour = .{ 14, 16, 22, 245 };
+pub var help_backing: Colour = .{ 14, 16, 22, 245 };
 /// Its title and the two columns' headings.
-pub const help_title: Colour = .{ 225, 230, 240, 255 };
+pub var help_title: Colour = .{ 225, 230, 240, 255 };
 /// A key or mouse action.
-pub const help_key: Colour = .{ 150, 200, 255, 255 };
+pub var help_key: Colour = .{ 150, 200, 255, 255 };
 /// What it does.
-pub const help_text: Colour = .{ 175, 184, 200, 255 };
+pub var help_text: Colour = .{ 175, 184, 200, 255 };
 
 // Display: fills (`gpu.Fill`, `[4]f32`).
 
 /// The display's background, where the sweep cursor blanks the stretch ahead of it.
 /// Also the render pass's clear colour (`gpu.zig`).
-pub const background: [4]f32 = .{ 0.04, 0.045, 0.055, 1.0 };
+pub var background: [4]f32 = .{ 0.04, 0.045, 0.055, 1.0 };
 /// The sweep cursor: the line at the newest sample.
-pub const sweep_cursor: [4]f32 = .{ 0.45, 0.48, 0.55, 1.0 };
+pub var sweep_cursor: [4]f32 = .{ 0.45, 0.48, 0.55, 1.0 };
 /// The line along a panel's left and top edges where they are not the display's.
-pub const panel_divider: [4]f32 = .{ 0.22, 0.24, 0.28, 1.0 };
+pub var panel_divider: [4]f32 = .{ 0.22, 0.24, 0.28, 1.0 };
 /// The bar along the top of the panel that input goes to.
-pub const target_bar: [4]f32 = .{ 0.30, 0.55, 0.95, 1.0 };
+pub var target_bar: [4]f32 = .{ 0.30, 0.55, 0.95, 1.0 };
 
 // Spike tiles.
 
-pub const tile_bg: Colour = .{ 17, 19, 25, 255 };
+pub var tile_bg: Colour = .{ 17, 19, 25, 255 };
 /// The tile under the pointer.
-pub const tile_bg_hover: Colour = .{ 26, 29, 38, 255 };
+pub var tile_bg_hover: Colour = .{ 26, 29, 38, 255 };
 /// The waveforms of a channel not listened to (their alpha is set per waveform). The
-/// display's first trace colour: `palette[0]` in `shaders/traces.vert`,
-/// `vec3(0.55, 0.85, 1.0)`, is 140.25, 216.75, 255 in 8 bits; this is it rounded.
-pub const tile_wave: Colour = .{ 140, 217, 255, 255 };
+/// display's first trace colour: `trace[0]`, `vec3(0.55, 0.85, 1.0)` by default, is 140.25,
+/// 216.75, 255 in 8 bits; this is it rounded.
+pub var tile_wave: Colour = .{ 140, 217, 255, 255 };
 /// The detection threshold across a tile.
 pub const tile_threshold: Colour = .{ 225, 80, 75, 210 };
 /// A tile's fixed range ("±150 µV"), bottom left: dimmer than the other read-outs.
-pub const tile_range_text: Colour = .{ 115, 124, 140, 255 };
+pub var tile_range_text: Colour = .{ 115, 124, 140, 255 };
 /// A fixed threshold's value ("-52 µV"), left of sigma: the red of the line, lightened to
 /// read as text. A threshold that follows the noise shows no value.
 pub const tile_threshold_text: Colour = .{ 240, 130, 120, 255 };
 
 // Control window (`ui.zig` widgets).
 
-pub const button_idle: Colour = .{ 38, 43, 54, 255 };
-pub const button_hover: Colour = .{ 56, 64, 82, 255 };
+pub var button_idle: Colour = .{ 38, 43, 54, 255 };
+pub var button_hover: Colour = .{ 56, 64, 82, 255 };
 /// A button that is on (a toggle, the chosen one of a choice).
-pub const button_on: Colour = .{ 52, 96, 170, 255 };
-pub const button_on_hover: Colour = .{ 66, 116, 200, 255 };
+pub var button_on: Colour = .{ 52, 96, 170, 255 };
+pub var button_on_hover: Colour = .{ 66, 116, 200, 255 };
 /// The line between sections.
-pub const rule: Colour = .{ 48, 52, 62, 255 };
+pub var rule: Colour = .{ 48, 52, 62, 255 };
 /// A section's heading, which opens and closes it: flatter than a button.
-pub const heading_idle: Colour = .{ 26, 30, 38, 255 };
-pub const heading_hover: Colour = .{ 48, 55, 70, 255 };
+pub var heading_idle: Colour = .{ 26, 30, 38, 255 };
+pub var heading_hover: Colour = .{ 48, 55, 70, 255 };
