@@ -113,3 +113,56 @@ config keys, `--help`, or anything not in `en.zig`.
 
 Per language: the number of messages written and left out (and why), the texts you think
 may be too long, the evidence above, and anything in `en.zig` you would change.
+
+## Report: de, fr, pt
+
+Branch `worktree-agent-a45271d1d6348aeb9`, work commit 2f1fc72 (this report is the next commit).
+Files: `src/gui/lang/{de,fr,pt}.zig`, `docs/translations/{de,fr,pt}.md`, this plan file.
+
+**Messages.** Each language: 267 written, 2 left out (`notice_language_missing`,
+`notice_language_where`, as the plan says). Comments and headings stay in English.
+
+**Failing test, not fixed (outside my files).** After the files were filled, `zig build test`
+reports 1 failure: `i18n.test.text, fmt and print give the current language's message...`,
+line 584: `countIn(.fr, &buf, "rec_gaps", 0, ...)` expects "0 gaps" because French was empty;
+French now has its own file and counts 0 as one ("0 trou"). The test needs another language
+that still has no file (pl, zh or fa until their files arrive). I did not change it. With
+the line temporarily switched to `.pl`, `zig build test --summary all` gave
+130/131 passed, 1 skipped, 0 failed; reverted.
+
+**Evidence.**
+- `zig fmt --check src build.zig`: no output. `zig build --release=safe`: succeeded.
+- Break-it (in fr.zig, each reverted; i18n.zig untouched in the end):
+  - renamed `{[gaps]d}` to `{[gapz]d}` in `rec_gaps_other`: compile error `'{[gapz]d} trous' needs a field 'gapz'`.
+  - `title_car` leading spaces 3 to 2: `every message of every language formats with its placeholders, and agrees with English` failed.
+  - deleted `rec_gaps_other`: `every counted message of a language has the forms its language needs` failed.
+  - (the "text, fmt and print" test also failed in the last two runs, from the stale `.fr` line above.)
+- Language in use (temporary test with `i18n.current` set, then removed), printed:
+
+      [de] Tasten und Maus   (? oder Esc schließt dies)
+      [de] DIE PLATTE IST VOLL IN 12 min
+      [de] 0:0 Lücken | 1:1 Lücke | 2:2 Lücken
+      [fr] Touches et souris   (? ou Échap ferme)
+      [fr] LE DISQUE SERA PLEIN DANS 12 min
+      [fr] 0:0 trou | 1:1 trou | 2:2 trous
+      [pt] Teclas e mouse   (? ou Esc fecha)
+      [pt] O DISCO ENCHE EM 12 min
+      [pt] 0:0 lacuna | 1:1 lacuna | 2:2 lacunas
+
+**Texts that may be too long** (English length to mine, characters; ones that grew over 1.5x,
+control window and display): de: `btn_save_view` 9 to 17, `btn_reset` 5 to 12, `label_cutoff` 6 to 13,
+`label_volume` 6 to 10, `btn_quit` 4 to 7, `tiles_range_mixed` 5 to 8; fr: `btn_save_view` 9 to 18,
+`btn_stop_recording` 14 to 24, `label_sample_rate` 11 to 23 (already abbreviated), `rec_idle` 13 to 20,
+`btn_record` 6 to 11, `mode_scroll` 6 to 10, `label_trigger` 7 to 11, `btn_plain` 5 to 8;
+pt: `label_sample_rate` 11 to 18. Help-window key names ("clic gauche sur une ligne" 25,
+"clique esquerdo em uma linha" 28, "Linksklick auf eine Zeile" 25, "pincement du pavé tactile" 25)
+are also longer. Also the longest German text, `window_title_status`, is 103 characters.
+
+**Choices to note.** "on"/"off" kept in fr and pt (short, common); alarm "0.5 s" keeps a decimal
+point in all three, since the program's own numbers do; "tile" kept as a loan word in pt.
+
+**Not covered.** Nothing was drawn or looked at on screen (no font, fit or glyph check); a
+native speaker has not read anything. Hyphen "Bild↑/Bild↓" arrows rely on the font having ↑ ↓.
+
+**en.zig.** Nothing wrong, but `help_low_corner` / `help_high_corner` ("low corner down / up") and
+"stamp" are terse; I read them as filter cutoff lowered / raised and a note given the current sample.
