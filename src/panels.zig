@@ -167,9 +167,53 @@ pub const Panel = struct {
     /// Where the band-passed copy of the panel's channels is in a row of the display's
     /// sample history (set by `feed.Feed.init`).
     slot: u32 = 0,
+    /// What the panel shows, in a word for its title (`shortSource`); empty: `shortLabel`
+    /// makes one from the kind.
+    short: []const u8 = "",
+    /// Not shown now (the ADC panels, hidden with `~`). Not saved. Input and drawing skip it;
+    /// the feed does not know.
+    hidden: bool = false,
 
     pub fn name(self: *const Panel) []const u8 {
         return self.name_buf[0..self.name_len];
+    }
+
+    /// The panel's title label: "A1", "A" (the port's only headstage), "all", "AUX", "ADC",
+    /// "TTL".
+    pub fn shortLabel(self: *const Panel) []const u8 {
+        if (self.short.len > 0) return self.short;
+        return switch (self.kind) {
+            .electrode => "all",
+            .aux => "AUX",
+            .adc => "ADC",
+            .ttl => "TTL",
+        };
+    }
+
+    /// A triggered panel keeps a strip at the top for its title, so that it does not lie over
+    /// row 0: a line of text and 10 pixels (0 without a font, or when not triggered).
+    pub fn headerPx(self: *const Panel, line_h: f32) u32 {
+        if (self.mode != .triggered or line_h <= 0) return 0;
+        return @as(u32, @intFromFloat(line_h)) + 10;
+    }
+
+    /// The part of `r` (the panel's `pixelRect`) the rows are laid out in: `r` less the
+    /// header strip. Everything that maps rows to pixels uses this.
+    pub fn bodyRect(self: *const Panel, r: Rect, line_h: f32) Rect {
+        const hdr = @min(self.headerPx(line_h), r.h -| 1);
+        return .{ .x = r.x, .y = r.y + hdr, .w = r.w, .h = r.h - hdr };
+    }
+
+    /// Whether the title should name the panel's scale: some shown row uses it (when every
+    /// shown row has a scale of its own, it does not).
+    pub fn usesPanelScale(self: *const Panel) bool {
+        const shown = self.shownRows();
+        if (shown == 0) return true;
+        for (0..shown) |k| {
+            const row = self.rowOfShown(k) orelse continue;
+            if (row >= max_rows or self.per_row.gain[row] == 1) return true;
+        }
+        return false;
     }
 
     /// Physical units per stored LSB, in the panel's unit (µV or V).
@@ -249,11 +293,19 @@ pub const Panel = struct {
 
     /// The row at a height given as a fraction of the display, if it is in the panel.
     pub fn rowAt(self: *const Panel, fy: f64) ?usize {
+        return self.rowAtBelow(fy, 0);
+    }
+
+    /// `rowAt` with the top `header` (a fraction of the display) of the panel not rows: the
+    /// header strip of a triggered panel.
+    pub fn rowAtBelow(self: *const Panel, fy: f64, header: f64) ?usize {
         const shown = self.shownRows();
-        if (fy < self.place.y or fy >= self.place.y + self.place.h or shown == 0) return null;
+        const top = self.place.y + header;
+        const h = self.place.h - header;
+        if (fy < top or fy >= self.place.y + self.place.h or shown == 0 or h <= 0) return null;
         return self.rowOfShown(@min(
             shown - 1,
-            @as(usize, @intFromFloat((fy - self.place.y) / self.place.h * @as(f64, @floatFromInt(shown)))),
+            @as(usize, @intFromFloat((fy - top) / h * @as(f64, @floatFromInt(shown)))),
         ));
     }
 
@@ -441,11 +493,50 @@ pub const Set = struct {
         while (i > 0) {
             i -= 1;
             const p = &self.items[i];
+            if (p.hidden) continue;
             if (fx >= p.place.x and fx < p.place.x + p.place.w and fy >= p.place.y and fy < p.place.y + p.place.h) return i;
         }
         return null;
     }
 };
+
+/// Sets every panel's place from `original` and, with `hide`, hides the ADC panels and
+/// stretches each other panel that borders one (an edge shared, within 1e-4, and its extent
+/// along that edge within the hidden panel's) over it, on all four sides. Returns false,
+/// changing nothing, when there is no ADC panel. `original` and `set` hold the same panels.
+pub fn hideAdc(set: *Set, original: *const Set, hide: bool) bool {
+    var any = false;
+    for (original.items[0..original.len]) |p| any = any or p.kind == .adc;
+    if (!any) return false;
+    const tol = 1e-4;
+    for (set.items[0..set.len], original.items[0..set.len]) |*p, o| {
+        p.place = o.place;
+        p.hidden = hide and o.kind == .adc;
+    }
+    if (!hide) return true;
+    for (original.items[0..original.len]) |h| {
+        if (h.kind != .adc) continue;
+        const hp = h.place;
+        for (set.items[0..set.len]) |*q| {
+            if (q.hidden) continue;
+            const qp = q.place;
+            const x_within = qp.x >= hp.x - tol and qp.x + qp.w <= hp.x + hp.w + tol;
+            const y_within = qp.y >= hp.y - tol and qp.y + qp.h <= hp.y + hp.h + tol;
+            if (x_within and @abs(qp.y + qp.h - hp.y) < tol) {
+                q.place.h = hp.y + hp.h - qp.y; // above it
+            } else if (x_within and @abs(qp.y - (hp.y + hp.h)) < tol) {
+                q.place.y = hp.y; // below it
+                q.place.h = qp.y + qp.h - hp.y;
+            } else if (y_within and @abs(qp.x + qp.w - hp.x) < tol) {
+                q.place.w = hp.x + hp.w - qp.x; // left of it
+            } else if (y_within and @abs(qp.x - (hp.x + hp.w)) < tol) {
+                q.place.x = hp.x; // right of it
+                q.place.w = qp.x + qp.w - hp.x;
+            }
+        }
+    }
+    return true;
+}
 
 pub const Error = error{BadPanel};
 
@@ -480,6 +571,27 @@ pub const Diagnostics = struct {
 };
 
 const Source = struct { kind: Kind, first: usize, rows: usize };
+
+/// The short label for a panel's title: a panel whose channels are within one headstage is
+/// named for it ("A1"), or for its port ("A") when the layout has no second headstage on
+/// that port; otherwise "all" for electrodes, "AUX", "ADC", "TTL". Static text.
+pub fn shortSource(layout: *const types.Layout, kind: Kind, first: usize, rows: usize) []const u8 {
+    switch (kind) {
+        .aux => return "AUX",
+        .adc => return "ADC",
+        .ttl => return "TTL",
+        .electrode => {},
+    }
+    for (layout.headstageSlice()) |h| {
+        if (rows == 0 or first < h.first_channel or first + rows > h.first_channel + h.num_channels) continue;
+        const name = types.headstage_names[h.slot];
+        for (layout.headstageSlice()) |o| {
+            if (o.slot != h.slot and types.headstage_names[o.slot][0] == name[0]) return name;
+        }
+        return name[0..1];
+    }
+    return "all";
+}
 
 fn resolve(source: []const u8, layout: *const types.Layout) ?Source {
     if (std.ascii.eqlIgnoreCase(source, "electrodes")) return .{ .kind = .electrode, .first = 0, .rows = layout.num_electrodes };
@@ -521,6 +633,7 @@ pub fn default(layout: *const types.Layout, mode: Mode) Set {
             .mode = mode,
         };
         p.setName(types.headstage_names[h.slot]);
+        p.short = shortSource(layout, .electrode, p.first_ch, p.rows);
         set.items[i] = p;
     }
     set.len = n;
@@ -699,6 +812,7 @@ pub fn fromConfig(doc: toml.Document, layout: *const types.Layout, diag: *Diagno
         }
         try applyKeys(&p, doc, "panel", i, diag);
         p.setName(doc.string("panel", i, "name") orelse source);
+        p.short = shortSource(layout, src.kind, src.first, src.rows);
         p.clamp();
         set.items[i] = p;
     }
@@ -1408,4 +1522,162 @@ test "signalSignature follows what decides a slot, and nothing display-only" {
         p.mode = .triggered;
         try testing.expectEqual(sig(&base, i), sig(&s, i));
     }
+}
+
+fn plainPanel(kind: Kind, x: f64, y: f64, w: f64, h: f64) Panel {
+    return .{ .place = .{ .x = x, .y = y, .w = w, .h = h }, .kind = kind, .first_ch = 0, .rows = 8, .span_s = 2, .scale = Panel.defaultScale(kind) };
+}
+
+test "short label: the headstage, or its port when it is the port's only one; all, AUX, ADC, TTL" {
+    var l = testLayout();
+    // A1 and B1 alone on their ports: "A" and "B".
+    var set = default(&l, .scroll);
+    try testing.expectEqualStrings("A", set.items[0].shortLabel());
+    try testing.expectEqualStrings("B", set.items[1].shortLabel());
+    // A second headstage on port A makes the first "A1" (and the second "A2"); B stays "B".
+    l.headstages[2] = .{ .slot = 1, .chip = "RHD2216", .num_channels = 16, .first_channel = 32, .has_bno = false };
+    l.num_headstages = 3;
+    l.num_electrodes = 48;
+    var diag: Diagnostics = .{};
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    set = try fromConfig(try toml.parse(arena_state.allocator(),
+        \\[[panel]]
+        \\source = "A1"
+        \\rect = [0, 0, 0.5, 0.5]
+        \\[[panel]]
+        \\source = "A2"
+        \\rect = [0.5, 0, 0.5, 0.5]
+        \\[[panel]]
+        \\source = "B1"
+        \\name = "something else"
+        \\rect = [0, 0.5, 0.5, 0.5]
+        \\[[panel]]
+        \\source = "electrodes"
+        \\rect = [0.5, 0.5, 0.5, 0.25]
+        \\[[panel]]
+        \\source = "adc"
+        \\rect = [0.5, 0.75, 0.25, 0.25]
+        \\[[panel]]
+        \\source = "aux"
+        \\rect = [0.75, 0.75, 0.25, 0.25]
+        \\[[panel]]
+        \\source = "ttl"
+        \\rect = [0, 0, 0.1, 0.1]
+    , null), &l, &diag);
+    const want = [_][]const u8{ "A1", "A2", "B", "all", "ADC", "AUX", "TTL" };
+    for (want, set.items[0..set.len]) |w, p| try testing.expectEqualStrings(w, p.shortLabel());
+    // The name of the config is still the name.
+    try testing.expectEqualStrings("something else", set.items[2].name());
+}
+
+test "the scale is named unless every shown row has its own" {
+    var p = plainPanel(.electrode, 0, 0, 1, 1);
+    p.rows = 4;
+    try testing.expect(p.usesPanelScale());
+    for (0..4) |r| p.per_row.gain[r] = 2;
+    try testing.expect(!p.usesPanelScale());
+    // One row back on the panel's scale: named again.
+    p.per_row.gain[2] = 1;
+    try testing.expect(p.usesPanelScale());
+    // ... unless that row is hidden.
+    p.per_row.hidden.set(2, true);
+    try testing.expect(!p.usesPanelScale());
+}
+
+test "a triggered panel's rows start below the header strip, in pixels and for the pointer" {
+    var p = plainPanel(.electrode, 0, 0.5, 1, 0.5);
+    p.rows = 10;
+    const r = p.pixelRect(1000, 800);
+    try testing.expectEqual(400, r.y);
+    // Scrolling: no strip, whatever the font.
+    try testing.expectEqual(0, p.headerPx(16));
+    try testing.expectEqual(r, p.bodyRect(r, 16));
+    p.mode = .triggered;
+    try testing.expectEqual(26, p.headerPx(16));
+    try testing.expectEqual(0, p.headerPx(0));
+    const b = p.bodyRect(r, 16);
+    try testing.expectEqual(426, b.y);
+    try testing.expectEqual(374, b.h);
+    try testing.expectEqual(r.y + r.h, b.y + b.h);
+    // Row 0 begins where the strip ends: a pointer in the strip is on no row, just below it
+    // on row 0, and the last pixel on row 9.
+    const hdr = 26.0 / 800.0;
+    try testing.expectEqual(null, p.rowAtBelow(425.0 / 800.0, hdr));
+    try testing.expectEqual(0, p.rowAtBelow(427.0 / 800.0, hdr).?);
+    try testing.expectEqual(9, p.rowAtBelow(799.0 / 800.0, hdr).?);
+    // Row 1 starts one row height (37.4 px) below the strip.
+    try testing.expectEqual(0, p.rowAtBelow((426.0 + 37.0) / 800.0, hdr).?);
+    try testing.expectEqual(1, p.rowAtBelow((426.0 + 38.0) / 800.0, hdr).?);
+}
+
+test "hiding the ADC panels: the panels that border one and lie within its extent grow over it" {
+    // The owner's layout.
+    var set: Set = .{};
+    set.items[0] = plainPanel(.electrode, 0, 0, 0.5, 0.75);
+    set.items[1] = plainPanel(.electrode, 0.5, 0, 0.5, 0.75);
+    set.items[2] = plainPanel(.adc, 0, 0.75, 1, 0.25);
+    set.len = 3;
+    const original = set;
+    try testing.expect(hideAdc(&set, &original, true));
+    try testing.expectEqual(1.0, set.items[0].place.h);
+    try testing.expectEqual(1.0, set.items[1].place.h);
+    try testing.expectEqual(0.0, set.items[0].place.y);
+    try testing.expectEqual(0.5, set.items[1].place.x);
+    try testing.expect(set.items[2].hidden and !set.items[0].hidden);
+    // The hidden panel is not under the pointer; the one that grew is.
+    try testing.expectEqual(1, set.at(0.7, 0.9).?);
+    // Shown again: every place as it was.
+    try testing.expect(hideAdc(&set, &original, false));
+    for (0..3) |i| {
+        try testing.expectEqual(original.items[i].place, set.items[i].place);
+        try testing.expect(!set.items[i].hidden);
+    }
+    try testing.expectEqual(2, set.at(0.7, 0.9).?);
+}
+
+test "hiding the ADC panels: a neighbour that does not span the edge stays, and the four sides" {
+    var set: Set = .{};
+    // Above the ADC panel but wider than it: stays. To its right, within its height: grows
+    // left over it. Below it: grows up. Left of it: grows right.
+    set.items[0] = plainPanel(.adc, 0.4, 0.4, 0.2, 0.2);
+    set.items[1] = plainPanel(.electrode, 0.0, 0.0, 1.0, 0.4); // above, wider
+    set.items[2] = plainPanel(.electrode, 0.6, 0.4, 0.4, 0.2); // right
+    set.items[3] = plainPanel(.electrode, 0.4, 0.6, 0.2, 0.4); // below
+    set.items[4] = plainPanel(.electrode, 0.0, 0.4, 0.4, 0.2); // left
+    set.items[5] = plainPanel(.electrode, 0.6, 0.0, 0.4, 0.4); // touches only at a corner
+    set.len = 6;
+    const original = set;
+    try testing.expect(hideAdc(&set, &original, true));
+    try testing.expectEqual(original.items[1].place, set.items[1].place);
+    try testing.expectEqual(original.items[5].place, set.items[5].place);
+    const right = set.items[2].place;
+    try testing.expectApproxEqAbs(0.4, right.x, 1e-9);
+    try testing.expectApproxEqAbs(0.6, right.w, 1e-9);
+    const below = set.items[3].place;
+    try testing.expectApproxEqAbs(0.4, below.y, 1e-9);
+    try testing.expectApproxEqAbs(0.6, below.h, 1e-9);
+    const left = set.items[4].place;
+    try testing.expectApproxEqAbs(0.0, left.x, 1e-9);
+    try testing.expectApproxEqAbs(0.6, left.w, 1e-9);
+    // An edge that is off by more than the tolerance is not shared.
+    set = original;
+    set.items[2].place.x = 0.6002;
+    const off = set;
+    try testing.expect(hideAdc(&set, &off, true));
+    try testing.expectEqual(off.items[2].place, set.items[2].place);
+    // A tiny error is.
+    set.items[2].place.x = 0.60001;
+    const near = set;
+    try testing.expect(hideAdc(&set, &near, true));
+    try testing.expectApproxEqAbs(0.4, set.items[2].place.x, 1e-9);
+}
+
+test "hiding the ADC panels with none changes nothing" {
+    var set: Set = .{};
+    set.items[0] = plainPanel(.electrode, 0, 0, 1, 1);
+    set.len = 1;
+    const original = set;
+    try testing.expect(!hideAdc(&set, &original, true));
+    try testing.expect(!set.items[0].hidden);
 }

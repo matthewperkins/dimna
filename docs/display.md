@@ -37,6 +37,14 @@ source = "adc"                # needs --adc
 rect = [0.0, 0.75, 1.0, 0.25]
 ```
 
+`~` (Shift+backtick on a US layout) hides the ADC panels and shows them again, live; it is not
+saved (the next start shows them). While they are hidden, each other panel that borders a
+hidden one along a whole edge, its extent along that edge lying within the hidden panel's (to
+1e-4 of the display), grows over it, on all four sides: with Port B at `[0, 0, 0.5, 0.75]`,
+Port A at `[0.5, 0, 0.5, 0.75]` and ADC at `[0, 0.75, 1, 0.25]`, both ports become full
+height. A panel that is wider than the hidden one does not grow. Nothing happens without an
+ADC panel. The ADC samples are still acquired, recorded and fed to the display meanwhile.
+
 Without `[[panel]]` tables there is one panel per headstage, side by side. Wheel (Y scale),
 Alt+wheel or pinch (time base) and the keys `- = [ ] r` act on the panel under the pointer,
 marked by a bar along its top; `q` quits. **`?` shows every key and mouse action** of the
@@ -71,6 +79,16 @@ as usual. Edges are found on the display thread from the digital words of each b
 (`src/sweeps.zig`). Sweeps older than the GPU's sample history (about 30 s) are dropped, so
 with slow triggers fewer are overlaid. After a filter corner change, only the recent past
 is refiltered, so older overlaid sweeps keep the old corners until they are replaced.
+
+A triggered panel keeps a strip along its top (a line of text and 10 pixels) for its
+title, so that the title never lies over row 0; the rows, the trigger line, the level line of
+a slope trigger (and dragging it) all use the rectangle below the strip. The title is
+right-aligned (it ends 8 px from the panel's right edge) and does not repeat the window: the
+time axis along the bottom gives it as `-10.0 ms` at the left, `0` at the trigger and
+`+40.0 ms` at the right. When `-10.0 ms` does not fit between the row labels and the
+trigger line it loses its ` ms`, and when even that does not fit it is put at the panel's
+left edge, over the row labels (better than leaving it out). With the trigger at the left
+edge (no time before it) there is no left label.
 
 ## Slope trigger (spikes)
 
@@ -206,7 +224,11 @@ long time base costs the graphics card no more than a short one. Changing a disp
 at a long time base makes the whole stretch again; at a 30 s sweep (a minute of signal) the
 picture stands still for most of a second while it does. Recording is not affected.
 
-Each panel is titled with its name, time base and scale per row, and its rows are labelled
+Each panel is titled with a short label for what it shows (the headstage: `A1`; just the
+port letter, `A`, when the layout has no second headstage on that port; `all` for a panel of
+every electrode, `AUX`, `ADC`, `TTL`; not the config's `name`), its time base and its scale
+per row (`400µV/row`, `2.5V/row`; left out when every shown row has a scale of its own),
+and its rows are labelled
 (the electrode's number on its headstage, AUXn, ADCn; thinned when rows are shorter than a
 line of text). The bottom right corner shows the latency and frame rate of the last second,
 and in amber how many blocks the display skipped, if any (the recording never depends on

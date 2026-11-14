@@ -249,6 +249,7 @@ pub const key_help = [_]KeyHelp{
     .{ .window = .display, .key = "/", .what = "type a note (Enter saves)" },
     .{ .window = .display, .key = "`", .what = "stamp the first draft note" },
     .{ .window = .display, .key = "1-9", .what = "stamp a preset note" },
+    .{ .window = .display, .key = "~", .what = "hide / show the ADC panels" },
     .{ .window = .display, .key = "Shift+a", .what = "acknowledge an alarm" },
     .{ .window = .display, .key = "?", .what = "these keys (? or Esc closes)" },
     .{ .window = .display, .key = "q or Esc", .what = "quit" },
@@ -320,6 +321,12 @@ pub const Display = struct {
     /// The display's size in pixels when it was last drawn: where input finds the lines
     /// drawn (0 before the first frame).
     size: [2]u32 = .{ 0, 0 },
+    /// The font's line height when it was last drawn (0 before, and without a font): the
+    /// header strip of a triggered panel is made from it (`Panel.bodyRect`).
+    line_h: f32 = 0,
+    /// The ADC panels are hidden (`~`), and the panels beside them stretched over them. Not
+    /// saved.
+    adc_hidden: bool = false,
     /// What the pointer is to look like (over a threshold line: a hand); the loop sets it
     /// on the window once per turn.
     cursor: Cursor = .default,
@@ -610,8 +617,76 @@ pub const Display = struct {
     pub fn reset(self: *Display, index: usize) void {
         const p = &self.set.items[index];
         const was = &self.initial.items[index];
-        // `initial` holds the config's values with this run's slots.
+        // `initial` holds the config's values with this run's slots. Where the panel is
+        // follows the ADC panels being shown or hidden, not the settings.
+        const place = p.place;
+        const hidden = p.hidden;
         p.* = was.*;
+        p.place = place;
+        p.hidden = hidden;
+    }
+
+    /// `~`: hides the ADC panels (the panels beside them grow over them), or shows them
+    /// again. Nothing without an ADC panel. The panels' places change, and with them their
+    /// pixel rectangles: everything sized to a panel (the review's overview columns, the
+    /// trace draws) is made from `pixelRect` each turn or frame, as after a window resize.
+    pub fn toggleAdc(self: *Display) void {
+        if (!panels_mod.hideAdc(&self.set, &self.initial, !self.adc_hidden)) return;
+        self.adc_hidden = !self.adc_hidden;
+        if (self.target < self.set.len and self.set.items[self.target].hidden) {
+            for (self.set.items[0..self.set.len], 0..) |p, i| {
+                if (!p.hidden) {
+                    self.target = i;
+                    break;
+                }
+            }
+        }
+        if (self.drag != null) self.drag = null;
+    }
+
+    /// The panel's rows are laid out in this part of its pixel rectangle.
+    fn bodyRect(self: *const Display, p: *const Panel) panels_mod.Rect {
+        return p.bodyRect(p.pixelRect(self.size[0], self.size[1]), self.line_h);
+    }
+
+    /// The row of `p` under the pointer, if any.
+    fn rowAtPointer(self: *const Display, p: *const Panel) ?usize {
+        const height: f64 = @floatFromInt(self.size[1]);
+        const header = if (height > 0) @as(f64, @floatFromInt(p.headerPx(self.line_h))) / height else 0;
+        return p.rowAtBelow(self.pointer_fy, header);
+    }
+
+    /// `~` (Shift+` in a US layout): which key typed it is read from what the keys typed
+    /// (`in.text`), as `helpKey` does for `?`; the ` keys that typed a ~ are removed, so
+    /// that they do not also stamp a note. Without a keymap (no text), ` with Shift held is
+    /// the ~. Call it before the notes take their keys, and not while a note is being typed.
+    pub fn adcKey(self: *Display, in: *Input) void {
+        var typed: [16]u8 = undefined;
+        var n_typed: usize = 0;
+        var asked: usize = 0;
+        for (in.text[0..in.text_len]) |c| {
+            if (c != '`' and c != '~') continue;
+            asked += @intFromBool(c == '~');
+            if (n_typed < typed.len) typed[n_typed] = c;
+            n_typed += 1;
+        }
+        const no_text = in.text_len == 0;
+        var kept: usize = 0;
+        var tick: usize = 0;
+        for (in.keys[0..in.num_keys]) |k| {
+            if (k.is('`')) {
+                defer tick += 1;
+                const is_tilde = if (no_text) in.shift else tick < typed.len and tick < n_typed and typed[tick] == '~';
+                if (is_tilde) {
+                    if (no_text) asked += 1;
+                    continue;
+                }
+            }
+            in.keys[kept] = k;
+            kept += 1;
+        }
+        in.num_keys = kept;
+        if (asked % 2 == 1) self.toggleAdc();
     }
 
     /// A change to the audio monitor's settings, from the control window.
@@ -689,7 +764,7 @@ pub const Display = struct {
         // On an electrode row a left click focuses its channel, a right click listens to it
         // (Ctrl: adds or removes it). A middle click anywhere clears the focus.
         if (p.kind == .electrode) {
-            if (p.rowAt(self.pointer_fy)) |row| {
+            if (self.rowAtPointer(p)) |row| {
                 const channel = p.first_ch + @as(u32, @intCast(row));
                 if (in.clicks > 0) self.setFocus(channel);
                 if (in.right_clicks > 0) self.listenClick(channel, in.ctrl);
@@ -698,7 +773,7 @@ pub const Display = struct {
         if (in.middle_clicks > 0) self.setFocus(null);
         // A click on a row of a spike-triggered panel moves the trigger to that row.
         if (in.clicks > 0 and p.mode == .triggered and p.trigger.source == .channel) {
-            if (p.rowAt(self.pointer_fy)) |row| p.trigger.row = @intCast(row);
+            if (self.rowAtPointer(p)) |row| p.trigger.row = @intCast(row);
         }
         p.clamp();
         // A panel that has begun to trigger on a channel (s, t, r, or that click).
@@ -717,7 +792,7 @@ pub const Display = struct {
         const sideways = @abs(in.scroll_x) > @abs(sy);
         if (sy != 0 and !in.alt and !in.shift and !sideways) {
             if (in.ctrl) {
-                if (p.rowAt(self.pointer_fy)) |row| p.scaleRow(row, @exp(sy * per_unit));
+                if (self.rowAtPointer(p)) |row| p.scaleRow(row, @exp(sy * per_unit));
             } else p.scale *= @exp(sy * per_unit);
         }
         var zoom: f64 = 1;
@@ -757,14 +832,14 @@ pub const Display = struct {
                 's' => if (p.mode == .triggered) {
                     if (p.trigger.source == .ttl) {
                         p.setTrigSource(.channel);
-                        if (p.rowAt(self.pointer_fy)) |row| p.trigger.row = @intCast(row);
+                        if (self.rowAtPointer(p)) |row| p.trigger.row = @intCast(row);
                     } else p.setTrigSource(.ttl);
                 },
                 't' => p.mode = if (p.mode == .triggered) .scroll else .triggered,
                 // The threshold of the electrode row under the pointer: fixed <-> following
                 // the noise.
                 'n' => if (p.kind == .electrode) {
-                    if (p.rowAt(self.pointer_fy)) |row| self.toggleFollow(p.first_ch + @as(u32, @intCast(row)));
+                    if (self.rowAtPointer(p)) |row| self.toggleFollow(p.first_ch + @as(u32, @intCast(row)));
                 },
                 // Triggered on a TTL line: the digits pick the line.
                 '1'...'8' => if (p.mode == .triggered and p.trigger.source == .ttl) {
@@ -899,7 +974,7 @@ pub const Display = struct {
         d.moved = true;
         if (d.panel >= self.set.len) return;
         const p = &self.set.items[d.panel];
-        const r = p.pixelRect(self.size[0], self.size[1]);
+        const r = self.bodyRect(p);
         var uv = levelAtPixelY(p, r, d.row, @floor(py)) orelse return;
         // Exactly on the centre: the smallest threshold on the side it was (0 would put it
         // back to following the noise).
@@ -914,7 +989,7 @@ pub const Display = struct {
         if (self.size[1] == 0 or self.target >= self.set.len) return null;
         if (self.set.at(self.pointer_fx, self.pointer_fy) != self.target) return null;
         const p = &self.set.items[self.target];
-        const lines = self.panelLines(p, p.pixelRect(self.size[0], self.size[1]));
+        const lines = self.panelLines(p, self.bodyRect(p));
         var best: ?ThresholdLine = null;
         for (lines.slice()) |l| {
             const dist = @abs(@floor(py) - l.y);
@@ -970,10 +1045,13 @@ pub const Display = struct {
         const height = surface.height;
         const fs = layout.sample_rate;
         self.size = .{ width, height };
+        self.line_h = @round(batch.font.line_height);
         batch.clear();
         var o: Output = .{ .draws = draws, .fills = fills, .batch = batch, .line_h = @round(batch.font.line_height) };
         const scene: Scene = .{ .surface = surface, .layout = layout, .newest = newest, .review = review, .notes = notes };
-        for (self.set.items[0..self.set.len], 0..) |*p, i| self.drawPanel(&o, &scene, p, i);
+        for (self.set.items[0..self.set.len], 0..) |*p, i| {
+            if (!p.hidden) self.drawPanel(&o, &scene, p, i);
+        }
         if (o.line_h > 0 and (status.alarm_len > 0 or status.warning_len > 0)) alarmBar(&o, status, review != null, width);
         if (review) |v| {
             if (o.line_h > 0) reviewBadge(&o, v, width, fs);
@@ -990,19 +1068,21 @@ pub const Display = struct {
     fn drawPanel(self: *const Display, o: *Output, scene: *const Scene, p: *const Panel, i: usize) void {
         const fs = scene.layout.sample_rate;
         const r = p.pixelRect(scene.surface.width, scene.surface.height);
+        // Where the rows are: the panel's rectangle, less a triggered panel's header strip.
+        const body = p.bodyRect(r, o.line_h);
         const t = panelTime(p, i, scene.newest, scene.review, fs);
-        const params = traceParams(p, i, r, t, scene.surface);
+        const params = traceParams(p, i, body, t, scene.surface);
         setRowGains(scene.surface.row_gains, p, i);
-        const rect: gpu_mod.PixelRect = .{ .x = r.x, .y = r.y, .w = r.w, .h = r.h };
+        const rect: gpu_mod.PixelRect = .{ .x = body.x, .y = body.y, .w = body.w, .h = body.h };
         var shown_sweeps: usize = 0;
         if (t.trig) |win| {
             shown_sweeps = self.sweepDraws(o, p, i, rect, params, win, scene.newest, scene.surface.hist_cap, fs);
-            self.triggerMarks(o, p, i, r, win, scene.newest, shown_sweeps);
+            self.triggerMarks(o, p, i, body, win, scene.newest, shown_sweeps);
         } else if (o.nd < o.draws.len and !t.waiting) {
             o.draws[o.nd] = .{ .rect = rect, .params = params, .review = t.from_file };
             o.nd += 1;
         }
-        self.thresholdLine(o, p, r);
+        self.thresholdLine(o, p, body);
         if (p.mode != .triggered and t.span >= 1) noteMarks(o, r, t, scene.notes);
         if (p.tint_line != 0 and p.mode != .triggered and t.span >= 1) tintPulses(o, p, r, t, &self.pulses[i]);
         if (t.sweeping) sweepCursor(o, r, t);
@@ -1020,7 +1100,7 @@ pub const Display = struct {
             _ = o.batch.text(@max(x, @as(f32, @floatFromInt(r.x)) + 4), y, text, theme.text_warn);
         }
         if (p.mode == .triggered) timeAxis(o, p, r);
-        self.rowLabels(o, p, r, scene.layout);
+        self.rowLabels(o, p, body, scene.layout);
     }
 
     /// One draw per sweep of a triggered panel, oldest first and dimmest, the newest on
@@ -1134,7 +1214,8 @@ pub const Display = struct {
         const line_h = o.line_h;
         const px: f32 = @floatFromInt(r.x);
         const py: f32 = @floatFromInt(r.y);
-        const title_y = py + 6;
+        // Rows are labelled below the title; a triggered panel's `r` is already below it.
+        const clear_of_title: f32 = if (p.mode == .triggered) py - 1e6 else py + 6 + line_h + 3;
         const shown = p.shownRows();
         if (shown == 0) return;
         const row_h = @as(f32, @floatFromInt(r.h)) / @as(f32, @floatFromInt(shown));
@@ -1156,7 +1237,7 @@ pub const Display = struct {
                 if (crowded) continue;
             }
             const y = py + (@as(f32, @floatFromInt(k)) + 0.5) * row_h - 0.5 * line_h;
-            if (p.kind != .ttl and y < title_y + line_h + 3) continue;
+            if (p.kind != .ttl and y < clear_of_title) continue;
             var name_buf: [16]u8 = undefined;
             var label_buf: [24]u8 = undefined;
             // The focused row is amber; a row listened to has a note before its label.
@@ -1401,26 +1482,49 @@ fn dividers(o: *Output, r: panels_mod.Rect) void {
     }
 }
 
-/// A panel's title, top left (a TTL lane strip's top right): its name, time base or
-/// trigger window (and what triggers it, `trig`), scale and band.
+/// The scale for a title, without the unit's space: "400µV", "1.50mV", "2.5V", "250mV".
+fn compactScale(buf: []u8, kind: panels_mod.Kind, v: f64) []const u8 {
+    var tmp: [24]u8 = undefined;
+    if ((kind == .aux or kind == .adc) and v >= 0.9995) {
+        var num = format.fmt(&tmp, "{d:.2}", .{v});
+        while (num.len > 0 and num[num.len - 1] == '0') num = num[0 .. num.len - 1];
+        if (num.len > 0 and num[num.len - 1] == '.') num = num[0 .. num.len - 1];
+        return format.fmt(buf, "{s}V", .{num});
+    }
+    const text = fmtScale(&tmp, kind, v);
+    var n: usize = 0;
+    for (text) |c| {
+        if (c == ' ' or n >= buf.len) continue;
+        buf[n] = c;
+        n += 1;
+    }
+    return buf[0..n];
+}
+
+/// "   400µV/row" for a title; nothing for a TTL panel (no scale), or when every shown row
+/// has a scale of its own (the panel's is then used by none).
+pub fn fmtTitleScale(buf: []u8, p: *const Panel) []const u8 {
+    if (p.kind == .ttl or !p.usesPanelScale()) return "";
+    var scale_buf: [24]u8 = undefined;
+    return format.fmt(buf, "   {s}/row", .{compactScale(&scale_buf, p.kind, p.scale)});
+}
+
+/// A panel's title, top left (a TTL lane strip's and a triggered panel's top right): what it
+/// shows (its short label), time base or what triggers it, scale and band.
 fn panelTitle(o: *Output, p: *const Panel, r: panels_mod.Rect, in_review: bool, shown_sweeps: usize, trig: []const u8) void {
     const batch = o.batch;
     const px: f32 = @floatFromInt(r.x);
     const py: f32 = @floatFromInt(r.y);
     const title_y = py + 6;
     var span_buf: [24]u8 = undefined;
-    var scale_buf: [24]u8 = undefined;
     var title_buf: [128]u8 = undefined;
     var band_buf: [48]u8 = undefined;
-    // A TTL panel has no scale to name.
-    var per_row_buf: [32]u8 = undefined;
-    const per_row = if (p.kind == .ttl) "" else format.fmt(&per_row_buf, "   {s}/row", .{fmtScale(&scale_buf, p.kind, p.scale)});
+    var per_row_buf: [40]u8 = undefined;
+    const per_row = fmtTitleScale(&per_row_buf, p);
     const title = if (p.mode == .triggered)
-        format.fmt(&title_buf, "{s}   {s}   -{d:.1}/+{d:.1} ms{s}{s}   {d} sweeps{s}", .{
-            p.name(),
+        format.fmt(&title_buf, "{s}   {s}{s}{s}   {d} sweeps{s}", .{
+            p.shortLabel(),
             trig,
-            p.trigger.pre_ms,
-            p.trigger.post_ms,
             per_row,
             fmtBand(&band_buf, p),
             shown_sweeps,
@@ -1428,28 +1532,43 @@ fn panelTitle(o: *Output, p: *const Panel, r: panels_mod.Rect, in_review: bool, 
         })
     else if (p.kind == .ttl)
         format.fmt(&title_buf, "{s}   {s}{s}", .{
-            p.name(),
+            p.shortLabel(),
             fmtSpan(&span_buf, p.span_s),
             if (in_review) "   review" else if (p.mode == .sweep) "   sweep" else "",
         })
     else
         format.fmt(&title_buf, "{s}   {s}{s}{s}{s}", .{
-            p.name(),
+            p.shortLabel(),
             fmtSpan(&span_buf, p.span_s),
             per_row,
             fmtBand(&band_buf, p),
             if (in_review) "   review" else if (p.mode == .sweep) "   sweep" else "",
         });
-    // A lane strip is short: its title goes to the right, clear of the lane labels.
-    _ = batch.label(
-        if (p.kind == .ttl) px + @as(f32, @floatFromInt(r.w)) - batch.font.width(title) - 8 else px + 8,
-        title_y,
-        title,
-        theme.text_bright,
-    );
+    // A lane strip is short: its title goes to the right, clear of the lane labels. A
+    // triggered panel's too, in the strip kept for it above the rows.
+    const right = p.kind == .ttl or p.mode == .triggered;
+    var x = if (right) px + @as(f32, @floatFromInt(r.w)) - batch.font.width(title) - 8 else px + 8;
+    // A triggered panel's title wider than the panel starts at its left edge and runs off
+    // the right, rather than off the left (where the display's edge would cut its start).
+    if (p.mode == .triggered) x = @max(x, px + 4);
+    _ = batch.label(x, title_y, title, theme.text_bright);
 }
 
-/// A triggered panel's time axis along the bottom: the ends of the window and the trigger.
+const AxisLabel = struct { text: []const u8, x: f32 };
+
+/// The left end of a triggered panel's time axis: "-10.0 ms" between the row labels
+/// (`from`) and the trigger line (`trigger_x`) when it fits; else "-10.0"; else at the
+/// panel's left edge (`edge`), over the row labels, which is better than not saying it.
+fn axisLeft(buf: []u8, face: *const font.Font, edge: f32, from: f32, trigger_x: f32, pre_ms: f64) AxisLabel {
+    const long = format.fmt(buf, "-{d:.1} ms", .{pre_ms});
+    if (from + face.width(long) + 8 < trigger_x) return .{ .text = long, .x = from };
+    const short = long[0 .. long.len - 3];
+    if (from + face.width(short) + 8 < trigger_x) return .{ .text = short, .x = from };
+    return .{ .text = short, .x = edge };
+}
+
+/// A triggered panel's time axis along the bottom: the ends of the window and the trigger,
+/// signed as the title used to give the window ("-10.0 ms", "0", "+40.0 ms").
 fn timeAxis(o: *Output, p: *const Panel, r: panels_mod.Rect) void {
     const batch = o.batch;
     const line_h = o.line_h;
@@ -1461,18 +1580,11 @@ fn timeAxis(o: *Output, p: *const Panel, r: panels_mod.Rect) void {
     const right = format.fmt(&t_buf, "+{d:.1} ms", .{p.trigger.post_ms});
     _ = batch.label(px + w - batch.font.width(right) - 8, bottom, right, theme.text_dim);
     if (p.trigger.pre_ms > 0) {
-        _ = batch.label(
-            px + w * @as(f32, @floatCast(p.trigger.pre_ms / (p.trigger.pre_ms + p.trigger.post_ms))) + 4,
-            bottom,
-            "0",
-            theme.text_dim,
-        );
+        const trigger_x = px + w * @as(f32, @floatCast(p.trigger.pre_ms / (p.trigger.pre_ms + p.trigger.post_ms)));
+        _ = batch.label(trigger_x + 4, bottom, "0", theme.text_dim);
         var l_buf: [24]u8 = undefined;
-        const left = format.fmt(&l_buf, "-{d:.1} ms", .{p.trigger.pre_ms});
-        // Only where it fits between the row labels and the trigger line.
-        if (px + 48 + batch.font.width(left) + 8 <
-            px + w * @as(f32, @floatCast(p.trigger.pre_ms / (p.trigger.pre_ms + p.trigger.post_ms))))
-            _ = batch.label(px + 48, bottom, left, theme.text_dim);
+        const left = axisLeft(&l_buf, batch.font, px + 4, px + 48, trigger_x, p.trigger.pre_ms);
+        _ = batch.label(left.x, bottom, left.text, theme.text_dim);
     }
 }
 
@@ -1731,6 +1843,8 @@ fn framePanel(name: []const u8, kind: panels_mod.Kind, first_ch: u32, rows: u32,
         .scale = Panel.defaultScale(kind),
         .slot = 7 + first_ch,
     };
+    const layout = frameLayout();
+    p.short = panels_mod.shortSource(&layout, kind, first_ch, rows);
     @memcpy(p.name_buf[0..name.len], name);
     p.name_len = name.len;
     return p;
@@ -2191,8 +2305,10 @@ fn focusModesState(st: *FrameState) void {
     sweep.span_s = 1;
     st.panels(&.{ trig, sweep });
     st.display.focus = 5;
-    // Both: row 5 of 32, R = 21.875, centre 120.3125, -50 µV at 400 µV/row 0.125 R below:
-    // 123.0469, the pixel row 123.
+    // The sweep panel: row 5 of 32, R = 21.875, centre 120.3125, -50 µV at 400 µV/row 0.125 R
+    // below: 123.0469, the pixel row 123. The triggered panel keeps a header strip of the font's
+    // 16 + 10 = 26 px: R = 674 / 32 = 21.0625, centre 26 + 5.5 R = 141.84, 0.125 R = 2.63
+    // below: 144.47, the pixel row 144.
     st.reportAll(-50);
     st.feed(8, false);
 }
@@ -2384,7 +2500,7 @@ test "the threshold line is on the pixel row where the shader draws a sample of 
         .{ .state = 15, .panel = 0, .row = 5, .uv = -50, .want = 103 },
         .{ .state = 20, .panel = 0, .row = 30, .uv = -80, .want = 335 },
         .{ .state = 20, .panel = 1, .row = 2, .uv = -80, .want = 476 },
-        .{ .state = 22, .panel = 0, .row = 5, .uv = -50, .want = 123 },
+        .{ .state = 22, .panel = 0, .row = 5, .uv = -50, .want = 144 },
         .{ .state = 22, .panel = 1, .row = 5, .uv = -50, .want = 123 },
         .{ .state = 23, .panel = 0, .row = 5, .uv = -120, .want = 153 },
     };
@@ -2395,11 +2511,12 @@ test "the threshold line is on the pixel row where the shader draws a sample of 
     for (cases) |c| {
         frameState(st, c.state);
         const p = &st.display.set.items[c.panel];
-        const r = p.pixelRect(st.width, st.height);
+        // And `frame` draws it there, across the panel (its rows: less a triggered panel's
+        // header strip, which `frame` learns from the font).
+        const quads = try thresholdRects(st, vertices);
+        const r = p.bodyRect(p.pixelRect(st.width, st.height), st.display.line_h);
         const line = levelPixelY(p, r, c.row, c.uv).?;
         try testing.expectEqual(c.want, line);
-        // And `frame` draws it there, across the panel.
-        const quads = try thresholdRects(st, vertices);
         var found = false;
         for (quads.slice()) |q| found = found or std.meta.eql(q, .{ @floatFromInt(r.x), c.want, @floatFromInt(r.w), 1 });
         try testing.expect(found);
@@ -3258,4 +3375,254 @@ test "review by the wheel: back from live enters, forward to the live edge leave
     // Alt+wheel never moves through time.
     Step.run(&review, &d, .{ .scroll_y = -15, .alt = true }, &gpu, &layout, newest);
     try testing.expect(!review.active);
+}
+
+/// What `frame` writes for `st` (as the stored test does), for the tests to search.
+fn frameText(gpa: std.mem.Allocator, st: *FrameState) ![]u8 {
+    const vertices = try gpa.alloc(font.Vertex, max_text_vertices);
+    defer gpa.free(vertices);
+    const gains = try gpa.alloc(f32, gpu_mod.max_rows * gpu_mod.max_gain_panels);
+    defer gpa.free(gains);
+    var out: std.Io.Writer.Allocating = .init(gpa);
+    errdefer out.deinit();
+    try writeFrame(&out.writer, "t", st, gains, vertices);
+    return out.toOwnedSlice();
+}
+
+/// The numbers of the first line of `text` that starts with `prefix` and contains `needle`.
+fn lineWith(text: []const u8, prefix: []const u8, needle: []const u8) ?[]const u8 {
+    var lines = std.mem.splitScalar(u8, text, '\n');
+    while (lines.next()) |l| {
+        if (std.mem.startsWith(u8, l, prefix) and std.mem.indexOf(u8, l, needle) != null) return l;
+    }
+    return null;
+}
+
+test "titles: the short label, the scale without a space, none when every row has its own" {
+    var buf: [40]u8 = undefined;
+    var p = framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0, .w = 1, .h = 1 });
+    try testing.expectEqualStrings("A", p.shortLabel());
+    try testing.expectEqualStrings("   400µV/row", fmtTitleScale(&buf, &p));
+    p.scale = 1500;
+    try testing.expectEqualStrings("   1.50mV/row", fmtTitleScale(&buf, &p));
+    p.scale = 400;
+    var adc = framePanel("ADC", .adc, 54, 8, .{ .x = 0, .y = 0, .w = 1, .h = 1 });
+    adc.scale = 2.5;
+    try testing.expectEqualStrings("   2.5V/row", fmtTitleScale(&buf, &adc));
+    adc.scale = 0.25;
+    try testing.expectEqualStrings("   250mV/row", fmtTitleScale(&buf, &adc));
+    const ttl = framePanel("TTL", .ttl, 0, 8, .{ .x = 0, .y = 0, .w = 1, .h = 1 });
+    try testing.expectEqualStrings("", fmtTitleScale(&buf, &ttl));
+    // Every shown row with a scale of its own: no scale in the title; one row on the
+    // panel's: it is back.
+    for (0..32) |r| p.per_row.gain[r] = 2;
+    try testing.expectEqualStrings("", fmtTitleScale(&buf, &p));
+    p.per_row.gain[7] = 1;
+    try testing.expectEqualStrings("   400µV/row", fmtTitleScale(&buf, &p));
+    p.per_row.hidden.set(7, true);
+    try testing.expectEqualStrings("", fmtTitleScale(&buf, &p));
+    // And in what is drawn.
+    const st = try testing.allocator.create(FrameState);
+    defer testing.allocator.destroy(st);
+    frameState(st, 0);
+    const text = try frameText(testing.allocator, st);
+    defer testing.allocator.free(text);
+    try testing.expect(lineWith(text, "text 8 6 ", "\"A   2.00 s   400µV/row   300-6000 Hz   CAR\"") != null);
+    try testing.expect(lineWith(text, "text 508 6 ", "\"B   500 ms   400µV/row   CAR\"") != null);
+    try testing.expect(std.mem.indexOf(u8, text, "Port A") == null);
+}
+
+test "a triggered panel: the title ends 8 px from the right edge, without the window, above the rows" {
+    const st = try testing.allocator.create(FrameState);
+    defer testing.allocator.destroy(st);
+    frameState(st, 2);
+    const text = try frameText(testing.allocator, st);
+    defer testing.allocator.free(text);
+    // Panel 0 is 600 px wide, at x 0: the title's backing rectangle (3 px each side of the
+    // text, which is 8 px per character) ends at 600 - 8 + 3.
+    const title = lineWith(text, "text ", "\"A   TTL2   400µV/row   300-6000 Hz   6 sweeps\"").?;
+    try testing.expect(std.mem.indexOf(u8, text, "-10.0/+40.0") == null);
+    var it = std.mem.tokenizeScalar(u8, title, ' ');
+    _ = it.next();
+    const x = try std.fmt.parseFloat(f32, it.next().?);
+    const chars = "A   TTL2   400µV/row   300-6000 Hz   6 sweeps".len - 1; // µ is two bytes
+    try testing.expectEqual(600.0 - 8.0, x + 8.0 * @as(f32, @floatFromInt(chars)));
+    // The rows are laid out below a strip of a line and 10 px: the draws start at y 26 and
+    // end where the panel does; the title (y 6, one line of 16 px) ends above it.
+    try testing.expect(lineWith(text, "draw 0 26 600 464 ", "first_ch=7 cols=600 rows=32") != null);
+    try testing.expect(std.mem.indexOf(u8, text, "draw 0 0 600 490") == null);
+    try testing.expect(6 + 16 < 26);
+    // The panel's own row 0 label is drawn, which the title used to cover.
+    try testing.expect(lineWith(text, "text 5 25 ", "\"1\"") != null);
+}
+
+test "a triggered panel: row 0's centre is the strip lower, and the trigger line starts there" {
+    const st = try testing.allocator.create(FrameState);
+    defer testing.allocator.destroy(st);
+    const vertices = try testing.allocator.alloc(font.Vertex, max_text_vertices);
+    defer testing.allocator.free(vertices);
+    frameState(st, 2);
+    // Scrolling: the unchanged geometry; row 0's centre at 0.5 R of 490/32.
+    st.display.set.items[0].mode = .scroll;
+    _ = try thresholdRects(st, vertices);
+    const p = &st.display.set.items[0];
+    const r = p.pixelRect(st.width, st.height);
+    const scroll_y = levelPixelY(p, st.display.bodyRect(p), 0, 0).?;
+    try testing.expectEqual(@as(f32, 7), scroll_y);
+    p.mode = .triggered;
+    _ = try thresholdRects(st, vertices);
+    const body = st.display.bodyRect(p);
+    try testing.expectEqual(r.y + 26, body.y);
+    try testing.expectEqual(r.h - 26, body.h);
+    // 26 + 0.5 * 464 / 32 = 33.25.
+    try testing.expectEqual(@as(f32, 33), levelPixelY(p, body, 0, 0).?);
+    // The pointer: the strip is no row; just below it row 0.
+    st.display.pointAt(0.3, 25.0 / 700.0);
+    try testing.expectEqual(null, st.display.rowAtPointer(p));
+    st.display.pointAt(0.3, 27.0 / 700.0);
+    try testing.expectEqual(0, st.display.rowAtPointer(p).?);
+}
+
+test "a triggered panel's level line is dragged where it is drawn, in the reduced rectangle" {
+    const st = try testing.allocator.create(FrameState);
+    defer testing.allocator.destroy(st);
+    frameState(st, 26);
+    const drawn = try frameText(testing.allocator, st);
+    try testing.expect(lineWith(drawn, "rect 0 123 6 1 ", "") != null);
+    defer testing.allocator.free(drawn);
+    const d = &st.display;
+    const p = &d.set.items[0];
+    try testing.expect(p.mode == .triggered);
+    const lines = d.panelLines(p, d.bodyRect(p));
+    try testing.expectEqual(1, lines.len);
+    const y = lines.items[0].y;
+    // The drawn dashed line (from the stored test: pixel row 123) is the one input finds.
+    try testing.expectEqual(@as(f32, 123), y);
+    d.pointAt(0.5, (y + 0.5) / 700.0);
+    const found = d.lineAtPointer(y + 0.5).?;
+    try testing.expectEqual(y, found.y);
+    // And the level of a row follows the pixel through levelAtPixelY in the same rectangle.
+    const uv = levelAtPixelY(p, d.bodyRect(p), found.row, y).?;
+    try testing.expectEqual(y, levelPixelY(p, d.bodyRect(p), found.row, uv).?);
+}
+
+test "time axis: the left label loses its unit, then goes to the left edge" {
+    const face = frameFont(16, false);
+    var buf: [24]u8 = undefined;
+    // Room: 48 + 8 * 8 + 8 < 200.
+    var l = axisLeft(&buf, &face, 4, 48, 200, 10);
+    try testing.expectEqualStrings("-10.0 ms", l.text);
+    try testing.expectEqual(48, l.x);
+    // The trigger at 100: "-10.0 ms" would end at 120; "-10.0" ends at 96 + 8 = 104 > 100
+    // too, but at 110 it fits.
+    l = axisLeft(&buf, &face, 4, 48, 110, 10);
+    try testing.expectEqualStrings("-10.0", l.text);
+    try testing.expectEqual(48, l.x);
+    // Not even that: at the left edge, still said.
+    l = axisLeft(&buf, &face, 4, 48, 90, 10);
+    try testing.expectEqualStrings("-10.0", l.text);
+    try testing.expectEqual(4, l.x);
+    // The window's own number, with its sign.
+    l = axisLeft(&buf, &face, 4, 48, 300, 2.5);
+    try testing.expectEqualStrings("-2.5 ms", l.text);
+}
+
+test "time axis in a frame: -10.0 ms, 0 and +40.0 ms as the title used to give them" {
+    const st = try testing.allocator.create(FrameState);
+    defer testing.allocator.destroy(st);
+    frameState(st, 2);
+    const text = try frameText(testing.allocator, st);
+    defer testing.allocator.free(text);
+    // Panel 0: 600 px, the trigger 120 px in; "-10.0 ms" does not fit before it, so "-10.0".
+    try testing.expect(lineWith(text, "text 48 ", "\"-10.0\"") != null);
+    try testing.expect(lineWith(text, "text 124 ", "\"0\"") != null);
+    try testing.expect(lineWith(text, "text ", "\"+40.0 ms\"") != null);
+    // Wider: the unit stays.
+    st.display.set.items[0].place.w = 1;
+    const wide = try frameText(testing.allocator, st);
+    defer testing.allocator.free(wide);
+    try testing.expect(lineWith(wide, "text 48 ", "\"-10.0 ms\"") != null);
+}
+
+fn adcLayoutState(st: *FrameState) void {
+    st.* = .{};
+    st.panels(&.{
+        framePanel("Port A", .electrode, 0, 32, .{ .x = 0.5, .y = 0, .w = 0.5, .h = 0.75 }),
+        framePanel("Port B", .electrode, 32, 16, .{ .x = 0, .y = 0, .w = 0.5, .h = 0.75 }),
+        framePanel("ADC", .adc, 54, 8, .{ .x = 0, .y = 0.75, .w = 1, .h = 0.25 }),
+    });
+}
+
+test "~ hides the ADC panel and the ports grow to the full height; again shows it" {
+    const st = try testing.allocator.create(FrameState);
+    defer testing.allocator.destroy(st);
+    adcLayoutState(st);
+    const shown = try frameText(testing.allocator, st);
+    defer testing.allocator.free(shown);
+    try testing.expect(std.mem.startsWith(u8, shown, "== t: 3 draws"));
+    try testing.expect(lineWith(shown, "draw 0 525 1000 175 ", "first_ch=54") != null);
+    // With a keymap: the key typed a ~ (Shift+`); the ` that went with it is not left for
+    // the notes.
+    var in = typedInput("`", "~", true);
+    st.display.adcKey(&in);
+    try testing.expectEqual(0, in.num_keys);
+    try testing.expect(st.display.adc_hidden);
+    const hidden = try frameText(testing.allocator, st);
+    defer testing.allocator.free(hidden);
+    try testing.expect(std.mem.startsWith(u8, hidden, "== t: 2 draws"));
+    try testing.expect(lineWith(hidden, "draw 500 0 500 700 ", "first_ch=7 cols=500 rows=32") != null);
+    try testing.expect(lineWith(hidden, "draw 0 0 500 700 ", "first_ch=39 cols=500 rows=16") != null);
+    try testing.expect(lineWith(hidden, "draw ", "first_ch=54") == null);
+    try testing.expect(lineWith(hidden, "text ", "\"ADC") == null);
+    // Input no longer reaches the hidden panel.
+    st.display.pointAt(0.5, 0.9);
+    try testing.expect(st.display.target != 2);
+    // Again: as it was, byte for byte.
+    in = typedInput("`", "~", true);
+    st.display.adcKey(&in);
+    try testing.expect(!st.display.adc_hidden);
+    const again = try frameText(testing.allocator, st);
+    defer testing.allocator.free(again);
+    try testing.expectEqualStrings(shown, again);
+}
+
+test "~: a plain ` is a note's key and does nothing here; without a keymap Shift+` is the ~; no ADC panel, nothing" {
+    const st = try testing.allocator.create(FrameState);
+    defer testing.allocator.destroy(st);
+    adcLayoutState(st);
+    var in = typedInput("`", "`", false);
+    st.display.adcKey(&in);
+    try testing.expectEqual(1, in.num_keys);
+    try testing.expect(!st.display.adc_hidden);
+    in = typedInput("`", "", true);
+    st.display.adcKey(&in);
+    try testing.expectEqual(0, in.num_keys);
+    try testing.expect(st.display.adc_hidden);
+    // The reset key puts the panel's settings back, not its place.
+    st.display.target = 0;
+    const keys = typedInput("r", "r", false);
+    _ = st.display.applyInput(keys);
+    try testing.expectEqual(@as(f64, 0.75 + 0.25), st.display.set.items[0].place.h);
+    // A display without an ADC panel.
+    var d = clickDisplay(5);
+    in = typedInput("`", "~", true);
+    d.adcKey(&in);
+    try testing.expect(!d.adc_hidden);
+}
+
+test "~: a neighbour that does not span the ADC panel's edge keeps its size, in the frame" {
+    const st = try testing.allocator.create(FrameState);
+    defer testing.allocator.destroy(st);
+    st.* = .{};
+    st.panels(&.{
+        framePanel("Port A", .electrode, 0, 32, .{ .x = 0, .y = 0, .w = 1, .h = 0.6 }),
+        framePanel("ADC", .adc, 54, 8, .{ .x = 0, .y = 0.6, .w = 0.5, .h = 0.4 }),
+        framePanel("Port B", .electrode, 32, 16, .{ .x = 0.5, .y = 0.6, .w = 0.5, .h = 0.4 }),
+    });
+    st.display.toggleAdc();
+    const text = try frameText(testing.allocator, st);
+    defer testing.allocator.free(text);
+    // A spans more than the ADC panel's width: unchanged. B is beside it: grows left.
+    try testing.expect(lineWith(text, "draw 0 0 1000 420 ", "first_ch=7") != null);
+    try testing.expect(lineWith(text, "draw 0 420 1000 280 ", "first_ch=39") != null);
 }

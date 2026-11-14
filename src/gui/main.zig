@@ -293,7 +293,10 @@ pub fn main(init: std.process.Init) !u8 {
         else
             0;
         // ? (the key summary) before the notes: it must not start a note as / does.
-        if (!notes.editing) display.helpKey(&input);
+        if (!notes.editing) {
+            display.helpKey(&input);
+            display.adcKey(&input);
+        }
         notes.handle(&input, note_stamp, recording.sessionPath());
         // Review keys (what is left of them after a note took its own), and Shift+wheel.
         review.queueInput(display.reviewActions(&input, pl.fs));
