@@ -73,7 +73,7 @@ README of each folder.
                                              # xkbcommon (development files); no glslc: shaders are checked in
                                              # optional at run time: harfbuzz and fribidi (Persian),
                                              # Noto Sans CJK SC (Chinese), Noto Sans Arabic or Vazirmatn
-    zig build test                           # 180 tests, none needs a display or the board
+    zig build test                           # about 270 tests, none needs a display or the board
 
     zig-out/bin/dimna --sim 32,16            # simulated headstages, in a window
     zig-out/bin/dimna                        # the board; ~/.config/dimna/config.toml decides the rest
