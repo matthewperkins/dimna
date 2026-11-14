@@ -100,3 +100,135 @@ mirror any layout (the control window's right-to-left layout is a later plan).
 
 Append a "Report" section: what you built, timings, how many CJK glyphs fit, the fonts
 found on this machine, test break-it results, and anything left open.
+
+## Report
+
+Branch `worktree-agent-a77053814de62737c`, first commit `1d60892` (code and docs).
+
+**What was built.** `src/gui/shape.zig` (new) holds the engine; `font.zig` hands it every
+string that is not made only of the fixed glyphs (Latin-1, the six extra symbols).
+
+- Fast path: a string of fixed glyphs is laid out as before. A test checks that with the
+  engine it gives byte-identical vertices and widths to the same font without one, and that
+  the engine is not called. The stored outputs (`display_frame.txt`, `tiles_draw.txt`,
+  `control_layout.txt`) were not touched and their tests pass.
+- Unshaped path (no libraries needed): Latin Extended, CJK and the like. One glyph per code
+  point from the first font that has it, left to right, with advances rounded as on the fast
+  path. Spaces and punctuation stay in the font of the text around them; marks stay with
+  the character before them.
+- Shaped path: used when a string has a character of a right-to-left or joined script
+  (Hebrew, Arabic, Indic, ...; combining marks; joiners and bidi controls). FriBidi gives
+  the levels (base direction from the first strong character) and rule L1. Rule L2 is done
+  here on the runs. Each run is split by font and shaped by HarfBuzz (`hb_ft` font, hinted
+  load flags), and positions are rounded to whole pixels.
+- **Owner's change applied:** HarfBuzz and FriBidi are dlopened on first need, not linked.
+  The 13 + 4 functions are declared in Zig and looked up by name. A missing library or
+  function logs one line once ("... install harfbuzz and fribidi"), and that text falls back
+  to the unshaped path. `build.zig` and `c.h` are unchanged from main.
+  `readelf -d zig-out/bin/dimna | grep NEEDED` gives the same list before (main, built in
+  /tmp) and after: libwayland-client.so.0, libvulkan.so.1, libfreetype.so.6,
+  libfontconfig.so.1, libxkbcommon.so.0, libasound.so.2, libm.so.6, libc.so.6,
+  ld-linux-x86-64.so.2.
+- Fallbacks: `Noto Sans CJK SC` (with fontconfig's face index, so SC, not JP), then
+  `Vazirmatn`, else `Noto Sans Arabic`, then fontconfig's best match for the code point
+  (looked up lazily, once per code point, at most 8 fonts). The named ones are checked by
+  family name, because fontconfig always offers something. Each fallback is sized
+  (`FT_Set_Char_Size`, 26.6) so its line height is within 1 px of the primary's. All fonts
+  share the primary's baseline.
+- Atlas: 2048x2048. Glyphs are keyed by (font, glyph index); the fixed glyphs are seeded
+  into that map. `gpu.textFont(&font)` is called once after `createText` in main, control
+  and tiles. `Gpu.draw` then copies the rows changed since the last frame through a
+  host-visible staging buffer, made on first use, before the render pass. When the atlas is
+  full: one warning, and the missing glyph with the glyph's own advance.
+- Cache of laid-out strings: 2048 entries, least recently used out, keyed by the bytes (one
+  engine per font).
+- `font.Batch`'s public API is unchanged. `Font` gains a defaulted `engine` field,
+  `takeDirty()`, and a public `Pen` and `codepointAt`. Fonts made by hand in tests have no
+  engine and behave exactly as before.
+
+**Deviation from plain Unicode bidi (intended).** With UAX #9 alone, "فیلتر 300-6000 Hz"
+shows as "Hz 6000-300 ..." (`fribidi` on the command line confirms this): digits after an
+Arabic-script letter become AN, and an ASCII '-' between two AN does not join them. So in any
+string with an R/AL letter, each stretch from an L/EN (or a sign before an EN) to the last
+L/EN before the next R/AL letter is wrapped in LRI…PDI, which are not drawn. This keeps
+"300-6000 Hz", "-10 ms" and "50%" as one left-to-right block. It applies to any Latin word
+inside right-to-left text. The translators should know about it.
+
+**Timings** (ReleaseSafe, thread CPU time, `DIMNA_TEXT_BENCH=1 zig build test
+--release=safe`). One frame of 200 labels (fast: 37-43 Latin-1 characters each; shaped:
+half Persian with numbers, shaped; half Chinese, about 30 characters each):
+
+| path | ms per frame |
+|---|---|
+| fast path | 0.22 |
+| shaped, first frame (layout and rasterising 215 glyphs) | 5.0-6.1 |
+| shaped, cache miss (glyphs already drawn) | 3.8-4.1 |
+| shaped, cached | 0.075 |
+
+The cached shaped path costs less than the fast path, because it replays stored glyphs
+without decoding UTF-8. A label whose text changes every frame (a live number in Persian)
+pays the cache-miss cost of about 20 µs per label. The GPU upload of changed rows was not
+measured: that would need a window, and none was opened.
+
+**CJK glyphs that fit:** 23,098 at 14 px, Noto Sans CJK SC at about 11.6 px. All of
+U+4E00-U+9F9F (20,896) plus most of Extension A, alongside the fixed glyphs, the fixed-width
+set and the benchmark's 215 glyphs.
+
+**Fonts on this machine:**
+- Lato Regular (`/usr/share/fonts/TTF/Lato-Regular.ttf`, primary)
+- Noto Sans CJK SC (`/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc`, face 2)
+- Noto Sans Arabic (`/usr/share/fonts/noto/NotoSansArabic-Regular.ttf`)
+- Vazirmatn: not installed
+- DejaVu Sans (used by one test)
+- Hack (monospace)
+
+HarfBuzz 15.1.0 and FriBidi 1.0.18 are installed and loaded.
+
+**Lam-alef.** Noto Sans Arabic does not draw lam-alef as one glyph: HarfBuzz gives two glyphs
+(`uni0644.init.rlig` + `uni0627.fina.rlig`). So there are two tests:
+- "one glyph in a font that has the ligature" uses DejaVu Sans as the primary;
+- "its own forms in a font that draws it as two glyphs" checks that Noto's pair is neither
+  the isolated nor the ordinary joined forms.
+
+In سلام the meem is correctly isolated (it follows alef), so that test checks the other
+letters.
+
+**Tests.** `zig build test --summary all`: core 133 pass; gui-test 121 pass, 1 skipped (the
+benchmark, which runs only with `DIMNA_TEXT_BENCH`). `zig build --release=safe` succeeds and
+`zig fmt --check src build.zig` prints nothing.
+
+**Break-it results.** Each break was a one-line change, reverted afterwards.
+
+| break | tests that failed |
+|---|---|
+| `bidi.EN` = 0x221 | bidi types, isolation, Hz range |
+| isolation off (`break false`) | isolation (strings differ); Hz range (gid 402 vs 15) |
+| L2 reverses nothing | L2 order; Hz range |
+| `allow_shaping` false | joined word, both lam-alef tests, Hz range |
+| fallback size ignores units per em | Chinese line height |
+| named fonts tried in reverse | DejaVu lam-alef (2 glyphs); Hz range |
+| cache never hits | cache (shape calls 3, expected 1) |
+| cache not LRU | cache |
+| dirty rows not marked | atlas (aborted on unwrapping a null; a crash, not a clean failure) |
+| atlas full not remembered | atlas (warning count) |
+| unshaped path's pen not advanced | unshaped Persian, Chinese, Hz range |
+| fast path not taken for Latin-1 | fast-path test (shape calls 1, expected 0); vertices were still identical, since the unshaped path gives the same result |
+| loader returns true on a missing function | loader test |
+
+**Left open / unsure:**
+- The case where the libraries are actually absent was not run, because both are installed.
+  It is covered by the loader test (a missing library and a missing function both report
+  failure) and by `allow_shaping = false` (the fallback layout).
+- Latin text that goes through the shaped path (inside Persian) is kerned by HarfBuzz;
+  fixed-glyph and unshaped text is not. Lato's "300-6000 Hz" came out the same either way.
+- A Latin-1 character in an otherwise Chinese or Polish string goes through the unshaped
+  path. It gives the same advances as the fast path but may come from a different
+  rasterisation of the same glyph (by glyph index, seeded from the fixed glyphs, so it is
+  normally the same).
+- CJK at the primary's line height is small (about 11.6 px ideographs at `font_px` 14).
+  This is what the plan asked for, but it may be hard to read; worth a look on the rig.
+- Bidi isolation uses heuristic character ranges (`needsShaping`, `isMark`, `isNeutral`)
+  instead of the Unicode database, so that the unshaped path needs no library.
+- Strings with invalid UTF-8 or control characters mixed with non-Latin-1 text now go
+  through the engine (U+FFFD from a fallback font, or the missing glyph) instead of "?".
+- The control window's mirrored layout and translations are not part of this plan.
