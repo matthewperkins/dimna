@@ -14,8 +14,15 @@ control window's queue and snapshot); none opens a window, connects to Wayland, 
 Vulkan instance or opens a sound device, so they pass without a display. A GUI file's tests
 run only if the file is listed in `src/gui/tests.zig`.
 
-The display also needs the Wayland and Vulkan development files, `glslc`, and FreeType and
-fontconfig (text).
+The display also needs the development files of the Wayland client library, the Vulkan
+loader, FreeType, fontconfig, xkbcommon and ALSA. It needs no wayland-protocols,
+wayland-scanner or vulkan-headers package (the protocol XMLs and `vk.xml` are in `vendor/`;
+`-Dvk-registry=<path>` substitutes another `vk.xml`), and no `glslc`: the compiled shaders
+are checked in as `src/gui/shaders/*.spv`. Only someone who changes a shader needs `glslc`
+(shaderc): when it is installed, a shader whose source is newer than its `.spv` is compiled
+during the build and that result is embedded; `zig build shaders` rewrites the checked-in
+`.spv` files, and `zig build test` fails while one differs from what glslc makes of its
+source (skipped when glslc is absent). Commit the `.spv` with the source.
 
 liboni is vendored (`vendor/liboni`, MIT) and built in. Two patches are carried in
 `onidriverloader.c`: a driver search directory (from oers) and a driver compiled into the
