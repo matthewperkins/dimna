@@ -28,6 +28,71 @@ liboni is vendored (`vendor/liboni`, MIT) and built in. Two patches are carried 
 `onidriverloader.c`: a driver search directory (from oers) and a driver compiled into the
 program (`oni_register_builtin_driver`).
 
+## Release build
+
+    zig build release
+
+builds both programs for two targets, whatever `-Dtarget` says, ReleaseSafe and for the
+baseline x86-64 CPU (a normal build is for this machine's CPU):
+
+| tarball | for |
+|---|---|
+| `zig-out/release/dimna-<version>-x86_64-linux-gnu.tar.gz` | glibc 2.34 or newer: Rocky/Alma/RHEL 9, Ubuntu 22.04, Debian 12 and everything newer |
+| `zig-out/release/dimna-<version>-x86_64-linux-musl.tar.gz` | musl (Void musl); see below |
+
+Each is also left unpacked beside it. A tarball holds `bin/dimna`, `bin/dimna-headless`,
+`packaging/`, `README.md`, `licenses/` (liboni, stb, zig-wayland, vulkan-zig; **dimna's own
+licence is missing**: there is none yet), `BUILD-INFO`, `COMMIT` (`git describe`) and `CHECK`.
+`<version>` is the one in `build.zig.zon`.
+
+**Using one.** Unpack it anywhere and run `bin/dimna` or `bin/dimna-headless`. The target
+needs, as for a build from source, the Wayland client library, the Vulkan loader, FreeType,
+fontconfig, xkbcommon and ALSA (the libraries, not their development files), and the same
+machine setup (udev rule, real-time limits) as below. `packaging/install-desktop.sh` and
+`dimna-launch.sh` still point at a checkout's `zig-out/bin`, so they do not work from an
+unpacked tarball yet.
+
+**What the build machine needs:** what a normal build needs, plus `tar`, `gzip`, `readelf`
+and `objdump` (binutils) and GNU `sort`; `git` for `COMMIT` (it says `unknown` without).
+
+**The check.** Before a tarball is packed, `packaging/check-release.sh` reads each binary:
+`readelf -d` must list only the libraries above, libc, libm and the dynamic loader (never
+HarfBuzz or FriBidi, which dimna opens at run time only for Persian), and `objdump -T` must
+show no `GLIBC_` version above 2.34. Anything else fails the release, and that target gets
+no tarball (the other target's may still be written; the build exits with an error). What it
+printed is the tarball's `CHECK`.
+
+**How the system libraries are found.** For any target other than the native one (and a
+glibc version or musl makes it another), Zig searches none of the system's header or library
+folders. `build.zig` hands the release build the folders Zig would search for a native build
+(`std.zig.system.NativePaths`: `/usr/local/include`, `/usr/include/<triple>`, `/usr/include`;
+`/usr/local/lib`, `/usr/lib/<triple>`, `/lib64`, `/lib`, `/usr/lib64`, `/usr/lib`,
+`/lib/<triple>`, plus `C_INCLUDE_PATH` and `LIBRARY_PATH`), those that exist. Headers come
+after Zig's own C library headers (`-idirafter`), so glibc 2.34's or musl's declarations are
+the ones used; libraries are `-L` folders. pkg-config runs as for a normal build, whatever
+the target: it gives the `-I` folders (FreeType's `freetype2`, `libpng16`) and the `-l`
+names, from the system's `.pc` files (`PKG_CONFIG_PATH` works as usual).
+
+This machine's libraries are only linked against: the target's own copies are loaded at run
+time. Built against a newer glibc, they reference symbol versions the 2.34 stubs lack
+(on Arch, `__isoc23_strtol@GLIBC_2.38` and `sqrtf@GLIBC_2.43`, among others, from libasound,
+libvulkan and libxkbcommon), so the
+glibc link allows undefined symbols in shared libraries (`--allow-shlib-undefined`); what
+dimna itself needs is what the check reads. The headers are this machine's too: a function
+newer than the oldest supported distribution's library would link here and fail to load
+there. Nothing checks that yet; `ldd -r bin/dimna` on the target would show it.
+
+**musl.** Both programs build. `dimna` is linked dynamically against this machine's
+glibc-built libraries, only to resolve names. (It links even without
+`--allow-shlib-undefined`: lld seems not to check a library's own needs when what that
+library needs, here glibc's `libc.so.6`, is not in the link.) It asks for
+`/lib/ld-musl-x86_64.so.1` and the same sonames, which a musl system's builds of those
+libraries have. It has not been run: that needs a musl system (a Void musl root, say).
+`dimna-headless` is static, so it runs on any x86_64 Linux, but a static musl program cannot
+`dlopen`: `--driver d3xx` (liboni's ft600 driver on FTDI's D3XX, itself built for glibc) is
+not available there; the default `--driver usb` is built in. liboni includes glibc's
+`<execinfo.h>` and uses nothing from it; for musl the build supplies an empty one.
+
 ## Two ways to reach the FT600
 
     dimna-headless ...                # --driver usb, the default: no FTDI code in the process

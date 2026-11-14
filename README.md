@@ -81,6 +81,9 @@ README of each folder.
 
     packaging/install-desktop.sh             # a launcher entry and icon
 
+    zig build release                        # tarballs for other distributions (glibc 2.34+, musl),
+                                             # in zig-out/release; see docs/install.md, "Release build"
+
 Press **`?`** on the display for every key and mouse action. `dimna --help` lists the
 options. Only one program can hold the board at a time.
 
