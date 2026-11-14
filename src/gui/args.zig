@@ -107,6 +107,7 @@ pub const usage =
     \\  /                              type a note (Enter saves, Esc drops, Tab keeps it as a draft)
     \\  `                              stamp the first draft note
     \\  1-9                            stamp the config's preset notes
+    \\  ~                              hide / show the ADC panels (the others grow over them)
     \\  Shift+a                        acknowledge an alarm (the red bar: samples lost, or the
     \\                                 recording failed)
     \\  ?                              the keys, over the display (? or Esc closes them)
