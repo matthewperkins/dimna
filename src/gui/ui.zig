@@ -1,6 +1,13 @@
 //! A small immediate-mode widget layer over `font.Batch`: text, buttons and steppers laid
 //! out left to right in rows. Each frame the whole interface is described again; a widget
 //! reports a click in the same call that draws it.
+//!
+//! Mirrored (`rtl`, for a language read right to left), the layout stays the same, in
+//! left-to-right coordinates: only what is drawn and the pointer are mirrored. A box at
+//! `x`..`x + w` is drawn at `width - x - w`, and the pointer's x is mirrored once, at
+//! `begin`, so every hit test is the same as unmirrored. A row then starts at the right
+//! edge, and what is placed near the right edge is near the left. A text keeps its own
+//! order: its run is moved whole into its mirrored box.
 
 const std = @import("std");
 const font = @import("font.zig");
@@ -23,12 +30,17 @@ pub const Ui = struct {
     width: f32,
     /// Where a row continues when its widgets do not fit the window's width.
     indent: f32 = 64,
+    /// Drawn mirrored, for a language read right to left (see the top of this file).
+    rtl: bool = false,
 
-    pub fn begin(batch: *font.Batch, width: f32, mouse_x: f32, mouse_y: f32, clicked: bool, wheel: f32) Ui {
+    /// With `rtl`, `mouse_x` is the pointer's position in the window, as unmirrored; a
+    /// negative one (no pointer) stays so.
+    pub fn begin(batch: *font.Batch, width: f32, mouse_x: f32, mouse_y: f32, clicked: bool, wheel: f32, rtl: bool) Ui {
         batch.clear();
         return .{
             .batch = batch,
-            .mouse_x = mouse_x,
+            .rtl = rtl,
+            .mouse_x = if (rtl and mouse_x >= 0) width - mouse_x else mouse_x,
             .mouse_y = mouse_y,
             .clicked = clicked,
             .wheel = wheel,
@@ -73,25 +85,48 @@ pub const Ui = struct {
         return @round(self.batch.font.width(label)) + 18;
     }
 
+    /// A solid rectangle at a box of the layout (drawn mirrored with `rtl`).
+    pub fn fill(self: *Ui, x: f32, y: f32, w: f32, h: f32, colour: Colour) void {
+        self.batch.rect(if (self.rtl) self.width - x - w else x, y, w, h, colour);
+    }
+
+    /// `string` drawn from `x` of the layout, as `font.Batch.text` draws it; returns the x
+    /// of the layout after it. With `rtl` its run is moved whole to the mirrored box (its
+    /// glyphs keep their order).
+    pub fn textAt(self: *Ui, x: f32, y: f32, string: []const u8, colour: Colour) f32 {
+        const first = self.batch.len;
+        const end = self.batch.text(x, y, string, colour);
+        if (self.rtl) {
+            // The run spans round(x)..end (the batch snaps its origin); its mirror starts
+            // at width - end.
+            const shift = (self.width - end) - @round(x);
+            for (self.batch.vertices[first..self.batch.len]) |*v| v.pos[0] += shift;
+        }
+        return end;
+    }
+
     pub fn separator(self: *Ui) void {
-        self.batch.rect(self.left, self.y + 2, self.width - 2 * self.left, 1, theme.rule);
+        self.fill(self.left, self.y + 2, self.width - 2 * self.left, 1, theme.rule);
         self.y += 8;
         self.x = self.left;
     }
 
     pub fn text(self: *Ui, string: []const u8, colour: Colour) void {
-        self.x = self.batch.text(self.x, self.y + 4, string, colour) + 8;
+        self.x = self.textAt(self.x, self.y + 4, string, colour) + 8;
     }
 
     /// Text in a box at least `min_width` wide (so what follows does not move as it changes).
     pub fn value(self: *Ui, string: []const u8, min_width: f32) void {
         const w = @max(min_width, self.batch.font.width(string));
-        _ = self.batch.text(self.x + (w - self.batch.font.width(string)) / 2, self.y + 4, string, theme.text_bright);
+        _ = self.textAt(self.x + (w - self.batch.font.width(string)) / 2, self.y + 4, string, theme.text_bright);
         self.x += w + 6;
     }
 
+    /// Whether the pointer is over the box `x`..`x + w` of the layout. A drawn box takes in
+    /// its left edge and not its right: mirrored, that is the box's right edge in the layout.
     fn hovering(self: *const Ui, x: f32, y: f32, w: f32, h: f32) bool {
-        return self.mouse_x >= x and self.mouse_x < x + w and self.mouse_y >= y and self.mouse_y < y + h;
+        const in_x = if (self.rtl) self.mouse_x > x and self.mouse_x <= x + w else self.mouse_x >= x and self.mouse_x < x + w;
+        return in_x and self.mouse_y >= y and self.mouse_y < y + h;
     }
 
     /// A button; `on` draws it highlighted (a selected choice). True when clicked.
@@ -100,14 +135,14 @@ pub const Ui = struct {
         const h = self.lineHeight() + 8;
         self.fit(w);
         const hot = self.hovering(self.x, self.y, w, h);
-        self.batch.rect(
+        self.fill(
             self.x,
             self.y,
             w,
             h,
             if (on) (if (hot) theme.button_on_hover else theme.button_on) else if (hot) theme.button_hover else theme.button_idle,
         );
-        _ = self.batch.text(self.x + 9, self.y + 4, label, theme.text_bright);
+        _ = self.textAt(self.x + 9, self.y + 4, label, theme.text_bright);
         self.x += w + 6;
         return hot and self.clicked;
     }
@@ -118,14 +153,14 @@ pub const Ui = struct {
         const h = self.lineHeight() + 8;
         self.fit(w);
         const hot = self.hovering(self.x, self.y, w, h);
-        self.batch.rect(
+        self.fill(
             self.x,
             self.y,
             w,
             h,
             if (on) (if (hot) theme.button_on_hover else theme.button_on) else if (hot) theme.button_hover else theme.button_idle,
         );
-        _ = self.batch.text(
+        _ = self.textAt(
             self.x + (w - self.batch.font.width(label)) / 2,
             self.y + 4,
             label,
@@ -136,16 +171,18 @@ pub const Ui = struct {
     }
 
     /// A section's heading that opens and closes it: "▸ label" while closed, "▾ label"
-    /// while open, on a flat bar as high as a button. True when clicked.
+    /// while open, on a flat bar as high as a button. True when clicked. Mirrored, the
+    /// closed triangle points the other way: "◂ label".
     pub fn heading(self: *Ui, label: []const u8, open: bool) bool {
         var buf: [64]u8 = undefined;
-        const string = std.fmt.bufPrint(&buf, "{s} {s}", .{ if (open) "\u{25BE}" else "\u{25B8}", label }) catch label;
+        const closed = if (self.rtl) "\u{25C2}" else "\u{25B8}";
+        const string = std.fmt.bufPrint(&buf, "{s} {s}", .{ if (open) "\u{25BE}" else closed, label }) catch label;
         const w = self.buttonWidth(string);
         const h = self.lineHeight() + 8;
         self.fit(w);
         const hot = self.hovering(self.x, self.y, w, h);
-        self.batch.rect(self.x, self.y, w, h, if (hot) theme.heading_hover else theme.heading_idle);
-        _ = self.batch.text(self.x + 9, self.y + 4, string, theme.text_bright);
+        self.fill(self.x, self.y, w, h, if (hot) theme.heading_hover else theme.heading_idle);
+        _ = self.textAt(self.x + 9, self.y + 4, string, theme.text_bright);
         self.x += w + 6;
         return hot and self.clicked;
     }
@@ -186,7 +223,7 @@ const TestBatch = struct {
 
     fn ui(self: *TestBatch, width: f32, mouse_x: f32, mouse_y: f32, clicked: bool, wheel: f32) Ui {
         self.batch = .{ .font = &test_font, .vertices = &self.vertices };
-        return .begin(&self.batch, width, mouse_x, mouse_y, clicked, wheel);
+        return .begin(&self.batch, width, mouse_x, mouse_y, clicked, wheel, false);
     }
 
     /// The `i`-th rectangle drawn, as x, y, w, h.

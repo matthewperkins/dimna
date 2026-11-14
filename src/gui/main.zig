@@ -125,6 +125,9 @@ pub fn main(init: std.process.Init) !u8 {
             language_notice.say(.notice_language_missing, .{ .language = n.name, .what = what }, .notice_language_where, .{ .where = files.tildePath(&where_buf, config_path, env.home) });
         }
     }
+    // Sentences of a language read right to left are laid out right to left, in every
+    // window's font (set before any font is made; the control window mirrors itself).
+    shape.start_rtl = i18n.rightToLeft(i18n.current);
     var scheme_notice: display_mod.Notice = .{};
     if (args.scheme_image.len > 0) {
         var spath_buf: [std.fs.max_path_bytes]u8 = undefined;

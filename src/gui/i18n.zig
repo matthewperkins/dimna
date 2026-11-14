@@ -25,6 +25,12 @@ pub const Language = enum { en, de, fr, pt, pl, zh, fa };
 /// The language of every text below. Set once, at start-up.
 pub var current: Language = .en;
 
+/// Whether `lang` is read right to left: its control window is mirrored, and its sentences
+/// are laid out right to left.
+pub fn rightToLeft(lang: Language) bool {
+    return lang == .fa;
+}
+
 /// A language's messages, as a type whose declarations are the messages it has.
 pub fn catalogue(comptime lang: Language) type {
     return switch (lang) {
@@ -609,4 +615,10 @@ test "the language: the config's value, then LANG, else English" {
     try testing.expectEqual(Language.en, pick("", "plain")); // not "pl"
     try testing.expectEqual(Language.en, pick("", "xx_XX")); // no such language
     try testing.expectEqual(Language.en, pick("klingon", "pl_PL.UTF-8")); // a bad value: English, not LANG
+}
+
+test "only Persian is read right to left" {
+    inline for (comptime std.enums.values(Language)) |lang| {
+        try testing.expectEqual(lang == .fa, rightToLeft(lang));
+    }
 }

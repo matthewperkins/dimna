@@ -75,6 +75,15 @@ font really has a sample of the language's characters, and for Persian that the 
 load; if not, it shows English, logs what to install, and says so in a banner for its first
 8 seconds. The other languages need nothing beyond English.
 
+Persian is read right to left. In Persian the control window is mirrored: each row starts
+at the right edge, the buttons placed near the right edge in English are near the left,
+and a closed section's triangle points left (◂). Only the drawing and the pointer are
+mirrored; the layout is the English one (`Ui.rtl` in `src/gui/ui.zig`). The neural display,
+the spike tiles and the key summary are not mirrored: their layout follows the data, left
+to right in time. In every window, a Persian text (any text with a Persian letter, typed
+notes included) is laid out right to left even when it starts with a Latin name or a
+number. In the other languages such a text takes the direction of its first letter.
+
 ## Colour scheme from a picture
 
 `scheme_image = "<path>"` in the config (`~/` is the home folder; a relative path is

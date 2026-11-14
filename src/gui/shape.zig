@@ -13,7 +13,12 @@
 //! The result is kept in a cache of laid-out strings, so a label drawn every frame is laid
 //! out once.
 //!
-//! The direction of a shaped string comes from its first strong character. Numbers and
+//! The paragraph direction of a shaped string is a setting of the engine (`Engine.rtl`),
+//! chosen at start-up from the language (`start_rtl`). In a language read right to left,
+//! every string with a right-to-left letter is laid out right to left, whatever comes first
+//! ("{source} ..." with a Latin name first, a number first). Otherwise the direction is
+//! that of the string's first strong letter (taken before the isolation below, which would
+//! hide the Latin letters from FriBidi's own rule). Numbers and
 //! Latin text inside right-to-left text ("فیلتر 300-6000 Hz") are kept together as one
 //! left-to-right block: each stretch from a Latin letter or a digit to the last Latin letter
 //! or digit before the next right-to-left letter is isolated (as if between U+2066 and
@@ -31,6 +36,10 @@ pub const max_faces = 8;
 /// Laid-out strings kept (least recently used out).
 pub const cache_entries = 2048;
 const no_face: u8 = 0xff;
+
+/// The paragraph direction of the engines made from now on (`Engine.rtl`). Set once at
+/// start-up, from the language, before any font is made.
+pub var start_rtl: bool = false;
 
 /// The fallbacks tried, in order, for characters the primary font lacks. In each group the
 /// first one installed is used.
@@ -79,6 +88,9 @@ const bidi = struct {
     const BS: u32 = 0x202840;
     /// FRIBIDI_PAR_ON: the direction from the first strong character.
     const par_on: u32 = 0x40;
+    /// FRIBIDI_PAR_LTR and FRIBIDI_PAR_RTL (the types of L and R).
+    const par_ltr: u32 = L;
+    const par_rtl: u32 = R;
 };
 
 const FriBidi = struct {
@@ -223,6 +235,11 @@ pub const Engine = struct {
     shaped_calls: usize = 0,
     /// False: never shape (tests of the path taken without HarfBuzz and FriBidi).
     allow_shaping: bool = true,
+    /// A string with a right-to-left letter is laid out with a right-to-left paragraph
+    /// direction (the language is read right to left); false: the direction of its first
+    /// strong letter. Fixed when the engine is made (`start_rtl`), as the cache holds
+    /// strings laid out with it.
+    rtl: bool,
     /// HarfBuzz's buffer, made the first time something is shaped.
     buf: ?*HbBuffer = null,
     cache: Cache = .{},
@@ -252,6 +269,7 @@ pub const Engine = struct {
             .cfg = c.FcInitLoadConfigAndFonts(),
             .line_height = f.line_height,
             .pen = f.pen,
+            .rtl = start_rtl,
         };
         self.faces[0] = .{ .ft = primary, .line_height = f.line_height };
         self.nfaces = 1;
@@ -489,6 +507,7 @@ pub const Engine = struct {
         if (raw.len == 0) return 0;
         try self.raw_types.resize(gpa, raw.len);
         l.fb.fribidi_get_bidi_types(raw.ptr, @intCast(raw.len), self.raw_types.items.ptr);
+        var base = paragraphDirection(self.raw_types.items, self.rtl);
         try isolateLtr(gpa, raw, self.raw_types.items, &self.text, &self.marks);
 
         const text = self.text.items;
@@ -498,7 +517,6 @@ pub const Engine = struct {
         try self.levels.resize(gpa, text.len);
         l.fb.fribidi_get_bidi_types(text.ptr, n, self.types.items.ptr);
         l.fb.fribidi_get_bracket_types(text.ptr, n, self.types.items.ptr, self.brackets.items.ptr);
-        var base: u32 = bidi.par_on;
         if (l.fb.fribidi_get_par_embedding_levels_ex(self.types.items.ptr, self.brackets.items.ptr, n, &base, self.levels.items.ptr) == 0) return error.Bidi;
         // Rule L1 (trailing white space to the paragraph's level); the order is done below.
         if (l.fb.fribidi_reorder_line(0, self.types.items.ptr, n, 0, base, self.levels.items.ptr, null, null) == 0) return error.Bidi;
@@ -609,6 +627,21 @@ fn scaleToLineHeight(ft: c.FT_Face, target: f32) ?f32 {
     }
     if (c.FT_Set_Char_Size(ft, 0, best_size, 72, 72) != 0) return null;
     return @as(f32, @floatFromInt(ft.*.size.*.metrics.height)) / 64.0;
+}
+
+/// FriBidi's paragraph direction for a string of bidi types `types`: right to left if `rtl`
+/// and it has a right-to-left letter; else that of its first strong letter (rule P2, but on
+/// the string as given: explicit isolates in it are not skipped); FRIBIDI_PAR_ON if it has
+/// none.
+fn paragraphDirection(types: []const u32, rtl: bool) u32 {
+    if (rtl) for (types) |t| {
+        if (t == bidi.R or t == bidi.AL) return bidi.par_rtl;
+    };
+    for (types) |t| {
+        if (t == bidi.L) return bidi.par_ltr;
+        if (t == bidi.R or t == bidi.AL) return bidi.par_rtl;
+    }
+    return bidi.par_on;
 }
 
 const lri: u32 = 0x2066;
@@ -1128,6 +1161,158 @@ test "the atlas: new glyphs mark their rows; when it is full, one warning and th
     const again = try shapedCopy(&f, "\u{142}");
     defer testing.allocator.free(again);
     try testing.expectEqual(g, again[0].g);
+}
+
+test "the paragraph direction: right to left with a right-to-left letter when the language is; else the first strong letter's" {
+    const Case = struct { types: []const u32, rtl: bool, want: u32 };
+    const L = bidi.L;
+    const R = bidi.R;
+    const AL = bidi.AL;
+    const EN = bidi.EN;
+    const WS: u32 = 0x800; // FRIBIDI_TYPE_WS: neither strong nor a letter
+    for ([_]Case{
+        // "Simulator فیلتر": Latin first.
+        .{ .types = &.{ L, L, WS, AL, AL }, .rtl = true, .want = bidi.par_rtl },
+        .{ .types = &.{ L, L, WS, AL, AL }, .rtl = false, .want = bidi.par_ltr },
+        // A number first, then Persian: the Persian is the first strong letter either way.
+        .{ .types = &.{ EN, WS, AL }, .rtl = true, .want = bidi.par_rtl },
+        .{ .types = &.{ EN, WS, AL }, .rtl = false, .want = bidi.par_rtl },
+        .{ .types = &.{ AL, WS, L }, .rtl = false, .want = bidi.par_rtl },
+        .{ .types = &.{ R, L }, .rtl = true, .want = bidi.par_rtl },
+        // No right-to-left letter: as the first strong letter says, setting or not.
+        .{ .types = &.{ EN, WS, L }, .rtl = true, .want = bidi.par_ltr },
+        .{ .types = &.{ EN, WS }, .rtl = true, .want = bidi.par_on },
+        .{ .types = &.{}, .rtl = false, .want = bidi.par_on },
+    }) |case| try testing.expectEqual(case.want, paragraphDirection(case.types, case.rtl));
+}
+
+test "a font made after the start-up direction is set lays out with it; one made before keeps its own" {
+    var before = try testFont();
+    defer before.deinit(testing.allocator);
+    start_rtl = true;
+    defer start_rtl = false;
+    var after = try testFont();
+    defer after.deinit(testing.allocator);
+    try testing.expect(!before.engine.?.rtl);
+    try testing.expect(after.engine.?.rtl);
+}
+
+/// The test font with the paragraph direction set (before anything is laid out, so the
+/// cache holds nothing laid out otherwise).
+fn testFontDirection(rtl: bool) !font.Font {
+    var f = try testFont();
+    f.engine.?.rtl = rtl;
+    return f;
+}
+
+/// Where the glyphs of the primary font (Latin, digits) and of font `ar` (Persian) are: the
+/// smallest and largest x of each.
+const Spans = struct {
+    latin: [2]i32 = .{ std.math.maxInt(i32), std.math.minInt(i32) },
+    persian: [2]i32 = .{ std.math.maxInt(i32), std.math.minInt(i32) },
+    persian_glyphs: usize = 0,
+
+    fn of(glyphs: []const Placed, ar: u8) Spans {
+        var s: Spans = .{};
+        for (glyphs) |p| {
+            const span = if (p.face == 0) &s.latin else if (p.face == ar) &s.persian else continue;
+            span[0] = @min(span[0], p.x);
+            span[1] = @max(span[1], p.x);
+            if (p.face == ar) s.persian_glyphs += 1;
+        }
+        return s;
+    }
+};
+
+test "Persian read right to left: a Latin name first is on the right, a Persian word first is too" {
+    _ = try needLibs();
+    var f = try testFontDirection(true);
+    defer f.deinit(testing.allocator);
+    var ltr = try testFontDirection(false);
+    defer ltr.deinit(testing.allocator);
+    const e = f.engine.?;
+    const ar = fallbackFor(e, 0x0641) orelse return skipBecause("no Persian/Arabic font installed");
+    const filter = "\u{641}\u{6cc}\u{644}\u{62a}\u{631}"; // فیلتر
+    // "{source} فیلتر", formatted with a Latin value first.
+    var buf: [64]u8 = undefined;
+    const sourced = try std.fmt.bufPrint(&buf, "{s} {s}", .{ "Simulator", filter });
+
+    const got = try shapedCopy(&f, sourced);
+    defer testing.allocator.free(got);
+    const s = Spans.of(got, ar);
+    try testing.expect(s.persian_glyphs >= 4);
+    // Right to left: the Persian word (logically last) leftmost, the name rightmost.
+    try testing.expect(s.persian[1] < s.latin[0]);
+    // The name itself left to right, its letters in order: as laid out alone.
+    const name = try shapedCopy(&f, "Simulator");
+    defer testing.allocator.free(name);
+    const space = c.FT_Get_Char_Index(e.faces[0].ft, ' ');
+    var k: usize = 0;
+    var last_x: i32 = std.math.minInt(i32);
+    for (got) |p| {
+        if (p.face != 0 or p.gid == space) continue;
+        try testing.expect(k < name.len);
+        try testing.expectEqual(name[k].gid, p.gid);
+        try testing.expect(p.x > last_x);
+        last_x = p.x;
+        k += 1;
+    }
+    try testing.expectEqual(name.len, k);
+
+    // Not read right to left (another language), the first strong letter decides: the name
+    // first, on the left.
+    const other = try shapedCopy(&ltr, sourced);
+    defer testing.allocator.free(other);
+    const o = Spans.of(other, ar);
+    try testing.expect(o.latin[1] < o.persian[0]);
+
+    // A number first ("12 فیلتر"): right to left in both, the number on the right.
+    for ([_]*font.Font{ &f, &ltr }) |which| {
+        const numbered = try shapedCopy(which, "12 " ++ filter);
+        defer testing.allocator.free(numbered);
+        const n = Spans.of(numbered, ar);
+        try testing.expect(n.persian[1] < n.latin[0]);
+    }
+
+    // فیلتر 300-6000 Hz: the range one left-to-right block on the left, in its order.
+    const hz = try shapedCopy(&f, filter ++ " 300-6000 Hz");
+    defer testing.allocator.free(hz);
+    const latin = try shapedCopy(&f, "300-6000 Hz");
+    defer testing.allocator.free(latin);
+    const h = Spans.of(hz, ar);
+    try testing.expect(h.latin[1] < h.persian[0]);
+    k = 0;
+    for (hz) |p| {
+        if (p.face != 0) continue;
+        try testing.expect(k < latin.len);
+        try testing.expectEqual(latin[k].gid, p.gid);
+        try testing.expectEqual(latin[k].x - latin[0].x, p.x - h.latin[0]);
+        k += 1;
+    }
+    try testing.expectEqual(latin.len, k);
+}
+
+test "Persian read right to left: a string with no right-to-left letter is laid out as before" {
+    var f = try testFontDirection(true);
+    defer f.deinit(testing.allocator);
+    const e = f.engine.?;
+    var plain = f;
+    plain.engine = null;
+    // Latin-1: the fixed glyphs, never laid out by the engine, the same quads.
+    const label = "A   2.00 s   400\u{b5}V/row   300\u{2013}6000 Hz";
+    var with_engine: [6 * 64]font.Vertex = undefined;
+    var without: [6 * 64]font.Vertex = undefined;
+    var b1: font.Batch = .{ .font = &f, .vertices = &with_engine };
+    var b2: font.Batch = .{ .font = &plain, .vertices = &without };
+    try testing.expectEqual(b2.text(3, 7, label, .{ 1, 2, 3, 4 }), b1.text(3, 7, label, .{ 1, 2, 3, 4 }));
+    try testing.expectEqualSlices(u8, std.mem.sliceAsBytes(without[0..b2.len]), std.mem.sliceAsBytes(with_engine[0..b1.len]));
+    try testing.expectEqual(0, e.shape_calls);
+    // Beyond Latin-1 but no right-to-left letter: unshaped, left to right.
+    const glyphs = try shapedCopy(&f, "\u{142}\u{f3}d\u{17a} 300 Hz");
+    defer testing.allocator.free(glyphs);
+    try testing.expectEqual(11, glyphs.len);
+    for (glyphs[1..], glyphs[0 .. glyphs.len - 1]) |p, before| try testing.expect(p.x > before.x);
+    try testing.expectEqual(0, e.shaped_calls);
 }
 
 fn cpuNs() u64 {
