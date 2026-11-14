@@ -25,10 +25,10 @@ as a port of its driver. The two are named after the jackals of the Tales of Bid
 
 ![The neural display, fullscreen, recording from an animal](docs/images/display.png)
 
-*The neural display on its own monitor, from an animal: EMG on port B (left, a sweep
-display with a 300-6000 Hz band on rows 1-8 and raw rows 9-12), single units on port A
-(right, 300-6000 Hz with a common average reference; row 4 is in focus, with its spike
-threshold as a red line, and listened to), the ADC inputs below.*
+*The neural display on its own monitor, from an animal: EMG on port B (left, 20 s,
+300-6000 Hz on rows 1-8; rows 9-12 raw, where the stomach's slow waves show), single
+units on port A (right, 300-6000 Hz with a common average reference; row 10 is in focus,
+with its spike threshold as a red line, and listened to), the ADC inputs below.*
 
 | | |
 |---|---|
