@@ -123,3 +123,77 @@ edits there minimal so the two merge.
 
 Append a "Report" section here: what you vendored (commit, hashes), timings, the swatch
 paths, test break-it results, anything you were unsure of in the role assignment.
+
+## Report
+
+Branch `worktree-agent-a1b55fffa08980123`; code in commit 64b207f.
+
+**Vendored.** stb_image.h v2.32 (sha256 `deb4f18c9ca21b751a1323019031c94c0bf5ca1d2929ef5913cc56f00aab6e91`)
+and stb_image_write.h v1.18 (`a8e7f77f0ccfdc9bac09a71268b131931ff81aafca82c393aeb6aaba10d9e7ca`),
+nothings/stb commit `9600522de53973336fa033a289858a4354cbb04c`, copied from the owner's clone in
+`~/src/stb` (nothing was downloaded; hashes verified after copying). `vendor/stb/` also holds
+`stb_impl.c`, `stb.h` (what translate-c reads), `LICENSE` (the notice at the end of stb_image.h)
+and `README.md`.
+
+**Changed.** `build.zig`, `src/gui/theme.zig` (22 colours are `var`, plus `trace`; `apply`,
+`current`), `src/gui/scheme.zig` (new), `args.zig`, `main.zig`, `gpu.zig`, `shaders/traces.vert`,
+`tests.zig`, `README.md`, `docs/display.md`. `display.zig` and `display_frame.txt` are untouched.
+The palette is pushed as a second push-constant range at offset 60 (`TraceParams` is 60 bytes),
+12 floats, 108 bytes in all, so `TraceParams` and the display's debug print did not change.
+`trigger_line` stays const.
+
+**Verified.**
+- `zig build --release=safe`: clean. `zig fmt --check src build.zig`: no output.
+- `zig build test --summary all`: core 127 tests, GUI 85 (13 new: scheme 12 incl. the extra
+  hue test, theme 1, args 1 is counted in these), "85/85 tests passed" on the last run (the
+  core's run was cached). All stored outputs (`display`, `control`, `tiles`) pass unchanged.
+- Timings (`dimna --print-scheme`, release-safe, this machine): 12-megapixel JPEG (4000x3000,
+  ImageMagick plasma): decode 130-136 ms, shrink 24.7 ms, clustering and roles 2.3 ms.
+  1-megapixel PNG: decode 45 ms, shrink 2.5 ms, clustering 2.3 ms. After decoding, a 12 MP
+  photo costs about 27 ms (the shrink is the part that grows with pixels); the plan's "a few
+  ms" holds for clustering, not for the pixel pass on a 12 MP image.
+- Swatches (kept for the reviewer): `/tmp/dimna-scheme-280945/swatch-rose.png`,
+  `swatch-logo.png`, `swatch-wizard.png`, and `swatch-plasma.png` (the 12 MP plasma).
+- Missing file: `scheme image '<path>': no such file`, exit 1 for `--print-scheme`; in the GUI
+  the same text is a warning followed by "using the built-in colours".
+
+**Break it on purpose** (one change, run, revert):
+- contrast raise: text_dim starting lightness 0.72 -> 0.30 with the raising loop disabled:
+  "the contrast guarantees hold on synthetic images" failed. Control (0.30 start, loop kept): passed.
+  The loop is otherwise never reached (the fixed lightnesses already give 7.8+), so this is the
+  only way the test exercises it.
+- seed from the clock: "the same pixels give the same scheme" failed.
+- trace hue separation 40/25 -> 0/0: first the rainbow test did not fail (its hues are apart
+  anyway), so I added "trace hues stay apart when the image's strongest colours are close in
+  hue" (three oranges plus three small colours); with the break it fails.
+- score negated: "the first trace colour is the strongest pick" failed.
+- gamut bisection removed: the hue test and the strongest-pick test failed (out-of-gamut
+  colours were clipped).
+- k-means seeding to one centre: "k-means on a two-colour image finds both colours" failed.
+- background lightness 0.16 -> 0.66: "neutrals ... stay dark" and the contrast test failed.
+- `~/` expansion to the wrong folder: "resolvePath" failed.
+- warning text without the path: "a missing scheme image ..." failed.
+- decode error mapped wrongly, PNG stride off by 3: the decode and round-trip tests failed.
+- theme.apply missing a field: "apply sets every themed colour" failed.
+- args: config key misspelt; `--swatch` ignored: the args test failed both times.
+- default `text_dim` 150 -> 151: the display, control and tile stored-output tests failed, so
+  they would catch a change to today's colours.
+My first version of the two-colour test expected 60x80 cells per colour; the image is 120 wide
+and shrinks to 96 cells, so 48x80 is right (the expectation was wrong, not the code).
+
+**Not covered.** The GUI was not run (rule 2), so the shader's new push-constant layout
+(`float pal[12]` at offset 60) is compiled by glslc and checked by a comptime size assertion but
+has not been seen drawing; if trace colours look wrong on the first real run, look there first.
+`scheme_image` in the config is exercised in the unit tests only through `resolvePath`,
+`loadFile` and the args parse, not through `main`. The Oklab/WCAG maths is checked by properties
+(guarantees, gamut), not against a reference implementation.
+
+**Unsure about in the role assignment.**
+- Neutrals take `min(base chroma, cap)`, so a heavily saturated picture gives a background with
+  a visible tint (the rose gives a brown `#140b06`). The plan's caps are followed.
+- A greyscale or dull picture has no trace picks, so all four are rotations (90 degrees) of the
+  base hue at L 0.80, C 0.12; for grey that base hue is arbitrary (0 or whatever atan2 gives).
+- Fill picks (and any pick) are kept at the plan's L and C ranges; so colours such as the
+  rose's trace 3 (`#aab500`) can be a fill that the picture does not really contain.
+- `help_title` equals `text_bright` (same L and C cap in the plan), `panel_divider` equals `rule`.
+- With fewer than 8 distinct colours the clusters are fewer than 8 (empty ones are dropped).
