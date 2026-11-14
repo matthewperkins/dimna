@@ -27,6 +27,20 @@ const release_targets = [_]struct { query: []const u8, name: []const u8, note: [
     },
 };
 
+/// The files of packaging/ that a release carries.
+const release_packaging = [_][]const u8{
+    "dimna-launch.sh",
+    "install-desktop.sh",
+    "icon/ICON-CREDITS.md",
+    "icon/dimna-icon.svg",
+    "icon/dimna-32.png",
+    "icon/dimna-48.png",
+    "icon/dimna-64.png",
+    "icon/dimna-128.png",
+    "icon/dimna-256.png",
+    "sim-config/dimna/config.toml",
+};
+
 /// The highest glibc symbol version a release binary may need (packaging/check-release.sh).
 const release_max_glibc = "2.34";
 
@@ -335,7 +349,11 @@ fn addRelease(b: *std.Build, inputs: Inputs, licences: []const std.Build.LazyPat
         const stage = b.addWriteFiles();
         _ = stage.addCopyFile(progs.gui.getEmittedBin(), b.fmt("{s}/bin/dimna", .{dir}));
         _ = stage.addCopyFile(progs.headless.getEmittedBin(), b.fmt("{s}/bin/dimna-headless", .{dir}));
-        _ = stage.addCopyDirectory(b.path("packaging"), b.fmt("{s}/packaging", .{dir}), .{});
+        // What an installation needs, named one by one: the folder on disk may hold other
+        // files (icon candidates, files of other work) that are not part of a release.
+        for (release_packaging) |f| {
+            _ = stage.addCopyFile(b.path(b.fmt("packaging/{s}", .{f})), b.fmt("{s}/packaging/{s}", .{ dir, f }));
+        }
         _ = stage.addCopyFile(b.path("README.md"), b.fmt("{s}/README.md", .{dir}));
         for (licences, licence_names) |licence, name| {
             _ = stage.addCopyFile(licence, b.fmt("{s}/licenses/{s}", .{ dir, name }));
