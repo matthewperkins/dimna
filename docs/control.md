@@ -102,5 +102,15 @@ when the monitor is muted or off:
 - the recording has gaps.
 
 An amber bar warns earlier, while the disk is more than 5 s behind, and goes when it has
-caught up. `DIMNA_TEST_RECORD_FAIL_AFTER=<samples>`, `DIMNA_TEST_RECORD_STALL=<samples>,<ms>`
+caught up.
+
+**The disk filling.** While recording, dimna looks at the free space of the recording's
+disk every 5 s and works out how long until it is full: from how fast the free space fell
+over the last 5 minutes (so the cameras writing to the same disk count) or the recorder's
+own rate, whichever is faster, counting the last 5 GB as full (btrfs can refuse writes for
+want of metadata space before its free space reaches 0). Under 30 minutes an amber bar
+says how long and how many GB are left; under 5 minutes, and again under 1, a red alarm
+until acknowledged. On btrfs the free space moves only when a transaction commits (every
+120 s with `commit=120`), which is why the window is 5 minutes and the recorder's rate is
+the floor. `DIMNA_TEST_DISK_RESERVE_GB=<GB>` counts that much more as full, for testing. `DIMNA_TEST_RECORD_FAIL_AFTER=<samples>`, `DIMNA_TEST_RECORD_STALL=<samples>,<ms>`
 and `DIMNA_TEST_RING_SECONDS=<s>` make these happen on purpose, for testing.

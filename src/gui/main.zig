@@ -151,6 +151,9 @@ pub fn main(init: std.process.Init) !u8 {
     var health: dimna.types.Health = .{};
     // What of the loss counters the user has acknowledged (the alarm shows the rest).
     var alarms: session.Alarms = .{};
+    // How long until the recording's disk is full (looked at every 5 s while recording).
+    var disk: session.DiskWatch = .{};
+    if (env.disk_reserve_gb) |gb| disk.reserve = gb * 1e9;
 
     // ---- window and renderer ----
     var win: Window = undefined;
@@ -516,12 +519,19 @@ pub fn main(init: std.process.Init) !u8 {
             rec_published_ns = nowNs();
             snap_dirty = true;
         }
+        // The disk: a statfs every 5 s while recording (microseconds), else forgotten.
+        if (recording.active()) {
+            const now_s = @as(f64, @floatFromInt(nowNs() - t_start)) / 1e9;
+            if (disk.due(now_s)) {
+                if (session.freeBytes(recording.sessionPath())) |free| disk.add(now_s, free, recording.written());
+            }
+        } else if (disk.len > 0) disk.reset();
         // Alarms: anything that means samples are not being kept.
         if (alarms.update(&status, .{
             .overflow = acq.ring_overflow.load(.monotonic),
             .dropped = health.dropped_samples.load(.monotonic),
             .gaps = recording.gaps(),
-        }, recording.behind(pl.bs, pl.fs), &display.acknowledged)) snap_dirty = true;
+        }, recording.behind(pl.bs, pl.fs), if (recording.active()) disk.left() else null, &display.acknowledged)) snap_dirty = true;
         audio_shared.alarm.store(status.alarm_len > 0, .monotonic);
         status.recording = recording.active();
         status.notice = if (scheme_notice.shown(nowNs())) &scheme_notice else null;

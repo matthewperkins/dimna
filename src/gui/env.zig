@@ -39,6 +39,8 @@ pub const Env = struct {
     tile_clicks: []const u8 = "",
     ring_seconds: f64 = 30,
     record_at: ?f64 = null,
+    /// Free space on the recording's disk that counts as none, in GB (testing the disk alarm).
+    disk_reserve_gb: ?f64 = null,
     record_test: RecordTest = .{},
     home: []const u8 = ".",
     /// "" when not set.
@@ -62,6 +64,7 @@ pub const Env = struct {
         if (get("DIMNA_TILE_CLICKS")) |v| e.tile_clicks = v;
         if (get("DIMNA_TEST_RING_SECONDS")) |v| e.ring_seconds = std.fmt.parseFloat(f64, v) catch 30.0;
         if (get("DIMNA_TEST_RECORD_AT")) |v| e.record_at = std.fmt.parseFloat(f64, v) catch null;
+        if (get("DIMNA_TEST_DISK_RESERVE_GB")) |v| e.disk_reserve_gb = std.fmt.parseFloat(f64, v) catch null;
         if (get("DIMNA_TEST_RECORD_FAIL_AFTER")) |v| e.record_test.fail_after = std.fmt.parseInt(u64, v, 10) catch null;
         if (get("DIMNA_TEST_RECORD_STALL")) |v| {
             var it = std.mem.tokenizeScalar(u8, v, ',');
