@@ -92,3 +92,13 @@ mirror any layout (the control window's right-to-left layout is a later plan).
 
 Append a "Report" section: what you built, timings, how many CJK glyphs fit, the fonts
 found on this machine, test break-it results, and anything left open.
+
+## After merging (the reviewer does this; not for the agent)
+
+**Font check with English fallback** (the owner, 2026-11-13). At startup, when the chosen
+language is `zh` or `fa`, check that an installed font really covers a sample of its script
+(fontconfig font *list* with a charset, not `fc-match`, which always returns something),
+and for `fa` that HarfBuzz and FriBidi load. If not, use English, log which package to
+install, and show the startup banner (as the colour scheme's): e.g. "Chinese font not found
+(Noto Sans CJK SC): showing English". Test with a fontconfig that has no CJK font
+(`FONTCONFIG_FILE` pointing at a config listing only Lato's folder).
