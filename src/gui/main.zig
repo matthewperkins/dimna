@@ -11,7 +11,7 @@
 //! The display reads the ring with a lossy reader, so it can never hold acquisition or the
 //! recorder back.
 //!
-//! What the loop does each turn is in `main` below, in order; the state each part keeps
+//! What the loop does each turn is in `runDisplay` below, in order; the state each part keeps
 //! between turns is in session.zig (recording, review, alarms, view file, board settings),
 //! pacing.zig (when to draw, latency figures) and display.zig (panels, input, drawing).
 //!
@@ -22,7 +22,8 @@
 
 const std = @import("std");
 const dimna = @import("dimna");
-const Window = @import("window.zig").Window;
+const window_mod = @import("window.zig");
+const Window = window_mod.Window;
 const gpu_mod = @import("gpu.zig");
 const Gpu = gpu_mod.Gpu;
 const font = @import("font.zig");
@@ -128,7 +129,18 @@ pub fn main(init: std.process.Init) !u8 {
             args.views_doc = vd;
         } else |_| log.warn("{s}: syntax error on line {d}; the view file is ignored", .{ views_path, toml_diag.line });
     }
+    // Everything else is the display's, run where this system's windowing wants it (on
+    // Linux: here, on the main thread).
+    return window_mod.run(runDisplay, .{ init, &env, &args, config_path, views_path });
+}
 
+/// The display's work and its exit status: what has to be settled before any window draws
+/// (the language, the colour scheme), the source, the display's window, the pipeline and
+/// the other windows' threads, the loop, and the teardown in the reverse order. `main`
+/// has read the environment, the config, the arguments and the view file.
+fn runDisplay(init: std.process.Init, env: *const Env, args: *const Args, config_path: []const u8, views_path: []const u8) !u8 {
+    const io = init.io;
+    const gpa = init.gpa;
     // The colour scheme, if the config names an image. Before any window or thread draws;
     // any failure is a warning and the built-in colours stay. Either way a banner says so
     // over the display for its first seconds, and where to change it.
@@ -234,8 +246,8 @@ pub fn main(init: std.process.Init) !u8 {
         .gpa = gpa,
         .io = io,
         .source = source,
-        .args = &args,
-        .env = &env,
+        .args = args,
+        .env = env,
         .gpu = &gpu,
         .health = &health,
         .audio_shared = &audio_shared,
@@ -261,7 +273,7 @@ pub fn main(init: std.process.Init) !u8 {
     var draws: [max_draws]gpu_mod.PanelDraw = undefined;
     var fills: [max_fills]gpu_mod.Fill = undefined;
     var text: Text = .{};
-    text.init(gpa, &gpu, args);
+    text.init(gpa, &gpu, args.*);
     defer text.deinit(gpa);
     // Glyphs the display's font draws on demand go to the GPU before the frame that uses them.
     if (text.vertices.len > 0) gpu.textFont(&text.font);
@@ -272,7 +284,7 @@ pub fn main(init: std.process.Init) !u8 {
 
     // The control window, on its own thread (see control.zig).
     var shared: control.Shared = .{};
-    var control_cfg: control.Config = .{ .gpa = gpa, .shared = &shared, .display_gpu = &gpu, .font_px = args.font_px, .env = &env };
+    var control_cfg: control.Config = .{ .gpa = gpa, .shared = &shared, .display_gpu = &gpu, .font_px = args.font_px, .env = env };
     // Which of its sections are open: from the view file, then as the control window
     // reports them; saved with the panels by "Save view".
     var control_view = dimna.control_view.ControlView.read(args.views_doc);

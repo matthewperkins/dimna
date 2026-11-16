@@ -78,6 +78,12 @@ const FeedbackSlot = struct {
     used: bool = false,
 };
 
+/// `window.run` on Wayland: nothing to set up; `body` runs on the calling thread, inlined
+/// into it.
+pub inline fn run(comptime body: anytype, args: anytype) @TypeOf(@call(.auto, body, args)) {
+    return @call(.always_inline, body, args);
+}
+
 pub const Window = struct {
     display: *wl.Display,
     registry: *wl.Registry,

@@ -48,6 +48,9 @@
 //!   there (false: no such monitor).
 //! - `declareLowLatency()`, `preferTearing()` (false where not supported), `setTitle`,
 //!   `setCursor(cursor)`.
+//!
+//! And besides `Window`, `run(body, args)` (see `run` below), which main.zig runs the
+//! display in.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -57,6 +60,25 @@ const backend = switch (builtin.os.tag) {
     else => @compileError("dimna has no window backend for this system yet"),
 };
 pub const Window = backend.Window;
+
+/// Runs `body` with `args` (a tuple) with this system's windowing set up around it, and
+/// returns what `body` returns (its status, or its error). main.zig runs the display's
+/// work in it: its window, the loop and the teardown.
+///
+/// Linux (`window_wayland.zig`): calls `body` on the calling thread, the process's main
+/// thread, and returns its result; nothing else. Each window has its own connection there,
+/// so the control window's and the tiles' threads make theirs themselves. Both functions
+/// and the call of `body` are inlined, so `body` is compiled into its caller as when it
+/// was written there (main.zig's `main` is the code it was before `runDisplay` was cut
+/// out of it).
+///
+/// macOS (to come): AppKit must own the process's main thread, so that version starts
+/// `body` on a new thread, runs AppKit's loop on the main thread (making and destroying
+/// the windows that `Window.init` and `deinit`, on any thread, ask it for, while the asking
+/// thread waits), and returns `body`'s result when `body` has ended.
+pub inline fn run(comptime body: anytype, args: anytype) @TypeOf(@call(.auto, body, args)) {
+    return backend.run(body, args);
+}
 
 /// A key dimna acts on, by what the key is labelled in the user's keyboard layout (its
 /// symbol without modifiers, from the compositor's keymap through xkbcommon), not by where
@@ -141,6 +163,22 @@ pub const Presented = struct {
     /// The output's refresh period in ns (0 if unknown).
     refresh_ns: u32,
 };
+
+test "run returns what the body returns, or its error; on Linux on the calling thread" {
+    const Body = struct {
+        fn f(thread: *std.Thread.Id, status: u8) !u8 {
+            thread.* = std.Thread.getCurrentId();
+            if (status == 255) return error.BodyFailed;
+            return status;
+        }
+    };
+    var thread: std.Thread.Id = undefined;
+    for ([_]u8{ 0, 1, 2 }) |status| {
+        try std.testing.expectEqual(status, try run(Body.f, .{ &thread, status }));
+        if (builtin.os.tag == .linux) try std.testing.expectEqual(std.Thread.getCurrentId(), thread);
+    }
+    try std.testing.expectError(error.BodyFailed, run(Body.f, .{ &thread, 255 }));
+}
 
 test "keys from keysyms: characters, named keys, and nothing for the rest" {
     const expectEqual = std.testing.expectEqual;
