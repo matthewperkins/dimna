@@ -30,7 +30,7 @@ package installs:
 |---|---|
 | `/usr/bin/dimna`, `/usr/bin/dimna-headless` | the programs |
 | `/usr/lib/udev/rules.d/60-dimna-ft60x.rules` | the board's udev rule (below) |
-| `/etc/security/limits.d/99-dimna-realtime.conf` | real-time priority 80 and unlimited locked memory for the `realtime` group |
+| `/etc/security/limits.d/99-dimna-realtime.conf` | real-time priority 95 and unlimited locked memory for the `realtime` group |
 | `/usr/share/applications/dimna.desktop`, `/usr/share/icons/hicolor/*/apps/dimna.*` | the menu entry (with a "simulated board" action) and the icon |
 | `/usr/libexec/dimna/dimna-desktop-launch` | what the menu entry runs: `/usr/bin/dimna`, its output appended to `~/.local/state/dimna/dimna.log` |
 | `/usr/share/dimna/` | the simulator action's config; `tools/dimna_read.py`, the reference reader |
@@ -52,7 +52,13 @@ and limits are read at login):
 
     sudo usermod -aG dimna,realtime $USER
 
-Then check, after logging in again: `ulimit -r` prints 80, `ulimit -l` prints `unlimited`.
+Then check, after logging in again: `ulimit -r` prints 95, `ulimit -l` prints `unlimited`.
+
+An existing installation may still have `rtprio 80` in that file (the limit was 80 before
+the acquisition thread asked for 90). Change that line to `@realtime - rtprio 95`
+(`sudoedit /etc/security/limits.d/99-dimna-realtime.conf`), then log out and in. Until then
+the acquisition thread runs at SCHED_FIFO 80, level with PipeWire's audio thread inside
+dimna instead of above it, and says so in the log ("Run" below has why).
 An older rule for the same board (an Open Ephys install's `/etc/udev/rules.d/*ft600*.rules`
 with `MODE="0666"`) still applies alongside; remove it if only the `dimna` group should reach
 the board.
@@ -76,7 +82,8 @@ groups, the udev rule into `/etc/udev/rules.d/`, the limits file into
 
 - the board's device node is readable and writable by you, if the board is plugged in (found
   through `/sys/bus/usb/devices`, vendor 0403; the node is never opened);
-- `ulimit -r` at least 70 (what the acquisition thread asks for) and `ulimit -l` unlimited;
+- `ulimit -r` at least 95 (the acquisition thread asks for 90, above PipeWire's audio thread
+  inside dimna, which asks for 88 and gets what the limit allows) and `ulimit -l` unlimited;
 - the optional fonts: Noto Sans CJK SC, only for Chinese; Noto Sans Arabic or Vazirmatn,
   and HarfBuzz and FriBidi, only for Persian;
 - a Wayland session (the windows need one; `dimna-headless` does not).
@@ -337,5 +344,10 @@ per second and `CLEAN` at the end if nothing was lost (exit status 0). Record to
 `/tmp`.
 
 The acquisition thread runs SCHED_FIFO (needs rtprio, e.g. the `realtime` group) and locks
-memory. It never waits on readers: the recorder and other readers take blocks from a
+memory. It asks for priority 90: above PipeWire's audio thread inside dimna (`data-loop.0`,
+which asks for 88 and gets what the limit allows), so sound can never hold acquisition up.
+If 90 is refused it takes the most the limit (`ulimit -r`) allows and logs a warning saying
+so and that the limit should be 95 (`packaging/99-dimna-realtime.conf`); if that is refused
+too, it runs at normal priority, also with a warning. On macOS the number means nothing (a
+Mach time-constraint policy instead). It never waits on readers: the recorder and other readers take blocks from a
 preallocated ring (30 s when recording).

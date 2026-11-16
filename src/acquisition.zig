@@ -156,7 +156,7 @@ pub const Acquisition = struct {
     }
 
     fn run(self: *Acquisition) void {
-        if (self.source.wantsRealtime()) self.realtime.store(setRealtime(70), .release);
+        if (self.source.wantsRealtime()) self.realtime.store(setRealtime(realtime_priority) != null, .release);
         defer self.done.store(true, .release);
         var next_sample: i64 = 0;
         while (!self.stop_flag.load(.acquire)) {
@@ -250,14 +250,27 @@ pub const Acquisition = struct {
     }
 };
 
-/// SCHED_FIFO at `priority` for the calling thread. Needs rtprio (e.g. the `realtime` group).
-pub fn setRealtime(priority: i32) bool {
-    const err = os.setThreadRealtime(priority);
-    if (err != .SUCCESS) {
-        log.warn("could not get SCHED_FIFO (errno {t}); running at normal priority", .{err});
-        return false;
-    }
-    return true;
+/// The `SCHED_FIFO` priority the acquisition thread asks for: above PipeWire's own thread
+/// inside dimna (`data-loop.0`), which asks for 88 and gets what the limit allows.
+pub const realtime_priority = 90;
+
+/// SCHED_FIFO at `priority` for the calling thread; if that is refused, at the highest the
+/// limit allows (`RLIMIT_RTPRIO`, `ulimit -r`; Linux only), with one warning. The priority
+/// it got, or null: refused, the thread stays at normal priority. Needs rtprio (e.g. the
+/// `realtime` group, which packaging/99-dimna-realtime.conf gives 95).
+pub fn setRealtime(priority: i32) ?i32 {
+    var err = os.setThreadRealtime(priority);
+    if (err == .SUCCESS) return priority;
+    if (os.realtimeLimit()) |limit| if (limit >= 1 and limit < priority) {
+        const lower = os.setThreadRealtime(limit);
+        if (lower == .SUCCESS) {
+            log.warn("SCHED_FIFO {d} refused (errno {t}); running at SCHED_FIFO {d}, the most the real-time limit allows (ulimit -r): it should be 95 (packaging/99-dimna-realtime.conf), for acquisition to run above PipeWire's thread", .{ priority, err, limit });
+            return limit;
+        }
+        err = lower;
+    };
+    log.warn("could not get SCHED_FIFO (errno {t}); running at normal priority", .{err});
+    return null;
 }
 
 /// Locks current and future pages in RAM, so acquisition never waits on a page-in.
@@ -266,6 +279,52 @@ pub fn lockMemory() bool {
 }
 
 const testing = std.testing;
+
+test "setRealtime: 90 when the limit allows it, else the limit's value (run under prlimit --rtprio=10:10 for the second)" {
+    // macOS has no such limit and ignores the number (its os test covers the call).
+    if (@import("builtin").os.tag != .linux) return error.SkipZigTest;
+    const limit = os.realtimeLimit() orelse return error.NoLimit;
+    // As an unprivileged user: the limit is what decides (root gets 90 whatever it is).
+    const want: ?i32 = if (limit >= realtime_priority) realtime_priority else if (limit >= 1) limit else null;
+    const Seen = struct { got: ?i32 = null, policy: i64 = -1, priority: i64 = -1, failed: ?anyerror = null };
+    var seen: Seen = .{};
+    // On a thread of its own, which exits with what it got.
+    const t = try std.Thread.spawn(.{}, struct {
+        fn run(out: *Seen) void {
+            out.got = setRealtime(realtime_priority);
+            // What the kernel says of this thread: rt_priority and policy (1 = SCHED_FIFO),
+            // fields 40 and 41 of /proc/self/task/<tid>/stat.
+            var path_buf: [64]u8 = undefined;
+            const path = std.fmt.bufPrintSentinel(&path_buf, "/proc/self/task/{d}/stat", .{std.Thread.getCurrentId()}, 0) catch unreachable;
+            const fd = os.openRead(path) orelse {
+                out.failed = error.NoStatFile;
+                return;
+            };
+            defer os.close(fd);
+            var buf: [4096]u8 = undefined;
+            const text = buf[0 .. os.pread(fd, &buf, buf.len, 0) orelse {
+                out.failed = error.StatUnreadable;
+                return;
+            }];
+            // After the name, which is in parentheses and may hold spaces: field 3 onwards.
+            const rest = text[(std.mem.lastIndexOfScalar(u8, text, ')') orelse return) + 2 ..];
+            var it = std.mem.tokenizeScalar(u8, rest, ' ');
+            var field: usize = 3;
+            while (it.next()) |f| : (field += 1) {
+                if (field == 40) out.priority = std.fmt.parseInt(i64, f, 10) catch -1;
+                if (field == 41) out.policy = std.fmt.parseInt(i64, std.mem.trimEnd(u8, f, "\n"), 10) catch -1;
+            }
+        }
+    }.run, .{&seen});
+    t.join();
+    if (seen.failed) |e| return e;
+    std.debug.print("RLIMIT_RTPRIO {d}: asked for {d}, got {?d}; the kernel says policy {d}, rt_priority {d}\n", .{ limit, realtime_priority, seen.got, seen.policy, seen.priority });
+    try testing.expectEqual(want, seen.got);
+    if (want) |p| {
+        try testing.expectEqual(1, seen.policy);
+        try testing.expectEqual(p, seen.priority);
+    } else try testing.expectEqual(0, seen.priority);
+}
 
 test "classify sorts settings changes" {
     const a: Settings = .{};

@@ -29,6 +29,12 @@ pub fn setThreadRealtime(priority: i32) E {
     return linux.errno(linux.sched_setscheduler(0, .{ .mode = .FIFO }, &.{ .priority = priority }));
 }
 
+pub fn realtimeLimit() ?i32 {
+    var lim: linux.rlimit = undefined;
+    if (linux.errno(linux.getrlimit(.RTPRIO, &lim)) != .SUCCESS) return null;
+    return @intCast(@min(lim.cur, 99));
+}
+
 pub fn setThreadIdle() E {
     return linux.errno(linux.sched_setscheduler(0, .{ .mode = .IDLE }, &.{ .priority = 0 }));
 }

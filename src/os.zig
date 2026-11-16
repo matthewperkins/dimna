@@ -53,6 +53,14 @@ pub fn setThreadRealtime(priority: i32) E {
     return impl.setThreadRealtime(priority);
 }
 
+/// The highest `SCHED_FIFO` priority the process's limit lets an unprivileged thread ask
+/// for: the soft `RLIMIT_RTPRIO` (`ulimit -r`), at most 99; 0 when it allows none. Null when
+/// there is no such limit or it cannot be read: on macOS, where `setThreadRealtime` ignores
+/// the number.
+pub fn realtimeLimit() ?i32 {
+    return impl.realtimeLimit();
+}
+
 /// Idle scheduling (`SCHED_IDLE`) for the calling thread: only what nothing else wants. On
 /// macOS the background QoS class.
 pub fn setThreadIdle() E {

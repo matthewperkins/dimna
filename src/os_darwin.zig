@@ -91,6 +91,12 @@ pub fn setThreadRealtime(priority: i32) E {
     };
 }
 
+/// macOS has no real-time priority limit (`setThreadRealtime` ignores the number): null, so
+/// a caller does not try a lower priority after a refusal.
+pub fn realtimeLimit() ?i32 {
+    return null;
+}
+
 /// The background QoS class (macOS's lowest: efficiency cores, throttled I/O).
 pub fn setThreadIdle() E {
     return @fromBackingInt(@intCast(c.pthread_set_qos_class_self_np(.BACKGROUND, 0)));
