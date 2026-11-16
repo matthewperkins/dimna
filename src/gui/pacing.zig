@@ -13,7 +13,7 @@
 
 const std = @import("std");
 const Presented = @import("window.zig").Presented;
-const DrawResult = @import("gpu_vulkan.zig").Gpu.DrawResult;
+const DrawResult = @import("gpu.zig").DrawResult;
 const log = std.log.scoped(.dimna);
 
 const skip_backoff_min: i128 = 250 * std.time.ns_per_ms;

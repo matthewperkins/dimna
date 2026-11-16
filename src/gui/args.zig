@@ -2,7 +2,7 @@
 
 const std = @import("std");
 const dimna = @import("dimna");
-const gpu_mod = @import("gpu_vulkan.zig");
+const gpu_mod = @import("gpu.zig");
 const audio_out = @import("audio_out.zig");
 const log = std.log.scoped(.dimna);
 

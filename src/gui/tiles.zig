@@ -53,7 +53,7 @@ const window_mod = @import("window.zig");
 const Window = window_mod.Window;
 const Input = window_mod.Input;
 const Ui = @import("ui.zig").Ui;
-const gpu_mod = @import("gpu_vulkan.zig");
+const gpu_mod = @import("gpu.zig");
 const font = @import("font.zig");
 const theme = @import("theme.zig");
 const format = @import("format.zig");
@@ -206,13 +206,13 @@ pub const Tiles = struct {
             _ = view.scale.tick(msOf(now));
             view.publish(&shared.report, &det, now);
             if (!dirty or !win.frame_ready or now - last_draw < picture_ms * std.time.ns_per_ms) continue;
-            if (win.resized or gpu.swapchain == .null) {
+            if (win.resized or gpu.unsized()) {
                 try gpu.resize(win.width, win.height);
                 win.resized = false;
             }
             var drawn = scene;
-            drawn.width = @floatFromInt(gpu.extent.width);
-            drawn.height = @floatFromInt(gpu.extent.height);
+            drawn.width = @floatFromInt(gpu.pixelSize().width);
+            drawn.height = @floatFromInt(gpu.pixelSize().height);
             drawn.mouse_x = @floatCast(in.pointer_x);
             drawn.mouse_y = @floatCast(in.pointer_y);
             batch.clear();

@@ -10,7 +10,7 @@ seen, so it can be told apart from a guess. Remove an entry when it is fixed or 
   no message (probably `createDirPath` under `/proc`). An ordinary bad path
   (`--record <file>/x`) fails cleanly with `NotDir`. Seen by the agent that split
   `headless.zig`, on the simulator, before and after its change.
-- **`gpu.zig`, failed set-up calls.** After the device exists, nothing destroys the render
+- **`gpu_vulkan.zig`, failed set-up calls.** After the device exists, nothing destroys the render
   pass, command pool, semaphores, fence or pipeline objects if a later step of `init`
   fails. `createText` has no `errdefer`s: a failure part-way leaks the atlas, and a failed
   `allocateMemory` leads `deinit` to unmap a null memory. `chooseSurfaceFormat` indexes

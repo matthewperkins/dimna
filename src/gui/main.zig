@@ -23,7 +23,7 @@
 const std = @import("std");
 const dimna = @import("dimna");
 const Window = @import("window.zig").Window;
-const gpu_mod = @import("gpu_vulkan.zig");
+const gpu_mod = @import("gpu.zig");
 const Gpu = gpu_mod.Gpu;
 const font = @import("font.zig");
 const format = @import("format.zig");
@@ -460,8 +460,8 @@ pub fn main(init: std.process.Init) !u8 {
             .newest = newest,
             .rec = recording.recorder,
             .overview = &overview,
-            .width = gpu.extent.width,
-            .height = gpu.extent.height,
+            .width = gpu.pixelSize().width,
+            .height = gpu.pixelSize().height,
         })) snap_dirty = true;
         // Notes saved this turn go into the recording, if there is one.
         for (notes.fresh[0..notes.num_fresh]) |*note| {
@@ -641,7 +641,7 @@ pub fn main(init: std.process.Init) !u8 {
 
         const now = nowNs();
         if (pacer.due(now, win.frame_ready, newest)) {
-            if (win.resized or gpu.swapchain == .null) {
+            if (win.resized or gpu.unsized()) {
                 try gpu.resize(win.width, win.height);
                 win.resized = false;
                 pacer.n_resize += 1;
@@ -669,10 +669,10 @@ pub fn main(init: std.process.Init) !u8 {
             const r = pacer.second();
             const tp = &display.set.items[display.target];
             log.info("t={d:.0}s {d} fps, latency ms avg {d:.1} min {d:.1} max {d:.1}, at the refresh aimed at {d}, a refresh later {d}, recovery skips {d}, margin {d:.1} ms, refresh {d:.2} ms, display lost {d} blocks, ring overflow {d}, panel {d} span {d:.2} s scale {d:.1}, {d}x{d}", .{
-                secs,             r.frames,                           r.avg_ms,           r.min_ms,    r.max_ms,
-                r.on_time,        r.late,                             r.skips,            r.margin_ms, r.refresh_ms,
-                reader.lost,      acq.ring_overflow.load(.monotonic), display.target + 1, tp.span_s,   tp.scale,
-                gpu.extent.width, gpu.extent.height,
+                secs,                  r.frames,                           r.avg_ms,           r.min_ms,    r.max_ms,
+                r.on_time,             r.late,                             r.skips,            r.margin_ms, r.refresh_ms,
+                reader.lost,           acq.ring_overflow.load(.monotonic), display.target + 1, tp.span_s,   tp.scale,
+                gpu.pixelSize().width, gpu.pixelSize().height,
             });
             status.valid = r.valid;
             status.latency_ms = r.avg_ms;

@@ -3,7 +3,7 @@
 
 const std = @import("std");
 const dimna = @import("dimna");
-const gpu_mod = @import("gpu_vulkan.zig");
+const gpu_mod = @import("gpu.zig");
 const Gpu = gpu_mod.Gpu;
 const font = @import("font.zig");
 const theme = @import("theme.zig");
@@ -72,8 +72,8 @@ pub const Surface = struct {
 
     pub fn of(gpu: *const Gpu) Surface {
         return .{
-            .width = gpu.extent.width,
-            .height = gpu.extent.height,
+            .width = gpu.pixelSize().width,
+            .height = gpu.pixelSize().height,
             .nch = gpu.nch,
             .hist_cap = gpu.hist_cap,
             .rev_cap = gpu.rev_cap,

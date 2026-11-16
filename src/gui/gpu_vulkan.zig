@@ -1,6 +1,7 @@
 //! Vulkan for the trace window: instance and device on a Wayland surface, the swapchain, a
 //! ring of sample history that the GPU reads directly, and the pipeline that draws traces
-//! from it (`shaders/traces.vert`).
+//! from it (`shaders/traces.vert`). The Linux backend of `gpu.zig`, which declares the
+//! types used here and says what a backend must offer.
 //!
 //! Only new samples cross to the GPU: each block is written once into the history ring
 //! (mapped memory, device-local when the driver offers it). Everything per pixel (min/max
@@ -11,40 +12,26 @@ const vk = @import("vulkan");
 const font = @import("font.zig");
 const theme = @import("theme.zig");
 const decimate = @import("dimna").decimate;
+const os = @import("dimna").os;
 const log = std.log.scoped(.gpu);
+
+// What every backend and its callers agree on, declared once in gpu.zig.
+const gpu = @import("gpu.zig");
+const PresentMode = gpu.PresentMode;
+const TraceParams = gpu.TraceParams;
+const PixelRect = gpu.PixelRect;
+const PanelDraw = gpu.PanelDraw;
+const Fill = gpu.Fill;
+const DrawResult = gpu.DrawResult;
+const Size = gpu.Size;
+const column_region = gpu.column_region;
+const max_rows = gpu.max_rows;
+const max_gain_panels = gpu.max_gain_panels;
 
 extern fn vkGetInstanceProcAddr(instance: ?vk.Instance, name: [*:0]const u8) vk.PfnVoidFunction;
 
-pub const PresentMode = enum { auto, mailbox, immediate, fifo };
-
 /// Where frames go: a Wayland surface, which the compositor shows.
 pub const Target = struct { display: *anyopaque, surface: *anyopaque };
-
-const linux = std.os.linux;
-
-/// Matches `Params` in traces.vert.
-pub const TraceParams = extern struct {
-    nch: u32,
-    cap_mask: u32,
-    newest: u32,
-    first_ch: u32,
-    cols: u32,
-    rows: u32,
-    span: f32,
-    lsb_per_row: f32,
-    half_px: f32,
-    /// Negative: scroll. Else sweep mode: samples since the current pass began.
-    phase: f32 = -1,
-    /// Samples at the right end of the window that do not exist yet (not drawn).
-    future: f32 = 0,
-    /// Brightness, 0..1.
-    gain: f32 = 1,
-    /// Where the panel's row factors start in `Gpu.row_gains`.
-    gain_base: u32 = 0,
-    /// Buckets in the decimated ring - 1: pixel columns that hold `bucket_cols` samples or
-    /// more are drawn from buckets. 0: always from samples.
-    dec_mask: u32 = 0,
-};
 
 /// The trace colours (`theme.trace`, 12 floats) follow `TraceParams` in the push constants.
 const Palette = extern struct {
@@ -58,29 +45,6 @@ const palette_bytes = @sizeOf(Palette);
 comptime {
     std.debug.assert(@sizeOf(TraceParams) + palette_bytes <= 128);
 }
-
-/// Pixel columns per panel in `Gpu.rev_cols`: no panel is wider.
-pub const column_region = 4096;
-/// `TraceParams.dec_mask` of a panel drawn from `Gpu.rev_cols`.
-pub const from_columns = 0xFFFF_FFFF;
-
-/// Row factors per panel in `Gpu.row_gains` (matches the shader's limit).
-pub const max_rows = 256;
-pub const max_gain_panels = 16;
-
-/// A rectangle of the display, in pixels.
-pub const PixelRect = struct { x: u32, y: u32, w: u32, h: u32 };
-
-/// One panel of traces: where on the display, and what to draw there.
-pub const PanelDraw = struct {
-    rect: PixelRect,
-    params: TraceParams,
-    /// Draw from the review history instead of the live one.
-    review: bool = false,
-};
-
-/// A solid rectangle (dividers, markers), drawn over the panels.
-pub const Fill = struct { rect: PixelRect, colour: [4]f32 };
 
 pub const Gpu = struct {
     gpa: std.mem.Allocator,
@@ -1140,6 +1104,16 @@ pub const Gpu = struct {
         }
     }
 
+    /// No swapchain yet: `resize` has not been called (nothing can be drawn).
+    pub fn unsized(self: *const Gpu) bool {
+        return self.swapchain == .null;
+    }
+
+    /// The swapchain's images in pixels (0 x 0 before the first `resize`).
+    pub fn pixelSize(self: *const Gpu) Size {
+        return .{ .width = self.extent.width, .height = self.extent.height };
+    }
+
     /// `r` limited to the swapchain image, or null if nothing of it is on screen.
     fn clip(self: *const Gpu, r: PixelRect) ?vk.Rect2D {
         if (r.x >= self.extent.width or r.y >= self.extent.height or r.w == 0 or r.h == 0) return null;
@@ -1148,14 +1122,6 @@ pub const Gpu = struct {
             .extent = .{ .width = @min(r.w, self.extent.width - r.x), .height = @min(r.h, self.extent.height - r.y) },
         };
     }
-
-    pub const DrawResult = enum {
-        presented,
-        /// The swapchain no longer fits the window: call `resize`.
-        out_of_date,
-        /// No swapchain image was free; nothing was drawn. Try again shortly.
-        busy,
-    };
 
     /// Draws one frame (each panel in its own viewport, then the fills, then `text`: quads
     /// from a `font.Batch`, over everything) and presents it.
@@ -1280,12 +1246,9 @@ pub const Gpu = struct {
         }}, self.in_flight);
 
         if (self.wait_render) {
-            var ts: linux.timespec = undefined;
-            _ = linux.clock_gettime(.MONOTONIC, &ts);
-            const t0 = @as(i128, ts.sec) * 1_000_000_000 + ts.nsec;
+            const t0 = os.nowNs();
             _ = try dev.waitForFences(&[_]vk.Fence{self.in_flight}, .true, std.math.maxInt(u64));
-            _ = linux.clock_gettime(.MONOTONIC, &ts);
-            self.last_render_ns = @intCast(@as(i128, ts.sec) * 1_000_000_000 + ts.nsec - t0);
+            self.last_render_ns = @intCast(os.nowNs() - t0);
         }
         before_present(context);
         const result = dev.queuePresentKHR(self.queue, &.{

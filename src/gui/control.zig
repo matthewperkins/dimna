@@ -15,7 +15,7 @@ const dimna = @import("dimna");
 const panels = dimna.panels;
 const ControlView = dimna.control_view.ControlView;
 const Window = @import("window.zig").Window;
-const gpu_mod = @import("gpu_vulkan.zig");
+const gpu_mod = @import("gpu.zig");
 const font = @import("font.zig");
 const ui_mod = @import("ui.zig");
 const theme = @import("theme.zig");
@@ -422,13 +422,13 @@ fn loop(cfg: *Config) !void {
         if (win.resized) dirty = true;
         if (!dirty or !win.frame_ready) continue;
 
-        if (win.resized or gpu.swapchain == .null) {
+        if (win.resized or gpu.unsized()) {
             try gpu.resize(win.width, win.height);
             win.resized = false;
         }
         var ui: ui_mod.Ui = .begin(
             &batch,
-            @floatFromInt(gpu.extent.width),
+            @floatFromInt(gpu.pixelSize().width),
             @floatCast(in.pointer_x),
             @floatCast(in.pointer_y),
             clicks > 0,
