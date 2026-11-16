@@ -18,6 +18,15 @@ PipeWire and WirePlumber stopped. On the rig `jackd -R -P 60 -d alsa -d hw:PCH -
 -p 64 -n 2` and the same with `-p 32` both started and ran 25 s idle without complaint
 (the lead, same day; no client was connected).
 
+Measured the same night through PipeWire (ALSA `default`, the board, 40 s runs): the
+device's side is dimna's own two-period ALSA buffer (256 frames) plus two of PipeWire's
+quanta. At the quantum dimna's request already gets (128): 10.6 ms. With
+`PIPEWIRE_LATENCY=128/48000`: no change. With `PIPEWIRE_LATENCY=64/48000`: 7.9 ms, no gap
+in 40 s. So PipeWire can be brought lower too, by shrinking dimna's period with the
+quantum; `jackd` at 64 frames x 2 would be 2.7 ms with no second buffer. The notes in
+`FROM_LINUX_DIMNA_AGENT_audio_seam.md` (on `main`) argue for measuring before choosing;
+the owner chose JACK for the rig, and this plan keeps ALSA as the default elsewhere.
+
 JACK asks a client for frames through a callback, as macOS's Core Audio does. So this step
 also gives the audio output the shape the Mac needs: one function that fills N frames from
 the queue, called by whichever device is in use.
@@ -30,10 +39,11 @@ the queue, called by whichever device is in use.
    the zero fill, the gap count (only when `active` and `primed`), the alarm tone (its
    phase becomes a field). It must be fit for a real-time callback: no allocation, no lock,
    no logging, no system call. It must be right for a number of frames that differs from
-   call to call. The feeder reads `period` in three places (the headroom, the drop limit,
-   `primed`): it becomes whatever the device last asked for, readable from the feeder's
-   thread (an atomic), and with ALSA it is the fixed period as now, so the ALSA arithmetic
-   is unchanged.
+   call to call. `period` is assumed fixed in three places. The headroom measure uses
+   the frame count of the request being filled. The feeder's drop limit and its `primed`
+   threshold mean "the largest request the device makes": a field `max_request`, readable
+   from the feeder's thread, which ALSA sets to its period (the same numbers as now) and a
+   callback device raises if it is ever asked for more.
 2. **`src/gui/audio_alsa.zig`**: today's `open` and the output loop, moved, calling the
    fill function and then `snd_pcm_writei`, `snd_pcm_recover`, `snd_pcm_delay` exactly as
    now (same device name, parameters, blocking write, one period at a time).
@@ -60,7 +70,9 @@ the queue, called by whichever device is in use.
      is silent, as when the ALSA device stops. No reconnecting in this step; say so in the
      docs.
 4. **Which one is used.** A config key and an option (follow `args.zig`'s conventions for
-   names; something like `audio_output = "auto" | "jack" | "alsa"`, default `auto`):
+   names; something like `audio_output = "alsa" | "jack" | "auto"`, default `alsa`: on
+   most distributions the JACK library is PipeWire's own, so `auto` as the default would
+   move those users to another path for no gain; the rig sets `jack`):
    `auto` uses JACK when a server answers and ALSA otherwise; `jack` does not fall back
    (no sound, with a warning that says why); `alsa` never tries JACK. The start-up log line
    says which was taken.
@@ -109,6 +121,8 @@ function separate from the device, it can be tested without one. Add it to `test
 - frames come out in the order pushed, across the queue's wrap, for frame counts that
   differ from call to call (1, 64, 100, 128, 1024);
 - `min_fill` is what is left after the call, and `fill` what was there before;
+- splitting a request changes nothing: with the same queue contents and the alarm on,
+  64 then 64 frames are the same 128 frames as one request of 128, and as 37 then 91;
 - the alarm tone: present while `alarm` is set, 0.15 s at the start of each second by the
   device's rate, continuous in phase across calls of different sizes, and added to what
   is playing;
