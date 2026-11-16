@@ -245,7 +245,7 @@ not available there; the default `--driver usb` is built in. liboni includes gli
 **`usb`** needs nothing installed beyond read/write access to the device node (the udev rule,
 `packaging/60-dimna-ft60x.rules`; see "Installing a release"). Three layers, all in this repo:
 
-- `src/usbfs.zig`: USB through the kernel's usbdevfs, in Zig, without libusb. Bulk transfers
+- `src/usb_linux.zig`: USB through the kernel's usbdevfs, in Zig, without libusb. Bulk transfers
   are asynchronous URBs, so a read that times out still reports the bytes that arrived.
 - `src/ft600.zig`: the FT600 wire protocol (documented at the top of the file). It was learned
   by logging the usbdevfs requests D3XX 1.0.14 makes for the ONI driver's calls on this board.

@@ -46,7 +46,7 @@
 //! file makes no control transfer outside that one function.
 
 const std = @import("std");
-const usbfs = @import("usbfs.zig");
+const usb = @import("usb.zig");
 const os = @import("os.zig");
 const log = std.log.scoped(.ft600);
 
@@ -80,7 +80,7 @@ pub const ChipConfig = struct {
     optional_features: u16,
 };
 
-pub const Error = usbfs.Error || error{ ShortCommand, ForbiddenRequest };
+pub const Error = usb.Error || error{ ShortCommand, ForbiddenRequest };
 
 /// The only control requests (bmRequestType, bRequest) the driver may send. Nothing that
 /// writes the chip configuration (0x40 0xcf) may ever be added here.
@@ -114,7 +114,7 @@ fn trace(comptime fmt: []const u8, args: anytype) void {
 }
 
 pub const Ft600 = struct {
-    dev: usbfs.Device,
+    dev: usb.Device,
     firmware: u32 = 0,
     /// Bytes announced on each channel's IN pipe that the chip has not delivered yet.
     outstanding: [2]usize = .{ 0, 0 },
@@ -133,11 +133,11 @@ pub const Ft600 = struct {
     /// Opens the `index`-th board (bus/device order) whose product string is `product`;
     /// a negative index means the first. Claims both interfaces.
     pub fn open(gpa: std.mem.Allocator, product: []const u8, index: i32) (Error || error{OutOfMemory})!Ft600 {
-        var locs: [8]usbfs.Location = undefined;
-        const found = usbfs.find(vendor_id, &product_ids, product, &locs);
+        var locs: [8]usb.Location = undefined;
+        const found = usb.find(vendor_id, &product_ids, product, &locs);
         const want: usize = if (index < 0) 0 else @intCast(index);
         if (want >= @min(found, locs.len)) return error.NotFound;
-        var dev = try usbfs.Device.open(locs[want]);
+        var dev = try usb.Device.open(locs[want]);
         errdefer dev.close();
         try dev.claimInterface(0);
         errdefer dev.releaseInterface(0);
@@ -338,7 +338,7 @@ test "a forbidden request is refused before it reaches the kernel" {
 
 test "this file makes control transfers only in controlTransfer" {
     const src = @embedFile("ft600.zig");
-    // Any call of a function named control, also as usbfs.Device.control with &self.dev.
+    // Any call of a function named control, also as usb.Device.control with &self.dev.
     const needle = "." ++ "control(";
     var count: usize = 0;
     var pos: usize = 0;
@@ -350,4 +350,70 @@ test "this file makes control transfers only in controlTransfer" {
     const call = std.mem.indexOf(u8, src, needle).?;
     const end = std.mem.indexOfPos(u8, src, wrapper, "\n    }\n").?;
     try std.testing.expect(wrapper < check and check < call and call < end);
+}
+
+test "no other file under src/ calls a control transfer, and only USB backends define one" {
+    // The rule above, for the whole tree: a USB backend (`usb_*.zig` in src/) may define a
+    // function named `control`, no other file may; and no file but this one may call one,
+    // where the test above confines the call to `Ft600.controlTransfer`. Text is searched
+    // line by line, comments included. The spellings are split so that this file does not
+    // contain them.
+    //
+    // Not seen: a call through a function pointer, an alias or `@field`; a function of
+    // another name that makes a control transfer (in a backend, or a raw ioctl elsewhere,
+    // which is `os.zig`'s test's business); a spelling `zig fmt` does not leave (a space
+    // before the parenthesis); and anything outside src/ (liboni's C, tools/).
+    const call = "." ++ "control(";
+    const def = "fn " ++ "control(";
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+    // Found as `os.zig`'s test finds it: the `src` in the folder `zig build` was started in,
+    // or in the nearest folder above it that has one holding this file.
+    var up_buf: [3 * 16 + 3]u8 = undefined;
+    var src = for (0..16) |depth| {
+        const p = up_buf[0 .. 3 * depth + 3];
+        for (0..depth) |k| @memcpy(p[3 * k ..][0..3], "../");
+        @memcpy(p[3 * depth ..], "src");
+        var d = std.Io.Dir.cwd().openDir(io, p, .{ .iterate = true }) catch continue;
+        if (d.access(io, "ft600.zig", .{})) |_| break d else |_| d.close(io);
+    } else {
+        std.debug.print("no src/ holding ft600.zig in the current folder or above it\n", .{});
+        return error.TestUnexpectedResult;
+    };
+    defer src.close(io);
+    var walker = try src.walk(gpa);
+    defer walker.deinit();
+    var files: usize = 0;
+    var seen_gui = false;
+    var backend_defs: usize = 0;
+    var bad: usize = 0;
+    while (try walker.next(io)) |entry| {
+        if (entry.kind != .file or !std.mem.endsWith(u8, entry.path, ".zig")) continue;
+        files += 1;
+        if (std.mem.eql(u8, entry.path, "gui/notes.zig")) seen_gui = true;
+        const backend = std.mem.startsWith(u8, entry.path, "usb_");
+        const this_file = std.mem.eql(u8, entry.path, "ft600.zig");
+        const text = try src.readFileAlloc(io, entry.path, gpa, .limited(16 << 20));
+        defer gpa.free(text);
+        var line_no: usize = 1;
+        var lines = std.mem.splitScalar(u8, text, '\n');
+        while (lines.next()) |line| : (line_no += 1) {
+            if (std.mem.indexOf(u8, line, def) != null) {
+                if (backend) {
+                    backend_defs += 1;
+                } else {
+                    std.debug.print("src/{s}:{d}: defines a control transfer outside a USB backend: {s}\n", .{ entry.path, line_no, std.mem.trim(u8, line, " ") });
+                    bad += 1;
+                }
+            }
+            if (!this_file and std.mem.indexOf(u8, line, call) != null) {
+                std.debug.print("src/{s}:{d}: calls a control transfer (only ft600.zig may): {s}\n", .{ entry.path, line_no, std.mem.trim(u8, line, " ") });
+                bad += 1;
+            }
+        }
+    }
+    // The walk saw the whole tree, not an empty or wrong folder, and found the backend's
+    // definition, so the spelling looked for is the one in use.
+    try std.testing.expect(seen_gui and files > 40 and backend_defs >= 1);
+    try std.testing.expectEqual(0, bad);
 }
