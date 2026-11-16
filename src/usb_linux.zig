@@ -1,3 +1,5 @@
+//! The Linux backend of `usb.zig` (which states what a backend must do).
+//!
 //! USB from user space through the kernel's usbdevfs (`/dev/bus/usb/BBB/DDD`), with no
 //! library in between: find a device in sysfs, claim interfaces, control transfers, and bulk
 //! transfers as asynchronous URBs.
