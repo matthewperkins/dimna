@@ -49,7 +49,7 @@ const Env = @import("env.zig").Env;
 const dimna = @import("dimna");
 const spikes = dimna.spikes;
 const tile_scale = dimna.tile_scale;
-const window_mod = @import("window_wayland.zig");
+const window_mod = @import("window.zig");
 const Window = window_mod.Window;
 const Input = window_mod.Input;
 const Ui = @import("ui.zig").Ui;
@@ -156,7 +156,7 @@ pub const Tiles = struct {
         const class = std.fmt.bufPrintSentinel(&class_buf, "{s}-tiles", .{self.env.app_id}, 0) catch "dimna-tiles";
         try win.init("dimna spikes", class, self.env.key_debug);
         defer win.deinit();
-        var gpu = try gpu_mod.Gpu.init(gpa, .{ .display = win.display, .surface = win.surface }, .fifo, self.display_gpu);
+        var gpu = try gpu_mod.Gpu.init(gpa, win.gpuTarget(), .fifo, self.display_gpu);
         defer gpu.deinit();
         var face = try font.Font.init(gpa, std.mem.sliceTo(&self.font_buf, 0), self.font_px);
         defer face.deinit(gpa);

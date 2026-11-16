@@ -1,6 +1,8 @@
 //! One Wayland window (xdg_toplevel), with the input and timing the trace display needs:
 //! wheel and two-finger scrolling, touchpad pinch, a few keys, frame callbacks to pace
-//! drawing, and presentation feedback (when a frame actually reached the screen).
+//! drawing, and presentation feedback (when a frame actually reached the screen). The
+//! Linux backend of `window.zig`, which declares the types used here and says what a
+//! backend must keep.
 //!
 //! All Wayland objects belong to the thread that calls `pump`.
 
@@ -14,49 +16,13 @@ const linux = std.os.linux;
 const xkb = @import("gui_c");
 const log = std.log.scoped(.window);
 
-/// A key dimna acts on, by what the key is labelled in the user's keyboard layout (its
-/// symbol without modifiers, from the compositor's keymap through xkbcommon), not by where
-/// it sits: on Dvorak, 'r' is the key marked r.
-pub const Key = union(enum) {
-    /// A key that types a character: that character without modifiers ('r', '/', '1', ' ').
-    char: u8,
-    named: Named,
-
-    pub const Named = enum { escape, enter, backspace, tab, home, end, page_up, page_down, left, up, right, down };
-
-    /// From an X keysym; null for a key dimna has no use for.
-    pub fn fromKeysym(sym: u32) ?Key {
-        return switch (sym) {
-            0x20...0x7e => .{ .char = @intCast(sym) },
-            0xff1b => .{ .named = .escape },
-            0xff0d => .{ .named = .enter },
-            0xff08 => .{ .named = .backspace },
-            0xff09 => .{ .named = .tab },
-            0xff50 => .{ .named = .home },
-            0xff57 => .{ .named = .end },
-            0xff55 => .{ .named = .page_up },
-            0xff56 => .{ .named = .page_down },
-            0xff51 => .{ .named = .left },
-            0xff52 => .{ .named = .up },
-            0xff53 => .{ .named = .right },
-            0xff54 => .{ .named = .down },
-            else => null,
-        };
-    }
-
-    pub fn is(self: Key, c: u8) bool {
-        return self == .char and self.char == c;
-    }
-
-    pub fn isNamed(self: Key, n: Named) bool {
-        return self == .named and self.named == n;
-    }
-
-    /// 1 to 9 for a digit key, else null.
-    pub fn digit(self: Key) ?u8 {
-        return if (self == .char and self.char >= '1' and self.char <= '9') self.char - '0' else null;
-    }
-};
+// What every backend and its callers agree on, declared once in window.zig.
+const window = @import("window.zig");
+const Key = window.Key;
+const Cursor = window.Cursor;
+const Input = window.Input;
+const Presented = window.Presented;
+const Target = @import("gpu.zig").Target;
 
 /// The keysym of an evdev key code on a US QWERTY keyboard, for when the compositor sends
 /// no usable keymap.
@@ -94,46 +60,6 @@ fn qwertyKey(code: u32) u32 {
         else => 0,
     };
 }
-
-/// What the pointer looks like over a window.
-pub const Cursor = enum { default, grab, grabbing };
-
-/// What the user did since the last `takeInput`.
-pub const Input = struct {
-    /// Wheel or two-finger scroll, in the compositor's axis units (a wheel click is about 15).
-    scroll_x: f64 = 0,
-    scroll_y: f64 = 0,
-    /// Pinch scale relative to the last `takeInput` (1 = none, > 1 = fingers apart).
-    pinch: f64 = 1,
-    keys: [16]Key = undefined,
-    num_keys: usize = 0,
-    /// The left mouse button is held down (for dragging).
-    left_down: bool = false,
-    /// Presses of the left, right and middle mouse buttons.
-    clicks: u32 = 0,
-    right_clicks: u32 = 0,
-    middle_clicks: u32 = 0,
-    /// What the keys pressed would type (UTF-8), for text entry.
-    text: [64]u8 = undefined,
-    text_len: usize = 0,
-    shift: bool = false,
-    ctrl: bool = false,
-    alt: bool = false,
-    pointer_x: f64 = 0,
-    pointer_y: f64 = 0,
-    /// The pointer is over the window (between its enter and leave).
-    pointer_inside: bool = false,
-};
-
-/// A frame that reached the screen.
-pub const Presented = struct {
-    /// The tag given to `beforePresent`.
-    tag: u64,
-    /// Presentation time in the compositor's presentation clock, ns.
-    time_ns: i128,
-    /// The output's refresh period in ns (0 if unknown).
-    refresh_ns: u32,
-};
 
 const Output = struct {
     window: *Window,
@@ -287,6 +213,22 @@ pub const Window = struct {
 
     pub fn setTitle(self: *Window, title: [:0]const u8) void {
         self.toplevel.setTitle(title);
+    }
+
+    /// What the GPU draws into: this window's surface on its connection.
+    pub fn gpuTarget(self: *const Window) Target {
+        return .{ .display = self.display, .surface = self.surface };
+    }
+
+    /// The connector name (DP-1, ...) of monitor `i`, or null past the last one.
+    pub fn monitorName(self: *const Window, i: usize) ?[]const u8 {
+        return if (i < self.num_outputs) self.outputs[i].name() else null;
+    }
+
+    /// Presentation times are on the clock `clock.nowNs` reads (`CLOCK_MONOTONIC`, clock id
+    /// 1). False also while the compositor has not said (`presentation_clock` is -1).
+    pub fn presentsOnNowClock(self: *const Window) bool {
+        return self.presentation_clock == 1;
     }
 
     /// Sends our requests and handles the compositor's events, waiting up to `timeout_ms`
@@ -649,21 +591,3 @@ pub const Window = struct {
         }
     }
 };
-
-test "keys from keysyms: characters, named keys, and nothing for the rest" {
-    const expectEqual = std.testing.expectEqual;
-    try expectEqual(Key{ .char = 'r' }, Key.fromKeysym('r').?);
-    try expectEqual(Key{ .char = ' ' }, Key.fromKeysym(0x20).?);
-    try expectEqual(Key{ .named = .escape }, Key.fromKeysym(0xff1b).?);
-    try expectEqual(Key{ .named = .page_down }, Key.fromKeysym(0xff56).?);
-    // Shift, a function key, a letter outside ASCII: not ours.
-    try expectEqual(null, Key.fromKeysym(0xffe1));
-    try expectEqual(null, Key.fromKeysym(0xffbe));
-    try expectEqual(null, Key.fromKeysym(0xe9));
-    try expectEqual(null, Key.fromKeysym(0));
-    try expectEqual(3, (Key{ .char = '3' }).digit().?);
-    try expectEqual(null, (Key{ .char = '0' }).digit());
-    try expectEqual(null, (Key{ .named = .enter }).digit());
-    try std.testing.expect((Key{ .char = '/' }).is('/') and !(Key{ .named = .tab }).is('/'));
-    try std.testing.expect((Key{ .named = .tab }).isNamed(.tab) and !(Key{ .char = 'q' }).isNamed(.escape));
-}

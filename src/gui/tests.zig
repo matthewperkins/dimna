@@ -18,5 +18,5 @@ test {
     _ = @import("theme.zig");
     _ = @import("tiles.zig");
     _ = @import("ui.zig");
-    _ = @import("window_wayland.zig");
+    _ = @import("window.zig");
 }

@@ -22,7 +22,7 @@
 
 const std = @import("std");
 const dimna = @import("dimna");
-const Window = @import("window_wayland.zig").Window;
+const Window = @import("window.zig").Window;
 const gpu_mod = @import("gpu.zig");
 const Gpu = gpu_mod.Gpu;
 const font = @import("font.zig");
@@ -65,7 +65,7 @@ const tile_link = @import("tile_link.zig");
 
 pub const std_options: std.Options = .{ .log_level = .info };
 
-const Input = @import("window_wayland.zig").Input;
+const Input = @import("window.zig").Input;
 const panels_mod = dimna.panels;
 const Panel = panels_mod.Panel;
 /// RAM for the overview of a recording: about 2.3 hours at 72 history columns in full
@@ -207,13 +207,14 @@ pub fn main(init: std.process.Init) !u8 {
             log.info("fullscreen on {s}", .{args.monitor});
         } else {
             log.err("no monitor named '{s}'; there are:", .{args.monitor});
-            for (win.outputs[0..win.num_outputs]) |*o| log.err("  {s}", .{o.name()});
+            var i: usize = 0;
+            while (win.monitorName(i)) |name| : (i += 1) log.err("  {s}", .{name});
             return 2;
         }
     }
     _ = win.declareLowLatency();
     if (args.tearing and !win.preferTearing()) log.warn("the compositor has no tearing control; frames will wait for the refresh", .{});
-    var gpu = try Gpu.init(gpa, .{ .display = win.display, .surface = win.surface }, args.present, null);
+    var gpu = try Gpu.init(gpa, win.gpuTarget(), args.present, null);
     defer gpu.deinit();
     var notes = notes_mod.Notes.init(args.doc, env.home, env.state_home);
     defer notes.deinit();
@@ -637,7 +638,7 @@ pub fn main(init: std.process.Init) !u8 {
         // A panel's corners changed: filter its recent past again.
         if (gpu.hist_cap > 0) _ = try feed.sync(gpa, &display.set, refilterSamples(&display.set, pl.fs), gpu.hist, gpu.hist_cap);
 
-        for (win.takePresented()) |p| pacer.presented(p, nowNs(), win.presentation_clock);
+        for (win.takePresented()) |p| pacer.presented(p, nowNs(), win.presentsOnNowClock(), win.presentation_clock);
 
         const now = nowNs();
         if (pacer.due(now, win.frame_ready, newest)) {

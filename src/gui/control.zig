@@ -14,7 +14,7 @@ const std = @import("std");
 const dimna = @import("dimna");
 const panels = dimna.panels;
 const ControlView = dimna.control_view.ControlView;
-const Window = @import("window_wayland.zig").Window;
+const Window = @import("window.zig").Window;
 const gpu_mod = @import("gpu.zig");
 const font = @import("font.zig");
 const ui_mod = @import("ui.zig");
@@ -371,7 +371,7 @@ fn loop(cfg: *Config) !void {
     const class = std.fmt.bufPrintSentinel(&class_buf, "{s}-control", .{cfg.env.app_id}, 0) catch "dimna-control";
     try win.init("dimna control", class, cfg.env.key_debug);
     defer win.deinit();
-    var gpu = try gpu_mod.Gpu.init(gpa, .{ .display = win.display, .surface = win.surface }, .fifo, cfg.display_gpu);
+    var gpu = try gpu_mod.Gpu.init(gpa, win.gpuTarget(), .fifo, cfg.display_gpu);
     defer gpu.deinit();
     var face = try font.Font.init(gpa, std.mem.sliceTo(&cfg.font_buf, 0), cfg.font_px);
     defer face.deinit(gpa);
