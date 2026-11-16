@@ -178,6 +178,37 @@ So a single before/after pair cannot show a change smaller than that: a step is 
 by alternating runs (before, after, before, after; three of each), and what counts is the
 ranges overlapping, the best frame, no frame a refresh late and nothing lost.
 
+## Steps done
+
+- **Step 1** (`ee07171`, plan `macos-step1-build.md`): `-Dgui=false`. The default binaries
+  are byte-identical to before; on the Mac, `zig build -Dgui=false` now fails only inside
+  `src/` (the raw clock call).
+- **Step 2** (`5267866`, `243843b`, `171eca3`, plan `macos-step2-os.md`): `src/os.zig`
+  and `src/os_linux.zig`; a test that finds raw system calls left elsewhere. In the
+  release build every `os` function is inlined; three of the four hot paths are the same
+  instructions, the fourth (`Review.process`) differs in register choice. On the board,
+  alternating runs of the build before (`cf89744`) and after, 60 s each, session
+  unlocked, tearing active in every GUI run:
+
+  | | before | after |
+  |---|---|---|
+  | headless ×2: lost | `dropped=0 gaps=0 bad=0`, `CLEAN` | the same |
+  | delivery delay avg / worst | 0.78 / 2.86, 0.78 / 2.57 ms | 0.76 / 2.70, 0.77 / 2.35 ms |
+  | USB data transfers in 60 s | 88,640, 88,608 | 88,429, 88,365 |
+  | CPU, user + sys | 2.69 + 3.30, 2.68 + 3.36 s | 2.34 + 3.26, 2.41 + 3.26 s |
+  | GUI ×3: per-second latency, median | 2.7, 2.5, 2.5 ms | 2.5, 2.7, 2.7 ms |
+  | GUI: best frame | 1.1, 0.6, 0.6 ms | 0.7, 0.7, 0.6 ms |
+  | GUI: worst frame | 17.4, 13.8, 20.8 ms | 19.7, 19.5, 18.1 ms |
+  | GUI: frames a refresh late; blocks lost | 0; 0 | 0; 0 |
+  | GUI: audio latency, median | 17.5, 16.8, 16.8 ms | 17.6, 16.8, 16.9 ms |
+  | GUI: audio gaps | 1, 0, 0 | 1, 0, 0 |
+
+  No difference beyond the spread between like runs. One audio gap in the first GUI run
+  on each side (none in the earlier baseline runs); not followed up. What no test covers,
+  by the agent's own break-it: a sleep that returns at once passes every test, so the USB
+  pacing sleep is checked only by the board runs above (the transfer counts would more
+  than double without it).
+
 ## The layout aimed at
 
 Names are proposals; the step that makes each file settles its name.
