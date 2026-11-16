@@ -40,6 +40,7 @@ const builtin = @import("builtin");
 
 const backend = switch (builtin.os.tag) {
     .linux => @import("fontfind_fontconfig.zig"),
+    .macos => @import("fontfind_coretext.zig"),
     else => @compileError("dimna has no font lookup for this system yet"),
 };
 

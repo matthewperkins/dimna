@@ -45,10 +45,25 @@ pub var start_rtl: bool = false;
 
 /// The fallbacks tried, in order, for characters the primary font lacks. In each group the
 /// first one installed is used.
-const named_fallbacks = [_]struct { what: []const u8, families: []const [:0]const u8 }{
-    // fontconfig's default for zh may be the JP face of the same collection, so SC is named.
-    .{ .what = "Simplified Chinese", .families = &.{"Noto Sans CJK SC"} },
-    .{ .what = "Persian/Arabic", .families = &.{ "Vazirmatn", "Noto Sans Arabic" } },
+const named_fallbacks = switch (builtin.os.tag) {
+    // What macOS installs by default, in /System/Library/Fonts. Chinese: Hiragino Sans GB (a
+    // sans-serif for Simplified Chinese; its regular weight is the collection's first face),
+    // then Heiti SC (STHeiti, the second face of its collection). Not PingFang SC, macOS's
+    // own Chinese font: the interface's copy (PingFangUI.ttc) has only Apple's `hvgl`
+    // outlines, which FreeType cannot read, and the one FreeType reads is a font asset
+    // macOS downloads (/System/Library/AssetsV2), not part of the system itself.
+    // Persian/Arabic: Geeza Pro (macOS's Arabic-script font of the interface before SF
+    // Arabic, which is hidden from lookups by family), then Damascus; both have the Persian
+    // letters and digits.
+    .macos => [_]struct { what: []const u8, families: []const [:0]const u8 }{
+        .{ .what = "Simplified Chinese", .families = &.{ "Hiragino Sans GB", "Heiti SC" } },
+        .{ .what = "Persian/Arabic", .families = &.{ "Geeza Pro", "Damascus" } },
+    },
+    else => [_]struct { what: []const u8, families: []const [:0]const u8 }{
+        // fontconfig's default for zh may be the JP face of the same collection, so SC is named.
+        .{ .what = "Simplified Chinese", .families = &.{"Noto Sans CJK SC"} },
+        .{ .what = "Persian/Arabic", .families = &.{ "Vazirmatn", "Noto Sans Arabic" } },
+    },
 };
 
 // ---- HarfBuzz and FriBidi, loaded at run time ----
@@ -108,10 +123,13 @@ pub const Libs = struct { hb: HarfBuzz, fb: FriBidi };
 /// first that opens is used). A system with no names here draws that text unshaped.
 const harfbuzz_names: []const [:0]const u8 = switch (builtin.os.tag) {
     .linux => &.{"libharfbuzz.so.0"},
+    // Homebrew's (Apple silicon: /opt/homebrew), then by name (found on dyld's paths).
+    .macos => &.{ "/opt/homebrew/lib/libharfbuzz.0.dylib", "libharfbuzz.0.dylib" },
     else => &.{},
 };
 const fribidi_names: []const [:0]const u8 = switch (builtin.os.tag) {
     .linux => &.{"libfribidi.so.0"},
+    .macos => &.{ "/opt/homebrew/lib/libfribidi.0.dylib", "libfribidi.0.dylib" },
     else => &.{},
 };
 
