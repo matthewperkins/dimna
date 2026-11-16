@@ -32,7 +32,13 @@
 const std = @import("std");
 const dimna = @import("dimna");
 const audio = dimna.audio;
-const audio_alsa = @import("audio_alsa.zig");
+// The sound device, chosen at compile time (the name is the Linux backend's, kept so that
+// nothing else here changed): ALSA on Linux, Core Audio on macOS.
+const audio_alsa = switch (@import("builtin").os.tag) {
+    .linux => @import("audio_alsa.zig"),
+    .macos => @import("audio_coreaudio.zig"),
+    else => @compileError("dimna has no sound output for this system yet"),
+};
 const Atomic = std.atomic.Value;
 const log = std.log.scoped(.audio);
 

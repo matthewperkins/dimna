@@ -104,8 +104,9 @@ pub fn main(init: std.process.Init) !u8 {
     var args = parseArgs(argv, doc) catch |e| return if (e == error.Help) 0 else 2;
     // PipeWire's quantum to match a period other than the default (audio_alsa.zig,
     // `pipewireLatency`). Here, before any thread is started and before the sound device is
-    // opened: setting the environment is not safe once other threads may read it.
-    if (args.audio) {
+    // opened: setting the environment is not safe once other threads may read it. Linux
+    // only: PipeWire has no meaning on macOS.
+    if (@import("builtin").os.tag == .linux and args.audio) {
         const existing = init.environ_map.get("PIPEWIRE_LATENCY");
         var latency_buf: [32]u8 = undefined;
         if (audio_alsa.pipewireLatency(&latency_buf, args.audio_period, existing)) |value| {
