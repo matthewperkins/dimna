@@ -3,7 +3,7 @@
 //! constants, the result of a frame) and the choice of this system's backend, at compile
 //! time: `Gpu` and `Target` are the backend's own, so a caller calls the backend's
 //! functions directly; there is no indirect call. Linux: `gpu_vulkan.zig` (Vulkan on a
-//! Wayland surface).
+//! Wayland surface); macOS: `gpu_metal.zig` (Metal on the window's CAMetalLayer).
 //!
 //! What a backend's `Gpu` must offer, because the callers use it (main.zig, control.zig,
 //! tiles.zig, display.zig, session.zig, pipeline.zig):
@@ -65,10 +65,11 @@ pub const Gpu = backend.Gpu;
 pub const Target = backend.Target;
 
 /// How frames are presented (`--present`); where the system lacks the one asked for, the
-/// backend falls back to presenting at the refresh.
+/// backend falls back to presenting at the refresh (Vulkan), or says in its header what
+/// it does instead (Metal has no mailbox: it presents at once, as `immediate`).
 pub const PresentMode = enum { auto, mailbox, immediate, fifo };
 
-/// Matches `Params` in traces.vert.
+/// Matches `Params` in traces.vert, and `TraceParams` in traces.metal.
 pub const TraceParams = extern struct {
     nch: u32,
     cap_mask: u32,

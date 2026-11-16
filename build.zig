@@ -122,7 +122,7 @@ pub fn build(b: *std.Build) void {
         return;
     }
 
-    // ---- macOS: dimna without a window or a GPU yet (see addMacGui). ----
+    // ---- macOS: dimna with AppKit and Metal (see addMacGui). ----
     if (target.result.os.tag == .macos) {
         const gui = addMacGui(b, target, optimize, core.dimna);
         b.installArtifact(gui.gui);
@@ -410,9 +410,9 @@ fn addGui(
 /// SPIR-V, fontconfig, xkbcommon or ALSA. FreeType through pkg-config (Homebrew's, which a
 /// Mac then needs installed); fonts are found with Core Text and sound goes through Core
 /// Audio, both called through their C interfaces, declared in the Zig files that use them
-/// (src/gui/fontfind_coretext.zig, src/gui/audio_coreaudio.zig). The window and the GPU are
-/// stand-ins that fail (src/gui/window_appkit.zig, src/gui/gpu_metal.zig): AppKit and Metal
-/// are the next step, and neither is linked yet.
+/// (src/gui/fontfind_coretext.zig, src/gui/audio_coreaudio.zig). The window is AppKit and
+/// the renderer Metal (src/gui/window_appkit.zig, src/gui/gpu_metal.zig), each through an
+/// Objective-C shim beside it.
 fn addMacGui(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
@@ -456,6 +456,40 @@ fn addMacGui(
         // Sound: the default output device through an output audio unit.
         m.linkFramework("AudioToolbox", .{});
         m.linkFramework("CoreAudio", .{});
+    }
+    // ---- The renderer (gpu_metal.zig): Metal through an Objective-C shim, compiled with
+    // ARC, and its C interface translated for Zig. The shaders are Metal Shading Language
+    // source, embedded and compiled when the renderer is made (no `metal` tool needed). ----
+    {
+        const metal_shim = b.addTranslateC(.{ .root_source_file = b.path("src/gui/metal_shim.h"), .target = target, .optimize = optimize }).createModule();
+        for ([_]*std.Build.Module{ gui_mod, gui_test_mod }) |m| {
+            m.addImport("metal_shim", metal_shim);
+            m.addCSourceFile(.{ .file = b.path("src/gui/metal_shim.m"), .flags = &.{"-fobjc-arc"} });
+            m.linkFramework("Metal", .{});
+            m.linkFramework("QuartzCore", .{});
+            m.linkFramework("Foundation", .{});
+        }
+    }
+    // ---- The window: AppKit through src/gui/appkit_shim.m (Objective-C, ARC), whose C
+    // interface (appkit_shim.h) Zig imports as `appkit_c`. The tests' build of the shim
+    // has its test helpers too (DIMNA_APPKIT_TEST), with Metal for their stand-in
+    // presenter; the program's has neither. ----
+    {
+        const appkit_c = b.addTranslateC(.{ .root_source_file = b.path("src/gui/appkit_shim.h"), .target = target, .optimize = optimize });
+        const appkit_c_mod = appkit_c.createModule();
+        for ([_]*std.Build.Module{ gui_mod, gui_test_mod }, [_]bool{ false, true }) |m, is_test| {
+            m.addImport("appkit_c", appkit_c_mod);
+            m.addCSourceFile(.{
+                .file = b.path("src/gui/appkit_shim.m"),
+                .flags = if (is_test) &.{ "-fobjc-arc", "-DDIMNA_APPKIT_TEST" } else &.{"-fobjc-arc"},
+                .language = .objective_c,
+            });
+            m.linkFramework("AppKit", .{});
+            m.linkFramework("Foundation", .{});
+            m.linkFramework("QuartzCore", .{});
+            m.linkFramework("CoreGraphics", .{});
+            if (is_test) m.linkFramework("Metal", .{});
+        }
     }
     const gui = b.addExecutable(.{ .name = "dimna", .root_module = gui_mod });
     return .{ .gui = gui, .gui_test_mod = gui_test_mod };
