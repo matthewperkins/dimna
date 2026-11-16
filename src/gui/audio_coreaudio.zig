@@ -283,6 +283,9 @@ test "the default output device pulls frames at its rate, within the largest req
     defer ring.deinit(gpa);
     var shared: audio_out.Shared = .{};
     const a = AudioOut.start(gpa, &shared, &ring, 30000, 1, 128, audio_out.default_period) orelse return error.NoAudioDevice;
+    // Stopped (before the ring is freed) whatever fails below.
+    var stopped = false;
+    defer if (!stopped) a.stop();
     try testing.expect(!shared.alarm.load(.monotonic));
     const r = last_report;
     const max_request = a.max_request.load(.monotonic);
@@ -325,6 +328,7 @@ test "the default output device pulls frames at its rate, within the largest req
     const after = a.rendered.load(.monotonic);
     dimna.os.sleepNs(50 * std.time.ns_per_ms);
     try testing.expectEqual(after, a.rendered.load(.monotonic));
+    stopped = true;
     a.stop();
     try testing.expect(!shared.running.load(.acquire));
 }

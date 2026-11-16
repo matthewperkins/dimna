@@ -133,17 +133,35 @@ instead (it also takes a config folder: see the script).
 ## macOS (so far: the simulator, no window, no board)
 
 On a Mac with Apple silicon (tried on macOS 27), the core and `dimna-headless` build and
-run from the simulator. The display (`dimna`) and the board are not ported yet.
+run from the simulator. `dimna` builds and its tests pass, but it cannot show anything yet:
+its window (AppKit) and its drawing (Metal) are the next step of the port. Run as
+`dimna --sim 32,16`, it reads its config and stops with status 1 and "windows are not
+ported to macOS yet", having opened nothing. The board is not ported yet either.
 
 1. **Zig 0.17.1**: `zig-aarch64-macos-0.17.1.tar.xz` from https://ziglang.org/download/,
    checked and unpacked anywhere, as above (no root needed). The build also needs Apple's
    Command Line Tools (`xcode-select --install`) for the system's headers and frameworks.
-2. Build and test, always with `-Dgui=false` (without it the build stops at once and says
-   that the GUI is not ported yet):
+2. **For `dimna`** (not for `dimna-headless`): FreeType and `pkg-config` from Homebrew
+   (`brew install pkg-config freetype`), found through `pkg-config freetype2`; `dimna`
+   then loads Homebrew's `libfreetype.6.dylib` when it runs. For Persian and other
+   right-to-left or joined scripts, also `brew install harfbuzz fribidi` (loaded when such
+   text is first drawn, from /opt/homebrew/lib or by name; without them that text is drawn
+   unshaped). Nothing else: fonts come from Core Text (Chinese from Hiragino Sans GB,
+   Persian from Geeza Pro, both installed with macOS), sound from Core Audio. No fontconfig,
+   Wayland, Vulkan, xkbcommon or ALSA. Where a packaged app should get FreeType, HarfBuzz and
+   FriBidi from is the packaging step's question.
+3. Build and test:
 
-       zig build -Dgui=false --release=safe     # zig-out/bin/dimna-headless
+       zig build -Dgui=false --release=safe     # zig-out/bin/dimna-headless only
        zig build test -Dgui=false               # the core's tests
+       zig build --release=safe                 # also zig-out/bin/dimna
+       zig build test                           # the core's tests and the GUI's
        zig-out/bin/dimna-headless --sim 32,16 --seconds 60 --record /tmp/dimna-test
+
+   The GUI's tests open no window and play nothing. One test opens the sound device, and
+   only with `DIMNA_TEST_AUDIO=1`: it lets the default output pull silence for half a second
+   and prints the device, its rate, buffer and reported latency. `zig build shaders` and
+   `zig build release` are Linux's (they say so on a Mac).
 
 What works: the core's tests, `dimna-headless --sim` with a recording (`tools/dimna_read.py`
 verifies it; it needs Python 3.11 or newer with numpy), Ctrl-C ending a recording cleanly,
@@ -162,8 +180,18 @@ verifies it; it needs Python 3.11 or newer with numpy), Ctrl-C ending a recordin
   time-constraint policy instead of `SCHED_FIFO` (nothing to set up, no group), and no
   memory is locked (macOS has no `mlockall`). The simulator asks for neither.
 
+- **Fonts.** The config's `font` is a family name as on Linux; `sans-serif` is the
+  system's interface font (SF), `monospace` the user's fixed-pitch font (Menlo). A family
+  that is not installed is replaced by `sans-serif` and is never downloaded (Core Text
+  would otherwise offer to fetch fonts from Apple's catalogue, such as Lato).
+- **Sound.** The system's default output device, at its own rate, with a buffer of
+  `audio_period` frames (default 128). The latency read-out's device part is what the
+  device reports: its latency, safety offset, stream latency and buffer (on a MacBook Air's
+  speakers 1516 frames at 48 kHz, 31.6 ms, most of it the speakers' stream latency).
+  `PIPEWIRE_LATENCY` is not set.
+
 Not yet: the board (the Mac's USB backend is a stand-in that finds no device, so opening
-the board fails as with none plugged in), the display, sound, an `.app`.
+the board fails as with none plugged in), the display's window and drawing, an `.app`.
 
 ## Build details
 
