@@ -45,8 +45,12 @@ overrides:
       - libfreetype6
       - libfontconfig1
       - libxkbcommon0
-      # Debian 13 and Ubuntu 24.04 renamed it in the 64-bit time_t transition.
-      - libasound2 | libasound2t64
+      # Debian 13 and Ubuntu 24.04 renamed it in the 64-bit time_t transition. The real
+      # library comes first, and the fallback is versioned: on Ubuntu 24.04 the bare name
+      # libasound2 is also provided by liboss4-salsa-asound2 (an OSS emulation without
+      # ALSA's versioned symbols), which apt chose there and dimna then failed to start
+      # ("undefined symbol: snd_pcm_recover, version ALSA_0.9"; release workflow, 2026-11-14).
+      - libasound2t64 | libasound2 (>= 1.1)
       # groupadd and getent, for the post-install script (both essential on Debian/Ubuntu).
       - passwd
     suggests:

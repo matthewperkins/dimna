@@ -275,6 +275,20 @@ fn addPrograms(
     for (inputs.gui_include_dirs) |dir| gui_c.addIncludePath(.{ .cwd_relative = dir });
     // After Zig's own libc headers (glibc 2.34's or musl's), never before them.
     if (system_dirs) |dirs| for (dirs.include) |dir| gui_c.addAfterIncludePath(.{ .cwd_relative = dir });
+    // Fedora and RHEL's multilib freetype2/freetype/config/ftconfig.h includes glibc's
+    // <bits/wordsize.h> to pick ftconfig-64.h; musl has no such header. For musl a stand-in
+    // gives the word size (the release builds on Rocky 9).
+    if (target.result.abi.isMusl()) {
+        const shim = b.addWriteFiles();
+        _ = shim.add("bits/wordsize.h",
+            \\/* Stand-in for glibc's bits/wordsize.h, which Fedora/RHEL's multilib ftconfig.h includes. */
+            \\#ifndef __WORDSIZE
+            \\#define __WORDSIZE 64
+            \\#endif
+            \\
+        );
+        gui_c.addAfterIncludePath(shim.getDirectory());
+    }
     const gui_c_mod = gui_c.createModule();
     // stb_image / stb_image_write (vendor/stb): the colour scheme's image and the swatch.
     const stb_c = b.addTranslateC(.{ .root_source_file = b.path("vendor/stb/stb.h"), .target = target, .optimize = optimize });
