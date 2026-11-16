@@ -457,6 +457,19 @@ fn addMacGui(
         m.linkFramework("AudioToolbox", .{});
         m.linkFramework("CoreAudio", .{});
     }
+    // ---- The renderer (gpu_metal.zig): Metal through an Objective-C shim, compiled with
+    // ARC, and its C interface translated for Zig. The shaders are Metal Shading Language
+    // source, embedded and compiled when the renderer is made (no `metal` tool needed). ----
+    {
+        const metal_shim = b.addTranslateC(.{ .root_source_file = b.path("src/gui/metal_shim.h"), .target = target, .optimize = optimize }).createModule();
+        for ([_]*std.Build.Module{ gui_mod, gui_test_mod }) |m| {
+            m.addImport("metal_shim", metal_shim);
+            m.addCSourceFile(.{ .file = b.path("src/gui/metal_shim.m"), .flags = &.{"-fobjc-arc"} });
+            m.linkFramework("Metal", .{});
+            m.linkFramework("QuartzCore", .{});
+            m.linkFramework("Foundation", .{});
+        }
+    }
     const gui = b.addExecutable(.{ .name = "dimna", .root_module = gui_mod });
     return .{ .gui = gui, .gui_test_mod = gui_test_mod };
 }

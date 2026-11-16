@@ -58,7 +58,7 @@ pub const Window = struct {
 
     pub fn gpuTarget(self: *const Window) Target {
         _ = self;
-        return .{};
+        unreachable; // the stand-in's `init` always fails, so no window is asked for its target
     }
 
     pub fn monitorName(self: *const Window, i: usize) ?[]const u8 {

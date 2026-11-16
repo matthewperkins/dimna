@@ -3,7 +3,7 @@
 //! constants, the result of a frame) and the choice of this system's backend, at compile
 //! time: `Gpu` and `Target` are the backend's own, so a caller calls the backend's
 //! functions directly; there is no indirect call. Linux: `gpu_vulkan.zig` (Vulkan on a
-//! Wayland surface).
+//! Wayland surface); macOS: `gpu_metal.zig` (Metal on the window's CAMetalLayer).
 //!
 //! What a backend's `Gpu` must offer, because the callers use it (main.zig, control.zig,
 //! tiles.zig, display.zig, session.zig, pipeline.zig):

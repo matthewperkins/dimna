@@ -134,7 +134,7 @@ instead (it also takes a config folder: see the script).
 
 On a Mac with Apple silicon (tried on macOS 27), the core and `dimna-headless` build and
 run from the simulator. `dimna` builds and its tests pass, but it cannot show anything yet:
-its window (AppKit) and its drawing (Metal) are the next step of the port. Run as
+its drawing (Metal) is in place, but its window (AppKit) is the next step of the port. Run as
 `dimna --sim 32,16`, it reads its config and stops with status 1 and "windows are not
 ported to macOS yet", having opened nothing. The board is not ported yet either.
 
@@ -160,8 +160,12 @@ ported to macOS yet", having opened nothing. The board is not ported yet either.
 
    The GUI's tests open no window and play nothing. One test opens the sound device, and
    only with `DIMNA_TEST_AUDIO=1`: it lets the default output pull silence for half a second
-   and prints the device, its rate, buffer and reported latency. `zig build shaders` and
-   `zig build release` are Linux's (they say so on a Mac).
+   and prints the device, its rate, buffer and reported latency. The drawing tests draw
+   offscreen with Metal and read the pixels back (they need the Mac's GPU, no window), and
+   `DIMNA_GPU_SPEED=1` adds a speed check that prints how long frames like the rig's take.
+   The shaders are Metal Shading Language source compiled when dimna starts (no `metal`
+   tool, so no Xcode needed). `zig build shaders` and `zig build release` are Linux's (they
+   say so on a Mac).
 
 What works: the core's tests, `dimna-headless --sim` with a recording (`tools/dimna_read.py`
 verifies it; it needs Python 3.11 or newer with numpy), Ctrl-C ending a recording cleanly,
@@ -189,9 +193,14 @@ verifies it; it needs Python 3.11 or newer with numpy), Ctrl-C ending a recordin
   device reports: its latency, safety offset, stream latency and buffer (on a MacBook Air's
   speakers 1516 frames at 48 kHz, 31.6 ms, most of it the speakers' stream latency).
   `PIPEWIRE_LATENCY` is not set.
+- **Drawing.** Metal, with the layer's display sync off for the display window (it tears,
+  as Linux's `--present immediate` does, and frames reach the screen in about 5 ms as
+  macOS reports it) and on for the control and tile windows; `--present fifo` turns it on
+  for the display too. `mailbox` means the same as `immediate` on a Mac. Colours are
+  written as they are, with no colour matching to the display.
 
 Not yet: the board (the Mac's USB backend is a stand-in that finds no device, so opening
-the board fails as with none plugged in), the display's window and drawing, an `.app`.
+the board fails as with none plugged in), the windows, an `.app`.
 
 ## Build details
 
