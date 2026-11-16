@@ -898,7 +898,7 @@ test "a missing library, or a missing function in one, is reported as missing" {
     _ = try needLibs();
     try testing.expect(load(One, harfbuzz_names, &one));
     // The names are tried in order: one that does not open is passed over.
-    try testing.expect(load(One, &.{ "libdimna-no-such-library.so.0", harfbuzz_names[0] }, &one));
+    try testing.expect(load(One, &[_][:0]const u8{"libdimna-no-such-library.so.0"} ++ harfbuzz_names, &one));
 }
 
 test "Latin and digits inside right-to-left text are isolated as one block; nothing else is" {
