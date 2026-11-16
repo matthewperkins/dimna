@@ -255,6 +255,33 @@ ranges overlapping, the best frame, no frame a refresh late and nothing lost.
   a file under `src/gui/` changed (the sources are not inputs of the run step); run
   directly it works. To fix in a later step. Stale names left in `src/gui/env.zig:8` and
   `src/gui/theme.zig:14,155` (outside the step's files).
+- **Steps 5 and 6** (`2840d85`, `0cc46c5`, `6858270`, plan
+  `macos-step5-6-fonts-mainloop.md`): font lookup is `fontfind.zig` over
+  `fontfind_fontconfig.zig` (every function the same instructions); the display's work is
+  `runDisplay`, which `main` runs through `window.run` (inlined back on Linux: in the loop,
+  176 of 187 compared lines the same but for stack offsets, the rest register choice,
+  error exits and padding). On the board, the real program before and after: `--help`
+  exit 0, a bad option and a bad value exit 2, a monitor that does not exist exit 2 with
+  the list, all with identical output; the start-up log identical; and alternating 60 s
+  runs, tearing active in all six:
+
+  | | before | after |
+  |---|---|---|
+  | per-second latency, median | 2.4, 2.4, 2.3 ms | 2.3, 2.4, 2.4 ms |
+  | best frame | 0.7, 0.7, 0.6 ms | 0.6, 0.6, 0.7 ms |
+  | worst frame | 14.9, 15.7, 23.1 ms | 18.6, 13.9, 13.4 ms |
+  | a refresh late; blocks lost | 0; 0 | 0; 0 |
+  | audio; gaps | 16.9, 16.7, 16.7 ms; 0 | 17.7, 16.7, 16.8 ms; 1, 0, 0 |
+
+  Weak spots the agent's break-its showed: no test covers any exit status of `main`
+  (the runs above are the check), the per-character font fallback runs in no test, and an
+  emptied HarfBuzz library list fails nothing (eight tests turn from passed to skipped).
+  An accident to know of: the agent piped an archive into an SSH shell on the rig, which
+  tried to run it as a script in the home directory; nothing was created (the lead
+  checked: no entry in `~` or `~/oEZ` changed in that time but the worktree).
+- **With this, the Linux groundwork (steps 1 to 6) is done.** What remains is on the Mac:
+  the AppKit window and the main thread, Metal, Core Audio and Core Text (steps 9 to 11),
+  the board through IOKit (step 8), tuning and packaging.
 - **Measuring on the rig over SSH:** start programs with `chrt -o 0 nice -n -16`; an SSH
   session there is at SCHED_IDLE (`ananicy-cpp`). The runs in this file up to step 3 were
   taken without that, both sides alike; at normal priority the display figures were the
