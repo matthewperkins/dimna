@@ -26,6 +26,7 @@ const Window = @import("window.zig").Window;
 const gpu_mod = @import("gpu.zig");
 const Gpu = gpu_mod.Gpu;
 const font = @import("font.zig");
+const fontfind = @import("fontfind.zig");
 const format = @import("format.zig");
 const i18n = @import("i18n.zig");
 const shape = @import("shape.zig");
@@ -136,7 +137,7 @@ pub fn main(init: std.process.Init) !u8 {
     var language_notice: display_mod.Notice = .{};
     if (i18n.needs(i18n.current)) |n| {
         const has_shaping = !n.shaping or shape.libs() != null;
-        if (i18n.missing(i18n.current, font.anyFontHas(n.sample), has_shaping)) |what| {
+        if (i18n.missing(i18n.current, fontfind.anyFontHas(n.sample), has_shaping)) |what| {
             log.warn("language {s}: {s} needs {s}; showing English", .{ @tagName(i18n.current), n.name, what });
             i18n.current = .en;
             var where_buf: [std.fs.max_path_bytes]u8 = undefined;

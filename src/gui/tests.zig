@@ -10,6 +10,7 @@ test {
     _ = @import("control.zig");
     _ = @import("display.zig");
     _ = @import("font.zig");
+    _ = @import("fontfind.zig");
     _ = @import("format.zig");
     _ = @import("i18n.zig");
     _ = @import("notes.zig");
