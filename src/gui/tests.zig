@@ -1,7 +1,9 @@
 //! Root of the GUI's unit tests (`zig build test`). A test in a file of this module runs
 //! only if the file is referenced from a `test` block here, so each file with tests is
 //! listed below. None of these tests opens a window, connects to Wayland, creates a Vulkan
-//! instance or opens a sound device: they are the GUI's pure logic.
+//! instance or opens a sound device: they are the GUI's pure logic. (On macOS the one test
+//! that opens the sound device, in audio_coreaudio.zig, is off unless DIMNA_TEST_AUDIO=1,
+//! and then plays silence.)
 
 test {
     _ = @import("args.zig");
@@ -20,4 +22,10 @@ test {
     _ = @import("tiles.zig");
     _ = @import("ui.zig");
     _ = @import("window.zig");
+    // The Mac's backends with tests of their own (Linux's are reached through the files
+    // above, or have none).
+    if (@import("builtin").os.tag == .macos) {
+        _ = @import("audio_coreaudio.zig");
+        _ = @import("fontfind_coretext.zig");
+    }
 }

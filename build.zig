@@ -102,16 +102,6 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", if (with_gui) "Run unit tests (the core's and the GUI's)" else "Run unit tests (the core's; -Dgui=false)");
     const release_step = b.step("release", "Build the release tarballs (x86_64 glibc 2.34 and musl) into zig-out/release");
 
-    // On macOS only the core and dimna-headless are ported so far: said at once, rather
-    // than failing later in pkg-config or a Wayland header.
-    if (target.result.os.tag == .macos and with_gui) {
-        const fail = b.addFail("the GUI (dimna) is not ported to macOS yet: build the core and dimna-headless with -Dgui=false");
-        for ([_]*std.Build.Step{ b.getInstallStep(), headless_step, shaders_step, gui_step, test_step, release_step }) |step| {
-            step.dependOn(&fail.step);
-        }
-        return;
-    }
-
     // ---- The normal build: -Dtarget (this machine by default). ----
     const core = addCore(b, target, optimize, null);
     b.installArtifact(core.headless);
@@ -129,6 +119,21 @@ pub fn build(b: *std.Build) void {
         for ([_]*std.Build.Step{ shaders_step, gui_step, release_step }) |step| {
             step.dependOn(&b.addFail(b.fmt("`zig build {s}` needs the GUI; it is not set up with -Dgui=false", .{step.name})).step);
         }
+        return;
+    }
+
+    // ---- macOS: dimna without a window or a GPU yet (see addMacGui). ----
+    if (target.result.os.tag == .macos) {
+        const gui = addMacGui(b, target, optimize, core.dimna);
+        b.installArtifact(gui.gui);
+        const run_gui = b.addRunArtifact(gui.gui);
+        run_gui.step.dependOn(b.getInstallStep());
+        run_gui.addPassthruArgs();
+        gui_step.dependOn(&run_gui.step);
+        test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .name = "gui-test", .root_module = gui.gui_test_mod })).step);
+        // The Vulkan shaders and the release tarballs are Linux's.
+        shaders_step.dependOn(&b.addFail("`zig build shaders` compiles the Vulkan shaders, which macOS does not use").step);
+        release_step.dependOn(&b.addFail("`zig build release` builds the Linux tarballs; it runs on Linux").step);
         return;
     }
 
@@ -397,6 +402,62 @@ fn addGui(
     // checked after the link (packaging/check-release.sh). The musl link does not need it:
     // lld does not refuse there (those libraries need libc.so.6, which is not in that link).
     if (system_dirs != null and target.result.abi.isGnu()) gui.linker_allow_shlib_undefined = true;
+    return .{ .gui = gui, .gui_test_mod = gui_test_mod };
+}
+
+/// dimna and the GUI's test module for macOS, over the core's `dimna` module. The same two
+/// modules over the same files as `addGui`, with the Mac's libraries: no Wayland, Vulkan,
+/// SPIR-V, fontconfig, xkbcommon or ALSA. FreeType through pkg-config (Homebrew's, which a
+/// Mac then needs installed); fonts are found with Core Text and sound goes through Core
+/// Audio, both called through their C interfaces, declared in the Zig files that use them
+/// (src/gui/fontfind_coretext.zig, src/gui/audio_coreaudio.zig). The window and the GPU are
+/// stand-ins that fail (src/gui/window_appkit.zig, src/gui/gpu_metal.zig): AppKit and Metal
+/// are the next step, and neither is linked yet.
+fn addMacGui(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    dimna: *std.Build.Module,
+) Gui {
+    const gui_c = b.addTranslateC(.{ .root_source_file = b.path("src/gui/c_darwin.h"), .target = target, .optimize = optimize });
+    const flags = b.run(&.{ "pkg-config", "--cflags-only-I", "freetype2" });
+    var it = std.mem.tokenizeAny(u8, flags, " \n");
+    while (it.next()) |f| {
+        if (std.mem.startsWith(u8, f, "-I")) gui_c.addIncludePath(.{ .cwd_relative = f[2..] });
+    }
+    const gui_c_mod = gui_c.createModule();
+    const stb_c = b.addTranslateC(.{ .root_source_file = b.path("vendor/stb/stb.h"), .target = target, .optimize = optimize });
+    const stb_mod = stb_c.createModule();
+    const gui_mod = b.createModule(.{
+        .root_source_file = b.path("src/gui/main.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    const gui_test_mod = b.createModule(.{
+        .root_source_file = b.path("src/gui/tests.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    for ([_]*std.Build.Module{ gui_mod, gui_test_mod }) |m| {
+        m.addImport("dimna", dimna);
+        m.addImport("gui_c", gui_c_mod);
+        m.addImport("stb", stb_mod);
+        m.addCSourceFile(.{
+            .file = b.path("vendor/stb/stb_impl.c"),
+            .flags = &.{ "-DNDEBUG", "-w", "-fno-sanitize=undefined" },
+        });
+        m.addIncludePath(b.path("vendor/stb"));
+        // Text: Core Text finds the font, FreeType rasterizes it.
+        m.linkSystemLibrary("freetype2", .{});
+        m.linkFramework("CoreText", .{});
+        m.linkFramework("CoreFoundation", .{});
+        // Sound: the default output device through an output audio unit.
+        m.linkFramework("AudioToolbox", .{});
+        m.linkFramework("CoreAudio", .{});
+    }
+    const gui = b.addExecutable(.{ .name = "dimna", .root_module = gui_mod });
     return .{ .gui = gui, .gui_test_mod = gui_test_mod };
 }
 
