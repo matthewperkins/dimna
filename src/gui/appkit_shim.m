@@ -418,7 +418,6 @@ static DimnaWindowObj *makeWindow(NSString *title, void *ctx, DimnaAwCallbacks c
     DimnaView *view = [[DimnaView alloc] initWithFrame:rect];
     view.owner = o;
     view.wantsLayer = YES;
-    view.layerContentsRedrawPolicy = NSViewLayerContentsRedrawDuringViewResize;
     CAMetalLayer *layer = (CAMetalLayer *)view.layer;
     layer.opaque = YES;
     layer.contentsScale = win.backingScaleFactor;
