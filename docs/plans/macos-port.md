@@ -282,6 +282,21 @@ ranges overlapping, the best frame, no frame a refresh late and nothing lost.
 - **With this, the Linux groundwork (steps 1 to 6) is done.** What remains is on the Mac:
   the AppKit window and the main thread, Metal, Core Audio and Core Text (steps 9 to 11),
   the board through IOKit (step 8), tuning and packaging.
+- **Step 9a** (`f657f44` to `c45aa35`, plan `macos-step9a-gui-builds.md`): on the Mac the
+  GUI builds and `gui-test` passes (149 passed, 4 skipped of 153; the four stored outputs
+  match as they are), with font lookup through Core Text, the sound device through Core
+  Audio (silence test: MacBook Air speakers, 48 kHz, 128-frame buffer, reported latency
+  1,516 frames = 31.6 ms, of which 1,280 are the stream's own), and stand-ins for the
+  window and the GPU: `dimna --sim 32,16` exits 1 saying windows are not ported, having
+  opened nothing. Needs Homebrew's FreeType (HarfBuzz and FriBidi optional). On Linux
+  (rig): `.text` and `.rodata` of `dimna` identical to before, tests 284/286 as before.
+  To know: the Mac's Chinese interface font (PingFang UI) cannot be read by FreeType, so
+  the fallbacks are Hiragino Sans GB and Heiti SC, Geeza Pro and Damascus for Persian;
+  asking Core Text for a family that is not installed can put up a font-download prompt
+  (it did once, from a throwaway program; the lookup now never does). The device's
+  latency read-out includes the stream latency, which the plan had not listed: to review.
+  Linux wording left in shared files (help text, the font hint in the banner, "mlockall
+  failed", XDG paths) is listed in that step's report, for the window step.
 - **Measuring on the rig over SSH:** start programs with `chrt -o 0 nice -n -16`; an SSH
   session there is at SCHED_IDLE (`ananicy-cpp`). The runs in this file up to step 3 were
   taken without that, both sides alike; at normal priority the display figures were the
