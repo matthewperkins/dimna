@@ -34,8 +34,8 @@ Zig is 0.17.1 (pinned in `build.zig.zon`). It differs from older Zig you may kno
 - `std.Io.Writer`: `var w: std.Io.Writer = .fixed(&buf); try w.print(...); w.buffered()`.
 - A local may not shadow a declaration or another local in an outer scope (compile error).
 - `std.fmt.bufPrintSentinel(&buf, fmt, args, 0)` for zero-terminated strings.
-- Raw Linux calls are used in places: `std.os.linux.open`, `pread`, `write`, with
-  `linux.errno(rc)`.
+- Raw system calls live in `src/os.zig` (`dimna.os`; Linux: `src/os_linux.zig`). Call it,
+  not `std.os.linux`: a test in `os.zig` fails on a direct use anywhere else under `src/`.
 
 Look at an existing test before writing one: `src/review.zig` (files in a temporary
 folder, raw syscalls), `src/feed.zig` and `src/ring.zig` (the ring, threads).

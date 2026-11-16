@@ -117,3 +117,99 @@ pub fn close(fd: Fd) void {
 pub fn mkdir(path: [*:0]const u8, mode: u32) bool {
     return impl.mkdir(path, mode);
 }
+
+const testing = std.testing;
+const Io = std.Io;
+
+test "no file under src/ calls the system directly, except the Linux backends" {
+    // The files that may: this module's Linux backend, and three that become Linux
+    // backends of their own later (USB, window, GPU).
+    const exceptions = [_][]const u8{ "os_linux.zig", "usbfs.zig", "gui/window.zig", "gui/gpu.zig" };
+    // And `record_test.zig`, once, inside its write-failure test (`fork`, `dup2`, `wait4`,
+    // `kill`: what replaces them elsewhere is another step's question).
+    const fork_file = "record_test.zig";
+    const fork_test = "test \"recorder: a write failure does not hold the producer";
+    // The spellings looked for, split so that this file does not contain them (comments
+    // count too): `linux` under `os` (however `std` and its `os` are reached), std's `os`
+    // given a name of its own, and posix's `system` (which is `linux` on Linux).
+    const linux_ns = "os" ++ ".linux";
+    const std_os = "std" ++ ".os";
+    const posix_system = "posix" ++ ".system";
+
+    const gpa = testing.allocator;
+    const io = testing.io;
+    // The tests run in the folder `zig build` was started in: the repository's root or one
+    // below it. The sources are the `src` there or in the nearest folder above that has one
+    // holding this file's Linux backend.
+    var up_buf: [3 * 16 + 3]u8 = undefined;
+    var src = for (0..16) |depth| {
+        const p = up_buf[0 .. 3 * depth + 3];
+        for (0..depth) |k| @memcpy(p[3 * k ..][0..3], "../");
+        @memcpy(p[3 * depth ..], "src");
+        var d = Io.Dir.cwd().openDir(io, p, .{ .iterate = true }) catch continue;
+        if (d.access(io, "os_linux.zig", .{})) |_| break d else |_| d.close(io);
+    } else {
+        std.debug.print("no src/ holding os_linux.zig in the current folder or above it\n", .{});
+        return error.TestUnexpectedResult;
+    };
+    defer src.close(io);
+    var walker = try src.walk(gpa);
+    defer walker.deinit();
+    var files: usize = 0;
+    var seen_backend = false;
+    var seen_gui = false;
+    var bad: usize = 0;
+    while (try walker.next(io)) |entry| {
+        if (entry.kind != .file or !std.mem.endsWith(u8, entry.path, ".zig")) continue;
+        files += 1;
+        if (std.mem.eql(u8, entry.path, "os_linux.zig")) seen_backend = true;
+        if (std.mem.eql(u8, entry.path, "gui/notes.zig")) seen_gui = true;
+        const excepted = for (exceptions) |x| {
+            if (std.mem.eql(u8, entry.path, x)) break true;
+        } else false;
+        if (excepted) continue;
+        const text = try src.readFileAlloc(io, entry.path, gpa, .limited(16 << 20));
+        defer gpa.free(text);
+        var allowed: ?[2]usize = null;
+        if (std.mem.eql(u8, entry.path, fork_file)) {
+            const start = std.mem.indexOf(u8, text, fork_test) orelse {
+                std.debug.print("src/{s}: its write-failure test is not there\n", .{fork_file});
+                return error.TestUnexpectedResult;
+            };
+            allowed = .{ start, std.mem.indexOfPos(u8, text, start, "\n}\n") orelse text.len };
+        }
+        var uses_in_fork_test: usize = 0;
+        var line_no: usize = 1;
+        var lines = std.mem.splitScalar(u8, text, '\n');
+        var at: usize = 0;
+        while (lines.next()) |line| : ({
+            at += line.len + 1;
+            line_no += 1;
+        }) {
+            var hit = std.mem.indexOf(u8, line, linux_ns) != null or
+                std.mem.indexOf(u8, line, posix_system) != null;
+            var pos: usize = 0;
+            while (std.mem.indexOfPos(u8, line, pos, std_os)) |i| : (pos = i + std_os.len) {
+                const after = i + std_os.len;
+                // Not followed by a `.`: std's `os` given a name of its own.
+                if (after >= line.len or line[after] != '.') hit = true;
+            }
+            if (!hit) continue;
+            if (allowed) |r| {
+                if (at >= r[0] and at < r[1]) {
+                    uses_in_fork_test += 1;
+                    continue;
+                }
+            }
+            std.debug.print("src/{s}:{d}: calls the system directly (use os.zig): {s}\n", .{ entry.path, line_no, std.mem.trim(u8, line, " ") });
+            bad += 1;
+        }
+        if (allowed != null and uses_in_fork_test != 1) {
+            std.debug.print("src/{s}: {d} direct uses in its write-failure test, expected 1\n", .{ fork_file, uses_in_fork_test });
+            bad += 1;
+        }
+    }
+    // The walk saw the whole tree, not an empty or wrong folder.
+    try testing.expect(seen_backend and seen_gui and files > 40);
+    try testing.expectEqual(0, bad);
+}
