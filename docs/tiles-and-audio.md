@@ -75,8 +75,7 @@ out. A Hyprland rule keeps it off the neural display's monitor:
 
 ## Spike audio
 
-dimna plays the channels you choose through ALSA's default sound device, or through a JACK
-server (below, "Where the sound goes").
+dimna plays the channels you choose through the default sound device.
 Right-click an electrode row on the display, or a spike tile, to listen to it; Ctrl+right
 click adds or removes a channel (up to 8, spread across the stereo field). The channels
 listened to have a note (♪) before their label. The control window's Audio section has on / off, mute, volume, shaped / plain,
@@ -99,55 +98,13 @@ region sound unlike another, so nothing in it adapts continuously:
 ratios kept, loudness independent of firing rate, hash not gated away, the limiter linear
 where spikes are, the resampler flat to 10 kHz.
 
-Sound runs on threads of its own (`src/gui/audio_out.zig`) with their own reader on the
-acquisition ring, so it does not depend on the display. On the board, through ALSA: about
-16 ms as reported, of which about 5 ms waits in dimna's queue and about 10 ms is what the
-device (PipeWire at a 128-frame quantum, and the sound card) says is still to be played; a
-few gaps in the first seconds while the clock servo settles, then about one in 10 s.
+Sound runs on two threads of its own (`src/gui/audio_out.zig`) with their own reader on
+the acquisition ring, so it does not depend on the display. On the board: about 16 ms as
+reported, of which about 5 ms waits in dimna's queue and about 10 ms is what the device
+(PipeWire at a 128-frame quantum, and the sound card) says is still to be played; a few
+gaps in the first seconds while the clock servo settles, then about one in 10 s.
 The queue's margin adapts: a gap raises it by 1 ms, 30 s without one lowers it by 0.5 ms,
 so latency settles at what the machine's timing needs. The once-a-second log line gives
 the margin, the longest wait between blocks and the oldest block the feeder met, for
 finding the cause when gaps do happen.
 `--no-audio` or `audio = false` turns it off; `volume_db = -6` sets the starting volume.
-
-### Where the sound goes
-
-`audio_output` in the config (or `--audio-output`):
-
-| value | |
-|---|---|
-| `"alsa"` (the default) | ALSA's `default` device, on a thread of dimna's that writes one 128-frame period at a time (`src/gui/audio_alsa.zig`). On most desktops `default` is PipeWire. |
-| `"jack"` | a running JACK server, as the client `dimna` (`src/gui/audio_jack.zig`). Without one there is no sound, and a warning in the log says why: dimna never starts a server, and does not fall back to ALSA. |
-| `"auto"` | JACK if a server answers, else ALSA. |
-
-The start-up line in the log says which was taken (`audio output: ALSA, ...` or
-`audio output: JACK (client dimna), ...`, with the server's rate, period, playback latency
-and the real-time priority of the client's thread).
-
-ALSA is the default because on most distributions the JACK library is PipeWire's own
-(`pipewire-jack`): a JACK client there joins PipeWire's graph with the same quantum as
-ALSA's `default`, so it gains nothing. JACK lowers latency when real JACK (`jackd`, JACK2)
-runs the sound card itself, with PipeWire stopped: that is what the user unit
-`packaging/dimna-jack.service` does, started and stopped around dimna by its launchers
-(docs/install.md, "Spike audio through JACK").
-
-With JACK, dimna's ports `dimna:left` and `dimna:right` are connected to the first two
-physical playback ports. The server's real-time thread asks for each period through a
-callback, which takes the frames from the same queue the ALSA thread does (one function,
-`AudioOut.render`, makes the frames for both). The server's rate is the queue's rate; its
-buffer size is what the feeder keeps room for, and a change of it while running is
-followed. xruns the server reports (any client's) are counted and shown at the end of the
-once-a-second audio line (`xruns 0` with ALSA). If the server goes away the monitor goes
-silent; dimna does not reconnect: restart dimna (or its acquisition) once a server runs
-again.
-
-**What "device" means in the latency read-out.** With ALSA it is `snd_pcm_delay`: what
-ALSA (here PipeWire and the card) says is still to be played. With JACK it is the playback
-latency JACK reports for dimna's ports (`jack_port_get_latency_range`, the larger of the
-two): the buffering between dimna's ports and the card as the server and its ALSA driver
-count it: with JACK's dummy driver at 64 frames, 128 frames (2.7 ms at 48 kHz); with its
-ALSA driver, the card's buffer less the period being written, plus the one period JACK's
-asynchronous mode adds, so about the same for `-p 64 -n 2` (not yet measured on the card). It cannot
-include what JACK does not know: the card's own converter (its digital filter's delay) and
-the analogue path after it, unless the server is told with `-O`. dimna's queue is counted
-separately ("queue"), as with ALSA.

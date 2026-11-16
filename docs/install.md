@@ -165,18 +165,6 @@ control window's queue and snapshot, the audio output's `render`); none opens a 
 connects to Wayland, creates a Vulkan instance or opens a sound device, so they pass without
 a display. A GUI file's tests run only if the file is listed in `src/gui/tests.zig`.
 
-Two tests in `src/gui/audio_jack.zig` connect to a JACK server, and are skipped unless an
-environment variable names one. A server with JACK's dummy driver opens no sound card and
-does not disturb PipeWire:
-
-    jackd -n dimna-test -d dummy -r 48000 -p 64 &
-    DIMNA_TEST_JACK=dimna-test .zig-cache/o/<hash>/gui-test   # the test binary itself
-    kill %1
-
-(`zig build test` does not run a test again when only the environment changed, so run the
-binary it built, from the repository's root.) `DIMNA_TEST_JACK_SHUTDOWN=<server>` runs the
-other one, which waits up to 30 s for that server to be stopped.
-
 The display also needs the development files of the Wayland client library, the Vulkan
 loader, FreeType, fontconfig, xkbcommon and ALSA. It needs no wayland-protocols,
 wayland-scanner or vulkan-headers package (the protocol XMLs and `vk.xml` are in `vendor/`;
@@ -283,56 +271,6 @@ libraries have. It has not been run: that needs a musl system (a Void musl root,
 `dlopen`: `--driver d3xx` (liboni's ft600 driver on FTDI's D3XX, itself built for glibc) is
 not available there; the default `--driver usb` is built in. liboni includes glibc's
 `<execinfo.h>` and uses nothing from it; for musl the build supplies an empty one.
-
-## Spike audio through JACK
-
-By default the spike audio goes to ALSA's `default` device, which on most desktops is
-PipeWire (docs/tiles-and-audio.md, "Where the sound goes"). On a machine that runs dimna for
-experiments, real JACK (`jackd`, JACK2) can run the sound card instead while dimna runs, for
-less latency: on the rig about 10.5 ms are on the device's side through PipeWire, against two
-64-frame periods (2.7 ms) that JACK should count on the card (not yet measured there; the
-dummy driver reports 128 frames). It needs JACK2's `jackd` (on Arch the package `jack2`, which
-the rig has; other distributions' names were not looked up), not PipeWire's `pipewire-jack`,
-and a user allowed real-time priority 60 (the `realtime` group above gives 80).
-
-1. Install the user unit (no root):
-
-       mkdir -p ~/.config/systemd/user
-       cp packaging/dimna-jack.service ~/.config/systemd/user/
-       systemctl --user daemon-reload
-
-   Do **not** enable it: dimna's launchers start it.
-2. Name the card (`aplay -l` lists them; the unit's default is `hw:0`) in a drop-in:
-
-       systemctl --user edit dimna-jack.service
-
-       [Service]
-       Environment=DIMNA_JACK_DEVICE=hw:PCH
-
-   `DIMNA_JACK_PERIOD` (default 64 frames) and `DIMNA_JACK_PERIODS` (default 2) are set the
-   same way. The rate is 48 kHz.
-3. In dimna's config: `audio_output = "jack"`.
-
-`packaging/dimna-launch.sh` and the desktop entry's launcher (`dimna-desktop-launch`) then
-start the unit before dimna, and when dimna exits, however it exits, stop it and start
-PipeWire's sockets and services (`pipewire.socket`, `pipewire-pulse.socket`,
-`pipewire.service`, `pipewire-pulse.service`, `wireplumber.service`) again. Only a launcher
-killed itself with SIGKILL cannot do that: then `systemctl --user stop dimna-jack.service`
-and `systemctl --user start pipewire.socket pipewire-pulse.socket wireplumber.service` by
-hand. dimna started some other way does not touch the unit (dimna never calls `systemctl`);
-with `audio_output = "jack"` and no server it is silent and says so in its log.
-
-Starting the unit stops PipeWire and WirePlumber, and their sockets (otherwise the next
-program that wants sound would start PipeWire again and the two would fight over the card).
-While JACK holds the card, **nothing that plays through PipeWire or PulseAudio has sound**
-(browsers, video calls, the desktop's sounds), and **screen sharing through the desktop
-portal** (xdg-desktop-portal, which uses PipeWire) does not work. `wayvnc` does not use
-PipeWire and is not affected.
-
-`jackd` runs at real-time priority 60 (`-R -P 60`), and JACK2 runs its clients' threads 5
-lower: dimna's audio callback at SCHED_FIFO 55. Both are below dimna's acquisition thread
-(SCHED_FIFO 70), so sound can never hold acquisition up. Its messages:
-`journalctl --user -u dimna-jack`.
 
 ## Two ways to reach the FT600
 

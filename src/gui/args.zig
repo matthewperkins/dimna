@@ -3,7 +3,6 @@
 const std = @import("std");
 const dimna = @import("dimna");
 const gpu_mod = @import("gpu.zig");
-const audio_out = @import("audio_out.zig");
 const log = std.log.scoped(.dimna);
 
 pub const Args = struct {
@@ -32,9 +31,6 @@ pub const Args = struct {
     /// The spike audio monitor.
     audio: bool = true,
     volume_db: f64 = -6,
-    /// Where the spike audio goes: ALSA's default device (the default), a JACK server,
-    /// or JACK when a server is running and ALSA otherwise (`audio_output` in the config).
-    audio_output: audio_out.Output = .alsa,
     /// The control window (a second, ordinary window with the panels' settings).
     control: bool = true,
     /// All panels in sweep mode (see `panels.Mode`).
@@ -75,9 +71,6 @@ pub const usage =
     \\  --no-control        no control window
     \\  --no-tiles          no spike-tile window
     \\  --no-audio          no spike audio
-    \\  --audio-output alsa|jack|auto   where the spike audio goes: ALSA's default device
-    \\                      (default), a running JACK server only, or JACK if one runs
-    \\                      and ALSA otherwise (docs/tiles-and-audio.md)
     \\  --seconds S         quit after S seconds
     \\  --script STEPS      synthetic input for tests (see src/gui/script.zig)
     \\  --help
@@ -161,10 +154,6 @@ pub fn applyConfig(a: *Args, doc: dimna.toml.Document) void {
             a.tiles = e.value.boolean;
         } else if (std.mem.eql(u8, e.key, "audio") and e.value == .boolean) {
             a.audio = e.value.boolean;
-        } else if (std.mem.eql(u8, e.key, "audio_output") and e.value == .string) {
-            if (std.meta.stringToEnum(audio_out.Output, e.value.string)) |o| {
-                a.audio_output = o;
-            } else log.warn("config line {d}: audio_output '{s}' is not alsa, jack or auto", .{ e.line, e.value.string });
         } else if (std.mem.eql(u8, e.key, "volume_db") and e.value == .number) {
             a.volume_db = std.math.clamp(e.value.number, -60, 12);
         } else if (std.mem.eql(u8, e.key, "record_dir") and e.value == .string) {
@@ -222,12 +211,6 @@ pub fn parseArgs(args: []const [:0]const u8, doc: dimna.toml.Document) !Args {
             a.tiles = false;
         } else if (std.mem.eql(u8, arg, "--no-audio")) {
             a.audio = false;
-        } else if (std.mem.eql(u8, arg, "--audio-output")) {
-            const name = try next(args, &i, arg);
-            a.audio_output = std.meta.stringToEnum(audio_out.Output, name) orelse {
-                log.err("--audio-output: '{s}' is not alsa, jack or auto", .{name});
-                return error.BadArgs;
-            };
         } else if (std.mem.eql(u8, arg, "--no-control")) {
             a.control = false;
         } else if (std.mem.eql(u8, arg, "--sweep")) {
@@ -307,17 +290,6 @@ test "language is read from the config" {
     try std.testing.expectEqual(@import("i18n.zig").Language.de, @import("i18n.zig").pick(a.language, "pl_PL.UTF-8"));
     const none = try parseArgs(&.{"dimna"}, .{ .entries = &.{} });
     try std.testing.expectEqualStrings("", none.language);
-}
-
-test "audio_output: alsa unless the config or the command line says otherwise; the command line wins" {
-    var diag: dimna.toml.Diagnostics = .{};
-    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
-    defer arena.deinit();
-    const none = try parseArgs(&.{"dimna"}, .{ .entries = &.{} });
-    try std.testing.expectEqual(audio_out.Output.alsa, none.audio_output);
-    const doc = try dimna.toml.parse(arena.allocator(), "audio_output = \"jack\"\n", &diag);
-    try std.testing.expectEqual(audio_out.Output.jack, (try parseArgs(&.{"dimna"}, doc)).audio_output);
-    try std.testing.expectEqual(audio_out.Output.auto, (try parseArgs(&.{ "dimna", "--audio-output", "auto" }, doc)).audio_output);
 }
 
 test "the usage text lists every option the parser accepts" {
