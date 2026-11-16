@@ -44,6 +44,8 @@ const builtin = @import("builtin");
 
 const impl = switch (builtin.os.tag) {
     .linux => @import("usb_linux.zig"),
+    // A stand-in that finds no device (the IOKit backend is the next step).
+    .macos => @import("usb_darwin.zig"),
     else => @compileError("dimna has no USB layer for this system yet"),
 };
 

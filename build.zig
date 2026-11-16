@@ -102,6 +102,16 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", if (with_gui) "Run unit tests (the core's and the GUI's)" else "Run unit tests (the core's; -Dgui=false)");
     const release_step = b.step("release", "Build the release tarballs (x86_64 glibc 2.34 and musl) into zig-out/release");
 
+    // On macOS only the core and dimna-headless are ported so far: said at once, rather
+    // than failing later in pkg-config or a Wayland header.
+    if (target.result.os.tag == .macos and with_gui) {
+        const fail = b.addFail("the GUI (dimna) is not ported to macOS yet: build the core and dimna-headless with -Dgui=false");
+        for ([_]*std.Build.Step{ b.getInstallStep(), headless_step, shaders_step, gui_step, test_step, release_step }) |step| {
+            step.dependOn(&fail.step);
+        }
+        return;
+    }
+
     // ---- The normal build: -Dtarget (this machine by default). ----
     const core = addCore(b, target, optimize, null);
     b.installArtifact(core.headless);
@@ -284,6 +294,12 @@ fn addCore(
     // The normal build's module is also offered to packages that depend on this one.
     const dimna = if (system_dirs == null) b.addModule("dimna", dimna_options) else b.createModule(dimna_options);
     dimna.linkLibrary(liboni);
+    // macOS: the power assertion that keeps the machine awake while acquiring
+    // (src/os_darwin.zig, IOPMAssertionCreateWithName) and the strings it takes.
+    if (target.result.os.tag == .macos) {
+        dimna.linkFramework("IOKit", .{});
+        dimna.linkFramework("CoreFoundation", .{});
+    }
 
     const headless = b.addExecutable(.{
         .name = "dimna-headless",

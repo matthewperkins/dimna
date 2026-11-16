@@ -1,6 +1,7 @@
 //! The operating system's calls that have no portable form in `std` (or none without an
 //! `Io`): the monotonic clock, sleeps, thread priority, memory locking, free disk space,
-//! zeroed pages, swapping a link, the process id, and files by descriptor.
+//! zeroed pages, swapping a link, the process id, files by descriptor, syncing a file to
+//! the disk, and keeping the machine awake.
 //!
 //! One implementation per system, chosen at compile time; there is no indirect call. The
 //! rest of the program calls these and never the system itself: in Zig 0.17.1 most raw
@@ -19,6 +20,7 @@ const builtin = @import("builtin");
 
 const impl = switch (builtin.os.tag) {
     .linux => @import("os_linux.zig"),
+    .macos => @import("os_darwin.zig"),
     else => @compileError("dimna has no os layer for this system yet"),
 };
 
@@ -28,8 +30,8 @@ pub const E = impl.E;
 pub const Fd = impl.Fd;
 pub const Pid = impl.Pid;
 
-/// Nanoseconds on the monotonic clock `Io.Clock.awake` reads (`CLOCK_MONOTONIC` on Linux).
-/// Needs no `Io`.
+/// Nanoseconds on the monotonic clock `Io.Clock.awake` reads (`CLOCK_MONOTONIC` on Linux,
+/// `CLOCK_UPTIME_RAW` on macOS). Needs no `Io`.
 pub fn nowNs() i128 {
     return impl.nowNs();
 }
@@ -45,17 +47,20 @@ pub fn sleepNsOnce(ns: u64) void {
     impl.sleepNsOnce(ns);
 }
 
-/// Real-time scheduling (`SCHED_FIFO` at `priority`) for the calling thread.
+/// Real-time scheduling (`SCHED_FIFO` at `priority`) for the calling thread. On macOS a
+/// Mach time-constraint policy instead, and `priority` is ignored (`os_darwin.zig`).
 pub fn setThreadRealtime(priority: i32) E {
     return impl.setThreadRealtime(priority);
 }
 
-/// Idle scheduling (`SCHED_IDLE`) for the calling thread: only what nothing else wants.
+/// Idle scheduling (`SCHED_IDLE`) for the calling thread: only what nothing else wants. On
+/// macOS the background QoS class.
 pub fn setThreadIdle() E {
     return impl.setThreadIdle();
 }
 
-/// Locks the process's current and future pages in RAM. False if refused.
+/// Locks the process's current and future pages in RAM. False if refused (always on
+/// macOS, which has no such call).
 pub fn lockMemory() bool {
     return impl.lockMemory();
 }
@@ -118,6 +123,33 @@ pub fn close(fd: Fd) void {
 /// there already).
 pub fn mkdir(path: [*:0]const u8, mode: u32) bool {
     return impl.mkdir(path, mode);
+}
+
+/// Makes what was written to `file` durable: on the disk itself, not in a cache. On Linux
+/// that is `file.sync(io)` (`fsync`). On macOS `fsync` does not make the drive write its
+/// own cache, so it is `fcntl(F_FULLFSYNC)`, with `fsync` where that is refused.
+pub fn syncToDisk(io: Io, file: Io.File) Io.File.SyncError!void {
+    // Linux's is here rather than in os_linux.zig: it is the `std.Io` call, not a raw one.
+    if (builtin.os.tag != .macos) return file.sync(io);
+    return impl.syncToDisk(io, file);
+}
+
+/// A hold on the machine staying awake, from `keepAwake`; empty (zero bytes) on Linux.
+pub const Awake = if (builtin.os.tag == .macos) impl.Awake else struct {};
+
+/// Keeps the machine from sleeping when idle, until `allowSleep`: macOS sleeps an idle
+/// machine, which would stop acquisition. Not a closed lid (macOS sleeps the machine then
+/// anyway). On Linux nothing: the program has never needed it there, and the two calls
+/// compile to nothing. Logs if it could not.
+pub fn keepAwake() Awake {
+    if (builtin.os.tag != .macos) return .{};
+    return impl.keepAwake();
+}
+
+/// Gives up what `keepAwake` got (nothing if it got nothing or was given up already).
+pub fn allowSleep(awake: *Awake) void {
+    if (builtin.os.tag != .macos) return;
+    impl.allowSleep(awake);
 }
 
 const testing = std.testing;
