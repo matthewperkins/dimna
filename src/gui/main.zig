@@ -661,7 +661,7 @@ pub fn main(init: std.process.Init) !u8 {
             status.fps = r.frames;
             status.lost = reader.lost;
             snap_dirty = true;
-            if (pl.audio_dev != null) log.info("  audio: {d:.1} ms (queue {d:.1}, device {d:.1}, margin {d:.1}; longest wait for a block {d:.1}, oldest block {d:.1}), gaps {d}, dropped {d}, noise {d:.1} uV{s}", .{
+            if (pl.audio_dev != null) log.info("  audio: {d:.1} ms (queue {d:.1}, device {d:.1}, margin {d:.1}; longest wait for a block {d:.1}, oldest block {d:.1}), gaps {d}, dropped {d}, noise {d:.1} uV{s}, xruns {d}", .{
                 @as(f64, @floatFromInt(audio_shared.latency_us.load(.monotonic))) / 1000.0,
                 @as(f64, @floatFromInt(audio_shared.queue_us.load(.monotonic))) / 1000.0,
                 @as(f64, @floatFromInt(audio_shared.device_us.load(.monotonic))) / 1000.0,
@@ -672,6 +672,7 @@ pub fn main(init: std.process.Init) !u8 {
                 audio_shared.dropped.load(.monotonic),
                 @as(f64, @floatFromInt(audio_shared.held_sigma_c.load(.monotonic))) / 100.0 * dimna.types.electrode_uv_per_bit,
                 if (audio_shared.held_sigma_c.load(.monotonic) == 0) " (measuring)" else " held",
+                audio_shared.xruns.load(.monotonic),
             });
             if (!env.no_title) {
                 // Zero-terminated for the window system; the text is cut to leave room.
