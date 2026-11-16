@@ -77,6 +77,9 @@ pub const Acquisition = struct {
     realtime: Atomic(bool) = .init(false),
     failure: ?anyerror = null,
     thread: ?std.Thread = null,
+    /// Held from `start` to `join`: the machine does not sleep when idle (macOS; nothing
+    /// on Linux, where it takes no bytes).
+    awake: os.Awake = .{},
 
     commands: events.Spsc(Command, 32) = .{},
     /// Applied settings changes, for the recorder (events.tsv). Single consumer.
@@ -93,7 +96,9 @@ pub const Acquisition = struct {
     pub fn start(self: *Acquisition) !void {
         self.requested = self.source.settings();
         try self.source.start(self.health);
+        self.awake = os.keepAwake();
         self.thread = std.Thread.spawn(.{}, run, .{self}) catch |e| {
+            os.allowSleep(&self.awake);
             self.source.stop() catch {};
             return e;
         };
@@ -106,6 +111,7 @@ pub const Acquisition = struct {
         if (self.thread) |t| t.join();
         self.thread = null;
         self.source.stop() catch |e| log.warn("stopping the source failed: {t}", .{e});
+        os.allowSleep(&self.awake);
     }
 
     /// Queues one command for the acquisition thread.
