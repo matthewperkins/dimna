@@ -115,6 +115,58 @@ Nothing was built on the Mac: Zig is not installed there yet.
 - **No test draws.** The GUI's stored outputs are draw lists as text, upstream of the GPU,
   so they check what either backend is given and nothing of what it draws.
 
+## What Zig 0.17.1's standard library does on macOS
+
+Read from the std source and proved with small programs on the Mac (2026-11-15):
+
+- `Io.Clock.awake` reads `CLOCK_UPTIME_RAW` on macOS and `CLOCK_MONOTONIC` on Linux. On
+  the Mac it shares its epoch with `mach_absolute_time` (readings back to back agreed
+  within 170 ns), which is the base Metal's presentation times use. So latency figures
+  stay differences on one clock. Not tested: an actual sleep of the machine.
+- `File.sync` is a plain `fsync` on macOS: it does **not** flush the drive's cache. std
+  has the constants (`std.c.F.FULLFSYNC`, `BARRIERFSYNC`) but no call that uses them; the
+  port calls `std.c.fcntl` itself. Both returned 0 on the Mac's disk.
+- `Io.File` has `readPositionalAll(io, buf, offset)` (the `pread`), `Io.Dir` has
+  `deleteFile`, `deleteDir`, `symLink`, `symLinkAtomic` (not tried) and a `rename` that
+  replaces its destination. There is **no append mode**: open with `std.c.open` and wrap
+  the descriptor, or write at the file's size.
+- There is no sleep and no clock without an `Io` (`std.Thread.sleep`, `std.time.Timer`
+  and `std.posix.nanosleep` are gone). The helpers that have no `Io` use `std.c.nanosleep`
+  and `std.c.clock_gettime` on macOS, `std.os.linux` on Linux, in `os.zig`. A 100 µs
+  `nanosleep` on the Mac slept 128 µs on average (worst 135), at default priority.
+- **`std.os.linux` calls compile for macOS and misbehave silently** (`getpid` returned
+  22): only `clock_gettime` fails to compile. So a forgotten raw call is not caught by the
+  compiler; step 2 must end with none left outside the Linux backends, checked by a test
+  that searches the sources.
+- `std.posix.mmap`/`munmap` work on both, including unmapping a 2 MiB piece. `std.c` has
+  `getpid`, `mlock`, `sigaction`, `pthread_set_qos_class_self_np`, `mach_absolute_time`;
+  it lacks `statfs`, `thread_policy_set` and `clock_gettime_nsec_np` (declare them).
+- `Thread.setName` (own thread only), `executableDirPath` and `DynLib.open` work on macOS.
+
+## Baseline on the rig (2026-11-15, branch at `15b65b2`, before any change)
+
+With the board (RHD2132 in 16-channel mode on A, RHD2216 on B, ADC; 40 channels, 30 kHz),
+the owner's config, 60 s each. The owner had lifted README rules 1 and 2 until the next
+morning.
+
+| figure | value |
+|---|---|
+| `dimna-headless --seconds 60 --16ch A1 --adc --record`: lost | `dropped=0 gaps=0 bad=0`, `CLEAN`; `dimna_read.py` `OK` |
+| delivery delay beyond the quickest block of each second | avg 0.76 ms, worst 2.65 ms |
+| USB data transfers | 88,428 in 60 s (1,474 per s), 4,074 bytes each |
+| CPU of the 60 s run (user + sys) | 2.4 + 3.4 s |
+| recorder: longest write, longest sync | 249 µs, 19.0 ms |
+| GUI, fullscreen on DP-2 with `tearing`: frames | 283 to 355 per s; display lost 0 blocks |
+| GUI: audio latency | 15.7 to 19.2 ms (queue about 5, device 10.5); gaps 0, dropped 0 |
+| GUI: USB data transfers | 88,870 in 60 s |
+| tests | 273/275 passed, 2 skipped (133; 139 + 2; shader-check 1) |
+
+**The display latency could not be taken**: the rig's session was locked (`hyprlock`), so
+the compositor sent no presentation feedback and the log line read `latency ms avg 0.0`,
+`refresh 0.00`. The owner's own log from an unlocked session has it at avg 1.9 to 2.6 ms,
+min 0.8 to 0.9 (same day). An agent does not unlock the session; the display latency
+figure needs the session unlocked by the owner.
+
 ## The layout aimed at
 
 Names are proposals; the step that makes each file settles its name.
