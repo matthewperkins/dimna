@@ -19,7 +19,7 @@ const Source = @import("source.zig").Source;
 const LiveCommand = types.LiveCommand;
 const Settings = types.Settings;
 const Atomic = std.atomic.Value;
-const linux = std.os.linux;
+const os = @import("os.zig");
 const log = std.log.scoped(.acquisition);
 
 pub const Command = union(enum) {
@@ -246,9 +246,9 @@ pub const Acquisition = struct {
 
 /// SCHED_FIFO at `priority` for the calling thread. Needs rtprio (e.g. the `realtime` group).
 pub fn setRealtime(priority: i32) bool {
-    const rc = linux.sched_setscheduler(0, .{ .mode = .FIFO }, &.{ .priority = priority });
-    if (linux.errno(rc) != .SUCCESS) {
-        log.warn("could not get SCHED_FIFO (errno {t}); running at normal priority", .{linux.errno(rc)});
+    const err = os.setThreadRealtime(priority);
+    if (err != .SUCCESS) {
+        log.warn("could not get SCHED_FIFO (errno {t}); running at normal priority", .{err});
         return false;
     }
     return true;
@@ -256,8 +256,7 @@ pub fn setRealtime(priority: i32) bool {
 
 /// Locks current and future pages in RAM, so acquisition never waits on a page-in.
 pub fn lockMemory() bool {
-    const rc = linux.mlockall(.{ .CURRENT = true, .FUTURE = true });
-    return linux.errno(rc) == .SUCCESS;
+    return os.lockMemory();
 }
 
 const testing = std.testing;

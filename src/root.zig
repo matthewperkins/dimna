@@ -34,6 +34,7 @@ pub const control_view = @import("control_view.zig");
 pub const independence_test = @import("independence_test.zig");
 pub const published = @import("published.zig");
 pub const clock = @import("clock.zig");
+pub const os = @import("os.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());

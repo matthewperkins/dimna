@@ -47,7 +47,7 @@
 
 const std = @import("std");
 const usbfs = @import("usbfs.zig");
-const linux = std.os.linux;
+const os = @import("os.zig");
 const log = std.log.scoped(.ft600);
 
 pub const vendor_id: u16 = 0x0403;
@@ -106,11 +106,12 @@ fn tracing() bool {
 }
 fn trace(comptime fmt: []const u8, args: anytype) void {
     if (!tracing()) return;
-    var ts: linux.timespec = undefined;
-    _ = linux.clock_gettime(.MONOTONIC, &ts);
+    const ns = os.nowNs();
+    const sec = @divTrunc(ns, 1_000_000_000);
+    const nsec = ns - sec * 1_000_000_000;
     std.debug.print(
         "[usb {d}.{d:0>6}] " ++ fmt ++ "\n",
-        .{ @as(u64, @intCast(@mod(ts.sec, 1000))), @as(u64, @intCast(@divTrunc(ts.nsec, 1000))) } ++ args,
+        .{ @as(u64, @intCast(@mod(sec, 1000))), @as(u64, @intCast(@divTrunc(nsec, 1000))) } ++ args,
     );
 }
 
@@ -293,19 +294,16 @@ pub const Ft600 = struct {
 };
 
 pub fn monotonicNs() i128 {
-    var ts: linux.timespec = undefined;
-    _ = linux.clock_gettime(.MONOTONIC, &ts);
-    return @as(i128, ts.sec) * 1_000_000_000 + ts.nsec;
+    return os.nowNs();
 }
 
 pub fn sleepNs(ns: u64) void {
-    var ts: linux.timespec = .{ .sec = @intCast(ns / 1_000_000_000), .nsec = @intCast(ns % 1_000_000_000) };
-    while (linux.errno(linux.nanosleep(&ts, &ts)) == .INTR) {}
+    os.sleepNs(ns);
 }
 
 pub fn sleepMs(ms: u32) void {
-    var ts: linux.timespec = .{ .sec = @intCast(ms / 1000), .nsec = @intCast(@as(u64, ms % 1000) * 1_000_000) };
-    while (linux.errno(linux.nanosleep(&ts, &ts)) == .INTR) {}
+    // The same seconds and nanoseconds as `ms / 1000` and `ms % 1000` ms.
+    os.sleepNs(@as(u64, ms) * 1_000_000);
 }
 
 test "the control requests the driver uses are allowed" {

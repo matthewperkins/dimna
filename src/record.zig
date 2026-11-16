@@ -22,6 +22,7 @@ const c = @import("c");
 const types = @import("types.zig");
 const BlockRing = @import("ring.zig").BlockRing;
 const events = @import("events.zig");
+const os = @import("os.zig");
 const Block = types.Block;
 const Io = std.Io;
 const Atomic = std.atomic.Value;
@@ -110,13 +111,9 @@ const max_pending_edges = 1 << 16;
 /// one step (a link under a temporary name, renamed over it). Best effort: a recording is
 /// not refused because the link could not be made.
 fn pointCurrent(root_dir: Io.Dir, name: []const u8) void {
-    const linux = std.os.linux;
     var target_buf: [128]u8 = undefined;
     const target = std.fmt.bufPrintSentinel(&target_buf, "{s}", .{name}, 0) catch return;
-    _ = linux.unlinkat(root_dir.handle, ".current.new", 0);
-    if (linux.errno(linux.symlinkat(target, root_dir.handle, ".current.new")) != .SUCCESS or
-        linux.errno(linux.renameat(root_dir.handle, ".current.new", root_dir.handle, "current")) != .SUCCESS)
-    {
+    if (!os.swapLink(root_dir.handle, target, ".current.new", "current")) {
         log.warn("could not point the 'current' link at {s}", .{name});
     }
 }

@@ -29,7 +29,6 @@ const std = @import("std");
 const dimna = @import("dimna");
 const audio = dimna.audio;
 const alsa = @import("gui_c");
-const linux = std.os.linux;
 const Atomic = std.atomic.Value;
 const log = std.log.scoped(.audio);
 
@@ -364,6 +363,5 @@ pub const AudioOut = struct {
 const nowNs = dimna.clock.nowNs;
 
 fn sleepUs(us: u32) void {
-    const ts: linux.timespec = .{ .sec = 0, .nsec = @as(isize, us) * 1000 };
-    _ = linux.nanosleep(&ts, null);
+    dimna.os.sleepNsOnce(@as(u64, us) * 1000);
 }

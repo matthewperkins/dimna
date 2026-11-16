@@ -1717,7 +1717,7 @@ test "which sections are open is saved with the view, but is not by itself somet
     try testing.expect(view_file.unsaved(view));
     // Saving writes the [control] table after the others, and then nothing is unsaved.
     var path_buf: [96]u8 = undefined;
-    const dir = try std.fmt.bufPrint(&path_buf, "/tmp/dimna-control-view-test-{d}", .{std.os.linux.getpid()});
+    const dir = try std.fmt.bufPrint(&path_buf, "/tmp/dimna-control-view-test-{d}", .{dimna.os.getpid()});
     defer std.Io.Dir.cwd().deleteTree(io, dir) catch {};
     var file_buf: [128]u8 = undefined;
     const path = try std.fmt.bufPrint(&file_buf, "{s}/views.toml", .{dir});

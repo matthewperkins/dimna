@@ -1350,9 +1350,8 @@ test "Persian read right to left: a string with no right-to-left letter is laid 
 }
 
 fn cpuNs() u64 {
-    var ts: std.os.linux.timespec = undefined;
-    _ = std.os.linux.clock_gettime(.THREAD_CPUTIME_ID, &ts);
-    return @intCast(@as(i128, ts.sec) * 1_000_000_000 + ts.nsec);
+    // CLOCK_THREAD_CPUTIME_ID on Linux.
+    return @intCast(std.Io.Clock.cpu_thread.now(testing.io).nanoseconds);
 }
 
 // The cost of a frame of text, and how many CJK glyphs fit. Not part of the usual run: set

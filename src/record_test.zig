@@ -13,6 +13,7 @@ const Atomic = std.atomic.Value;
 const types = @import("types.zig");
 const record = @import("record.zig");
 const events = @import("events.zig");
+const os = @import("os.zig");
 const BlockRing = @import("ring.zig").BlockRing;
 const Recorder = record.Recorder;
 const IndexRecord = record.IndexRecord;
@@ -154,7 +155,7 @@ const TmpRoot = struct {
 
     fn init(name: []const u8) !TmpRoot {
         var t: TmpRoot = .{};
-        const p = try std.fmt.bufPrint(&t.buf, "/tmp/dimna-record-test-{d}/{s}", .{ std.os.linux.getpid(), name });
+        const p = try std.fmt.bufPrint(&t.buf, "/tmp/dimna-record-test-{d}/{s}", .{ os.getpid(), name });
         t.len = p.len;
         Io.Dir.cwd().deleteTree(testing.io, p) catch {};
         try Io.Dir.cwd().createDirPath(testing.io, p);
@@ -167,8 +168,8 @@ const TmpRoot = struct {
         Io.Dir.cwd().deleteTree(testing.io, self.path()) catch {};
         // The per-process parent, once the last test's folder is gone (fails while others remain).
         var pbuf: [64]u8 = undefined;
-        const parent = std.fmt.bufPrintSentinel(&pbuf, "/tmp/dimna-record-test-{d}", .{std.os.linux.getpid()}, 0) catch return;
-        _ = std.os.linux.rmdir(parent);
+        const parent = std.fmt.bufPrint(&pbuf, "/tmp/dimna-record-test-{d}", .{os.getpid()}) catch return;
+        Io.Dir.cwd().deleteDir(testing.io, parent) catch {};
     }
 };
 

@@ -5,13 +5,11 @@
 //! Latency figures are differences between the two; they must stay on the same clock.
 
 const std = @import("std");
-const linux = std.os.linux;
+const os = @import("os.zig");
 
 /// Nanoseconds on the monotonic clock. Needs no `Io`, so any thread can call it.
 pub fn nowNs() i128 {
-    var ts: linux.timespec = undefined;
-    _ = linux.clock_gettime(.MONOTONIC, &ts);
-    return @as(i128, ts.sec) * std.time.ns_per_s + ts.nsec;
+    return os.nowNs();
 }
 
 test "the same clock as Io.Clock.awake, and it does not go back" {

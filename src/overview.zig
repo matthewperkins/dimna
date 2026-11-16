@@ -26,7 +26,7 @@ const pyramid = @import("pyramid.zig");
 const events = @import("events.zig");
 const clock = @import("clock.zig");
 const Atomic = std.atomic.Value;
-const linux = std.os.linux;
+const os = @import("os.zig");
 const log = std.log.scoped(.overview);
 
 /// A hole for the thread: make the buckets of its newest end (`Backfill.step`).
@@ -88,8 +88,8 @@ const Shared = struct {
 /// The backfill thread.
 fn run(sh: *Shared) void {
     // Idle priority: it gets only what nothing else wants. Not fatal if refused.
-    const rc = linux.sched_setscheduler(0, .{ .mode = .IDLE }, &.{ .priority = 0 });
-    if (linux.errno(rc) != .SUCCESS) log.warn("backfill thread: could not get SCHED_IDLE (errno {t})", .{linux.errno(rc)});
+    const err = os.setThreadIdle();
+    if (err != .SUCCESS) log.warn("backfill thread: could not get SCHED_IDLE (errno {t})", .{err});
     var bf = pyramid.Backfill.init(sh.gpa, &sh.layout, &sh.set, sh.generation) catch |e| return sh.fail(e);
     defer bf.deinit();
     bf.open(sh.dir_buf[0..sh.dir_len], sh.first_sample) catch |e| return sh.fail(e);
@@ -506,9 +506,9 @@ const TestRec = struct {
             if (@mod(s, 9001) < 300) w |= 8;
             self.words[i] = w;
         }
-        const d = try std.fmt.bufPrintSentinel(&self.dir_buf, "/tmp/dimna-overview-test-{d}-{s}", .{ linux.getpid(), tag }, 0);
+        const d = try std.fmt.bufPrintSentinel(&self.dir_buf, "/tmp/dimna-overview-test-{d}-{s}", .{ os.getpid(), tag }, 0);
         self.dir_len = d.len;
-        _ = linux.mkdir(self.dir(), 0o700);
+        try std.Io.Dir.cwd().createDirPath(testing.io, self.dir());
         try self.write(written);
         return self;
     }
@@ -531,19 +531,12 @@ const TestRec = struct {
         ) |name, bytes_| {
             var b: [128:0]u8 = undefined;
             const path = try std.fmt.bufPrintSentinel(&b, "{s}/{s}", .{ self.dir(), name }, 0);
-            const fd: i32 = @intCast(linux.open(path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, 0o600));
-            defer _ = linux.close(fd);
-            var done: usize = 0;
-            while (done < bytes_.len) done += linux.write(fd, bytes_.ptr + done, bytes_.len - done);
+            try std.Io.Dir.cwd().writeFile(testing.io, .{ .sub_path = path, .data = bytes_ });
         }
     }
 
     fn deinit(self: *TestRec) void {
-        inline for (.{ "samples.i16", "ttl_sample.i64", "ttl_word.u16" }) |name| {
-            var b: [128:0]u8 = undefined;
-            _ = linux.unlink(std.fmt.bufPrintSentinel(&b, "{s}/{s}", .{ self.dir(), name }, 0) catch unreachable);
-        }
-        _ = linux.rmdir(self.dir());
+        std.Io.Dir.cwd().deleteTree(testing.io, self.dir()) catch {};
         self.gpa.free(self.data);
         self.gpa.free(self.words);
     }
@@ -838,7 +831,7 @@ test "no recording folder: inactive, logged; a file shorter than file_end: retri
 
     // A folder that is not there (removed before the thread got to it).
     var gone_buf: [80]u8 = undefined;
-    const gone = try std.fmt.bufPrint(&gone_buf, "/tmp/dimna-overview-test-{d}-gone", .{linux.getpid()});
+    const gone = try std.fmt.bufPrint(&gone_buf, "/tmp/dimna-overview-test-{d}-gone", .{os.getpid()});
     try ov.begin(gone, 5000, &set, width);
     var until = deadline(30);
     while (ov.active()) {
