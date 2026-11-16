@@ -302,6 +302,47 @@ ranges overlapping, the best frame, no frame a refresh late and nothing lost.
   taken without that, both sides alike; at normal priority the display figures were the
   same (2.4 ms per-second average, best frame 0.6 ms).
 
+### Steps 9b and 10: the AppKit window and the Metal renderer (2026-11-16)
+
+Plans `macos-step9b-appkit-window.md` and `macos-step10-metal.md`, written by two agents
+at once and joined by the lead. `dimna --sim 32,16` on the Mac now opens its three windows,
+draws, and ends with status 0. Tests on the Mac: core 139 of 140, GUI 188 of 194 with
+`DIMNA_TEST_WINDOW=1` (181 without; the rest skip by design). The Linux headless binary's
+`.text` and `.rodata` are identical before and after; the Linux GUI is **not yet built on
+the rig** with this code (the shared files changed in comments only).
+
+Measured in the joined program, simulator, 60 Hz MacBook Air, sample to screen as macOS
+reports it (the once-a-second line):
+
+| how | frames per s | latency avg | best frame |
+|---|---|---|---|
+| fullscreen, `--tearing` | about 210 | 6.4 to 6.9 ms | 4.1 ms |
+| window, `--tearing`, alone and in front | about 225 | 5.6 to 6.4 ms | 4.0 ms |
+| window, `--tearing`, control and tiles beside it | about 110 | about 20 ms | 3.7 ms |
+| window, `--tearing`, behind another application's window | 60 | 45 ms | |
+| window, paced at the refresh (no `--tearing`) | 60 | 16 to 19 ms | 4.5 ms |
+
+What was learned joining them:
+
+- A window started from a terminal came up behind the terminal's, and a covered window is
+  shown through the window server's queue (45 ms, the GPU waiting about 13 ms a frame for
+  its surface). The window now comes to the front when made.
+- With other windows redrawing on the same screen the display is slower even when nothing
+  covers it, with display sync off for all of them as well (tried). Only a lone front
+  window or a fullscreen one is shown at once. So on the Mac as on the rig, the display
+  belongs fullscreen on a screen of its own; two screens are not tried yet.
+- The first three windows are placed side by side (display left, the others right).
+- Frames replaced before they were shown (13 to 25 % with three drawables) are not
+  reported to the pacer.
+
+Open from the two reports: worst frames of 25 to 49 ms now and then, unexplained since
+the probe; the display link giving 66 frames a second on a 60 Hz screen; real keyboard,
+wheel and trackpad input checked by nobody's hands yet (the tests deliver events inside
+the process); `contentsScale` when a window changes screens; colours unmatched (P3
+panel); Linux wording in shared text (`--monitor DP-2`, "the Vulkan present mode",
+`$XDG_CONFIG_HOME`, "not CLOCK_MONOTONIC"), left alone because changing it changes the
+Linux binary.
+
 ## The layout aimed at
 
 Names are proposals; the step that makes each file settles its name.

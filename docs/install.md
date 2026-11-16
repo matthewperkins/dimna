@@ -214,6 +214,18 @@ verifies it; it needs Python 3.11 or newer with numpy), Ctrl-C ending a recordin
   macOS reports it) and on for the control and tile windows; `--present fifo` turns it on
   for the display too. `mailbox` means the same as `immediate` on a Mac. Colours are
   written as they are, with no colour matching to the display.
+- **Where the display is quick.** Fullscreen (`--monitor "Built-in Retina Display"`, or
+  another screen's name as macOS shows it) with `--tearing`: about 210 frames a second and
+  7 ms from sample to screen as macOS reports it, on a 60 Hz MacBook Air. In a window it is
+  as quick only while it is in front and nothing else on the screen is redrawing (about
+  225 frames a second, 6 ms, alone); with dimna's control and tile windows beside it, about
+  110 frames a second and 20 ms; behind another application's window, 60 and 45 ms. The
+  window server shows a lone front window at once and everything else at the refresh. On
+  one screen, fullscreen covers dimna's other windows; with a second screen they go there.
+  Not tried yet: two screens, a 120 Hz screen.
+- **Windows.** The display opens on the left of the screen, the control window and the
+  tiles on the right, and dimna comes to the front. Cmd-Q closes like the close button;
+  keys with Cmd held are not dimna's.
 
 Not yet: the board (the Mac's USB backend is a stand-in that finds no device, so opening
 the board fails as with none plugged in), an `.app`.

@@ -433,15 +433,33 @@ static DimnaWindowObj *makeWindow(NSString *title, void *ctx, DimnaAwCallbacks c
     o.view = view;
     o.layer = layer;
 
-    // Each new window a little lower and to the right of the last.
-    [win center];
-    NSPoint at = win.frame.origin;
-    CGFloat step = 24 * (CGFloat)(windows.count % 8);
-    [win setFrameOrigin:NSMakePoint(at.x + step, at.y - step)];
+    // The process's first three windows (the display, then the control window and the
+    // tiles, in either order) side by side, none over another: the display on the left
+    // with most of the screen, the other two above each other on the right. (A window
+    // under another one is shown through the window server's queue: free-running, the
+    // display measured 45 ms behind another application's window against 6 in front.)
+    // Any further window a little lower and to the right of the last.
+    if (windows.count < 3 && screen) {
+        CGFloat split = floor(visible.size.width * 0.62), half = floor(visible.size.height / 2);
+        NSRect frame = windows.count == 0
+            ? NSMakeRect(visible.origin.x, visible.origin.y, split, visible.size.height)
+            : NSMakeRect(visible.origin.x + split, visible.origin.y + (windows.count == 1 ? half : 0),
+                         visible.size.width - split, windows.count == 1 ? visible.size.height - half : half);
+        [win setFrame:frame display:NO];
+    } else {
+        [win center];
+        NSPoint at = win.frame.origin;
+        CGFloat step = 24 * (CGFloat)(windows.count % 8);
+        [win setFrameOrigin:NSMakePoint(at.x + step, at.y - step)];
+    }
     [windows addObject:o];
 
     [win makeKeyAndOrderFront:nil];
     [NSApp activate];
+    // Started from a terminal, activation alone can leave the window behind the terminal's
+    // (macOS lets the front application keep its place), and a covered window is slow (see
+    // the placement above). The user started dimna, so its window comes to the front.
+    [win orderFrontRegardless];
     atomic_store(&o->refresh_ns, refreshOf(win.screen ? win.screen : screen));
 
     // At each refresh of the screen the view is on, on the main thread.

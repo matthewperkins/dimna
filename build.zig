@@ -122,7 +122,7 @@ pub fn build(b: *std.Build) void {
         return;
     }
 
-    // ---- macOS: dimna without a window or a GPU yet (see addMacGui). ----
+    // ---- macOS: dimna with AppKit and Metal (see addMacGui). ----
     if (target.result.os.tag == .macos) {
         const gui = addMacGui(b, target, optimize, core.dimna);
         b.installArtifact(gui.gui);
@@ -410,9 +410,9 @@ fn addGui(
 /// SPIR-V, fontconfig, xkbcommon or ALSA. FreeType through pkg-config (Homebrew's, which a
 /// Mac then needs installed); fonts are found with Core Text and sound goes through Core
 /// Audio, both called through their C interfaces, declared in the Zig files that use them
-/// (src/gui/fontfind_coretext.zig, src/gui/audio_coreaudio.zig). The window and the GPU are
-/// stand-ins that fail (src/gui/window_appkit.zig, src/gui/gpu_metal.zig): AppKit and Metal
-/// are the next step, and neither is linked yet.
+/// (src/gui/fontfind_coretext.zig, src/gui/audio_coreaudio.zig). The window is AppKit and
+/// the renderer Metal (src/gui/window_appkit.zig, src/gui/gpu_metal.zig), each through an
+/// Objective-C shim beside it.
 fn addMacGui(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
