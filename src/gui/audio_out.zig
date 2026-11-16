@@ -4,8 +4,12 @@
 //!     depends on the display's frame rate, and never holds acquisition back), runs the
 //!     chain in `audio.zig`, resamples to the device's rate and puts the result in a small
 //!     queue;
-//!   output: hands the device one period at a time (ALSA; on this machine PipeWire's ALSA
-//!     device), with silence when the queue is empty.
+//!   output: hands the device one period at a time (ALSA, `audio_alsa.zig`; on this
+//!     machine PipeWire's ALSA device), with silence when the queue is empty.
+//!
+//! What goes to the device is made by one function, `render`: it fills as many frames as
+//! the device asks for from the queue. The ALSA thread calls it once a period and then
+//! writes the period; a device that pulls frames through a callback calls it from there.
 //!
 //! The board's clock and the sound card's differ slightly, so the feeder trims the
 //! resampling ratio to keep the queue just above empty: it steers on the least that was
@@ -28,7 +32,7 @@
 const std = @import("std");
 const dimna = @import("dimna");
 const audio = dimna.audio;
-const alsa = @import("gui_c");
+const audio_alsa = @import("audio_alsa.zig");
 const Atomic = std.atomic.Value;
 const log = std.log.scoped(.audio);
 
@@ -106,9 +110,13 @@ pub const AudioOut = struct {
     fs_in: f64,
     nch: usize,
     block_samples: usize,
-    pcm: ?*alsa.snd_pcm_t = null,
+    alsa: ?audio_alsa.Device = null,
     fs_out: f64 = 48000,
-    period: usize = 128,
+    /// The largest request the device makes, in frames: what the feeder keeps room for
+    /// (the drop limit, `primed`), read from its own thread. ALSA: its period, fixed once
+    /// the device is open. A device with requests of varying size sets what it expects;
+    /// `render` raises it if a request is ever larger.
+    max_request: Atomic(u32) = .init(128),
     /// The device's own buffer, in frames (two periods are asked for).
     device_buffer: usize = 256,
     fifo: Fifo,
@@ -120,6 +128,11 @@ pub const AudioOut = struct {
     active: Atomic(bool) = .init(false),
     /// The queue has been filled to its margin at least once since the monitor came on.
     primed: Atomic(bool) = .init(false),
+    /// Where the alarm tone is in its second, in frames of the device's rate. Only
+    /// `render` uses it.
+    alarm_phase: usize = 0,
+    /// Frames handed to the device so far (`render`).
+    rendered: Atomic(u64) = .init(0),
     feeder: ?std.Thread = null,
     output: ?std.Thread = null,
 
@@ -143,7 +156,7 @@ pub const AudioOut = struct {
             .block_samples = block_samples,
             .fifo = .{ .buf = &.{} },
         };
-        self.open() catch |e| {
+        self.alsa = audio_alsa.open(self) catch |e| {
             log.warn("no audio output ({t}); the monitor is silent", .{e});
             gpa.destroy(self);
             return null;
@@ -151,15 +164,15 @@ pub const AudioOut = struct {
         // A fifth of a second of stereo frames, rounded up to a power of two.
         const cap = std.math.ceilPowerOfTwo(usize, @as(usize, @intFromFloat(self.fs_out / 5)) * 2) catch 32768;
         self.fifo.buf = gpa.alloc(f32, cap) catch {
-            _ = alsa.snd_pcm_close(self.pcm);
+            audio_alsa.close(self.alsa.?);
             gpa.destroy(self);
             return null;
         };
-        self.output = std.Thread.spawn(.{}, outputLoop, .{self}) catch null;
+        self.output = std.Thread.spawn(.{}, audio_alsa.outputLoop, .{self}) catch null;
         self.feeder = std.Thread.spawn(.{}, feederLoop, .{self}) catch null;
         shared.device_rate.store(@intFromFloat(self.fs_out), .monotonic);
         shared.running.store(self.output != null and self.feeder != null, .release);
-        log.info("audio output: {d} Hz, {d} frames per period, device buffer {d}", .{ self.fs_out, self.period, self.device_buffer });
+        log.info("audio output: {d} Hz, {d} frames per period, device buffer {d}", .{ self.fs_out, self.max_request.load(.monotonic), self.device_buffer });
         return self;
     }
 
@@ -168,81 +181,44 @@ pub const AudioOut = struct {
         if (self.feeder) |t| t.join();
         if (self.output) |t| t.join();
         self.shared.running.store(false, .release);
-        if (self.pcm) |p| _ = alsa.snd_pcm_close(p);
+        if (self.alsa) |d| audio_alsa.close(d);
         self.gpa.free(self.fifo.buf);
         self.gpa.destroy(self);
     }
 
-    fn open(self: *AudioOut) !void {
-        var pcm: ?*alsa.snd_pcm_t = null;
-        if (alsa.snd_pcm_open(&pcm, "default", alsa.SND_PCM_STREAM_PLAYBACK, 0) < 0) return error.NoDevice;
-        errdefer _ = alsa.snd_pcm_close(pcm);
-        var hw: ?*alsa.snd_pcm_hw_params_t = null;
-        if (alsa.snd_pcm_hw_params_malloc(&hw) < 0) return error.OutOfMemory;
-        defer alsa.snd_pcm_hw_params_free(hw);
-        if (alsa.snd_pcm_hw_params_any(pcm, hw) < 0) return error.DeviceParams;
-        if (alsa.snd_pcm_hw_params_set_access(pcm, hw, alsa.SND_PCM_ACCESS_RW_INTERLEAVED) < 0) return error.DeviceParams;
-        if (alsa.snd_pcm_hw_params_set_format(pcm, hw, alsa.SND_PCM_FORMAT_FLOAT_LE) < 0) return error.DeviceFormat;
-        if (alsa.snd_pcm_hw_params_set_channels(pcm, hw, 2) < 0) return error.DeviceChannels;
-        var rate: c_uint = 48000;
-        if (alsa.snd_pcm_hw_params_set_rate_near(pcm, hw, &rate, null) < 0) return error.DeviceRate;
-        // Small periods: each is latency. Two of them as the device's own buffer.
-        var period: alsa.snd_pcm_uframes_t = 128;
-        _ = alsa.snd_pcm_hw_params_set_period_size_near(pcm, hw, &period, null);
-        var buffer: alsa.snd_pcm_uframes_t = period * 2;
-        _ = alsa.snd_pcm_hw_params_set_buffer_size_near(pcm, hw, &buffer);
-        if (alsa.snd_pcm_hw_params(pcm, hw) < 0) return error.DeviceParams;
-        _ = alsa.snd_pcm_hw_params_get_period_size(hw, &period, null);
-        _ = alsa.snd_pcm_hw_params_get_buffer_size(hw, &buffer);
-        self.device_buffer = @intCast(buffer);
-        _ = alsa.snd_pcm_hw_params_get_rate(hw, &rate, null);
-        if (alsa.snd_pcm_prepare(pcm) < 0) return error.DevicePrepare;
-        self.pcm = pcm;
-        self.fs_out = @floatFromInt(rate);
-        self.period = @intCast(period);
-    }
-
-    fn outputLoop(self: *AudioOut) void {
-        const buf = self.gpa.alloc(f32, self.period * 2) catch return;
-        defer self.gpa.free(buf);
-        var alarm_phase: usize = 0;
-        while (!self.stop_flag.load(.acquire)) {
-            const avail = self.fifo.used() / 2;
-            // What is left after this period is the headroom against late input.
-            const left: u32 = @intCast(avail -| self.period);
-            _ = self.min_fill.fetchMin(left, .monotonic);
-            self.fill.store(@intCast(avail), .monotonic);
-            const got = self.fifo.pop(buf[0 .. @min(avail, self.period) * 2]);
-            @memset(buf[got..], 0);
-            // A gap only counts once sound has started arriving (not the silence before
-            // the first block, or while the monitor is off).
-            if (got < buf.len and self.active.load(.monotonic) and
-                self.primed.load(.monotonic)) _ = self.shared.underruns.fetchAdd(1, .monotonic);
-            if (self.shared.alarm.load(.monotonic)) {
-                // 0.15 s of 880 Hz at the start of every second.
-                const rate: usize = @intFromFloat(self.fs_out);
-                for (0..self.period) |i| {
-                    const n = (alarm_phase + i) % rate;
-                    if (n < rate * 15 / 100) {
-                        const v: f32 = 0.25 * @sin(2.0 * std.math.pi * 880.0 * @as(f32, @floatFromInt(n)) / @as(f32, @floatFromInt(rate)));
-                        buf[2 * i] += v;
-                        buf[2 * i + 1] += v;
-                    }
-                }
-                alarm_phase = (alarm_phase + self.period) % rate;
-            } else alarm_phase = 0;
-            const wrote = alsa.snd_pcm_writei(self.pcm, buf.ptr, self.period);
-            if (wrote < 0) {
-                // An xrun or a suspended device: start again.
-                if (alsa.snd_pcm_recover(self.pcm, @intCast(wrote), 1) < 0) {
-                    log.warn("the audio device stopped: {s}", .{alsa.snd_strerror(@intCast(wrote))});
-                    self.shared.running.store(false, .release);
-                    return;
+    /// Fills `out[0 .. 2 * frames]` (interleaved stereo) with the next `frames` frames from
+    /// the queue, silence where it has none, and the alarm tone over it while the alarm is
+    /// on. Called by the device's own thread or callback, once for each request, with any
+    /// number of frames. Fit for a real-time callback: atomics only, no lock, no
+    /// allocation, no logging, no system call.
+    pub fn render(self: *AudioOut, out: []f32, frames: usize) void {
+        const buf = out[0 .. 2 * frames];
+        if (frames > self.max_request.load(.monotonic)) _ = self.max_request.fetchMax(@intCast(frames), .monotonic);
+        const avail = self.fifo.used() / 2;
+        // What is left after this request is the headroom against late input.
+        const left: u32 = @intCast(avail -| frames);
+        _ = self.min_fill.fetchMin(left, .monotonic);
+        self.fill.store(@intCast(avail), .monotonic);
+        const got = self.fifo.pop(buf[0 .. @min(avail, frames) * 2]);
+        @memset(buf[got..], 0);
+        // A gap only counts once sound has started arriving (not the silence before
+        // the first block, or while the monitor is off).
+        if (got < buf.len and self.active.load(.monotonic) and
+            self.primed.load(.monotonic)) _ = self.shared.underruns.fetchAdd(1, .monotonic);
+        if (self.shared.alarm.load(.monotonic)) {
+            // 0.15 s of 880 Hz at the start of every second.
+            const rate: usize = @intFromFloat(self.fs_out);
+            for (0..frames) |i| {
+                const n = (self.alarm_phase + i) % rate;
+                if (n < rate * 15 / 100) {
+                    const v: f32 = 0.25 * @sin(2.0 * std.math.pi * 880.0 * @as(f32, @floatFromInt(n)) / @as(f32, @floatFromInt(rate)));
+                    buf[2 * i] += v;
+                    buf[2 * i + 1] += v;
                 }
             }
-            var delay: alsa.snd_pcm_sframes_t = 0;
-            if (alsa.snd_pcm_delay(self.pcm, &delay) == 0 and delay >= 0) self.device_delay.store(@intCast(delay), .monotonic);
-        }
+            self.alarm_phase = (self.alarm_phase + frames) % rate;
+        } else self.alarm_phase = 0;
+        self.rendered.store(self.rendered.load(.monotonic) + frames, .monotonic);
     }
 
     fn feederLoop(self: *AudioOut) void {
@@ -345,7 +321,7 @@ pub const AudioOut = struct {
             // Far more queued than needed (start-up, a stall upstream): drop this block's
             // sound, one audible skip, rather than carry the latency for a minute. The
             // slack covers the board's bursty USB delivery.
-            const limit: usize = @as(usize, @intFromFloat(margin_ms * 1e-3 * self.fs_out)) + 2 * self.period +
+            const limit: usize = @as(usize, @intFromFloat(margin_ms * 1e-3 * self.fs_out)) + 2 * self.max_request.load(.monotonic) +
                 @as(usize, @intFromFloat(self.fs_out * 0.012));
             if (self.fifo.used() / 2 > limit) {
                 _ = self.shared.dropped.fetchAdd(1, .monotonic);
@@ -354,7 +330,7 @@ pub const AudioOut = struct {
             const n = self.fifo.push(out.items);
             if (!self.primed.load(.monotonic) and
                 self.fifo.used() / 2 >
-                    @as(usize, @intFromFloat(margin_ms * 1e-3 * self.fs_out)) + self.period) self.primed.store(true, .monotonic);
+                    @as(usize, @intFromFloat(margin_ms * 1e-3 * self.fs_out)) + self.max_request.load(.monotonic)) self.primed.store(true, .monotonic);
             if (n < out.items.len) _ = self.shared.dropped.fetchAdd(1, .monotonic);
         }
     }
@@ -364,4 +340,205 @@ const nowNs = dimna.clock.nowNs;
 
 fn sleepUs(us: u32) void {
     dimna.os.sleepNsOnce(@as(u64, us) * 1000);
+}
+
+// ---- tests: `render` without a device ----
+
+const testing = std.testing;
+
+/// An `AudioOut` with a queue of `buf` (a power of two of samples) and no device, ring or
+/// threads: only `render` and the queue are used.
+fn testOut(shared: *Shared, buf: []f32, fs_out: f64) AudioOut {
+    return .{
+        .gpa = testing.allocator,
+        .shared = shared,
+        .ring = undefined,
+        .fs_in = 30000,
+        .nch = 1,
+        .block_samples = 128,
+        .fs_out = fs_out,
+        .fifo = .{ .buf = buf },
+    };
+}
+
+test "render: an empty queue gives zeros; a gap counts only when active and primed" {
+    var shared: Shared = .{};
+    var q: [256]f32 = undefined;
+    var a = testOut(&shared, &q, 48000);
+    var out: [128]f32 = undefined;
+    for ([_][2]bool{ .{ false, false }, .{ true, false }, .{ false, true } }) |state| {
+        a.active.store(state[0], .monotonic);
+        a.primed.store(state[1], .monotonic);
+        @memset(&out, 7);
+        a.render(&out, 64);
+        for (out) |v| try testing.expectEqual(0, v);
+        try testing.expectEqual(0, shared.underruns.load(.monotonic));
+    }
+    a.active.store(true, .monotonic);
+    a.primed.store(true, .monotonic);
+    a.render(&out, 64);
+    try testing.expectEqual(1, shared.underruns.load(.monotonic));
+    // Part of a request: what there is, then zeros, and a gap.
+    var some: [20]f32 = undefined;
+    for (&some, 0..) |*v, i| v.* = @floatFromInt(i + 1);
+    try testing.expectEqual(20, a.fifo.push(&some));
+    @memset(&out, 7);
+    a.render(&out, 64);
+    try testing.expectEqualSlices(f32, &some, out[0..20]);
+    for (out[20..]) |v| try testing.expectEqual(0, v);
+    try testing.expectEqual(2, shared.underruns.load(.monotonic));
+    // A whole request from the queue is no gap.
+    for (0..4) |_| _ = a.fifo.push(&some);
+    a.render(&out, 40);
+    try testing.expectEqual(2, shared.underruns.load(.monotonic));
+    try testing.expectEqual(5 * 64 + 40, a.rendered.load(.monotonic));
+}
+
+test "render: frames come out in the order pushed, across the queue's wrap, whatever the request" {
+    var shared: Shared = .{};
+    var q: [256]f32 = undefined; // 128 frames
+    var a = testOut(&shared, &q, 48000);
+    a.active.store(true, .monotonic);
+    a.primed.store(true, .monotonic);
+    const out = try testing.allocator.alloc(f32, 2 * 1024);
+    defer testing.allocator.free(out);
+    var pushed: usize = 0; // samples pushed so far; each sample's value is its index
+    var popped: usize = 0;
+    var gaps: u64 = 0;
+    for (0..12) |round| {
+        for ([_]usize{ 1, 64, 100, 128, 1024 }) |frames| {
+            // Fill the queue up (an odd number of samples now and then would break the
+            // frames apart: push whole frames, as the feeder does).
+            var chunk: [256]f32 = undefined;
+            const free = (q.len - a.fifo.used()) & ~@as(usize, 1);
+            const want = if (round % 3 == 0) @min(free, 2 * 37) else free;
+            for (chunk[0..want], 0..) |*v, i| v.* = @floatFromInt(pushed + i);
+            try testing.expectEqual(want, a.fifo.push(chunk[0..want]));
+            pushed += want;
+            const avail = a.fifo.used() / 2;
+            @memset(out, -1);
+            a.render(out, frames);
+            const got = @min(avail, frames);
+            for (out[0 .. 2 * got], 0..) |v, i| try testing.expectEqual(@as(f32, @floatFromInt(popped + i)), v);
+            for (out[2 * got .. 2 * frames]) |v| try testing.expectEqual(0, v);
+            // Nothing beyond the request is touched.
+            for (out[2 * frames ..]) |v| try testing.expectEqual(-1, v);
+            popped += 2 * got;
+            if (got < frames) gaps += 1;
+            try testing.expectEqual(gaps, shared.underruns.load(.monotonic));
+            // The largest request so far (the queue's default, 128, until 1024 comes).
+            try testing.expectEqual(@as(u32, if (round == 0 and frames < 1024) 128 else 1024), a.max_request.load(.monotonic));
+        }
+    }
+    // The queue's indices went round it many times.
+    try testing.expect(popped > 20 * q.len);
+}
+
+test "render: fill is what was queued before the request, min_fill the least left after one" {
+    var shared: Shared = .{};
+    var q: [512]f32 = undefined;
+    var a = testOut(&shared, &q, 48000);
+    var frames100: [200]f32 = @splat(0.5);
+    _ = a.fifo.push(&frames100);
+    var out: [256]f32 = undefined;
+    a.render(&out, 64);
+    try testing.expectEqual(100, a.fill.load(.monotonic));
+    try testing.expectEqual(36, a.min_fill.load(.monotonic));
+    a.render(&out, 16);
+    try testing.expectEqual(36, a.fill.load(.monotonic));
+    try testing.expectEqual(20, a.min_fill.load(.monotonic));
+    a.render(&out, 64); // more than there is: nothing left
+    try testing.expectEqual(20, a.fill.load(.monotonic));
+    try testing.expectEqual(0, a.min_fill.load(.monotonic));
+    // The feeder takes the least and starts again.
+    try testing.expectEqual(0, a.min_fill.swap(std.math.maxInt(u32), .monotonic));
+    _ = a.fifo.push(frames100[0..100]);
+    a.render(&out, 10);
+    try testing.expectEqual(50, a.fill.load(.monotonic));
+    try testing.expectEqual(40, a.min_fill.load(.monotonic));
+    a.render(&out, 128);
+    try testing.expectEqual(0, a.min_fill.load(.monotonic));
+}
+
+test "render: splitting a request changes nothing (the queue, the alarm's phase)" {
+    // The same queue contents each time, the alarm on: 128 frames asked for at once, as
+    // 64 + 64, and as 37 + 91, come out the same.
+    const splits = [_][]const usize{ &.{128}, &.{ 64, 64 }, &.{ 37, 91 }, &.{ 1, 100, 27 } };
+    var results: [splits.len][2 * 128 * 3]f32 = undefined;
+    for (splits, 0..) |split, k| {
+        var shared: Shared = .{};
+        var q: [1024]f32 = undefined;
+        var a = testOut(&shared, &q, 48000);
+        shared.alarm.store(true, .monotonic);
+        var sound: [2 * 300]f32 = undefined;
+        for (&sound, 0..) |*v, i| v.* = @as(f32, @floatFromInt(i % 50)) / 100.0 - 0.25;
+        _ = a.fifo.push(&sound);
+        // Three rounds of 128: the third runs past the 300 frames queued.
+        var at: usize = 0;
+        for (0..3) |_| for (split) |n| {
+            a.render(results[k][2 * at ..], n);
+            at += n;
+        };
+        try testing.expectEqual(3 * 128, at);
+    }
+    for (results[1..]) |r| try testing.expectEqualSlices(f32, &results[0], &r);
+}
+
+/// The alarm tone at frame `n` of a second at `rate` frames per second: what `render` adds.
+fn alarmAt(n: usize, rate: usize) f32 {
+    if (n % rate >= rate * 15 / 100) return 0;
+    const k = n % rate;
+    return 0.25 * @sin(2.0 * std.math.pi * 880.0 * @as(f32, @floatFromInt(k)) / @as(f32, @floatFromInt(rate)));
+}
+
+test "render: the alarm tone, 0.15 s at the start of each second, continuous across requests of any size" {
+    for ([_]usize{ 48000, 44100 }) |rate| {
+        var shared: Shared = .{};
+        var q: [4096]f32 = undefined;
+        var a = testOut(&shared, &q, @floatFromInt(rate));
+        const total = 2 * rate + rate / 4;
+        const got = try testing.allocator.alloc(f32, 2 * total);
+        defer testing.allocator.free(got);
+        shared.alarm.store(true, .monotonic);
+        const sizes = [_]usize{ 1, 64, 100, 128, 1024, 37, 91 };
+        var at: usize = 0;
+        var k: usize = 0;
+        while (at < total) : (k += 1) {
+            const n = @min(sizes[k % sizes.len], total - at);
+            a.render(got[2 * at ..], n);
+            at += n;
+        }
+        var on: usize = 0;
+        for (0..total) |i| {
+            const want = alarmAt(i, rate);
+            try testing.expectApproxEqAbs(want, got[2 * i], 1e-6);
+            try testing.expectEqual(got[2 * i], got[2 * i + 1]);
+            if (got[2 * i] != 0) on += 1;
+        }
+        // Sounding for (nearly: the sine's zero crossings) 0.15 s of each of the three
+        // seconds begun, and silent the rest.
+        try testing.expect(on > 3 * (rate * 15 / 100) - 3 * 300 and on <= 3 * (rate * 15 / 100));
+
+        // Off: silence, and on again it starts at the beginning of its second.
+        shared.alarm.store(false, .monotonic);
+        var out: [2 * 300]f32 = undefined;
+        a.render(&out, 300);
+        for (out) |v| try testing.expectEqual(0, v);
+        shared.alarm.store(true, .monotonic);
+        a.render(&out, 300);
+        for (0..300) |i| try testing.expectApproxEqAbs(alarmAt(i, rate), out[2 * i], 1e-6);
+
+        // Added to what is playing.
+        var sound: [2 * 200]f32 = undefined;
+        for (&sound, 0..) |*v, i| v.* = if (i % 2 == 0) 0.1 else -0.2;
+        _ = a.fifo.push(&sound);
+        a.render(&out, 300);
+        for (0..300) |i| {
+            const tone = alarmAt(300 + i, rate);
+            const l: f32 = if (i < 200) 0.1 else 0;
+            const r: f32 = if (i < 200) -0.2 else 0;
+            try testing.expectApproxEqAbs(l + tone, out[2 * i], 1e-6);
+            try testing.expectApproxEqAbs(r + tone, out[2 * i + 1], 1e-6);
+        }
+    }
 }
