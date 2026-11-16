@@ -121,3 +121,29 @@ makes the caller behave as now), `packaging/dimna-jack.service` (removed),
 The evidence and the break-it results are in your report; the three changes are separate
 commits on `macos-port` in the rig's worktree; the worktree is clean; nothing of yours is
 left in `/tmp`.
+
+## Result (2026-11-16)
+
+Done as planned: `1228fe4` (no JACK), `9f132db` (the period), `2e2b8c5` (the priority).
+Tests on the rig 282/284 (2 skipped); on the Mac the core's 139/140 (1 skipped). The
+lead's runs on the board, 60 s each, started at normal priority:
+
+| run | PipeWire's quantum | total | device | queue | gaps | dropped |
+|---|---|---|---|---|---|---|
+| default (128), twice | 128 | 17.7, 16.8 ms | 10.6 ms | 6.0, 5.1 ms | 1, 0 | 0 |
+| `--audio-period 64` | 64 | 10.9 ms | 5.3 ms | 4.5 ms | 1 | 0 |
+| `--audio-period 32`, twice | 32 | 7.6, 8.2 ms | 2.6 ms | 3.9, 4.5 ms | 2, 6 | 0, 127 |
+
+- The setting does what it should: PipeWire grants the quantum asked for, and the default
+  is as before.
+- 32 is not dependable: the second run had six gaps, 127 blocks of sound dropped and one
+  second at 17.7 ms. 64 is the setting to use until 32 has been soaked under the rig's
+  real load.
+- The acquisition thread and PipeWire's `data-loop.0` are both at SCHED_FIFO 80 (the
+  rig's limit), where before they were at 70 and 80. Acquisition asking for 90 and getting
+  it has not been seen anywhere: it needs `rtprio 95` in the rig's limits file, which is
+  the owner's to change.
+- Display in every run: 2.4 to 2.5 ms per-second average, best frame 0.6 to 0.7 ms, no
+  frame a refresh late, nothing lost. Headless, 60 s on the board: `dropped=0 gaps=0
+  bad=0`, `CLEAN`, delivery 0.77 / 2.39 ms, recording `OK`.
+- Stale outside the step's files: `packaging/nfpm.yaml:107` (a comment saying rtprio 80).
