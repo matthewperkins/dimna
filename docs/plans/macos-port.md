@@ -209,6 +209,20 @@ ranges overlapping, the best frame, no frame a refresh late and nothing lost.
   pacing sleep is checked only by the board runs above (the transfer counts would more
   than double without it).
 
+- **Step 3** (`54b217d`, plan `macos-step3-usb.md`): `src/usb.zig`, with `usbfs.zig` moved
+  to `src/usb_linux.zig` (one header line added). In both release binaries every loaded
+  section is byte-identical to before, and every function is the same instruction for
+  instruction (784 and 1,448 functions; only names in the debug sections differ). A new
+  test fails if any file but `ft600.zig` calls a control transfer or any file but a USB
+  backend defines one. On the board, 60 s headless: `dropped=0 gaps=0 bad=0`, `CLEAN`,
+  delivery 0.77 / 2.63 ms, 88,457 transfers, recording `OK`. For a Mac backend to note:
+  `ft600.zig`'s test builds its device as `.{ .fd = -1 }`. Left stale on purpose (outside
+  the step's file list): the comment at `os.zig`'s test about files that "become" backends,
+  `ft600.zig`'s header and `docs/hardware.md`, which still describe the control-transfer
+  test as guarding one file.
+- **Next, by the owner's choice (2026-11-15):** audio through JACK, `jack-audio.md`, ahead
+  of steps 4 to 6.
+
 ## The layout aimed at
 
 Names are proposals; the step that makes each file settles its name.
