@@ -57,6 +57,7 @@ const builtin = @import("builtin");
 
 const backend = switch (builtin.os.tag) {
     .linux => @import("window_wayland.zig"),
+    .macos => @import("window_appkit.zig"),
     else => @compileError("dimna has no window backend for this system yet"),
 };
 pub const Window = backend.Window;

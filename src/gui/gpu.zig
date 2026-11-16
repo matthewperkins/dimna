@@ -58,6 +58,7 @@ const builtin = @import("builtin");
 
 const backend = switch (builtin.os.tag) {
     .linux => @import("gpu_vulkan.zig"),
+    .macos => @import("gpu_metal.zig"),
     else => @compileError("dimna has no GPU backend for this system yet"),
 };
 pub const Gpu = backend.Gpu;
