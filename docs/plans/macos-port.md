@@ -235,6 +235,26 @@ ranges overlapping, the best frame, no frame a refresh late and nothing lost.
   (1 ms period, 0.5 ms computation) is proven on an idle thread only; no memory locking;
   the `.fd = -1` stand-in. Left stale: `clock.zig`'s header and `acquisition.zig`'s log
   line still say `CLOCK_MONOTONIC` and `SCHED_FIFO`.
+- **Step 4** (`94d8de2`, `1dc812d`, `b624e85`, `3526c7e`, plan
+  `macos-step4-gpu-window.md`): `gpu.zig` and `window.zig` are now the shared surfaces
+  over `gpu_vulkan.zig` and `window_wayland.zig`. Of about 1,450 functions in `dimna`,
+  three differ (the "no such monitor" message, two stores on the `wait_render` debug
+  path, stack layout); `dimna-headless` is identical. On the board, alternating 60 s
+  runs, session unlocked, tearing active in all six:
+
+  | | before | after |
+  |---|---|---|
+  | per-second latency, median | 2.4, 2.4, 2.3 ms | 2.4, 2.3, 2.4 ms |
+  | best frame | 0.6, 0.7, 0.6 ms | 0.6, 0.6, 0.6 ms |
+  | worst frame | 15.9, 14.9, 30.6 ms | 18.5, 20.7, 13.7 ms |
+  | frames per s; a refresh late; blocks lost | 297 to 299; 0; 0 | 298; 0; 0 |
+  | audio; gaps | 16.6, 17.6, 16.8 ms; 0, 1, 0 | 16.9, 16.8, 16.9 ms; 0, 0, 0 |
+
+  No presentation-clock warning in any run (no test would notice that check inverted).
+  Found by the agent: `os.zig`'s search test is not re-run by `zig build test` when only
+  a file under `src/gui/` changed (the sources are not inputs of the run step); run
+  directly it works. To fix in a later step. Stale names left in `src/gui/env.zig:8` and
+  `src/gui/theme.zig:14,155` (outside the step's files).
 - **Measuring on the rig over SSH:** start programs with `chrt -o 0 nice -n -16`; an SSH
   session there is at SCHED_IDLE (`ananicy-cpp`). The runs in this file up to step 3 were
   taken without that, both sides alike; at normal priority the display figures were the
