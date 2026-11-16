@@ -89,6 +89,7 @@ names of the development files per distribution).
                                              # optional at run time: harfbuzz and fribidi (Persian),
                                              # Noto Sans CJK SC (Chinese), Noto Sans Arabic or Vazirmatn
     zig build test                           # about 270 tests, none needs a display or the board
+    zig build -Dgui=false --release=safe     # dimna-headless only: no GUI libraries, no pkg-config
 
     zig-out/bin/dimna --sim 32,16            # simulated headstages, in a window
     zig-out/bin/dimna                        # the board; ~/.config/dimna/config.toml decides the rest

@@ -112,6 +112,12 @@ instead (it also takes a config folder: see the script).
        zig build --release=safe     # zig-out/bin/dimna and dimna-headless (safety checks stay on)
        zig build test               # unit tests: the core (src/root.zig) and the GUI (src/gui/tests.zig)
 
+   `-Dgui=false` builds the core and `dimna-headless` alone: it needs none of the libraries in
+   2, nor pkg-config, and zig-wayland and vulkan-zig are not fetched (they are lazy
+   dependencies; `zig build --fetch=all` fetches them ahead of an offline build, plain
+   `--fetch` does not). `zig build test -Dgui=false` runs the core's tests only; `gui`,
+   `shaders` and `release` fail with a message that they need the GUI.
+
 4. The machine setup as for a tarball: `packaging/60-dimna-ft60x.rules` into
    `/etc/udev/rules.d/`, `packaging/99-dimna-realtime.conf` into `/etc/security/limits.d/`, the
    `dimna` and `realtime` groups, `usermod`, log out and in (`install-user.sh` in a release
