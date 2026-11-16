@@ -4,12 +4,14 @@
 //!     depends on the display's frame rate, and never holds acquisition back), runs the
 //!     chain in `audio.zig`, resamples to the device's rate and puts the result in a small
 //!     queue;
-//!   output: hands the device one period at a time (ALSA, `audio_alsa.zig`; on this
-//!     machine PipeWire's ALSA device), with silence when the queue is empty.
+//!   output: hands the device one period at a time, with silence when the queue is
+//!     empty. Either ALSA's `default` device (`audio_alsa.zig`; on the rig PipeWire's ALSA
+//!     device), on a thread of our own, or a JACK server (`audio_jack.zig`), whose own
+//!     real-time thread asks for each period through a callback. `Output` says which.
 //!
 //! What goes to the device is made by one function, `render`: it fills as many frames as
 //! the device asks for from the queue. The ALSA thread calls it once a period and then
-//! writes the period; a device that pulls frames through a callback calls it from there.
+//! writes the period; JACK's process callback calls it and copies the frames to its ports.
 //!
 //! The board's clock and the sound card's differ slightly, so the feeder trims the
 //! resampling ratio to keep the queue just above empty: it steers on the least that was
@@ -33,6 +35,7 @@ const std = @import("std");
 const dimna = @import("dimna");
 const audio = dimna.audio;
 const audio_alsa = @import("audio_alsa.zig");
+const audio_jack = @import("audio_jack.zig");
 const Atomic = std.atomic.Value;
 const log = std.log.scoped(.audio);
 
@@ -62,6 +65,8 @@ pub const Shared = struct {
     /// is being measured.
     held_sigma_c: Atomic(u32) = .init(0),
     device_rate: Atomic(u32) = .init(0),
+    /// xruns the JACK server reported (any client's, not only ours); 0 with ALSA.
+    xruns: Atomic(u64) = .init(0),
 
     /// Display thread: new settings for the audio threads.
     pub fn publish(self: *Shared, s: *const audio.Settings) void {
@@ -99,6 +104,22 @@ const Fifo = struct {
     }
 };
 
+/// Where the sound goes (`audio_output` in the config, `--audio-output`).
+pub const Output = enum {
+    /// A JACK server if one is running (dimna never starts one), else ALSA.
+    auto,
+    /// A JACK server only: without one, no sound.
+    jack,
+    /// ALSA's default device; JACK is not tried.
+    alsa,
+};
+
+pub const Options = struct {
+    output: Output = .alsa,
+    /// The JACK server to connect to; null: the default (or `$JACK_DEFAULT_SERVER`).
+    jack_server: ?[*:0]const u8 = null,
+};
+
 /// The least kept in the queue when all is quiet, and the most the feeder will go to.
 const margin_min_ms = 1.5;
 const margin_max_ms = 25.0;
@@ -111,6 +132,7 @@ pub const AudioOut = struct {
     nch: usize,
     block_samples: usize,
     alsa: ?audio_alsa.Device = null,
+    jack: ?audio_jack.Device = null,
     fs_out: f64 = 48000,
     /// The largest request the device makes, in frames: what the feeder keeps room for
     /// (the drop limit, `primed`), read from its own thread. ALSA: its period, fixed once
@@ -136,7 +158,7 @@ pub const AudioOut = struct {
     feeder: ?std.Thread = null,
     output: ?std.Thread = null,
 
-    /// Opens the default output device and starts both threads. Null (with a warning) if
+    /// Opens the output `opts` asks for and starts the threads. Null (with a warning) if
     /// there is no usable device: everything else works without sound.
     pub fn start(
         gpa: std.mem.Allocator,
@@ -145,6 +167,7 @@ pub const AudioOut = struct {
         fs_in: f64,
         nch: usize,
         block_samples: usize,
+        opts: Options,
     ) ?*AudioOut {
         const self = gpa.create(AudioOut) catch return null;
         self.* = .{
@@ -156,23 +179,49 @@ pub const AudioOut = struct {
             .block_samples = block_samples,
             .fifo = .{ .buf = &.{} },
         };
-        self.alsa = audio_alsa.open(self) catch |e| {
-            log.warn("no audio output ({t}); the monitor is silent", .{e});
-            gpa.destroy(self);
-            return null;
-        };
+        if (opts.output != .alsa) {
+            // Before the queue is made: its size follows the server's rate.
+            audio_jack.open(self, opts.jack_server) catch |e| {
+                if (opts.output == .jack) {
+                    log.warn("no audio output (JACK: {t}; audio_output is \"jack\", so ALSA is not tried); the monitor is silent", .{e});
+                    gpa.destroy(self);
+                    return null;
+                }
+                log.info("JACK not used ({t}); ALSA instead", .{e});
+            };
+        }
+        if (self.jack == null) {
+            self.alsa = audio_alsa.open(self) catch |e| {
+                log.warn("no audio output ({t}); the monitor is silent", .{e});
+                gpa.destroy(self);
+                return null;
+            };
+        }
         // A fifth of a second of stereo frames, rounded up to a power of two.
         const cap = std.math.ceilPowerOfTwo(usize, @as(usize, @intFromFloat(self.fs_out / 5)) * 2) catch 32768;
         self.fifo.buf = gpa.alloc(f32, cap) catch {
-            audio_alsa.close(self.alsa.?);
+            if (self.alsa) |d| audio_alsa.close(d);
+            if (self.jack) |*d| audio_jack.close(d);
             gpa.destroy(self);
             return null;
         };
-        self.output = std.Thread.spawn(.{}, audio_alsa.outputLoop, .{self}) catch null;
+        var device_ok = false;
+        if (self.jack) |*d| {
+            if (audio_jack.activate(d)) |_| {
+                device_ok = true;
+            } else |e| log.warn("JACK: {t}; the monitor is silent", .{e});
+        } else {
+            self.output = std.Thread.spawn(.{}, audio_alsa.outputLoop, .{self}) catch null;
+            device_ok = self.output != null;
+        }
         self.feeder = std.Thread.spawn(.{}, feederLoop, .{self}) catch null;
         shared.device_rate.store(@intFromFloat(self.fs_out), .monotonic);
-        shared.running.store(self.output != null and self.feeder != null, .release);
-        log.info("audio output: {d} Hz, {d} frames per period, device buffer {d}", .{ self.fs_out, self.max_request.load(.monotonic), self.device_buffer });
+        shared.running.store(device_ok and self.feeder != null, .release);
+        if (self.jack) |*d| {
+            log.info("audio output: JACK (client {s}), {d} Hz, {d} frames per period, playback latency {d} frames, client thread real-time priority {d}", .{
+                d.name(), self.fs_out, self.max_request.load(.monotonic), self.device_delay.load(.monotonic), d.priority,
+            });
+        } else log.info("audio output: ALSA, {d} Hz, {d} frames per period, device buffer {d}", .{ self.fs_out, self.max_request.load(.monotonic), self.device_buffer });
         return self;
     }
 
@@ -180,6 +229,8 @@ pub const AudioOut = struct {
         self.stop_flag.store(true, .release);
         if (self.feeder) |t| t.join();
         if (self.output) |t| t.join();
+        // JACK's thread stops calling `render` here, before the queue goes.
+        if (self.jack) |*d| audio_jack.close(d);
         self.shared.running.store(false, .release);
         if (self.alsa) |d| audio_alsa.close(d);
         self.gpa.free(self.fifo.buf);
