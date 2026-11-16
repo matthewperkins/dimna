@@ -1,10 +1,13 @@
 //! The command line and the top-level keys of the config file.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const dimna = @import("dimna");
 const gpu_mod = @import("gpu.zig");
 const audio_out = @import("audio_out.zig");
 const log = std.log.scoped(.dimna);
+
+const tearing_default = builtin.os.tag == .macos;
 
 pub const Args = struct {
     seconds: f64 = 0,
@@ -17,7 +20,10 @@ pub const Args = struct {
     margin_ms: f64 = -1,
     script: []const u8 = "",
     monitor: []const u8 = "",
-    tearing: bool = false,
+    /// On by default on macOS: there the display is quickest free-running with display sync
+    /// off (the owner's choice, 2026-11-16); `tearing = false` in the config, or
+    /// `--present fifo`, turns it off.
+    tearing: bool = tearing_default,
     /// An image the GUI's colours are taken from (`scheme_image` in the config; "" = the
     /// built-in colours). Not resolved: see `scheme.resolvePath`.
     scheme_image: []const u8 = "",
@@ -281,6 +287,9 @@ pub fn parseArgs(args: []const [:0]const u8, doc: dimna.toml.Document) !Args {
             return error.BadArgs;
         }
     }
+    // Asked to wait for the refresh: that is not tearing (it can only be on here by the
+    // Mac's default, or with both options given, where the later `--present` wins).
+    if (tearing_default and a.present == .fifo) a.tearing = false;
     // Tearing shows frames as they are presented, so draw as samples arrive.
     if (a.tearing and a.free_ms < 0) a.free_ms = 2;
     return a;

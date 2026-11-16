@@ -117,9 +117,13 @@ const msl_layout = blk: {
 /// shown. Measured on the M4's display (60 Hz), 4 s each, two rounds, presented time
 /// less the time the frame's data was taken: median 5.6 and 4.1 ms in a window, 5.0 and
 /// 5.4 ms fullscreen, against 7.0, 5.8, 6.0 and 6.1 ms with two. With display sync on
-/// (`fifo`), two: three queued a frame more, median 65 ms against 32 ms in a window.
+/// (`fifo`), three as well: drawn flat out, three queue a frame more than two (median 65
+/// ms against 32 ms in a window), but dimna's windows draw once a refresh, and with two
+/// the display found no drawable free every other refresh (a frame is shown a refresh
+/// after it is presented): 26 frames a second fullscreen against 52 with three, both
+/// about 20 ms behind.
 const drawables_sync_off = 3;
-const drawables_sync_on = 2;
+const drawables_sync_on = 3;
 
 pub const Gpu = struct {
     gpa: std.mem.Allocator,
