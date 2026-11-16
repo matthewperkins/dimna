@@ -480,16 +480,16 @@ pub const Recorder = struct {
     /// Samples to disk first, then the index records that describe them.
     fn sync(self: *Recorder) !void {
         const t0 = Io.Clock.awake.now(self.io);
-        try self.samples_file.sync(self.io);
+        try os.syncToDisk(self.io, self.samples_file);
         if (self.pending_index_len > 0) {
             try self.index_file.writeStreamingAll(self.io, self.pending_index[0..self.pending_index_len]);
             self.pending_index_len = 0;
         }
         try self.flushEdges();
-        try self.index_file.sync(self.io);
-        try self.ttl_sample_file.sync(self.io);
-        try self.ttl_word_file.sync(self.io);
-        try self.events_file.sync(self.io);
+        try os.syncToDisk(self.io, self.index_file);
+        try os.syncToDisk(self.io, self.ttl_sample_file);
+        try os.syncToDisk(self.io, self.ttl_word_file);
+        try os.syncToDisk(self.io, self.events_file);
         maxStore(&self.stats.max_sync_us, @intCast(t0.untilNow(self.io, .awake).toMicroseconds()));
         _ = self.stats.syncs.fetchAdd(1, .monotonic);
         self.last_sync = Io.Clock.awake.now(self.io);
@@ -497,7 +497,7 @@ pub const Recorder = struct {
 
     fn syncDir(self: *Recorder) !void {
         const f: Io.File = .{ .handle = self.dir.handle, .flags = .{ .nonblocking = false } };
-        try f.sync(self.io);
+        try os.syncToDisk(self.io, f);
     }
 
     fn drainEvents(self: *Recorder) !void {
@@ -526,7 +526,7 @@ pub const Recorder = struct {
         var fw = f.writer(self.io, &buf);
         try writeToml(&fw.interface, self, final_end);
         try fw.interface.flush();
-        try f.sync(self.io);
+        try os.syncToDisk(self.io, f);
         f.close(self.io);
         try Io.Dir.rename(self.dir, tmp, self.dir, "meta.toml", self.io);
     }
