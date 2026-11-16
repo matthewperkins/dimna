@@ -99,6 +99,18 @@ const Fifo = struct {
     }
 };
 
+/// The period dimna asks the device for, in frames (`audio_period` in the config,
+/// `--audio-period`): a power of two from `min_period` to `max_period`. The device's buffer
+/// is two of them. What the device accepted is what is used (`max_request`).
+pub const default_period: u32 = 128;
+pub const min_period: u32 = 16;
+pub const max_period: u32 = 1024;
+
+/// Whether `frames` is a period dimna accepts.
+pub fn validPeriod(frames: u64) bool {
+    return frames >= min_period and frames <= max_period and std.math.isPowerOfTwo(frames);
+}
+
 /// The least kept in the queue when all is quiet, and the most the feeder will go to.
 const margin_min_ms = 1.5;
 const margin_max_ms = 25.0;
@@ -136,8 +148,9 @@ pub const AudioOut = struct {
     feeder: ?std.Thread = null,
     output: ?std.Thread = null,
 
-    /// Opens the default output device and starts both threads. Null (with a warning) if
-    /// there is no usable device: everything else works without sound.
+    /// Opens the default output device, asking for periods of `period` frames, and starts
+    /// both threads. Null (with a warning) if there is no usable device: everything else
+    /// works without sound.
     pub fn start(
         gpa: std.mem.Allocator,
         shared: *Shared,
@@ -145,6 +158,7 @@ pub const AudioOut = struct {
         fs_in: f64,
         nch: usize,
         block_samples: usize,
+        period: u32,
     ) ?*AudioOut {
         const self = gpa.create(AudioOut) catch return null;
         self.* = .{
@@ -156,7 +170,7 @@ pub const AudioOut = struct {
             .block_samples = block_samples,
             .fifo = .{ .buf = &.{} },
         };
-        self.alsa = audio_alsa.open(self) catch |e| {
+        self.alsa = audio_alsa.open(self, period) catch |e| {
             log.warn("no audio output ({t}); the monitor is silent", .{e});
             gpa.destroy(self);
             return null;

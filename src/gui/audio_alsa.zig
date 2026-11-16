@@ -5,7 +5,8 @@
 
 const std = @import("std");
 const alsa = @import("gui_c");
-const AudioOut = @import("audio_out.zig").AudioOut;
+const audio_out = @import("audio_out.zig");
+const AudioOut = audio_out.AudioOut;
 const log = std.log.scoped(.audio);
 
 /// The open device.
@@ -13,10 +14,10 @@ pub const Device = struct {
     pcm: ?*alsa.snd_pcm_t,
 };
 
-/// Opens the default output device: float stereo at 48 kHz (or what is nearest), 128-frame
-/// periods and two of them as the device's buffer. Sets `out.fs_out`, `out.max_request` and
-/// `out.device_buffer` to what the device took.
-pub fn open(out: *AudioOut) !Device {
+/// Opens the default output device: float stereo at 48 kHz (or what is nearest), periods
+/// of `period_frames` (or what is nearest) and two of them as the device's buffer. Sets
+/// `out.fs_out`, `out.max_request` and `out.device_buffer` to what the device took.
+pub fn open(out: *AudioOut, period_frames: u32) !Device {
     var pcm: ?*alsa.snd_pcm_t = null;
     if (alsa.snd_pcm_open(&pcm, "default", alsa.SND_PCM_STREAM_PLAYBACK, 0) < 0) return error.NoDevice;
     errdefer _ = alsa.snd_pcm_close(pcm);
@@ -30,7 +31,7 @@ pub fn open(out: *AudioOut) !Device {
     var rate: c_uint = 48000;
     if (alsa.snd_pcm_hw_params_set_rate_near(pcm, hw, &rate, null) < 0) return error.DeviceRate;
     // Small periods: each is latency. Two of them as the device's own buffer.
-    var period: alsa.snd_pcm_uframes_t = 128;
+    var period: alsa.snd_pcm_uframes_t = period_frames;
     _ = alsa.snd_pcm_hw_params_set_period_size_near(pcm, hw, &period, null);
     var buffer: alsa.snd_pcm_uframes_t = period * 2;
     _ = alsa.snd_pcm_hw_params_set_buffer_size_near(pcm, hw, &buffer);
@@ -43,6 +44,32 @@ pub fn open(out: *AudioOut) !Device {
     out.fs_out = @floatFromInt(rate);
     out.max_request.store(@intCast(period), .monotonic);
     return .{ .pcm = pcm };
+}
+
+/// What to set `PIPEWIRE_LATENCY` to before any thread starts and before the device is
+/// opened, or null to leave the environment alone. Through PipeWire (ALSA's `default` on
+/// most desktops) the device's side of the latency is its buffer plus two of PipeWire's
+/// quanta, and the quantum follows the period asked for only down to PipeWire's own; its
+/// ALSA plugin takes the quantum from this variable (`<frames>/<rate>`). Set to
+/// `<period>/48000` when the period is not the default and the user has not set the
+/// variable (`existing`, its value, or null when unset): a value the user set is kept, and
+/// at the default period nothing is set. Without PipeWire the variable does nothing.
+pub fn pipewireLatency(buf: *[32]u8, period: u32, existing: ?[]const u8) ?[:0]const u8 {
+    if (period == audio_out.default_period or existing != null) return null;
+    return std.fmt.bufPrintSentinel(buf, "{d}/48000", .{period}, 0) catch null;
+}
+
+test "pipewireLatency: set only for a period other than the default, and never over the user's" {
+    var buf: [32]u8 = undefined;
+    try std.testing.expectEqual(null, pipewireLatency(&buf, audio_out.default_period, null));
+    try std.testing.expectEqual(null, pipewireLatency(&buf, audio_out.default_period, "256/48000"));
+    try std.testing.expectEqualStrings("64/48000", pipewireLatency(&buf, 64, null).?);
+    try std.testing.expectEqualStrings("32/48000", pipewireLatency(&buf, 32, null).?);
+    try std.testing.expectEqualStrings("1024/48000", pipewireLatency(&buf, 1024, null).?);
+    try std.testing.expectEqualStrings("16/48000", pipewireLatency(&buf, 16, null).?);
+    // Set by the user, even to nothing: left as it is.
+    try std.testing.expectEqual(null, pipewireLatency(&buf, 64, "256/48000"));
+    try std.testing.expectEqual(null, pipewireLatency(&buf, 32, ""));
 }
 
 pub fn close(dev: Device) void {

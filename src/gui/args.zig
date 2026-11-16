@@ -3,6 +3,7 @@
 const std = @import("std");
 const dimna = @import("dimna");
 const gpu_mod = @import("gpu.zig");
+const audio_out = @import("audio_out.zig");
 const log = std.log.scoped(.dimna);
 
 pub const Args = struct {
@@ -31,6 +32,9 @@ pub const Args = struct {
     /// The spike audio monitor.
     audio: bool = true,
     volume_db: f64 = -6,
+    /// The sound device's period in frames, a power of two from 16 to 1024 (`audio_period`
+    /// in the config). Not the default: PipeWire's quantum is asked to match (main.zig).
+    audio_period: u32 = audio_out.default_period,
     /// The control window (a second, ordinary window with the panels' settings).
     control: bool = true,
     /// All panels in sweep mode (see `panels.Mode`).
@@ -71,6 +75,8 @@ pub const usage =
     \\  --no-control        no control window
     \\  --no-tiles          no spike-tile window
     \\  --no-audio          no spike audio
+    \\  --audio-period N    the sound device's period in frames: 16, 32, ... 1024 (default
+    \\                      128); smaller is less latency (docs/tiles-and-audio.md)
     \\  --seconds S         quit after S seconds
     \\  --script STEPS      synthetic input for tests (see src/gui/script.zig)
     \\  --help
@@ -154,6 +160,11 @@ pub fn applyConfig(a: *Args, doc: dimna.toml.Document) void {
             a.tiles = e.value.boolean;
         } else if (std.mem.eql(u8, e.key, "audio") and e.value == .boolean) {
             a.audio = e.value.boolean;
+        } else if (std.mem.eql(u8, e.key, "audio_period") and e.value == .number) {
+            const n = e.value.number;
+            if (n >= 0 and n <= audio_out.max_period and n == @floor(n) and audio_out.validPeriod(@intFromFloat(n))) {
+                a.audio_period = @intFromFloat(n);
+            } else log.warn("config line {d}: audio_period {d} is not a power of two from 16 to 1024 frames; ignored", .{ e.line, n });
         } else if (std.mem.eql(u8, e.key, "volume_db") and e.value == .number) {
             a.volume_db = std.math.clamp(e.value.number, -60, 12);
         } else if (std.mem.eql(u8, e.key, "record_dir") and e.value == .string) {
@@ -211,6 +222,12 @@ pub fn parseArgs(args: []const [:0]const u8, doc: dimna.toml.Document) !Args {
             a.tiles = false;
         } else if (std.mem.eql(u8, arg, "--no-audio")) {
             a.audio = false;
+        } else if (std.mem.eql(u8, arg, "--audio-period")) {
+            const text = try next(args, &i, arg);
+            a.audio_period = parsePeriod(text) orelse {
+                log.err("--audio-period: '{s}' is not a power of two from 16 to 1024 frames", .{text});
+                return error.BadArgs;
+            };
         } else if (std.mem.eql(u8, arg, "--no-control")) {
             a.control = false;
         } else if (std.mem.eql(u8, arg, "--sweep")) {
@@ -267,6 +284,41 @@ pub fn parseArgs(args: []const [:0]const u8, doc: dimna.toml.Document) !Args {
     // Tearing shows frames as they are presented, so draw as samples arrive.
     if (a.tearing and a.free_ms < 0) a.free_ms = 2;
     return a;
+}
+
+/// `--audio-period`'s value, or null if it is not one `audio_out.validPeriod` accepts.
+fn parsePeriod(text: []const u8) ?u32 {
+    const n = std.fmt.parseInt(u32, text, 10) catch return null;
+    return if (audio_out.validPeriod(n)) n else null;
+}
+
+test "audio_period: 128 unless the config or the command line says otherwise; the command line wins; only powers of two from 16 to 1024" {
+    var diag: dimna.toml.Diagnostics = .{};
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const none = try parseArgs(&.{"dimna"}, .{ .entries = &.{} });
+    try std.testing.expectEqual(128, none.audio_period);
+    const doc = try dimna.toml.parse(arena.allocator(), "audio_period = 64\n", &diag);
+    try std.testing.expectEqual(64, (try parseArgs(&.{"dimna"}, doc)).audio_period);
+    try std.testing.expectEqual(32, (try parseArgs(&.{ "dimna", "--audio-period", "32" }, doc)).audio_period);
+    try std.testing.expectEqual(1024, (try parseArgs(&.{ "dimna", "--audio-period", "1024" }, .{ .entries = &.{} })).audio_period);
+    // Every power of two in the range, and nothing else up to 4096.
+    for (0..4097) |n| {
+        const want = n >= 16 and n <= 1024 and std.math.isPowerOfTwo(n);
+        var buf: [8]u8 = undefined;
+        const text = std.fmt.bufPrint(&buf, "{d}", .{n}) catch unreachable;
+        try std.testing.expectEqual(want, parsePeriod(text) != null);
+        try std.testing.expectEqual(want, audio_out.validPeriod(n));
+    }
+    for ([_][]const u8{ "", "abc", "64.0", "-64", " 64", "0x40", "4294967296" }) |text|
+        try std.testing.expectEqual(null, parsePeriod(text));
+    // The command line refuses what parsePeriod refuses (not run here: it logs an error,
+    // which fails a test). The config warns and keeps what it had.
+    for ([_][]const u8{ "audio_period = 48\n", "audio_period = 8\n", "audio_period = 2048\n", "audio_period = 64.5\n", "audio_period = -64\n", "audio_period = \"64\"\n" }) |text| {
+        const bad = try dimna.toml.parse(arena.allocator(), text, &diag);
+        try std.testing.expectEqual(128, (try parseArgs(&.{"dimna"}, bad)).audio_period);
+        try std.testing.expectEqual(256, (try parseArgs(&.{ "dimna", "--audio-period", "256" }, bad)).audio_period);
+    }
 }
 
 test "scheme_image is read from the config, and the scheme options from the command line" {

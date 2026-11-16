@@ -5,6 +5,7 @@
 
 test {
     _ = @import("args.zig");
+    _ = @import("audio_alsa.zig");
     _ = @import("audio_out.zig");
     _ = @import("control.zig");
     _ = @import("display.zig");

@@ -33,6 +33,7 @@ const fmtSpan = format.fmtSpan;
 const fmtScale = format.fmtScale;
 const control = @import("control.zig");
 const audio_out = @import("audio_out.zig");
+const audio_alsa = @import("audio_alsa.zig");
 const notes_mod = @import("notes.zig");
 const tiles_mod = @import("tiles.zig");
 const Status = display_mod.Status;
@@ -73,6 +74,10 @@ const overview_budget = 1_500_000_000;
 
 const nowNs = dimna.clock.nowNs;
 
+/// The C library's (std.c does not declare it): the variable is for a library dimna loads,
+/// PipeWire's ALSA plugin, which reads the C library's environment.
+extern "c" fn setenv(name: [*:0]const u8, value: [*:0]const u8, overwrite: c_int) c_int;
+
 pub fn main(init: std.process.Init) !u8 {
     const io = init.io;
     const gpa = init.gpa;
@@ -95,6 +100,19 @@ pub fn main(init: std.process.Init) !u8 {
         return 2;
     };
     var args = parseArgs(argv, doc) catch |e| return if (e == error.Help) 0 else 2;
+    // PipeWire's quantum to match a period other than the default (audio_alsa.zig,
+    // `pipewireLatency`). Here, before any thread is started and before the sound device is
+    // opened: setting the environment is not safe once other threads may read it.
+    if (args.audio) {
+        const existing = init.environ_map.get("PIPEWIRE_LATENCY");
+        var latency_buf: [32]u8 = undefined;
+        if (audio_alsa.pipewireLatency(&latency_buf, args.audio_period, existing)) |value| {
+            if (setenv("PIPEWIRE_LATENCY", value.ptr, 0) == 0) {
+                log.info("audio_period {d}: PIPEWIRE_LATENCY={s}", .{ args.audio_period, value });
+            } else log.warn("audio_period {d}: could not set PIPEWIRE_LATENCY", .{args.audio_period});
+        } else if (existing) |v| if (args.audio_period != audio_out.default_period)
+            log.info("audio_period {d}: PIPEWIRE_LATENCY is set already ({s}); left as it is", .{ args.audio_period, v });
+    }
     // The language of every text, before any window draws.
     i18n.current = i18n.pick(args.language, init.environ_map.get("LANG") orelse "");
     // `--print-scheme`: derive and print the colours of an image, without a window or the board.
