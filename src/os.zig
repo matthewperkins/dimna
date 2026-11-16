@@ -9,8 +9,10 @@
 //! catches it instead.
 //!
 //! Each function does exactly what its call site did before it was moved here; callers
-//! keep their own logic and log lines. The hot ones (clock, sleep, positional read,
-//! unmapping) are `inline`, so a caller makes the system call itself, as before.
+//! keep their own logic and log lines. They are small enough that the optimizer inlines
+//! them (in the release build no function of this module or of `os_linux.zig` is left), so
+//! a caller makes the system call itself, as before; that matters on the hot paths (the
+//! clock, the pacing sleep, positional reads in review, unmapping in the overview store).
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -28,18 +30,18 @@ pub const Pid = impl.Pid;
 
 /// Nanoseconds on the monotonic clock `Io.Clock.awake` reads (`CLOCK_MONOTONIC` on Linux).
 /// Needs no `Io`.
-pub inline fn nowNs() i128 {
+pub fn nowNs() i128 {
     return impl.nowNs();
 }
 
 /// Sleeps `ns` nanoseconds; a signal does not cut it short (the sleep is resumed for the
 /// time left).
-pub inline fn sleepNs(ns: u64) void {
+pub fn sleepNs(ns: u64) void {
     impl.sleepNs(ns);
 }
 
 /// Sleeps up to `ns` nanoseconds, once: a signal ends it early.
-pub inline fn sleepNsOnce(ns: u64) void {
+pub fn sleepNsOnce(ns: u64) void {
     impl.sleepNsOnce(ns);
 }
 
@@ -69,9 +71,9 @@ pub fn mapZeroed(size: usize) ?[*]align(std.heap.page_size_min) u8 {
     return impl.mapZeroed(size);
 }
 
-/// Gives back `len` bytes (whole pages) from `ptr` of memory from `mapZeroed`; any whole
-/// pages of it, not only all of it.
-pub inline fn unmap(ptr: [*]align(std.heap.page_size_min) const u8, len: usize) void {
+/// Gives back `len` bytes from `ptr` of memory from `mapZeroed`: any whole pages of it, not
+/// only all of it. `ptr` must be at a page boundary (not checked here, as before the move).
+pub fn unmap(ptr: [*]const u8, len: usize) void {
     impl.unmap(ptr, len);
 }
 
@@ -94,7 +96,7 @@ pub fn openRead(path: [*:0]const u8) ?Fd {
 
 /// Reads up to `len` bytes into `ptr` from `offset` in the file, without moving its
 /// position. The number read (0 at the end of the file), or null on an error.
-pub inline fn pread(fd: Fd, ptr: [*]u8, len: usize, offset: i64) ?usize {
+pub fn pread(fd: Fd, ptr: [*]u8, len: usize, offset: i64) ?usize {
     return impl.pread(fd, ptr, len, offset);
 }
 

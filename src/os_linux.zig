@@ -9,18 +9,18 @@ pub const E = linux.E;
 pub const Fd = linux.fd_t;
 pub const Pid = linux.pid_t;
 
-pub inline fn nowNs() i128 {
+pub fn nowNs() i128 {
     var ts: linux.timespec = undefined;
     _ = linux.clock_gettime(.MONOTONIC, &ts);
     return @as(i128, ts.sec) * std.time.ns_per_s + ts.nsec;
 }
 
-pub inline fn sleepNs(ns: u64) void {
+pub fn sleepNs(ns: u64) void {
     var ts: linux.timespec = .{ .sec = @intCast(ns / 1_000_000_000), .nsec = @intCast(ns % 1_000_000_000) };
     while (linux.errno(linux.nanosleep(&ts, &ts)) == .INTR) {}
 }
 
-pub inline fn sleepNsOnce(ns: u64) void {
+pub fn sleepNsOnce(ns: u64) void {
     const ts: linux.timespec = .{ .sec = @intCast(ns / 1_000_000_000), .nsec = @intCast(ns % 1_000_000_000) };
     _ = linux.nanosleep(&ts, null);
 }
@@ -63,10 +63,11 @@ pub fn freeBytes(path: [*:0]const u8) ?u64 {
 pub fn mapZeroed(size: usize) ?[*]align(std.heap.page_size_min) u8 {
     const rc = linux.mmap(null, size, .{ .READ = true, .WRITE = true }, .{ .TYPE = .PRIVATE, .ANONYMOUS = true }, -1, 0);
     if (linux.errno(rc) != .SUCCESS) return null;
-    return @ptrFromInt(rc);
+    const ptr: [*]align(std.heap.page_size_min) u8 = @ptrFromInt(rc);
+    return ptr;
 }
 
-pub inline fn unmap(ptr: [*]align(std.heap.page_size_min) const u8, len: usize) void {
+pub fn unmap(ptr: [*]const u8, len: usize) void {
     _ = linux.munmap(ptr, len);
 }
 
@@ -86,7 +87,7 @@ pub fn openRead(path: [*:0]const u8) ?Fd {
     return @intCast(rc);
 }
 
-pub inline fn pread(fd: Fd, ptr: [*]u8, len: usize, offset: i64) ?usize {
+pub fn pread(fd: Fd, ptr: [*]u8, len: usize, offset: i64) ?usize {
     const rc = linux.pread(fd, ptr, len, offset);
     if (linux.errno(rc) != .SUCCESS) return null;
     return rc;

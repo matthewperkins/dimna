@@ -235,8 +235,7 @@ pub const Review = struct {
             const have = self.edge_samples.items.len;
             const rs = os.pread(self.ttl_sample_fd, std.mem.asBytes(&s), @sizeOf(@TypeOf(s)), @intCast(have * 8));
             const rw = os.pread(self.ttl_word_fd, std.mem.asBytes(&w), @sizeOf(@TypeOf(w)), @intCast(have * 2));
-            if (rs == null or rw == null) return;
-            const n = @min(rs.? / 8, rw.? / 2);
+            const n = @min((rs orelse return) / 8, (rw orelse return) / 2);
             if (n == 0) return;
             try self.edge_samples.appendSlice(self.gpa, s[0..n]);
             try self.edge_words.appendSlice(self.gpa, w[0..n]);

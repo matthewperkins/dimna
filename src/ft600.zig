@@ -106,12 +106,10 @@ fn tracing() bool {
 }
 fn trace(comptime fmt: []const u8, args: anytype) void {
     if (!tracing()) return;
-    const ns = os.nowNs();
-    const sec = @divTrunc(ns, 1_000_000_000);
-    const nsec = ns - sec * 1_000_000_000;
+    const ns: u64 = @intCast(os.nowNs());
     std.debug.print(
         "[usb {d}.{d:0>6}] " ++ fmt ++ "\n",
-        .{ @as(u64, @intCast(@mod(sec, 1000))), @as(u64, @intCast(@divTrunc(nsec, 1000))) } ++ args,
+        .{ ns / 1_000_000_000 % 1000, ns % 1_000_000_000 / 1000 } ++ args,
     );
 }
 
