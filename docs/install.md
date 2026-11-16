@@ -123,6 +123,41 @@ instead (it also takes a config folder: see the script).
    `dimna` and `realtime` groups, `usermod`, log out and in (`install-user.sh` in a release
    tarball prints the exact commands).
 
+## macOS (so far: the simulator, no window, no board)
+
+On a Mac with Apple silicon (tried on macOS 27), the core and `dimna-headless` build and
+run from the simulator. The display (`dimna`) and the board are not ported yet.
+
+1. **Zig 0.17.1**: `zig-aarch64-macos-0.17.1.tar.xz` from https://ziglang.org/download/,
+   checked and unpacked anywhere, as above (no root needed). The build also needs Apple's
+   Command Line Tools (`xcode-select --install`) for the system's headers and frameworks.
+2. Build and test, always with `-Dgui=false` (without it the build stops at once and says
+   that the GUI is not ported yet):
+
+       zig build -Dgui=false --release=safe     # zig-out/bin/dimna-headless
+       zig build test -Dgui=false               # the core's tests
+       zig-out/bin/dimna-headless --sim 32,16 --seconds 60 --record /tmp/dimna-test
+
+What works: the core's tests, `dimna-headless --sim` with a recording (`tools/dimna_read.py`
+verifies it; it needs Python 3.11 or newer with numpy), Ctrl-C ending a recording cleanly,
+`tools/crash-test.sh`. What differs from Linux:
+
+- **Syncing.** Once a second the recorder makes its files durable with `F_FULLFSYNC`,
+  which makes the drive write its own cache (a plain `fsync` on macOS does not; on Linux
+  `fsync` does). On the Mac's internal disk that costs about 17 ms a second for a
+  48-channel recording, against about 2 ms for `fsync`.
+- **Staying awake.** While acquisition runs dimna holds a power assertion
+  (`PreventUserIdleSystemSleep`, named "dimna is acquiring"; `pmset -g assertions` shows
+  it), so the Mac does not sleep for being idle. It does **not** keep a Mac awake whose lid
+  is closed (without an external display), nor one put to sleep from the menu: close the
+  lid and acquisition stops.
+- **Priority and memory.** With the board, the acquisition thread would ask for a Mach
+  time-constraint policy instead of `SCHED_FIFO` (nothing to set up, no group), and no
+  memory is locked (macOS has no `mlockall`). The simulator asks for neither.
+
+Not yet: the board (the Mac's USB backend is a stand-in that finds no device, so opening
+the board fails as with none plugged in), the display, sound, an `.app`.
+
 ## Build details
 
 The GUI's tests cover its pure logic only (typed notes, the tile grid, the widget layout, the
