@@ -9,8 +9,16 @@ const decimate = @import("dimna").decimate;
 const gpu = @import("gpu.zig");
 const log = std.log.scoped(.gpu);
 
-/// What a window hands the GPU (`Window.gpuTarget`): nothing yet.
-pub const Target = struct {};
+/// What a window hands the GPU (`Window.gpuTarget`).
+pub const Target = struct {
+    /// The window's CAMetalLayer.
+    layer: *anyopaque,
+    /// Where `Gpu.draw` puts the frame's drawable (an id<CAMetalDrawable>, not
+    /// retained for the window) before it calls `before_present`, and null again
+    /// after presenting. The window's `beforePresent(tag)` reads it to attach its
+    /// report of when the frame reached the screen.
+    drawable: *?*anyopaque,
+};
 
 pub const Gpu = struct {
     gpa: std.mem.Allocator,

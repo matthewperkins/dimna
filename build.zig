@@ -457,6 +457,27 @@ fn addMacGui(
         m.linkFramework("AudioToolbox", .{});
         m.linkFramework("CoreAudio", .{});
     }
+    // ---- The window: AppKit through src/gui/appkit_shim.m (Objective-C, ARC), whose C
+    // interface (appkit_shim.h) Zig imports as `appkit_c`. The tests' build of the shim
+    // has its test helpers too (DIMNA_APPKIT_TEST), with Metal for their stand-in
+    // presenter; the program's has neither. ----
+    {
+        const appkit_c = b.addTranslateC(.{ .root_source_file = b.path("src/gui/appkit_shim.h"), .target = target, .optimize = optimize });
+        const appkit_c_mod = appkit_c.createModule();
+        for ([_]*std.Build.Module{ gui_mod, gui_test_mod }, [_]bool{ false, true }) |m, is_test| {
+            m.addImport("appkit_c", appkit_c_mod);
+            m.addCSourceFile(.{
+                .file = b.path("src/gui/appkit_shim.m"),
+                .flags = if (is_test) &.{ "-fobjc-arc", "-DDIMNA_APPKIT_TEST" } else &.{"-fobjc-arc"},
+                .language = .objective_c,
+            });
+            m.linkFramework("AppKit", .{});
+            m.linkFramework("Foundation", .{});
+            m.linkFramework("QuartzCore", .{});
+            m.linkFramework("CoreGraphics", .{});
+            if (is_test) m.linkFramework("Metal", .{});
+        }
+    }
     const gui = b.addExecutable(.{ .name = "dimna", .root_module = gui_mod });
     return .{ .gui = gui, .gui_test_mod = gui_test_mod };
 }

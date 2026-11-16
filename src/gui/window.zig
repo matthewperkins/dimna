@@ -2,7 +2,8 @@
 //! file holds what every backend and its callers agree on (`Key`, `Cursor`, `Input`,
 //! `Presented`) and the choice of this system's backend, at compile time: `Window` is the
 //! backend's own, so a caller calls the backend's functions directly; there is no indirect
-//! call. Linux: `window_wayland.zig` (a Wayland xdg_toplevel).
+//! call. Linux: `window_wayland.zig` (a Wayland xdg_toplevel). macOS: `window_appkit.zig`
+//! (an AppKit window with a CAMetalLayer view, through `appkit_shim.m`).
 //!
 //! What a backend's `Window` must keep, because the callers rely on it (main.zig,
 //! control.zig, tiles.zig; display.zig, notes.zig and script.zig read `Input`):
@@ -73,7 +74,7 @@ pub const Window = backend.Window;
 /// was written there (main.zig's `main` is the code it was before `runDisplay` was cut
 /// out of it).
 ///
-/// macOS (to come): AppKit must own the process's main thread, so that version starts
+/// macOS (`window_appkit.zig`): AppKit must own the process's main thread, so `run` starts
 /// `body` on a new thread, runs AppKit's loop on the main thread (making and destroying
 /// the windows that `Window.init` and `deinit`, on any thread, ask it for, while the asking
 /// thread waits), and returns `body`'s result when `body` has ended.
