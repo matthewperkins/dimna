@@ -6,7 +6,7 @@
 
 const std = @import("std");
 const dimna = @import("dimna");
-const gpu_mod = @import("gpu.zig");
+const gpu_mod = @import("gpu_vulkan.zig");
 const control = @import("control.zig");
 const i18n = @import("i18n.zig");
 const files = @import("files.zig");

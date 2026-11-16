@@ -166,7 +166,7 @@ const Io = std.Io;
 test "no file under src/ calls the system directly, except the Linux backends" {
     // The files that may: this module's Linux backend, and three that become Linux
     // backends of their own later (USB, window, GPU).
-    const exceptions = [_][]const u8{ "os_linux.zig", "usb_linux.zig", "gui/window.zig", "gui/gpu.zig" };
+    const exceptions = [_][]const u8{ "os_linux.zig", "usb_linux.zig", "gui/window.zig", "gui/gpu_vulkan.zig" };
     // And `record_test.zig`, once, inside its write-failure test (`fork`, `dup2`, `wait4`,
     // `kill`: what replaces them elsewhere is another step's question).
     const fork_file = "record_test.zig";

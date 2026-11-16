@@ -3,7 +3,7 @@
 
 const std = @import("std");
 const dimna = @import("dimna");
-const gpu_mod = @import("gpu.zig");
+const gpu_mod = @import("gpu_vulkan.zig");
 const Gpu = gpu_mod.Gpu;
 const font = @import("font.zig");
 const theme = @import("theme.zig");
