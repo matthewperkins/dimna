@@ -174,3 +174,52 @@ what would be needed.
 The evidence and the three break-it results are in your report; the report says what the
 JACK latency figure includes; the work is committed on `macos-port` in the rig's worktree;
 the worktree is clean; no `jackd` of yours is running; your `/tmp` folder is gone.
+
+## Result on the rig (2026-11-16): JACK does not get below PipeWire here
+
+Built as planned (`8022796`, `6602199`, `9923759`, `c8cd55b`); the agent's tests pass,
+including the one against a dummy-driver server. Then the lead's runs on the board, 40 to
+60 s each, dimna at normal scheduling (see the caution below), tearing display running
+beside it. "Device" is the part past dimna's queue.
+
+| route | buffer | total | device | gaps | sound dropped |
+|---|---|---|---|---|---|
+| ALSA `default` (PipeWire), the new code | period 128, quantum 128 | 16.8 to 17.3 ms | 10.6 ms | 0 to 1 | 0 |
+| the same | period 64, quantum 64 | 10.1 ms | 5.2 ms | 0 | 0 |
+| the same | period 32, quantum 32 (two runs) | 6.9, 7.5 ms | 2.6 ms | 0, 1 | 0 |
+| the card opened by dimna (`plughw:PCH`) | period 128 | 11.8 ms | 4.4 ms | 4 | 0 |
+| the same | period 64 | broken | 2.0 ms | 0 | 13,966 blocks |
+| the same | period 32 | broken | 1.0 ms | 170 | 2,116 blocks |
+| `jackd -P` on `hw:PCH`, dimna as client | 128 x 2 | 12.5 ms | 5.3 ms | 2 | 0 |
+| the same | 64 x 2 (two runs) | broken | 2.7 ms | 0 | about 41,900 blocks, 4,250 xruns |
+| the same | 32 x 2 | broken | 1.3 ms | 0 | 16,927 blocks, 3,816 xruns |
+
+- The ALSA path is unchanged by the new code (16.8 to 16.9 ms in the first two runs, as
+  the baseline).
+- With JACK or the card opened directly, 128-frame periods work and give about 12 ms.
+  Smaller ones do not: dimna's queue sits at its upper limit and the feeder throws most of
+  the sound away, which means frames are being taken more slowly than they are made. Why
+  was not found. `jackd` with three periods logged "client = dimna was not finished"
+  thousands of times; with two it logged nothing. JACK's priority (clients at 55 or at 80)
+  made no difference, nor did dimna's own scheduling class.
+- Through PipeWire the same card runs at 64 and at 32 frames without trouble. PipeWire
+  drives it from a timer with a larger hardware buffer; that is the likely difference, not
+  shown.
+- So on this rig the short way to low audio latency is PipeWire with a smaller period and
+  quantum (the quantum asked for through `PIPEWIRE_LATENCY`, or by dimna itself), not
+  JACK. The period is still fixed at 128 in the code; the runs above used a one-off build
+  that read it from the environment.
+- **The unit as written is wrong in one respect:** it opens the card for capture too
+  (no `-P` after the driver's options), which made 128 x 3 worse (244 xruns in 30 s
+  against 1 to 3 playback-only). If the unit is kept it needs `-P`.
+- The display and acquisition figures were the same in every run (display 2.4 to 2.5 ms
+  per-second average, best frame 0.6 to 0.7 ms, nothing lost).
+- Found on the way: through PipeWire, PipeWire's own thread inside dimna (`data-loop.0`)
+  runs at SCHED_FIFO 80, above the acquisition thread's 70. That is so on `main` too.
+
+**Caution for anyone measuring on the rig over SSH.** `ananicy-cpp` puts an SSH session at
+SCHED_IDLE, nice 16, and what is started from it inherits that. The first set of these
+runs (and the baseline and the steps' before/after runs in `macos-port.md`) were taken
+that way, dimna's ordinary threads at idle priority. Repeated at normal priority
+(`chrt -o 0 nice -n -16`), the table above: the same picture, and the display figures did
+not move.

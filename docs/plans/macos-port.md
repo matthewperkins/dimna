@@ -220,8 +220,25 @@ ranges overlapping, the best frame, no frame a refresh late and nothing lost.
   the step's file list): the comment at `os.zig`'s test about files that "become" backends,
   `ft600.zig`'s header and `docs/hardware.md`, which still describe the control-transfer
   test as guarding one file.
-- **Next, by the owner's choice (2026-11-15):** audio through JACK, `jack-audio.md`, ahead
-  of steps 4 to 6.
+- **Audio through JACK** (`jack-audio.md`, put ahead of steps 4 to 6 by the owner): built,
+  with the shared `render(out, frames)` that Core Audio will call too, so the audio half
+  of step 5 is done. On the rig JACK did not get below PipeWire; see that file's result.
+- **Step 7** (`33c0098` to `d4a0935`, plan `macos-step7-core.md`): `os_darwin.zig`, a USB
+  stand-in, the recorder syncing with `F_FULLFSYNC`, a power assertion while acquiring.
+  On the Mac: 139/139 core tests, `dimna-headless --sim` 60 s `CLEAN` and `OK`, Ctrl-C and
+  the crash test leave valid recordings. Sync of five files on the Mac's disk: `fsync`
+  3.5 ms, `F_BARRIERFSYNC` 6.4 ms, `F_FULLFSYNC` 22.5 ms worst; nothing dropped with any.
+  On Linux: by cross-build, the same 785 functions, four differing in how the same sync
+  call is set up; on the rig, 281/285 tests (4 skipped), and 60 s on the board
+  `dropped=0 gaps=0 bad=0`, delivery 0.77 / 2.71 ms, max sync 20.0 ms, recording `OK`.
+  No test notices a sync that does nothing. For the board step: the real-time policy
+  (1 ms period, 0.5 ms computation) is proven on an idle thread only; no memory locking;
+  the `.fd = -1` stand-in. Left stale: `clock.zig`'s header and `acquisition.zig`'s log
+  line still say `CLOCK_MONOTONIC` and `SCHED_FIFO`.
+- **Measuring on the rig over SSH:** start programs with `chrt -o 0 nice -n -16`; an SSH
+  session there is at SCHED_IDLE (`ananicy-cpp`). The runs in this file up to step 3 were
+  taken without that, both sides alike; at normal priority the display figures were the
+  same (2.4 ms per-second average, best frame 0.6 ms).
 
 ## The layout aimed at
 
