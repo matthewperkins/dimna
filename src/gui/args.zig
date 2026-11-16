@@ -7,7 +7,9 @@ const gpu_mod = @import("gpu.zig");
 const audio_out = @import("audio_out.zig");
 const log = std.log.scoped(.dimna);
 
-const tearing_default = builtin.os.tag == .macos;
+/// macOS waits for the refresh by default (the owner's choice by eye, 2026-11-16: about 20
+/// ms behind, but the scroll is even on a 60 Hz screen); `--tearing` is the quick mode.
+const present_default: gpu_mod.PresentMode = if (builtin.os.tag == .macos) .fifo else .auto;
 
 pub const Args = struct {
     seconds: f64 = 0,
@@ -15,15 +17,12 @@ pub const Args = struct {
     driver: dimna.board.Driver = .usb,
     sim: [8]usize = @splat(0),
     num_sim: usize = 0,
-    present: gpu_mod.PresentMode = .auto,
+    present: gpu_mod.PresentMode = present_default,
     /// Fixed margin before the refresh at which to draw; negative = adapt.
     margin_ms: f64 = -1,
     script: []const u8 = "",
     monitor: []const u8 = "",
-    /// On by default on macOS: there the display is quickest free-running with display sync
-    /// off (the owner's choice, 2026-11-16); `tearing = false` in the config, or
-    /// `--present fifo`, turns it off.
-    tearing: bool = tearing_default,
+    tearing: bool = false,
     /// An image the GUI's colours are taken from (`scheme_image` in the config; "" = the
     /// built-in colours). Not resolved: see `scheme.resolvePath`.
     scheme_image: []const u8 = "",
@@ -287,9 +286,6 @@ pub fn parseArgs(args: []const [:0]const u8, doc: dimna.toml.Document) !Args {
             return error.BadArgs;
         }
     }
-    // Asked to wait for the refresh: that is not tearing (it can only be on here by the
-    // Mac's default, or with both options given, where the later `--present` wins).
-    if (tearing_default and a.present == .fifo) a.tearing = false;
     // Tearing shows frames as they are presented, so draw as samples arrive.
     if (a.tearing and a.free_ms < 0) a.free_ms = 2;
     return a;

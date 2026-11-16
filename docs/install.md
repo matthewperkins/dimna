@@ -214,8 +214,9 @@ verifies it; it needs Python 3.11 or newer with numpy), Ctrl-C ending a recordin
   macOS reports it) and on for the control and tile windows; `--present fifo` turns it on
   for the display too. `mailbox` means the same as `immediate` on a Mac. Colours are
   written as they are, with no colour matching to the display.
-- **Where the display is quick.** `--tearing` is the default on a Mac (`tearing = false`
-  in the config, or `--present fifo`, turns it off). Fullscreen (`--monitor "Built-in
+- **The default waits for the refresh** (`--present fifo` is the Mac's default): about 58
+  frames a second and 20 ms from sample to screen on a 60 Hz MacBook Air, scrolling evenly.
+- **Where the display is quick.** With `--tearing`, fullscreen (`--monitor "Built-in
   Retina Display"`, or another screen's name as macOS shows it): about 210 frames a second and
   7 ms from sample to screen as macOS reports it, on a 60 Hz MacBook Air. In a window it is
   as quick only while it is in front and nothing else on the screen is redrawing (about
