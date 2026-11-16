@@ -130,13 +130,11 @@ instead (it also takes a config folder: see the script).
    `dimna` and `realtime` groups, `usermod`, log out and in (`install-user.sh` in a release
    tarball prints the exact commands).
 
-## macOS (so far: the simulator, no window, no board)
+## macOS (so far: the simulator, no board)
 
 On a Mac with Apple silicon (tried on macOS 27), the core and `dimna-headless` build and
-run from the simulator. `dimna` builds and its tests pass, but it cannot show anything yet:
-its drawing (Metal) is in place, but its window (AppKit) is the next step of the port. Run as
-`dimna --sim 32,16`, it reads its config and stops with status 1 and "windows are not
-ported to macOS yet", having opened nothing. The board is not ported yet either.
+run from the simulator, and `dimna --sim 32,16` opens its windows (AppKit) and draws
+(Metal). The board is not ported yet.
 
 1. **Zig 0.17.1**: `zig-aarch64-macos-0.17.1.tar.xz` from https://ziglang.org/download/,
    checked and unpacked anywhere, as above (no root needed). The build also needs Apple's
@@ -160,7 +158,13 @@ ported to macOS yet", having opened nothing. The board is not ported yet either.
 
    The GUI's tests open no window and play nothing. One test opens the sound device, and
    only with `DIMNA_TEST_AUDIO=1`: it lets the default output pull silence for half a second
-   and prints the device, its rate, buffer and reported latency. The drawing tests draw
+   and prints the device, its rate, buffer and reported latency. With `DIMNA_TEST_WINDOW=1`
+   the window's tests open windows for a second or so each (and bring dimna to the front):
+   events made inside the process, never sent to the system, so no permission is asked
+   for. With `DIMNA_TEST_PRESENT=1` as well, one more test draws plain frames for about 20
+   s, windowed and fullscreen, and prints how long they took to reach the screen (the
+   screen must be on and unlocked: a window not shown has its frames discarded).
+   The drawing tests draw
    offscreen with Metal and read the pixels back (they need the Mac's GPU, no window), and
    `DIMNA_GPU_SPEED=1` adds a speed check that prints how long frames like the rig's take.
    The shaders are Metal Shading Language source compiled when dimna starts (no `metal`
@@ -184,6 +188,18 @@ verifies it; it needs Python 3.11 or newer with numpy), Ctrl-C ending a recordin
   time-constraint policy instead of `SCHED_FIFO` (nothing to set up, no group), and no
   memory is locked (macOS has no `mlockall`). The simulator asks for neither.
 
+- **Windows.** AppKit runs on the process's main thread; the display, the control window
+  and the tiles each run on a thread of their own, as on Linux. Sizes and pointer positions
+  are in the screen's pixels (twice the points on a Retina screen). `--monitor` takes the
+  name macOS gives the screen (System Settings > Displays; e.g. `--monitor "Built-in
+  Retina Display"`); a name that is not there lists those that are. Fullscreen there is a
+  borderless window above the menu bar, with the menu bar and the Dock hidden while dimna
+  is in front (not a Space of its own). Keys are read by what they type in the keyboard
+  layout in use (on Dvorak, `r` is the key marked R); Command combinations are left to the
+  system, and Cmd-Q closes dimna's windows as their close buttons do. There is no input
+  method and no press-and-hold accent menu in notes; dead keys are as AppKit gives them.
+  Scrolling follows the system's "natural scrolling" setting, as libinput's does on Linux;
+  a trackpad's glide after the fingers lift is ignored.
 - **Fonts.** The config's `font` is a family name as on Linux; `sans-serif` is the
   system's interface font (SF), `monospace` the user's fixed-pitch font (Menlo). A family
   that is not installed is replaced by `sans-serif` and is never downloaded (Core Text
@@ -200,7 +216,7 @@ verifies it; it needs Python 3.11 or newer with numpy), Ctrl-C ending a recordin
   written as they are, with no colour matching to the display.
 
 Not yet: the board (the Mac's USB backend is a stand-in that finds no device, so opening
-the board fails as with none plugged in), the windows, an `.app`.
+the board fails as with none plugged in), an `.app`.
 
 ## Build details
 
