@@ -270,8 +270,13 @@ Statements a test or a careful reading can check; appearance beyond them is free
 
 ## Open, for the owner
 
-- **Whether Zig 0.17.1 compiles the `.m` shims itself** or the build must call the
-  system's clang for them: the first thing step 9 finds out.
+- (Answered 2026-11-15: Zig 0.17.1 compiles Objective-C itself. `zig cc -fobjc-arc
+  tools/metal-latency/metal_latency.m -framework Cocoa -framework Metal -framework
+  QuartzCore` built on the Mac with the Command Line Tools' SDK; the binary was not run.
+  Whether `build.zig`'s `addCSourceFiles` takes `.m` the same way is still for step 9.)
+- (Seen 2026-11-15, first `zig build` on the Mac, unchanged tree: liboni compiles;
+  `dimna-headless` fails in `std/os/linux/vdso.zig`, reached from `clock_gettime`; the GUI
+  fails at `xkbcommon/xkbcommon.h` in `src/gui/c.h`. As the survey predicted.)
 - **The oldest macOS supported.** Until decided: the one on the owner's Mac (27).
 - **The board figures on the rig.** Over SSH an agent can build, test and run `--sim`, but
   the timing figures in the table above need the real board streaming and the display on
