@@ -161,11 +161,22 @@ morning.
 | GUI: USB data transfers | 88,870 in 60 s |
 | tests | 273/275 passed, 2 skipped (133; 139 + 2; shader-check 1) |
 
-**The display latency could not be taken**: the rig's session was locked (`hyprlock`), so
-the compositor sent no presentation feedback and the log line read `latency ms avg 0.0`,
-`refresh 0.00`. The owner's own log from an unlocked session has it at avg 1.9 to 2.6 ms,
-min 0.8 to 0.9 (same day). An agent does not unlock the session; the display latency
-figure needs the session unlocked by the owner.
+**Display latency** needs the rig's session unlocked: under `hyprlock` the compositor sends
+no presentation feedback and the log line reads `latency ms avg 0.0`, `refresh 0.00`. An
+agent does not unlock the session. The owner unlocked it for the night; then, same binary,
+tearing active on DP-2 (`hyprctl monitors`: `activelyTearing: true`), no frame "a refresh
+later", no block lost:
+
+| run | per-second average | best frame | worst frame | frames per s | audio |
+|---|---|---|---|---|---|
+| 45 s, a build running beside it | 1.7 to 2.3 ms typical (2.5 over the run) | 0.7 ms | 13.6 ms | 292 | 16.6 ms |
+| 60 s, rig quiet | 2.3 to 2.9 ms (median 2.7) | 1.1 ms | 15.7 ms (per-second worst: median 10.1) | 289 | 15.6 to 18.0 ms (median 16.8) |
+| the owner's own log, same day | 1.9 to 2.6 ms | 0.8 to 0.9 ms | | | |
+
+**The runs differ by about half a millisecond among themselves**, with nothing changed.
+So a single before/after pair cannot show a change smaller than that: a step is compared
+by alternating runs (before, after, before, after; three of each), and what counts is the
+ranges overlapping, the best frame, no frame a refresh late and nothing lost.
 
 ## The layout aimed at
 
@@ -330,6 +341,16 @@ Statements a test or a careful reading can check; appearance beyond them is free
   `dimna-headless` fails in `std/os/linux/vdso.zig`, reached from `clock_gettime`; the GUI
   fails at `xkbcommon/xkbcommon.h` in `src/gui/c.h`. As the survey predicted.)
 - **The oldest macOS supported.** Until decided: the one on the owner's Mac (27).
+- **What the Linux sound output should be** (raised by the owner, 2026-11-15; to settle
+  before step 5). Today dimna opens ALSA's `default`, which on the rig is PipeWire, and
+  10.5 of the 16.8 ms are on the device's side. Candidates: the sound card opened directly
+  (`hw:`), or JACK. JACK, like Core Audio, asks for frames through a callback, so with it
+  both platforms would have the same shape and step 5's seam would be "a function that
+  fills N frames from the queue" on both. To be measured on the rig before choosing.
+- **A hardware monitor through the board's DAC outputs** (raised by the owner, same day):
+  the driver can route an electrode to a DAC, with a high-pass and a noise slicer, but
+  nothing in the control window, the config file or the command line reaches it. Separate
+  from the port; noted here so it is not lost.
 - **The board figures on the rig.** Over SSH an agent can build, test and run `--sim`, but
   the timing figures in the table above need the real board streaming and the display on
   the rig's monitor, which README rules 1 and 2 keep from agents. So for each of steps 2 to
