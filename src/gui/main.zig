@@ -22,7 +22,7 @@
 
 const std = @import("std");
 const dimna = @import("dimna");
-const Window = @import("window.zig").Window;
+const Window = @import("window_wayland.zig").Window;
 const gpu_mod = @import("gpu.zig");
 const Gpu = gpu_mod.Gpu;
 const font = @import("font.zig");
@@ -65,7 +65,7 @@ const tile_link = @import("tile_link.zig");
 
 pub const std_options: std.Options = .{ .log_level = .info };
 
-const Input = @import("window.zig").Input;
+const Input = @import("window_wayland.zig").Input;
 const panels_mod = dimna.panels;
 const Panel = panels_mod.Panel;
 /// RAM for the overview of a recording: about 2.3 hours at 72 history columns in full

@@ -12,7 +12,7 @@
 //! `begin` and `end` around a frame, and `second` once a second for the figures.
 
 const std = @import("std");
-const Presented = @import("window.zig").Presented;
+const Presented = @import("window_wayland.zig").Presented;
 const DrawResult = @import("gpu.zig").DrawResult;
 const log = std.log.scoped(.dimna);
 

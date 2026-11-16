@@ -17,8 +17,8 @@
 
 const std = @import("std");
 const dimna = @import("dimna");
-const Input = @import("window.zig").Input;
-const Key = @import("window.zig").Key;
+const Input = @import("window_wayland.zig").Input;
+const Key = @import("window_wayland.zig").Key;
 const os = dimna.os;
 const log = std.log.scoped(.notes);
 

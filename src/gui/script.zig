@@ -20,7 +20,7 @@
 //!   cannot be scripted.
 
 const std = @import("std");
-const Input = @import("window.zig").Input;
+const Input = @import("window_wayland.zig").Input;
 const Display = @import("display.zig").Display;
 
 /// Adds the script steps that are due at `elapsed_s` to `in`. `pos` is the script cursor.
