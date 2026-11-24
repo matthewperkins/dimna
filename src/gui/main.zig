@@ -291,8 +291,8 @@ fn runDisplay(init: std.process.Init, env: *const Env, args: *const Args, config
 
     // The control window, on its own thread (see control.zig). On a Mac's screen (two
     // pixels to the point) the default 14 px is 7 points, small for a window that is read
-    // and clicked: 20 px there unless the config file says what `font_px` is.
-    const control_font_px: u32 = if (builtin.os.tag == .macos and !args.font_px_given) 20 else args.font_px;
+    // and clicked: 24 px there unless the config file says what `font_px` is.
+    const control_font_px: u32 = if (builtin.os.tag == .macos and !args.font_px_given) 24 else args.font_px;
     var shared: control.Shared = .{};
     var control_cfg: control.Config = .{ .gpa = gpa, .shared = &shared, .display_gpu = &gpu, .font_px = control_font_px, .env = env };
     // Which of its sections are open: from the view file, then as the control window
