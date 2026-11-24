@@ -19,7 +19,7 @@ const std = @import("std");
 const dimna = @import("dimna");
 const Input = @import("window.zig").Input;
 const Key = @import("window.zig").Key;
-const linux = std.os.linux;
+const os = dimna.os;
 const log = std.log.scoped(.notes);
 
 pub const max_text = 200;
@@ -85,13 +85,12 @@ pub const Notes = struct {
         mkdirs(dir);
         var file_buf: [std.fs.max_path_bytes]u8 = undefined;
         const file = std.fmt.bufPrintSentinel(&file_buf, "{s}/notes.log", .{dir}, 0) catch return self;
-        const rc = linux.open(file, .{ .ACCMODE = .WRONLY, .CREAT = true, .APPEND = true, .CLOEXEC = true }, 0o644);
-        if (linux.errno(rc) == .SUCCESS) self.log_fd = @intCast(rc) else log.warn("cannot open {s}: notes are not logged there", .{file});
+        if (os.openAppend(file, 0o644)) |fd| self.log_fd = fd else log.warn("cannot open {s}: notes are not logged there", .{file});
         return self;
     }
 
     pub fn deinit(self: *Notes) void {
-        if (self.log_fd >= 0) _ = linux.close(self.log_fd);
+        if (self.log_fd >= 0) os.close(self.log_fd);
     }
 
     /// The `i`-th most recent note (0 = newest).
@@ -213,7 +212,7 @@ pub const Notes = struct {
                 "{s}\t{d}\t{s}\t{s}\n",
                 .{ dimna.record.localTime(&when), sample, if (session.len > 0) session else "-", note.text() },
             ) catch return;
-            _ = linux.write(self.log_fd, text_line.ptr, text_line.len);
+            _ = os.write(self.log_fd, text_line);
         }
     }
 };
@@ -226,7 +225,7 @@ fn mkdirs(path: [:0]const u8) void {
         if (i < path.len and path[i] != '/') continue;
         @memcpy(buf[0..i], path[0..i]);
         buf[i] = 0;
-        _ = linux.mkdir(buf[0..i :0], 0o755);
+        _ = os.mkdir(buf[0..i :0], 0o755);
     }
 }
 
@@ -479,17 +478,14 @@ test "recent keeps the last 32 notes, newest first" {
 
 test "a saved note is one line in the log: time, sample, session, text" {
     var dir_buf: [64]u8 = undefined;
-    const dir = try std.fmt.bufPrintSentinel(&dir_buf, "/tmp/dimna-notes-test-{d}", .{linux.getpid()}, 0);
+    const dir = try std.fmt.bufPrintSentinel(&dir_buf, "/tmp/dimna-notes-test-{d}", .{os.getpid()}, 0);
     var file_buf: [96]u8 = undefined;
     const file = try std.fmt.bufPrintSentinel(&file_buf, "{s}/notes.log", .{dir}, 0);
-    _ = linux.mkdir(dir, 0o755);
-    defer {
-        _ = linux.unlink(file);
-        _ = linux.rmdir(dir);
-    }
-    const rc = linux.open(file, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true, .CLOEXEC = true }, 0o644);
-    try testing.expectEqual(.SUCCESS, linux.errno(rc));
-    var notes: Notes = .{ .log_fd = @intCast(rc) };
+    // A fresh folder, so the log is new and empty, opened as `Notes.init` opens it.
+    std.Io.Dir.cwd().deleteTree(testing.io, dir) catch {};
+    try std.Io.Dir.cwd().createDirPath(testing.io, dir);
+    defer std.Io.Dir.cwd().deleteTree(testing.io, dir) catch {};
+    var notes: Notes = .{ .log_fd = os.openAppend(file, 0o644) orelse return error.CannotOpenLog };
     defer notes.deinit();
     notes.presets[0].set("baseline");
     try openAndType(&notes, 12345, "cell 1");
@@ -499,11 +495,9 @@ test "a saved note is one line in the log: time, sample, session, text" {
     notes.handle(&in, 67890, "");
 
     var buf: [1024]u8 = undefined;
-    const fd = linux.open(file, .{ .ACCMODE = .RDONLY, .CLOEXEC = true }, 0);
-    try testing.expectEqual(.SUCCESS, linux.errno(fd));
-    defer _ = linux.close(@intCast(fd));
-    const n = linux.read(@intCast(fd), &buf, buf.len);
-    try testing.expectEqual(.SUCCESS, linux.errno(n));
+    const fd = os.openRead(file) orelse return error.CannotOpenLog;
+    defer os.close(fd);
+    const n = os.pread(fd, &buf, buf.len, 0) orelse return error.ReadFailed;
     var lines = std.mem.splitScalar(u8, buf[0..n], '\n');
     const expect = [_][3][]const u8{
         .{ "12345", "/data/2026-11-12_10-00-00", "cell 1" },

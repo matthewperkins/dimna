@@ -125,16 +125,19 @@ for d in "$sysfs"/*; do
 done
 $found || note "no board plugged in (USB vendor 0403, products $products); plug it in and run '$0 --check'"
 
-# Real-time limits: the acquisition thread asks for SCHED_FIFO priority 70 and locks its memory.
+# Real-time limits: the acquisition thread asks for SCHED_FIFO priority 90 (else the most the
+# limit allows) and locks its memory. 95, so that it runs above PipeWire's audio thread inside
+# dimna, which asks for 88 and gets what the limit allows.
 rtprio=$(ulimit -r 2>/dev/null || echo unknown)
 case "$rtprio" in
 unlimited) ok "real-time priority limit (ulimit -r): unlimited" ;;
 '' | *[!0-9]*) todo "real-time priority limit (ulimit -r): cannot read it ($rtprio)" ;;
 *)
-    if [ "$rtprio" -ge 70 ]; then
-        ok "real-time priority limit (ulimit -r): $rtprio (dimna asks for 70)"
+    if [ "$rtprio" -ge 95 ]; then
+        ok "real-time priority limit (ulimit -r): $rtprio (acquisition asks for 90, above PipeWire's 88)"
     else
-        todo "real-time priority limit (ulimit -r): $rtprio, dimna asks for 70; root steps 1, 3, 4"
+        todo "real-time priority limit (ulimit -r): $rtprio; 95 wanted (acquisition asks for 90, and must be above" \
+            "PipeWire's audio thread, which gets up to 88); root steps 1, 3, 4"
     fi
     ;;
 esac

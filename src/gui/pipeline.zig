@@ -83,7 +83,7 @@ pub const Pipeline = struct {
         try self.acq.start();
         self.running = true;
         if (self.args.audio)
-            self.audio_dev = audio_out.AudioOut.start(self.gpa, self.audio_shared, &self.ring, self.fs, self.nch, self.bs);
+            self.audio_dev = audio_out.AudioOut.start(self.gpa, self.audio_shared, &self.ring, self.fs, self.nch, self.bs, self.args.audio_period);
         if (self.args.tiles) self.tiles_win = tiles_mod.Tiles.start(
             self.gpa,
             self.tiles_shared,

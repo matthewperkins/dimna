@@ -36,6 +36,7 @@ const builtin = @import("builtin");
 const types = @import("types.zig");
 const panels = @import("panels.zig");
 const Review = @import("review.zig").Review;
+const os = @import("os.zig");
 
 /// Samples per bucket of level 0.
 pub const bucket: i64 = 64;
@@ -125,9 +126,7 @@ const Mapping = []align(std.heap.page_size_min) u8;
 /// up to whole pages.
 fn mapZeroed(len: usize) !Mapping {
     const size = std.mem.alignForward(usize, @max(len, 1), std.heap.pageSize());
-    const rc = std.os.linux.mmap(null, size, .{ .READ = true, .WRITE = true }, .{ .TYPE = .PRIVATE, .ANONYMOUS = true }, -1, 0);
-    if (std.os.linux.errno(rc) != .SUCCESS) return error.OutOfMemory;
-    const ptr: [*]align(std.heap.page_size_min) u8 = @ptrFromInt(rc);
+    const ptr = os.mapZeroed(size) orelse return error.OutOfMemory;
     return ptr[0..size];
 }
 
@@ -141,7 +140,7 @@ const Retired = struct {
 
     fn put(self: *Retired, gpa: std.mem.Allocator, mem: Mapping) void {
         self.list.append(gpa, mem) catch {
-            _ = std.os.linux.munmap(mem.ptr, mem.len);
+            os.unmap(mem.ptr, mem.len);
         };
     }
 
@@ -151,11 +150,11 @@ const Retired = struct {
         while (left > 0 and self.list.items.len > 0) {
             const last = &self.list.items[self.list.items.len - 1];
             if (last.len <= left) {
-                _ = std.os.linux.munmap(last.ptr, last.len);
+                os.unmap(last.ptr, last.len);
                 left -= last.len;
                 _ = self.list.pop();
             } else {
-                _ = std.os.linux.munmap(@alignCast(last.ptr + last.len - left), left);
+                os.unmap(@alignCast(last.ptr + last.len - left), left);
                 last.len -= left;
                 left = 0;
             }
@@ -163,7 +162,7 @@ const Retired = struct {
     }
 
     fn all(self: *Retired, gpa: std.mem.Allocator) void {
-        for (self.list.items) |m| _ = std.os.linux.munmap(m.ptr, m.len);
+        for (self.list.items) |m| os.unmap(m.ptr, m.len);
         self.list.deinit(gpa);
         self.list = .empty;
     }
@@ -805,7 +804,6 @@ pub const Backfill = struct {
 // ---------------------------------------------------------------- tests
 
 const testing = std.testing;
-const linux = std.os.linux;
 
 /// A test signal: a slow and a faster sine per column, noise and rare spikes, so the
 /// extremes differ from bucket to bucket at every level.
@@ -1384,25 +1382,16 @@ test "backfill from a recording equals the live store, apart from the lead-ins" 
         }
     }
     var dir_buf: [64]u8 = undefined;
-    const dir = try std.fmt.bufPrintSentinel(&dir_buf, "/tmp/dimna-pyramid-test-{d}", .{linux.getpid()}, 0);
-    _ = linux.mkdir(dir, 0o700);
-    defer {
-        inline for (.{ "samples.i16", "ttl_sample.i64", "ttl_word.u16" }) |name| {
-            var b: [96:0]u8 = undefined;
-            _ = linux.unlink(std.fmt.bufPrintSentinel(&b, "{s}/{s}", .{ dir, name }, 0) catch unreachable);
-        }
-        _ = linux.rmdir(dir);
-    }
+    const dir = try std.fmt.bufPrintSentinel(&dir_buf, "/tmp/dimna-pyramid-test-{d}", .{os.getpid()}, 0);
+    try std.Io.Dir.cwd().createDirPath(testing.io, dir);
+    defer std.Io.Dir.cwd().deleteTree(testing.io, dir) catch {};
     inline for (
         .{ "samples.i16", "ttl_sample.i64", "ttl_word.u16" },
         .{ std.mem.sliceAsBytes(data), std.mem.sliceAsBytes(es.items), std.mem.sliceAsBytes(ew.items) },
     ) |name, bytes_| {
         var b: [96:0]u8 = undefined;
         const path = try std.fmt.bufPrintSentinel(&b, "{s}/{s}", .{ dir, name }, 0);
-        const fd: i32 = @intCast(linux.open(path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, 0o600));
-        var done: usize = 0;
-        while (done < bytes_.len) done += linux.write(fd, bytes_.ptr + done, bytes_.len - done);
-        _ = linux.close(fd);
+        try std.Io.Dir.cwd().writeFile(testing.io, .{ .sub_path = path, .data = bytes_ });
     }
 
     // Live: the rows of a feed made from the same panels, in blocks of 256.

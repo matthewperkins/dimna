@@ -1,5 +1,4 @@
 const std = @import("std");
-const Scanner = @import("wayland").Scanner;
 
 /// The release tarballs: `zig build release` builds both, whatever -Dtarget says.
 /// glibc 2.34 covers Rocky/Alma/RHEL 9, Ubuntu 22.04, Debian 12 and everything newer.
@@ -74,9 +73,14 @@ const SystemDirs = struct {
     lib: []const []const u8,
 };
 
-const Programs = struct {
+/// The core and dimna-headless for one target.
+const Core = struct {
     dimna: *std.Build.Module,
     headless: *std.Build.Step.Compile,
+};
+
+/// dimna and the GUI's test module for one target.
+const Gui = struct {
     gui: *std.Build.Step.Compile,
     gui_test_mod: *std.Build.Module,
 };
@@ -85,42 +89,69 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     // Acquisition code ships with safety checks on (bounds, overflow, unreachable).
     const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
+    // -Dgui=false: the core and dimna-headless alone. Nothing of the GUI is set up: no
+    // pkg-config, no Wayland scanner, no Vulkan binding, no shaders, no glslc lookup, and
+    // zig-wayland and vulkan-zig (lazy dependencies) are not fetched.
+    const with_gui = b.option(bool, "gui", "Build the GUI, dimna (default: true; false: the core and dimna-headless only)") orelse true;
+    const vk_registry_option = b.option([]const u8, "vk-registry", "Path to vk.xml (default: vendor/vulkan/vk.xml)");
+
+    // Made first, so that `zig build --help` lists the steps in the order it always has.
+    const headless_step = b.step("headless", "Run the headless acquisition tool");
+    const shaders_step = b.step("shaders", "Rebuild the checked-in src/gui/shaders/*.spv with glslc");
+    const gui_step = b.step("gui", "Run the GUI");
+    const test_step = b.step("test", if (with_gui) "Run unit tests (the core's and the GUI's)" else "Run unit tests (the core's; -Dgui=false)");
+    const release_step = b.step("release", "Build the release tarballs (x86_64 glibc 2.34 and musl) into zig-out/release");
+
+    // ---- The normal build: -Dtarget (this machine by default). ----
+    const core = addCore(b, target, optimize, null);
+    b.installArtifact(core.headless);
+
+    const run = b.addRunArtifact(core.headless);
+    run.step.dependOn(b.getInstallStep());
+    run.addPassthruArgs();
+    headless_step.dependOn(&run.step);
+
+    const tests = b.addTest(.{ .root_module = core.dimna });
+    test_step.dependOn(&b.addRunArtifact(tests).step);
+
+    if (!with_gui) {
+        // Said plainly, rather than half-working.
+        for ([_]*std.Build.Step{ shaders_step, gui_step, release_step }) |step| {
+            step.dependOn(&b.addFail(b.fmt("`zig build {s}` needs the GUI; it is not set up with -Dgui=false", .{step.name})).step);
+        }
+        return;
+    }
+
+    // ---- macOS: dimna with AppKit and Metal (see addMacGui). ----
+    if (target.result.os.tag == .macos) {
+        const gui = addMacGui(b, target, optimize, core.dimna);
+        b.installArtifact(gui.gui);
+        const run_gui = b.addRunArtifact(gui.gui);
+        run_gui.step.dependOn(b.getInstallStep());
+        run_gui.addPassthruArgs();
+        gui_step.dependOn(&run_gui.step);
+        test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .name = "gui-test", .root_module = gui.gui_test_mod })).step);
+        // The Vulkan shaders and the release tarballs are Linux's.
+        shaders_step.dependOn(&b.addFail("`zig build shaders` compiles the Vulkan shaders, which macOS does not use").step);
+        release_step.dependOn(&b.addFail("`zig build release` builds the Linux tarballs; it runs on Linux").step);
+        return;
+    }
 
     // ---- dimna: the GUI. Wayland directly (zig-wayland), Vulkan (vulkan-zig). ----
-    // The protocol XMLs are vendored (vendor/wayland-protocols), so a build needs neither
-    // wayland-protocols nor wayland-scanner installed, and no distribution's older copy.
-    const scanner = Scanner.create(b, .{
-        .wayland_xml = b.path("vendor/wayland-protocols/wayland.xml"),
-        .wayland_protocols = b.path("vendor/wayland-protocols"),
-    });
-    scanner.addSystemProtocol("stable/xdg-shell/xdg-shell.xml");
-    scanner.addSystemProtocol("stable/presentation-time/presentation-time.xml");
-    scanner.addSystemProtocol("unstable/pointer-gestures/pointer-gestures-unstable-v1.xml");
-    scanner.generate("wl_compositor", 4);
-    scanner.generate("wl_seat", 5);
-    scanner.generate("wl_output", 4); // v4 gives the connector name (DP-2), to pick a monitor
-    scanner.generate("xdg_wm_base", 2);
-    scanner.generate("wp_presentation", 1);
-    scanner.generate("zwp_pointer_gestures_v1", 1);
-    scanner.addSystemProtocol("staging/tearing-control/tearing-control-v1.xml");
-    scanner.generate("wp_tearing_control_manager_v1", 1);
-    scanner.addSystemProtocol("staging/content-type/content-type-v1.xml");
-    scanner.generate("wp_content_type_manager_v1", 1);
-    // The pointer's shape (a hand over something that can be dragged). The protocol also
-    // names tablet tools, so the tablet protocol has to be known to the scanner.
-    scanner.addSystemProtocol("stable/tablet/tablet-v2.xml");
-    scanner.addSystemProtocol("staging/cursor-shape/cursor-shape-v1.xml");
-    scanner.generate("wp_cursor_shape_manager_v1", 1);
-    const wayland = b.createModule(.{ .root_source_file = scanner.result });
+    // Both are lazy dependencies, fetched only for a build with the GUI. While one is not
+    // fetched yet, lazyImport and lazyDependency return null; the build runner then fetches
+    // what was asked for and runs this function again.
+    const wayland: ?*std.Build.Module = if (b.lazyImport(@This(), "wayland")) |zig_wayland| waylandBindings(b, zig_wayland.Scanner) else null;
 
     // Vulkan bindings are generated from the vendored registry (vendor/vulkan/vk.xml);
     // -Dvk-registry=<path> overrides it, e.g. with the system's vulkan-headers copy.
-    const vk_registry: std.Build.LazyPath = if (b.option([]const u8, "vk-registry", "Path to vk.xml (default: vendor/vulkan/vk.xml)")) |path|
+    const vk_registry: std.Build.LazyPath = if (vk_registry_option) |path|
         .{ .cwd_relative = path }
     else
         b.path("vendor/vulkan/vk.xml");
-    const vulkan_dep = b.dependency("vulkan", .{ .registry = vk_registry });
+    const vulkan_dep = b.lazyDependency("vulkan", .{ .registry = vk_registry }) orelse return;
     const vulkan = vulkan_dep.module("vulkan-zig");
+    if (wayland == null) return;
 
     // FreeType's headers live in their own directory; ask pkg-config where.
     var gui_include_dirs: std.ArrayList([]const u8) = .empty;
@@ -131,10 +162,6 @@ pub fn build(b: *std.Build) void {
             if (std.mem.startsWith(u8, f, "-I")) gui_include_dirs.append(b.allocator, f[2..]) catch @panic("OOM");
         }
     }
-
-    // Made before the shaders' step, so that `zig build --help` lists the steps in the order
-    // it always has.
-    const headless_step = b.step("headless", "Run the headless acquisition tool");
 
     // Shaders: GLSL compiled to SPIR-V and embedded. The compiled .spv files are checked in
     // next to the sources, so building dimna does not need glslc. When glslc is installed
@@ -172,39 +199,28 @@ pub fn build(b: *std.Build) void {
         shader_check_mod.addAnonymousImport("checked_in/" ++ name ++ ".spv", .{ .root_source_file = checked_in });
         shader_check_mod.addAnonymousImport("compiled/" ++ name ++ ".spv", .{ .root_source_file = compiled orelse checked_in });
     }
-    b.step("shaders", "Rebuild the checked-in src/gui/shaders/*.spv with glslc").dependOn(&update_shaders.step);
+    shaders_step.dependOn(&update_shaders.step);
 
     const inputs: Inputs = .{
-        .wayland = wayland,
+        .wayland = wayland.?,
         .vulkan = vulkan,
         .shaders = shaders,
         .gui_include_dirs = gui_include_dirs.items,
     };
 
-    // ---- The normal build: -Dtarget (this machine by default). ----
-    const progs = addPrograms(b, target, optimize, inputs, null);
-    b.installArtifact(progs.headless);
-
-    const run = b.addRunArtifact(progs.headless);
-    run.step.dependOn(b.getInstallStep());
-    run.addPassthruArgs();
-    headless_step.dependOn(&run.step);
-
-    b.installArtifact(progs.gui);
-    const run_gui = b.addRunArtifact(progs.gui);
+    const gui = addGui(b, target, optimize, inputs, null, core.dimna);
+    b.installArtifact(gui.gui);
+    const run_gui = b.addRunArtifact(gui.gui);
     run_gui.step.dependOn(b.getInstallStep());
     run_gui.addPassthruArgs();
-    b.step("gui", "Run the GUI").dependOn(&run_gui.step);
+    gui_step.dependOn(&run_gui.step);
 
-    const tests = b.addTest(.{ .root_module = progs.dimna });
-    const gui_tests = b.addTest(.{ .name = "gui-test", .root_module = progs.gui_test_mod });
-    const test_step = b.step("test", "Run unit tests (the core's and the GUI's)");
-    test_step.dependOn(&b.addRunArtifact(tests).step);
+    const gui_tests = b.addTest(.{ .name = "gui-test", .root_module = gui.gui_test_mod });
     test_step.dependOn(&b.addRunArtifact(gui_tests).step);
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .name = "shader-check", .root_module = shader_check_mod })).step);
 
     // ---- zig build release: one tarball per entry of release_targets, in zig-out/release. ----
-    addRelease(b, inputs, &.{
+    addRelease(b, release_step, inputs, &.{
         b.path("LICENSE"),
         b.path("vendor/liboni/LICENSE"),
         b.path("vendor/stb/LICENSE"),
@@ -213,16 +229,43 @@ pub fn build(b: *std.Build) void {
     });
 }
 
-/// dimna-headless, dimna and the GUI's test module for one target. `system_dirs` is null
-/// for the normal build (Zig then searches this machine's folders itself, for the native
-/// target) and set for a release build.
-fn addPrograms(
+/// The Wayland bindings: zig-wayland's scanner run over the protocols dimna uses.
+fn waylandBindings(b: *std.Build, comptime Scanner: type) *std.Build.Module {
+    // The protocol XMLs are vendored (vendor/wayland-protocols), so a build needs neither
+    // wayland-protocols nor wayland-scanner installed, and no distribution's older copy.
+    const scanner = Scanner.create(b, .{
+        .wayland_xml = b.path("vendor/wayland-protocols/wayland.xml"),
+        .wayland_protocols = b.path("vendor/wayland-protocols"),
+    });
+    scanner.addSystemProtocol("stable/xdg-shell/xdg-shell.xml");
+    scanner.addSystemProtocol("stable/presentation-time/presentation-time.xml");
+    scanner.addSystemProtocol("unstable/pointer-gestures/pointer-gestures-unstable-v1.xml");
+    scanner.generate("wl_compositor", 4);
+    scanner.generate("wl_seat", 5);
+    scanner.generate("wl_output", 4); // v4 gives the connector name (DP-2), to pick a monitor
+    scanner.generate("xdg_wm_base", 2);
+    scanner.generate("wp_presentation", 1);
+    scanner.generate("zwp_pointer_gestures_v1", 1);
+    scanner.addSystemProtocol("staging/tearing-control/tearing-control-v1.xml");
+    scanner.generate("wp_tearing_control_manager_v1", 1);
+    scanner.addSystemProtocol("staging/content-type/content-type-v1.xml");
+    scanner.generate("wp_content_type_manager_v1", 1);
+    // The pointer's shape (a hand over something that can be dragged). The protocol also
+    // names tablet tools, so the tablet protocol has to be known to the scanner.
+    scanner.addSystemProtocol("stable/tablet/tablet-v2.xml");
+    scanner.addSystemProtocol("staging/cursor-shape/cursor-shape-v1.xml");
+    scanner.generate("wp_cursor_shape_manager_v1", 1);
+    return b.createModule(.{ .root_source_file = scanner.result });
+}
+
+/// The core (the `dimna` module, with liboni) and dimna-headless for one target.
+/// `system_dirs` is null for the normal build and set for a release build.
+fn addCore(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
-    inputs: Inputs,
     system_dirs: ?SystemDirs,
-) Programs {
+) Core {
     // liboni (MIT, vendored from oers, which carries one patch: oni_set_driver_search_dir).
     // It dlopen()s libonidriver_<name>.so at runtime, so nothing here links FTDI's library.
     const liboni_mod = b.createModule(.{ .target = target, .optimize = optimize, .link_libc = true });
@@ -257,6 +300,14 @@ fn addPrograms(
     // The normal build's module is also offered to packages that depend on this one.
     const dimna = if (system_dirs == null) b.addModule("dimna", dimna_options) else b.createModule(dimna_options);
     dimna.linkLibrary(liboni);
+    // macOS: the power assertion that keeps the machine awake while acquiring
+    // (src/os_darwin.zig, IOPMAssertionCreateWithName) and the strings it takes; and the
+    // USB backend's IOKit calls (src/usb_darwin.zig calls src/usb_iokit.c).
+    if (target.result.os.tag == .macos) {
+        dimna.addCSourceFile(.{ .file = b.path("src/usb_iokit.c"), .flags = &.{ "-Wall", "-Wextra" } });
+        dimna.linkFramework("IOKit", .{});
+        dimna.linkFramework("CoreFoundation", .{});
+    }
 
     const headless = b.addExecutable(.{
         .name = "dimna-headless",
@@ -267,7 +318,20 @@ fn addPrograms(
             .imports = &.{.{ .name = "dimna", .module = dimna }},
         }),
     });
+    return .{ .dimna = dimna, .headless = headless };
+}
 
+/// dimna and the GUI's test module for one target, over the core's `dimna` module.
+/// `system_dirs` is null for the normal build (Zig then searches this machine's folders
+/// itself, for the native target) and set for a release build.
+fn addGui(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    inputs: Inputs,
+    system_dirs: ?SystemDirs,
+    dimna: *std.Build.Module,
+) Gui {
     // Two modules over the same files: the program (main.zig) and its unit tests
     // (tests.zig), with the same imports and libraries so the test binary compiles the
     // same code. The tests only link these libraries; none of them opens a window, a
@@ -341,15 +405,105 @@ fn addPrograms(
     // checked after the link (packaging/check-release.sh). The musl link does not need it:
     // lld does not refuse there (those libraries need libc.so.6, which is not in that link).
     if (system_dirs != null and target.result.abi.isGnu()) gui.linker_allow_shlib_undefined = true;
-    return .{ .dimna = dimna, .headless = headless, .gui = gui, .gui_test_mod = gui_test_mod };
+    return .{ .gui = gui, .gui_test_mod = gui_test_mod };
+}
+
+/// dimna and the GUI's test module for macOS, over the core's `dimna` module. The same two
+/// modules over the same files as `addGui`, with the Mac's libraries: no Wayland, Vulkan,
+/// SPIR-V, fontconfig, xkbcommon or ALSA. FreeType through pkg-config (Homebrew's, which a
+/// Mac then needs installed); fonts are found with Core Text and sound goes through Core
+/// Audio, both called through their C interfaces, declared in the Zig files that use them
+/// (src/gui/fontfind_coretext.zig, src/gui/audio_coreaudio.zig). The window is AppKit and
+/// the renderer Metal (src/gui/window_appkit.zig, src/gui/gpu_metal.zig), each through an
+/// Objective-C shim beside it.
+fn addMacGui(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    dimna: *std.Build.Module,
+) Gui {
+    const gui_c = b.addTranslateC(.{ .root_source_file = b.path("src/gui/c_darwin.h"), .target = target, .optimize = optimize });
+    const flags = b.run(&.{ "pkg-config", "--cflags-only-I", "freetype2" });
+    var it = std.mem.tokenizeAny(u8, flags, " \n");
+    while (it.next()) |f| {
+        if (std.mem.startsWith(u8, f, "-I")) gui_c.addIncludePath(.{ .cwd_relative = f[2..] });
+    }
+    const gui_c_mod = gui_c.createModule();
+    const stb_c = b.addTranslateC(.{ .root_source_file = b.path("vendor/stb/stb.h"), .target = target, .optimize = optimize });
+    const stb_mod = stb_c.createModule();
+    const gui_mod = b.createModule(.{
+        .root_source_file = b.path("src/gui/main.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    const gui_test_mod = b.createModule(.{
+        .root_source_file = b.path("src/gui/tests.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    for ([_]*std.Build.Module{ gui_mod, gui_test_mod }) |m| {
+        m.addImport("dimna", dimna);
+        m.addImport("gui_c", gui_c_mod);
+        m.addImport("stb", stb_mod);
+        m.addCSourceFile(.{
+            .file = b.path("vendor/stb/stb_impl.c"),
+            .flags = &.{ "-DNDEBUG", "-w", "-fno-sanitize=undefined" },
+        });
+        m.addIncludePath(b.path("vendor/stb"));
+        // Text: Core Text finds the font, FreeType rasterizes it.
+        m.linkSystemLibrary("freetype2", .{});
+        m.linkFramework("CoreText", .{});
+        m.linkFramework("CoreFoundation", .{});
+        // Sound: the default output device through an output audio unit.
+        m.linkFramework("AudioToolbox", .{});
+        m.linkFramework("CoreAudio", .{});
+    }
+    // ---- The renderer (gpu_metal.zig): Metal through an Objective-C shim, compiled with
+    // ARC, and its C interface translated for Zig. The shaders are Metal Shading Language
+    // source, embedded and compiled when the renderer is made (no `metal` tool needed). ----
+    {
+        const metal_shim = b.addTranslateC(.{ .root_source_file = b.path("src/gui/metal_shim.h"), .target = target, .optimize = optimize }).createModule();
+        for ([_]*std.Build.Module{ gui_mod, gui_test_mod }) |m| {
+            m.addImport("metal_shim", metal_shim);
+            m.addCSourceFile(.{ .file = b.path("src/gui/metal_shim.m"), .flags = &.{"-fobjc-arc"} });
+            m.linkFramework("Metal", .{});
+            m.linkFramework("QuartzCore", .{});
+            m.linkFramework("Foundation", .{});
+        }
+    }
+    // ---- The window: AppKit through src/gui/appkit_shim.m (Objective-C, ARC), whose C
+    // interface (appkit_shim.h) Zig imports as `appkit_c`. The tests' build of the shim
+    // has its test helpers too (DIMNA_APPKIT_TEST), with Metal for their stand-in
+    // presenter; the program's has neither. ----
+    {
+        const appkit_c = b.addTranslateC(.{ .root_source_file = b.path("src/gui/appkit_shim.h"), .target = target, .optimize = optimize });
+        const appkit_c_mod = appkit_c.createModule();
+        for ([_]*std.Build.Module{ gui_mod, gui_test_mod }, [_]bool{ false, true }) |m, is_test| {
+            m.addImport("appkit_c", appkit_c_mod);
+            m.addAnonymousImport("dimna-icon.png", .{ .root_source_file = b.path("packaging/icon/dimna-256.png") });
+            m.addCSourceFile(.{
+                .file = b.path("src/gui/appkit_shim.m"),
+                .flags = if (is_test) &.{ "-fobjc-arc", "-DDIMNA_APPKIT_TEST" } else &.{"-fobjc-arc"},
+                .language = .objective_c,
+            });
+            m.linkFramework("AppKit", .{});
+            m.linkFramework("Foundation", .{});
+            m.linkFramework("QuartzCore", .{});
+            m.linkFramework("CoreGraphics", .{});
+            if (is_test) m.linkFramework("Metal", .{});
+        }
+    }
+    const gui = b.addExecutable(.{ .name = "dimna", .root_module = gui_mod });
+    return .{ .gui = gui, .gui_test_mod = gui_test_mod };
 }
 
 /// `zig build release`: for each of `release_targets`, zig-out/release/dimna-<version>-<name>/
 /// (bin/dimna, bin/dimna-headless, packaging/, tools/dimna_read.py, licenses/, README.md,
 /// BUILD-INFO, COMMIT, CHECK) and the same folder as dimna-<version>-<name>.tar.gz. Needs tar, gzip, readelf and
 /// objdump; and git for COMMIT (it says "unknown" without).
-fn addRelease(b: *std.Build, inputs: Inputs, licences: []const std.Build.LazyPath) void {
-    const release_step = b.step("release", "Build the release tarballs (x86_64 glibc 2.34 and musl) into zig-out/release");
+fn addRelease(b: *std.Build, release_step: *std.Build.Step, inputs: Inputs, licences: []const std.Build.LazyPath) void {
     const version = @import("build.zig.zon").version;
 
     // This machine's header and library folders, as Zig would search them for a native
@@ -368,12 +522,14 @@ fn addRelease(b: *std.Build, inputs: Inputs, licences: []const std.Build.LazyPat
 
     for (release_targets) |rt| {
         const query = std.Target.Query.parse(.{ .arch_os_abi = rt.query }) catch @panic("bad release target");
-        const progs = addPrograms(b, b.resolveTargetQuery(query), .ReleaseSafe, inputs, system_dirs);
+        const release_target = b.resolveTargetQuery(query);
+        const core = addCore(b, release_target, .ReleaseSafe, system_dirs);
+        const gui = addGui(b, release_target, .ReleaseSafe, inputs, system_dirs, core.dimna);
         const dir = b.fmt("dimna-{s}-{s}", .{ version, rt.name });
 
         const stage = b.addWriteFiles();
-        _ = stage.addCopyFile(progs.gui.getEmittedBin(), b.fmt("{s}/bin/dimna", .{dir}));
-        _ = stage.addCopyFile(progs.headless.getEmittedBin(), b.fmt("{s}/bin/dimna-headless", .{dir}));
+        _ = stage.addCopyFile(gui.gui.getEmittedBin(), b.fmt("{s}/bin/dimna", .{dir}));
+        _ = stage.addCopyFile(core.headless.getEmittedBin(), b.fmt("{s}/bin/dimna-headless", .{dir}));
         // What an installation needs, named one by one: the folder on disk may hold other
         // files (icon candidates, files of other work) that are not part of a release.
         for (release_packaging) |f| {
@@ -402,8 +558,8 @@ fn addRelease(b: *std.Build, inputs: Inputs, licences: []const std.Build.LazyPat
         const check = b.addSystemCommand(&.{"sh"});
         check.addFileArg(b.path("packaging/check-release.sh"));
         check.addArg(release_max_glibc);
-        check.addFileArg(progs.gui.getEmittedBin());
-        check.addFileArg(progs.headless.getEmittedBin());
+        check.addFileArg(gui.gui.getEmittedBin());
+        check.addFileArg(core.headless.getEmittedBin());
         _ = stage.addCopyFile(check.captureStdOut(.{}), b.fmt("{s}/CHECK", .{dir}));
 
         const tar = b.addSystemCommand(&.{ "tar", "--sort=name", "--owner=0", "--group=0", "--numeric-owner", "-czf" });

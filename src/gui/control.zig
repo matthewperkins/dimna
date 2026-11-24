@@ -371,7 +371,7 @@ fn loop(cfg: *Config) !void {
     const class = std.fmt.bufPrintSentinel(&class_buf, "{s}-control", .{cfg.env.app_id}, 0) catch "dimna-control";
     try win.init("dimna control", class, cfg.env.key_debug);
     defer win.deinit();
-    var gpu = try gpu_mod.Gpu.init(gpa, .{ .display = win.display, .surface = win.surface }, .fifo, cfg.display_gpu);
+    var gpu = try gpu_mod.Gpu.init(gpa, win.gpuTarget(), .fifo, cfg.display_gpu);
     defer gpu.deinit();
     var face = try font.Font.init(gpa, std.mem.sliceTo(&cfg.font_buf, 0), cfg.font_px);
     defer face.deinit(gpa);
@@ -422,13 +422,13 @@ fn loop(cfg: *Config) !void {
         if (win.resized) dirty = true;
         if (!dirty or !win.frame_ready) continue;
 
-        if (win.resized or gpu.swapchain == .null) {
+        if (win.resized or gpu.unsized()) {
             try gpu.resize(win.width, win.height);
             win.resized = false;
         }
         var ui: ui_mod.Ui = .begin(
             &batch,
-            @floatFromInt(gpu.extent.width),
+            @floatFromInt(gpu.pixelSize().width),
             @floatCast(in.pointer_x),
             @floatCast(in.pointer_y),
             clicks > 0,
@@ -1717,7 +1717,7 @@ test "which sections are open is saved with the view, but is not by itself somet
     try testing.expect(view_file.unsaved(view));
     // Saving writes the [control] table after the others, and then nothing is unsaved.
     var path_buf: [96]u8 = undefined;
-    const dir = try std.fmt.bufPrint(&path_buf, "/tmp/dimna-control-view-test-{d}", .{std.os.linux.getpid()});
+    const dir = try std.fmt.bufPrint(&path_buf, "/tmp/dimna-control-view-test-{d}", .{dimna.os.getpid()});
     defer std.Io.Dir.cwd().deleteTree(io, dir) catch {};
     var file_buf: [128]u8 = undefined;
     const path = try std.fmt.bufPrint(&file_buf, "{s}/views.toml", .{dir});

@@ -30,7 +30,7 @@ package installs:
 |---|---|
 | `/usr/bin/dimna`, `/usr/bin/dimna-headless` | the programs |
 | `/usr/lib/udev/rules.d/60-dimna-ft60x.rules` | the board's udev rule (below) |
-| `/etc/security/limits.d/99-dimna-realtime.conf` | real-time priority 80 and unlimited locked memory for the `realtime` group |
+| `/etc/security/limits.d/99-dimna-realtime.conf` | real-time priority 95 and unlimited locked memory for the `realtime` group |
 | `/usr/share/applications/dimna.desktop`, `/usr/share/icons/hicolor/*/apps/dimna.*` | the menu entry (with a "simulated board" action) and the icon |
 | `/usr/libexec/dimna/dimna-desktop-launch` | what the menu entry runs: `/usr/bin/dimna`, its output appended to `~/.local/state/dimna/dimna.log` |
 | `/usr/share/dimna/` | the simulator action's config; `tools/dimna_read.py`, the reference reader |
@@ -52,7 +52,13 @@ and limits are read at login):
 
     sudo usermod -aG dimna,realtime $USER
 
-Then check, after logging in again: `ulimit -r` prints 80, `ulimit -l` prints `unlimited`.
+Then check, after logging in again: `ulimit -r` prints 95, `ulimit -l` prints `unlimited`.
+
+An existing installation may still have `rtprio 80` in that file (the limit was 80 before
+the acquisition thread asked for 90). Change that line to `@realtime - rtprio 95`
+(`sudoedit /etc/security/limits.d/99-dimna-realtime.conf`), then log out and in. Until then
+the acquisition thread runs at SCHED_FIFO 80, level with PipeWire's audio thread inside
+dimna instead of above it, and says so in the log ("Run" below has why).
 An older rule for the same board (an Open Ephys install's `/etc/udev/rules.d/*ft600*.rules`
 with `MODE="0666"`) still applies alongside; remove it if only the `dimna` group should reach
 the board.
@@ -76,7 +82,8 @@ groups, the udev rule into `/etc/udev/rules.d/`, the limits file into
 
 - the board's device node is readable and writable by you, if the board is plugged in (found
   through `/sys/bus/usb/devices`, vendor 0403; the node is never opened);
-- `ulimit -r` at least 70 (what the acquisition thread asks for) and `ulimit -l` unlimited;
+- `ulimit -r` at least 95 (the acquisition thread asks for 90, above PipeWire's audio thread
+  inside dimna, which asks for 88 and gets what the limit allows) and `ulimit -l` unlimited;
 - the optional fonts: Noto Sans CJK SC, only for Chinese; Noto Sans Arabic or Vazirmatn,
   and HarfBuzz and FriBidi, only for Persian;
 - a Wayland session (the windows need one; `dimna-headless` does not).
@@ -112,17 +119,130 @@ instead (it also takes a config folder: see the script).
        zig build --release=safe     # zig-out/bin/dimna and dimna-headless (safety checks stay on)
        zig build test               # unit tests: the core (src/root.zig) and the GUI (src/gui/tests.zig)
 
+   `-Dgui=false` builds the core and `dimna-headless` alone: it needs none of the libraries in
+   2, nor pkg-config, and zig-wayland and vulkan-zig are not fetched (they are lazy
+   dependencies; `zig build --fetch=all` fetches them ahead of an offline build, plain
+   `--fetch` does not). `zig build test -Dgui=false` runs the core's tests only; `gui`,
+   `shaders` and `release` fail with a message that they need the GUI.
+
 4. The machine setup as for a tarball: `packaging/60-dimna-ft60x.rules` into
    `/etc/udev/rules.d/`, `packaging/99-dimna-realtime.conf` into `/etc/security/limits.d/`, the
    `dimna` and `realtime` groups, `usermod`, log out and in (`install-user.sh` in a release
    tarball prints the exact commands).
 
+## macOS
+
+On a Mac with Apple silicon (tried on macOS 27), `dimna` and `dimna-headless` build from
+source and run from the simulator or the board: windows through AppKit, drawing with
+Metal, sound through Core Audio, the board through IOKit (nothing to install for it). There
+is no `.app` yet.
+
+1. **Zig 0.17.1**: `zig-aarch64-macos-0.17.1.tar.xz` from https://ziglang.org/download/,
+   checked and unpacked anywhere, as above (no root needed). The build also needs Apple's
+   Command Line Tools (`xcode-select --install`) for the system's headers and frameworks.
+2. **For `dimna`** (not for `dimna-headless`): FreeType and `pkg-config` from Homebrew
+   (`brew install pkg-config freetype`), found through `pkg-config freetype2`; `dimna`
+   then loads Homebrew's `libfreetype.6.dylib` when it runs. For Persian and other
+   right-to-left or joined scripts, also `brew install harfbuzz fribidi` (loaded when such
+   text is first drawn, from /opt/homebrew/lib or by name; without them that text is drawn
+   unshaped). Nothing else: fonts come from Core Text (Chinese from Hiragino Sans GB,
+   Persian from Geeza Pro, both installed with macOS), sound from Core Audio. No fontconfig,
+   Wayland, Vulkan, xkbcommon or ALSA. Where a packaged app should get FreeType, HarfBuzz and
+   FriBidi from is the packaging step's question.
+3. Build and test:
+
+       zig build -Dgui=false --release=safe     # zig-out/bin/dimna-headless only
+       zig build test -Dgui=false               # the core's tests
+       zig build --release=safe                 # also zig-out/bin/dimna
+       zig build test                           # the core's tests and the GUI's
+       zig-out/bin/dimna-headless --sim 32,16 --seconds 60 --record /tmp/dimna-test
+
+   The GUI's tests open no window and play nothing. One test opens the sound device, and
+   only with `DIMNA_TEST_AUDIO=1`: it lets the default output pull silence for half a second
+   and prints the device, its rate, buffer and reported latency. With `DIMNA_TEST_WINDOW=1`
+   the window's tests open windows for a second or so each (and bring dimna to the front):
+   events made inside the process, never sent to the system, so no permission is asked
+   for. With `DIMNA_TEST_PRESENT=1` as well, one more test draws plain frames for about 20
+   s, windowed and fullscreen, and prints how long they took to reach the screen (the
+   screen must be on and unlocked: a window not shown has its frames discarded).
+   The drawing tests draw
+   offscreen with Metal and read the pixels back (they need the Mac's GPU, no window), and
+   `DIMNA_GPU_SPEED=1` adds a speed check that prints how long frames like the rig's take.
+   The shaders are Metal Shading Language source compiled when dimna starts (no `metal`
+   tool, so no Xcode needed). `zig build shaders` and `zig build release` are Linux's (they
+   say so on a Mac).
+
+What works: the core's tests, `dimna-headless --sim` with a recording (`tools/dimna_read.py`
+verifies it; it needs Python 3.11 or newer with numpy), Ctrl-C ending a recording cleanly,
+`tools/crash-test.sh`. What differs from Linux:
+
+- **Syncing.** Once a second the recorder makes its files durable with `F_FULLFSYNC`,
+  which makes the drive write its own cache (a plain `fsync` on macOS does not; on Linux
+  `fsync` does). On the Mac's internal disk that costs about 17 ms a second for a
+  48-channel recording, against about 2 ms for `fsync`.
+- **Staying awake.** While acquisition runs dimna holds a power assertion
+  (`PreventUserIdleSystemSleep`, named "dimna is acquiring"; `pmset -g assertions` shows
+  it), so the Mac does not sleep for being idle. It does **not** keep a Mac awake whose lid
+  is closed (without an external display), nor one put to sleep from the menu: close the
+  lid and acquisition stops.
+- **Priority and memory.** With the board, the acquisition thread would ask for a Mach
+  time-constraint policy instead of `SCHED_FIFO` (nothing to set up, no group), and no
+  memory is locked (macOS has no `mlockall`). The simulator asks for neither.
+
+- **Windows.** AppKit runs on the process's main thread; the display, the control window
+  and the tiles each run on a thread of their own, as on Linux. Sizes and pointer positions
+  are in the screen's pixels (twice the points on a Retina screen). `--monitor` takes the
+  name macOS gives the screen (System Settings > Displays; e.g. `--monitor "Built-in
+  Retina Display"`); a name that is not there lists those that are. Fullscreen there is a
+  borderless window above the menu bar, with the menu bar and the Dock hidden while dimna
+  is in front (not a Space of its own). Keys are read by what they type in the keyboard
+  layout in use (on Dvorak, `r` is the key marked R); Command combinations are left to the
+  system, and Cmd-Q closes dimna's windows as their close buttons do. There is no input
+  method and no press-and-hold accent menu in notes; dead keys are as AppKit gives them.
+  Scrolling follows the system's "natural scrolling" setting, as libinput's does on Linux;
+  a trackpad's glide after the fingers lift is ignored.
+- **Fonts.** The config's `font` is a family name as on Linux; `sans-serif` is the
+  system's interface font (SF), `monospace` the user's fixed-pitch font (Menlo). A family
+  that is not installed is replaced by `sans-serif` and is never downloaded (Core Text
+  would otherwise offer to fetch fonts from Apple's catalogue, such as Lato).
+- **Sound.** The system's default output device, at its own rate, with a buffer of
+  `audio_period` frames (default 128). The latency read-out's device part is what the
+  device reports: its latency, safety offset, stream latency and buffer (on a MacBook Air's
+  speakers 1516 frames at 48 kHz, 31.6 ms, most of it the speakers' stream latency).
+  `PIPEWIRE_LATENCY` is not set.
+- **Drawing.** Metal, with the layer's display sync off for the display window (it tears,
+  as Linux's `--present immediate` does, and frames reach the screen in about 5 ms as
+  macOS reports it) and on for the control and tile windows; `--present fifo` turns it on
+  for the display too. `mailbox` means the same as `immediate` on a Mac. Colours are
+  written as they are, with no colour matching to the display.
+- **The default waits for the refresh** (`--present fifo` is the Mac's default): about 58
+  frames a second and 20 ms from sample to screen on a 60 Hz MacBook Air, scrolling evenly.
+- **Where the display is quick.** With `--tearing`, fullscreen (`--monitor "Built-in
+  Retina Display"`, or another screen's name as macOS shows it): about 210 frames a second and
+  7 ms from sample to screen as macOS reports it, on a 60 Hz MacBook Air. In a window it is
+  as quick only while it is in front and nothing else on the screen is redrawing (about
+  225 frames a second, 6 ms, alone); with dimna's control and tile windows beside it, about
+  110 frames a second and 20 ms; behind another application's window, 60 and 45 ms. The
+  window server shows a lone front window at once and everything else at the refresh. On
+  one screen, fullscreen covers dimna's other windows; with a second screen they go there.
+  Not tried yet: two screens, a 120 Hz screen.
+- **Windows.** The display opens on the left of the screen, the control window and the
+  tiles on the right, and dimna comes to the front. Cmd-Q closes like the close button;
+  keys with Cmd held are not dimna's.
+
+The board: the Mac's USB backend (IOKit; no driver to install, no permission asked) has
+run the board on a MacBook Air M4 through Apple's USB-C Digital AV Multiport Adapter at
+5 Gb/s: ten minutes recorded and verified with nothing lost, delivery delay 0.73 ms on
+average as on Linux, with an occasional block 10 to 17 ms late. A soak of hours, an
+unplugged cable and a comparison with the rig are still to do
+(`docs/plans/macos-step8-usb.md`). Not yet: an `.app`.
+
 ## Build details
 
 The GUI's tests cover its pure logic only (typed notes, the tile grid, the widget layout, the
-control window's queue and snapshot); none opens a window, connects to Wayland, creates a
-Vulkan instance or opens a sound device, so they pass without a display. A GUI file's tests
-run only if the file is listed in `src/gui/tests.zig`.
+control window's queue and snapshot, the audio output's `render`); none opens a window,
+connects to Wayland, creates a Vulkan instance or opens a sound device, so they pass without
+a display. A GUI file's tests run only if the file is listed in `src/gui/tests.zig`.
 
 The display also needs the development files of the Wayland client library, the Vulkan
 loader, FreeType, fontconfig, xkbcommon and ALSA. It needs no wayland-protocols,
@@ -239,7 +359,7 @@ not available there; the default `--driver usb` is built in. liboni includes gli
 **`usb`** needs nothing installed beyond read/write access to the device node (the udev rule,
 `packaging/60-dimna-ft60x.rules`; see "Installing a release"). Three layers, all in this repo:
 
-- `src/usbfs.zig`: USB through the kernel's usbdevfs, in Zig, without libusb. Bulk transfers
+- `src/usb_linux.zig`: USB through the kernel's usbdevfs, in Zig, without libusb. Bulk transfers
   are asynchronous URBs, so a read that times out still reports the bytes that arrived.
 - `src/ft600.zig`: the FT600 wire protocol (documented at the top of the file). It was learned
   by logging the usbdevfs requests D3XX 1.0.14 makes for the ONI driver's calls on this board.
@@ -296,5 +416,10 @@ per second and `CLEAN` at the end if nothing was lost (exit status 0). Record to
 `/tmp`.
 
 The acquisition thread runs SCHED_FIFO (needs rtprio, e.g. the `realtime` group) and locks
-memory. It never waits on readers: the recorder and other readers take blocks from a
+memory. It asks for priority 90: above PipeWire's audio thread inside dimna (`data-loop.0`,
+which asks for 88 and gets what the limit allows), so sound can never hold acquisition up.
+If 90 is refused it takes the most the limit (`ulimit -r`) allows and logs a warning saying
+so and that the limit should be 95 (`packaging/99-dimna-realtime.conf`); if that is refused
+too, it runs at normal priority, also with a warning. On macOS the number means nothing (a
+Mach time-constraint policy instead). It never waits on readers: the recorder and other readers take blocks from a
 preallocated ring (30 s when recording).

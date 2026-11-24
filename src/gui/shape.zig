@@ -26,8 +26,10 @@
 //! into Arabic numbers and draw "300-6000" as "6000-300".
 
 const std = @import("std");
+const builtin = @import("builtin");
 const c = @import("gui_c");
 const font = @import("font.zig");
+const fontfind = @import("fontfind.zig");
 const log = std.log.scoped(.font);
 
 /// Fonts one engine may hold: the primary, the named fallbacks, and those found for single
@@ -43,10 +45,25 @@ pub var start_rtl: bool = false;
 
 /// The fallbacks tried, in order, for characters the primary font lacks. In each group the
 /// first one installed is used.
-const named_fallbacks = [_]struct { what: []const u8, families: []const [:0]const u8 }{
-    // fontconfig's default for zh may be the JP face of the same collection, so SC is named.
-    .{ .what = "Simplified Chinese", .families = &.{"Noto Sans CJK SC"} },
-    .{ .what = "Persian/Arabic", .families = &.{ "Vazirmatn", "Noto Sans Arabic" } },
+const named_fallbacks = switch (builtin.os.tag) {
+    // What macOS installs by default, in /System/Library/Fonts. Chinese: Hiragino Sans GB (a
+    // sans-serif for Simplified Chinese; its regular weight is the collection's first face),
+    // then Heiti SC (STHeiti, the second face of its collection). Not PingFang SC, macOS's
+    // own Chinese font: the interface's copy (PingFangUI.ttc) has only Apple's `hvgl`
+    // outlines, which FreeType cannot read, and the one FreeType reads is a font asset
+    // macOS downloads (/System/Library/AssetsV2), not part of the system itself.
+    // Persian/Arabic: Geeza Pro (macOS's Arabic-script font of the interface before SF
+    // Arabic, which is hidden from lookups by family), then Damascus; both have the Persian
+    // letters and digits.
+    .macos => [_]struct { what: []const u8, families: []const [:0]const u8 }{
+        .{ .what = "Simplified Chinese", .families = &.{ "Hiragino Sans GB", "Heiti SC" } },
+        .{ .what = "Persian/Arabic", .families = &.{ "Geeza Pro", "Damascus" } },
+    },
+    else => [_]struct { what: []const u8, families: []const [:0]const u8 }{
+        // fontconfig's default for zh may be the JP face of the same collection, so SC is named.
+        .{ .what = "Simplified Chinese", .families = &.{"Noto Sans CJK SC"} },
+        .{ .what = "Persian/Arabic", .families = &.{ "Vazirmatn", "Noto Sans Arabic" } },
+    },
 };
 
 // ---- HarfBuzz and FriBidi, loaded at run time ----
@@ -102,6 +119,20 @@ const FriBidi = struct {
 
 pub const Libs = struct { hb: HarfBuzz, fb: FriBidi };
 
+/// The file names HarfBuzz and FriBidi are opened by on this system, tried in order (the
+/// first that opens is used). A system with no names here draws that text unshaped.
+const harfbuzz_names: []const [:0]const u8 = switch (builtin.os.tag) {
+    .linux => &.{"libharfbuzz.so.0"},
+    // Homebrew's (Apple silicon: /opt/homebrew), then by name (found on dyld's paths).
+    .macos => &.{ "/opt/homebrew/lib/libharfbuzz.0.dylib", "libharfbuzz.0.dylib" },
+    else => &.{},
+};
+const fribidi_names: []const [:0]const u8 = switch (builtin.os.tag) {
+    .linux => &.{"libfribidi.so.0"},
+    .macos => &.{ "/opt/homebrew/lib/libfribidi.0.dylib", "libfribidi.0.dylib" },
+    else => &.{},
+};
+
 /// 0: not tried, 1: loading, 2: loaded, 3: missing.
 var libs_state: std.atomic.Value(u8) = .init(0);
 var libs_value: Libs = undefined;
@@ -114,28 +145,39 @@ pub fn libs() ?*const Libs {
         3 => return null,
         1 => std.atomic.spinLoopHint(),
         else => if (libs_state.cmpxchgStrong(0, 1, .acquire, .monotonic) == null) {
-            const ok = load(HarfBuzz, "libharfbuzz.so.0", &libs_value.hb) and load(FriBidi, "libfribidi.so.0", &libs_value.fb);
+            const ok = load(HarfBuzz, harfbuzz_names, &libs_value.hb) and load(FriBidi, fribidi_names, &libs_value.fb);
             libs_state.store(if (ok) 2 else 3, .release);
         },
     };
 }
 
-/// Opens `name` (kept open for good) and looks up every function of `T` in it.
-fn load(comptime T: type, comptime name: [:0]const u8, out: *T) bool {
+/// Opens the first of `names` that opens (kept open for good) and looks up every function
+/// of `T` in it.
+fn load(comptime T: type, comptime names: []const [:0]const u8, out: *T) bool {
     const hint = "Persian and other right-to-left or joined scripts are drawn unshaped, left to right (install harfbuzz and fribidi)";
-    var lib = std.DynLib.open(name) catch {
-        log.warn("cannot load " ++ name ++ ": " ++ hint, .{});
-        return false;
-    };
-    const info = @typeInfo(T).@"struct";
-    inline for (info.field_names, info.field_types) |field, FieldType| {
-        @field(out, field) = lib.lookup(FieldType, field) orelse {
-            log.warn(name ++ " has no " ++ field ++ ": " ++ hint, .{});
-            lib.close();
-            return false;
-        };
+    inline for (names) |name| {
+        if (std.DynLib.open(name)) |opened| {
+            var lib = opened;
+            const info = @typeInfo(T).@"struct";
+            inline for (info.field_names, info.field_types) |field, FieldType| {
+                @field(out, field) = lib.lookup(FieldType, field) orelse {
+                    log.warn(name ++ " has no " ++ field ++ ": " ++ hint, .{});
+                    lib.close();
+                    return false;
+                };
+            }
+            return true;
+        } else |_| {}
     }
-    return true;
+    log.warn("cannot load " ++ comptime orList(names) ++ ": " ++ hint, .{});
+    return false;
+}
+
+/// "a", "a or b", ...: the names of a list, for a message.
+fn orList(comptime names: []const [:0]const u8) []const u8 {
+    var s: []const u8 = "";
+    for (names, 0..) |name, k| s = s ++ (if (k > 0) " or " else "") ++ name;
+    return s;
 }
 
 /// True for a code point that has to be shaped: right-to-left and joined scripts, the
@@ -208,7 +250,8 @@ const Face = struct {
 pub const Engine = struct {
     gpa: std.mem.Allocator,
     lib: c.FT_Library,
-    cfg: ?*c.FcConfig,
+    /// The font lookup the fallbacks are found with, kept for the engine's life.
+    matcher: fontfind.Matcher,
     faces: [max_faces]Face = undefined,
     nfaces: u8 = 0,
     /// `faces[0..named]`: the primary and the named fallbacks; later ones were found for a
@@ -270,7 +313,7 @@ pub const Engine = struct {
         self.* = .{
             .gpa = gpa,
             .lib = lib,
-            .cfg = c.FcInitLoadConfigAndFonts(),
+            .matcher = .init(),
             .line_height = f.line_height,
             .pen = f.pen,
             .rtl = start_rtl,
@@ -288,7 +331,7 @@ pub const Engine = struct {
         for (named_fallbacks) |fb| {
             for (fb.families) |family| {
                 var path_buf: [std.fs.max_path_bytes:0]u8 = undefined;
-                const m = self.match(family, family, &path_buf) orelse continue;
+                const m = self.matcher.match(family, family, &path_buf) orelse continue;
                 if (self.addFace(m.path, m.index)) |at| {
                     log.info("{s}: {s} (face {d}) at {d:.1} px line height", .{ fb.what, m.path, m.index, self.faces[at].line_height });
                     break;
@@ -311,7 +354,7 @@ pub const Engine = struct {
         }
         if (self.buf) |buf| l.?.hb.hb_buffer_destroy(buf);
         _ = c.FT_Done_FreeType(self.lib);
-        if (self.cfg) |cfg| c.FcConfigDestroy(cfg);
+        self.matcher.deinit();
         self.glyphs.deinit(gpa);
         self.best.deinit(gpa);
         inline for (.{ "raw", "raw_types", "text", "marks", "types", "brackets", "levels", "runs", "order", "items", "out" }) |name| {
@@ -403,37 +446,6 @@ pub const Engine = struct {
         return g;
     }
 
-    const Match = struct { path: [:0]const u8, index: c_int };
-
-    /// The font fontconfig picks for `pattern`; with `family`, only if it is that family
-    /// (fontconfig always offers something).
-    fn match(self: *Engine, pattern_text: [:0]const u8, family: ?[]const u8, buf: *[std.fs.max_path_bytes:0]u8) ?Match {
-        const cfg = self.cfg orelse return null;
-        const pattern = c.FcNameParse(pattern_text.ptr) orelse return null;
-        defer c.FcPatternDestroy(pattern);
-        _ = c.FcConfigSubstitute(cfg, pattern, c.FcMatchPattern);
-        c.FcDefaultSubstitute(pattern);
-        var result: c.FcResult = c.FcResultNoMatch;
-        const m = c.FcFontMatch(cfg, pattern, &result) orelse return null;
-        defer c.FcPatternDestroy(m);
-        if (family) |want| {
-            var found = false;
-            var k: c_int = 0;
-            while (true) : (k += 1) {
-                var name: [*c]c.FcChar8 = null;
-                if (c.FcPatternGetString(m, c.FC_FAMILY, k, &name) != c.FcResultMatch or name == null) break;
-                if (std.ascii.eqlIgnoreCase(std.mem.span(@as([*:0]const u8, @ptrCast(name))), want)) found = true;
-            }
-            if (!found) return null;
-        }
-        var file: [*c]c.FcChar8 = null;
-        if (c.FcPatternGetString(m, c.FC_FILE, 0, &file) != c.FcResultMatch or file == null) return null;
-        var index: c_int = 0;
-        if (c.FcPatternGetInteger(m, c.FC_INDEX, 0, &index) != c.FcResultMatch) index = 0;
-        const path = std.fmt.bufPrintSentinel(buf, "{s}", .{std.mem.span(@as([*:0]const u8, @ptrCast(file)))}, 0) catch return null;
-        return .{ .path = path, .index = index };
-    }
-
     /// Loads face `index` of `path`, scaled to the primary's line height, as the next font.
     /// Its index in `faces`, or null (no room, cannot load, not scalable).
     fn addFace(self: *Engine, path: [:0]const u8, index: c_int) ?u8 {
@@ -480,7 +492,7 @@ pub const Engine = struct {
         var want_buf: [48:0]u8 = undefined;
         const want = std.fmt.bufPrintSentinel(&want_buf, "sans-serif:charset={x}", .{cp}, 0) catch return no_face;
         var path_buf: [std.fs.max_path_bytes:0]u8 = undefined;
-        const m = self.match(want, null, &path_buf) orelse return no_face;
+        const m = self.matcher.match(want, null, &path_buf) orelse return no_face;
         const at = self.addFace(m.path, m.index) orelse return no_face;
         // Kept if it does not have it after all (it is loaded), but no help with this one.
         if (!self.covers(at, cp)) return no_face;
@@ -899,10 +911,12 @@ test "a missing library, or a missing function in one, is reported as missing" {
     const Missing = struct { hb_no_such_function: *const fn () callconv(.c) void };
     var one: One = undefined;
     var missing: Missing = undefined;
-    try testing.expect(!load(One, "libdimna-no-such-library.so.0", &one));
-    try testing.expect(!load(Missing, "libharfbuzz.so.0", &missing));
+    try testing.expect(!load(One, &.{"libdimna-no-such-library.so.0"}, &one));
+    try testing.expect(!load(Missing, harfbuzz_names, &missing));
     _ = try needLibs();
-    try testing.expect(load(One, "libharfbuzz.so.0", &one));
+    try testing.expect(load(One, harfbuzz_names, &one));
+    // The names are tried in order: one that does not open is passed over.
+    try testing.expect(load(One, &[_][:0]const u8{"libdimna-no-such-library.so.0"} ++ harfbuzz_names, &one));
 }
 
 test "Latin and digits inside right-to-left text are isolated as one block; nothing else is" {
@@ -1350,9 +1364,8 @@ test "Persian read right to left: a string with no right-to-left letter is laid 
 }
 
 fn cpuNs() u64 {
-    var ts: std.os.linux.timespec = undefined;
-    _ = std.os.linux.clock_gettime(.THREAD_CPUTIME_ID, &ts);
-    return @intCast(@as(i128, ts.sec) * 1_000_000_000 + ts.nsec);
+    // CLOCK_THREAD_CPUTIME_ID on Linux.
+    return @intCast(std.Io.Clock.cpu_thread.now(testing.io).nanoseconds);
 }
 
 // The cost of a frame of text, and how many CJK glyphs fit. Not part of the usual run: set

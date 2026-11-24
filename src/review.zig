@@ -21,7 +21,8 @@ const std = @import("std");
 const types = @import("types.zig");
 const panels = @import("panels.zig");
 const Feed = @import("feed.zig").Feed;
-const linux = std.os.linux;
+const os = @import("os.zig");
+const Io = std.Io;
 const log = std.log.scoped(.review);
 
 const chunk = 4096;
@@ -118,13 +119,11 @@ pub const Review = struct {
         const names = [_][]const u8{ "samples.i16", "ttl_sample.i64", "ttl_word.u16" };
         var fds: [3]i32 = @splat(-1);
         errdefer for (fds) |fd| {
-            if (fd >= 0) _ = linux.close(fd);
+            if (fd >= 0) os.close(fd);
         };
         for (names, &fds) |name, *fd| {
             const path = try std.fmt.bufPrintSentinel(&buf, "{s}/{s}", .{ dir, name }, 0);
-            const rc = linux.open(path, .{ .ACCMODE = .RDONLY, .CLOEXEC = true }, 0);
-            if (linux.errno(rc) != .SUCCESS) return error.CannotOpenRecording;
-            fd.* = @intCast(rc);
+            fd.* = os.openRead(path) orelse return error.CannotOpenRecording;
         }
         self.samples_fd = fds[0];
         self.ttl_sample_fd = fds[1];
@@ -137,7 +136,7 @@ pub const Review = struct {
 
     pub fn close(self: *Review) void {
         for ([_]*i32{ &self.samples_fd, &self.ttl_sample_fd, &self.ttl_word_fd }) |fd| {
-            if (fd.* >= 0) _ = linux.close(fd.*);
+            if (fd.* >= 0) os.close(fd.*);
             fd.* = -1;
         }
     }
@@ -210,8 +209,7 @@ pub const Review = struct {
             const offset: u64 = @intCast((at - self.first_sample) * @as(i64, @intCast(self.nch * 2)));
             var got: usize = 0;
             while (got < bytes.len) {
-                const rc = linux.pread(self.samples_fd, bytes.ptr + got, bytes.len - got, @intCast(offset + got));
-                if (linux.errno(rc) != .SUCCESS) return error.ReadFailed;
+                const rc = os.pread(self.samples_fd, bytes.ptr + got, bytes.len - got, @intCast(offset + got)) orelse return error.ReadFailed;
                 if (rc == 0) return error.RecordingTooShort;
                 got += rc;
             }
@@ -235,10 +233,9 @@ pub const Review = struct {
             var s: [512]i64 = undefined;
             var w: [512]u16 = undefined;
             const have = self.edge_samples.items.len;
-            const rs = linux.pread(self.ttl_sample_fd, std.mem.asBytes(&s), @sizeOf(@TypeOf(s)), @intCast(have * 8));
-            const rw = linux.pread(self.ttl_word_fd, std.mem.asBytes(&w), @sizeOf(@TypeOf(w)), @intCast(have * 2));
-            if (linux.errno(rs) != .SUCCESS or linux.errno(rw) != .SUCCESS) return;
-            const n = @min(rs / 8, rw / 2);
+            const rs = os.pread(self.ttl_sample_fd, std.mem.asBytes(&s), @sizeOf(@TypeOf(s)), @intCast(have * 8));
+            const rw = os.pread(self.ttl_word_fd, std.mem.asBytes(&w), @sizeOf(@TypeOf(w)), @intCast(have * 2));
+            const n = @min((rs orelse return) / 8, (rw orelse return) / 2);
             if (n == 0) return;
             try self.edge_samples.appendSlice(self.gpa, s[0..n]);
             try self.edge_words.appendSlice(self.gpa, w[0..n]);
@@ -296,15 +293,9 @@ test "review reads a recording back through the feed, in pieces, in any order" {
     const first: i64 = 5000;
     const total = 40000;
     var dir_buf: [64]u8 = undefined;
-    const dir = try std.fmt.bufPrintSentinel(&dir_buf, "/tmp/dimna-review-test-{d}", .{linux.getpid()}, 0);
-    _ = linux.mkdir(dir, 0o700);
-    defer {
-        inline for (.{ "samples.i16", "ttl_sample.i64", "ttl_word.u16" }) |name| {
-            var b: [96:0]u8 = undefined;
-            _ = linux.unlink(std.fmt.bufPrintSentinel(&b, "{s}/{s}", .{ dir, name }, 0) catch unreachable);
-        }
-        _ = linux.rmdir(dir);
-    }
+    const dir = try std.fmt.bufPrintSentinel(&dir_buf, "/tmp/dimna-review-test-{d}", .{os.getpid()}, 0);
+    try Io.Dir.cwd().createDirPath(testing.io, dir);
+    defer Io.Dir.cwd().deleteTree(testing.io, dir) catch {};
     {
         const data = try gpa.alloc(i16, total * 2);
         defer gpa.free(data);
@@ -320,10 +311,7 @@ test "review reads a recording back through the feed, in pieces, in any order" {
         ) |name, bytes| {
             var b: [96:0]u8 = undefined;
             const path = try std.fmt.bufPrintSentinel(&b, "{s}/{s}", .{ dir, name }, 0);
-            const fd: i32 = @intCast(linux.open(path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, 0o600));
-            var done: usize = 0;
-            while (done < bytes.len) done += linux.write(fd, bytes.ptr + done, bytes.len - done);
-            _ = linux.close(fd);
+            try Io.Dir.cwd().writeFile(testing.io, .{ .sub_path = path, .data = bytes });
         }
     }
 

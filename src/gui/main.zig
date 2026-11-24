@@ -11,7 +11,7 @@
 //! The display reads the ring with a lossy reader, so it can never hold acquisition or the
 //! recorder back.
 //!
-//! What the loop does each turn is in `main` below, in order; the state each part keeps
+//! What the loop does each turn is in `runDisplay` below, in order; the state each part keeps
 //! between turns is in session.zig (recording, review, alarms, view file, board settings),
 //! pacing.zig (when to draw, latency figures) and display.zig (panels, input, drawing).
 //!
@@ -21,11 +21,14 @@
 //! measured: docs/latency.md. Scripted input for tests (--script): script.zig.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const dimna = @import("dimna");
-const Window = @import("window.zig").Window;
+const window_mod = @import("window.zig");
+const Window = window_mod.Window;
 const gpu_mod = @import("gpu.zig");
 const Gpu = gpu_mod.Gpu;
 const font = @import("font.zig");
+const fontfind = @import("fontfind.zig");
 const format = @import("format.zig");
 const i18n = @import("i18n.zig");
 const shape = @import("shape.zig");
@@ -33,6 +36,7 @@ const fmtSpan = format.fmtSpan;
 const fmtScale = format.fmtScale;
 const control = @import("control.zig");
 const audio_out = @import("audio_out.zig");
+const audio_alsa = @import("audio_alsa.zig");
 const notes_mod = @import("notes.zig");
 const tiles_mod = @import("tiles.zig");
 const Status = display_mod.Status;
@@ -73,6 +77,10 @@ const overview_budget = 1_500_000_000;
 
 const nowNs = dimna.clock.nowNs;
 
+/// The C library's (std.c does not declare it): the variable is for a library dimna loads,
+/// PipeWire's ALSA plugin, which reads the C library's environment.
+extern "c" fn setenv(name: [*:0]const u8, value: [*:0]const u8, overwrite: c_int) c_int;
+
 pub fn main(init: std.process.Init) !u8 {
     const io = init.io;
     const gpa = init.gpa;
@@ -95,6 +103,20 @@ pub fn main(init: std.process.Init) !u8 {
         return 2;
     };
     var args = parseArgs(argv, doc) catch |e| return if (e == error.Help) 0 else 2;
+    // PipeWire's quantum to match a period other than the default (audio_alsa.zig,
+    // `pipewireLatency`). Here, before any thread is started and before the sound device is
+    // opened: setting the environment is not safe once other threads may read it. Linux
+    // only: PipeWire has no meaning on macOS.
+    if (@import("builtin").os.tag == .linux and args.audio) {
+        const existing = init.environ_map.get("PIPEWIRE_LATENCY");
+        var latency_buf: [32]u8 = undefined;
+        if (audio_alsa.pipewireLatency(&latency_buf, args.audio_period, existing)) |value| {
+            if (setenv("PIPEWIRE_LATENCY", value.ptr, 0) == 0) {
+                log.info("audio_period {d}: PIPEWIRE_LATENCY={s}", .{ args.audio_period, value });
+            } else log.warn("audio_period {d}: could not set PIPEWIRE_LATENCY", .{args.audio_period});
+        } else if (existing) |v| if (args.audio_period != audio_out.default_period)
+            log.info("audio_period {d}: PIPEWIRE_LATENCY is set already ({s}); left as it is", .{ args.audio_period, v });
+    }
     // The language of every text, before any window draws.
     i18n.current = i18n.pick(args.language, init.environ_map.get("LANG") orelse "");
     // `--print-scheme`: derive and print the colours of an image, without a window or the board.
@@ -109,7 +131,18 @@ pub fn main(init: std.process.Init) !u8 {
             args.views_doc = vd;
         } else |_| log.warn("{s}: syntax error on line {d}; the view file is ignored", .{ views_path, toml_diag.line });
     }
+    // Everything else is the display's, run where this system's windowing wants it (on
+    // Linux: here, on the main thread).
+    return window_mod.run(runDisplay, .{ init, &env, &args, config_path, views_path });
+}
 
+/// The display's work and its exit status: what has to be settled before any window draws
+/// (the language, the colour scheme), the source, the display's window, the pipeline and
+/// the other windows' threads, the loop, and the teardown in the reverse order. `main`
+/// has read the environment, the config, the arguments and the view file.
+fn runDisplay(init: std.process.Init, env: *const Env, args: *const Args, config_path: []const u8, views_path: []const u8) !u8 {
+    const io = init.io;
+    const gpa = init.gpa;
     // The colour scheme, if the config names an image. Before any window or thread draws;
     // any failure is a warning and the built-in colours stay. Either way a banner says so
     // over the display for its first seconds, and where to change it.
@@ -118,7 +151,7 @@ pub fn main(init: std.process.Init) !u8 {
     var language_notice: display_mod.Notice = .{};
     if (i18n.needs(i18n.current)) |n| {
         const has_shaping = !n.shaping or shape.libs() != null;
-        if (i18n.missing(i18n.current, font.anyFontHas(n.sample), has_shaping)) |what| {
+        if (i18n.missing(i18n.current, fontfind.anyFontHas(n.sample), has_shaping)) |what| {
             log.warn("language {s}: {s} needs {s}; showing English", .{ @tagName(i18n.current), n.name, what });
             i18n.current = .en;
             var where_buf: [std.fs.max_path_bytes]u8 = undefined;
@@ -144,6 +177,17 @@ pub fn main(init: std.process.Init) !u8 {
                 scheme_notice.say(.notice_colours_failed, .{ .reason = sdiag.message() }, .notice_colours_where, .{ .where = where });
             }
         } else log.warn("scheme image '{s}': the path is too long; using the built-in colours", .{args.scheme_image});
+    } else if (builtin.os.tag == .macos) {
+        // On macOS, with no image named: the colours of dimna's icon (the picture the
+        // program carries for the Dock), which is what the owner's Linux rig names as its
+        // `scheme_image`, so the two look alike. No banner: nothing was asked for.
+        if (scheme.decode(@embedFile("dimna-icon.png"))) |img| {
+            defer img.deinit();
+            if (scheme.derivePixels(img.rgb, img.w, img.h, 4)) |r| {
+                theme.apply(r.scheme);
+                log.info("colour scheme from dimna's icon (the default on macOS; scheme_image in the config file changes it)", .{});
+            }
+        } else |_| {}
     }
 
     // ---- the source: simulator or board ----
@@ -184,18 +228,23 @@ pub fn main(init: std.process.Init) !u8 {
     try win.init("dimna", app_id, env.key_debug);
     defer win.deinit();
     const fullscreen = args.monitor.len > 0;
+    // The camera housing's cut-out in a Mac laptop's screen, which a fullscreen window covers.
+    var top_cut: ?[3]f32 = null;
     if (fullscreen) {
         if (win.fullscreenOn(args.monitor)) {
             log.info("fullscreen on {s}", .{args.monitor});
+            if (builtin.os.tag == .macos) top_cut = win.topCut();
+            if (top_cut) |cut| log.info("the screen's cut-out: {d:.0} to {d:.0} px, {d:.0} px deep; titles keep clear of it", .{ cut[0], cut[1], cut[2] });
         } else {
             log.err("no monitor named '{s}'; there are:", .{args.monitor});
-            for (win.outputs[0..win.num_outputs]) |*o| log.err("  {s}", .{o.name()});
+            var i: usize = 0;
+            while (win.monitorName(i)) |name| : (i += 1) log.err("  {s}", .{name});
             return 2;
         }
     }
     _ = win.declareLowLatency();
     if (args.tearing and !win.preferTearing()) log.warn("the compositor has no tearing control; frames will wait for the refresh", .{});
-    var gpu = try Gpu.init(gpa, .{ .display = win.display, .surface = win.surface }, args.present, null);
+    var gpu = try Gpu.init(gpa, win.gpuTarget(), args.present, null);
     defer gpu.deinit();
     var notes = notes_mod.Notes.init(args.doc, env.home, env.state_home);
     defer notes.deinit();
@@ -214,8 +263,8 @@ pub fn main(init: std.process.Init) !u8 {
         .gpa = gpa,
         .io = io,
         .source = source,
-        .args = &args,
-        .env = &env,
+        .args = args,
+        .env = env,
         .gpu = &gpu,
         .health = &health,
         .audio_shared = &audio_shared,
@@ -231,6 +280,7 @@ pub fn main(init: std.process.Init) !u8 {
     // The parts the loop uses all the time. They stay at these addresses across a restart;
     // their contents, and pl.fs, pl.nch and pl.bs, change.
     const display = &pl.display;
+    if (top_cut) |cut| display.top_cut = .{ .x0 = cut[0], .x1 = cut[1], .bottom = cut[2] };
     const layout = &pl.layout;
     const acq = &pl.acq;
     const ring = &pl.ring;
@@ -241,7 +291,7 @@ pub fn main(init: std.process.Init) !u8 {
     var draws: [max_draws]gpu_mod.PanelDraw = undefined;
     var fills: [max_fills]gpu_mod.Fill = undefined;
     var text: Text = .{};
-    text.init(gpa, &gpu, args);
+    text.init(gpa, &gpu, args.*);
     defer text.deinit(gpa);
     // Glyphs the display's font draws on demand go to the GPU before the frame that uses them.
     if (text.vertices.len > 0) gpu.textFont(&text.font);
@@ -250,9 +300,12 @@ pub fn main(init: std.process.Init) !u8 {
 
     try pl.run();
 
-    // The control window, on its own thread (see control.zig).
+    // The control window, on its own thread (see control.zig). On a Mac's screen (two
+    // pixels to the point) the default 14 px is 7 points, small for a window that is read
+    // and clicked: 24 px there unless the config file says what `font_px` is.
+    const control_font_px: u32 = if (builtin.os.tag == .macos and !args.font_px_given) 24 else args.font_px;
     var shared: control.Shared = .{};
-    var control_cfg: control.Config = .{ .gpa = gpa, .shared = &shared, .display_gpu = &gpu, .font_px = args.font_px, .env = &env };
+    var control_cfg: control.Config = .{ .gpa = gpa, .shared = &shared, .display_gpu = &gpu, .font_px = control_font_px, .env = env };
     // Which of its sections are open: from the view file, then as the control window
     // reports them; saved with the panels by "Save view".
     var control_view = dimna.control_view.ControlView.read(args.views_doc);
@@ -442,8 +495,8 @@ pub fn main(init: std.process.Init) !u8 {
             .newest = newest,
             .rec = recording.recorder,
             .overview = &overview,
-            .width = gpu.extent.width,
-            .height = gpu.extent.height,
+            .width = gpu.pixelSize().width,
+            .height = gpu.pixelSize().height,
         })) snap_dirty = true;
         // Notes saved this turn go into the recording, if there is one.
         for (notes.fresh[0..notes.num_fresh]) |*note| {
@@ -619,11 +672,11 @@ pub fn main(init: std.process.Init) !u8 {
         // A panel's corners changed: filter its recent past again.
         if (gpu.hist_cap > 0) _ = try feed.sync(gpa, &display.set, refilterSamples(&display.set, pl.fs), gpu.hist, gpu.hist_cap);
 
-        for (win.takePresented()) |p| pacer.presented(p, nowNs(), win.presentation_clock);
+        for (win.takePresented()) |p| pacer.presented(p, nowNs(), win.presentsOnNowClock(), win.presentation_clock);
 
         const now = nowNs();
         if (pacer.due(now, win.frame_ready, newest)) {
-            if (win.resized or gpu.swapchain == .null) {
+            if (win.resized or gpu.unsized()) {
                 try gpu.resize(win.width, win.height);
                 win.resized = false;
                 pacer.n_resize += 1;
@@ -651,10 +704,10 @@ pub fn main(init: std.process.Init) !u8 {
             const r = pacer.second();
             const tp = &display.set.items[display.target];
             log.info("t={d:.0}s {d} fps, latency ms avg {d:.1} min {d:.1} max {d:.1}, at the refresh aimed at {d}, a refresh later {d}, recovery skips {d}, margin {d:.1} ms, refresh {d:.2} ms, display lost {d} blocks, ring overflow {d}, panel {d} span {d:.2} s scale {d:.1}, {d}x{d}", .{
-                secs,             r.frames,                           r.avg_ms,           r.min_ms,    r.max_ms,
-                r.on_time,        r.late,                             r.skips,            r.margin_ms, r.refresh_ms,
-                reader.lost,      acq.ring_overflow.load(.monotonic), display.target + 1, tp.span_s,   tp.scale,
-                gpu.extent.width, gpu.extent.height,
+                secs,                  r.frames,                           r.avg_ms,           r.min_ms,    r.max_ms,
+                r.on_time,             r.late,                             r.skips,            r.margin_ms, r.refresh_ms,
+                reader.lost,           acq.ring_overflow.load(.monotonic), display.target + 1, tp.span_s,   tp.scale,
+                gpu.pixelSize().width, gpu.pixelSize().height,
             });
             status.valid = r.valid;
             status.latency_ms = r.avg_ms;

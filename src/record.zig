@@ -22,6 +22,7 @@ const c = @import("c");
 const types = @import("types.zig");
 const BlockRing = @import("ring.zig").BlockRing;
 const events = @import("events.zig");
+const os = @import("os.zig");
 const Block = types.Block;
 const Io = std.Io;
 const Atomic = std.atomic.Value;
@@ -110,13 +111,9 @@ const max_pending_edges = 1 << 16;
 /// one step (a link under a temporary name, renamed over it). Best effort: a recording is
 /// not refused because the link could not be made.
 fn pointCurrent(root_dir: Io.Dir, name: []const u8) void {
-    const linux = std.os.linux;
     var target_buf: [128]u8 = undefined;
     const target = std.fmt.bufPrintSentinel(&target_buf, "{s}", .{name}, 0) catch return;
-    _ = linux.unlinkat(root_dir.handle, ".current.new", 0);
-    if (linux.errno(linux.symlinkat(target, root_dir.handle, ".current.new")) != .SUCCESS or
-        linux.errno(linux.renameat(root_dir.handle, ".current.new", root_dir.handle, "current")) != .SUCCESS)
-    {
+    if (!os.swapLink(root_dir.handle, target, ".current.new", "current")) {
         log.warn("could not point the 'current' link at {s}", .{name});
     }
 }
@@ -483,16 +480,16 @@ pub const Recorder = struct {
     /// Samples to disk first, then the index records that describe them.
     fn sync(self: *Recorder) !void {
         const t0 = Io.Clock.awake.now(self.io);
-        try self.samples_file.sync(self.io);
+        try os.syncToDisk(self.io, self.samples_file);
         if (self.pending_index_len > 0) {
             try self.index_file.writeStreamingAll(self.io, self.pending_index[0..self.pending_index_len]);
             self.pending_index_len = 0;
         }
         try self.flushEdges();
-        try self.index_file.sync(self.io);
-        try self.ttl_sample_file.sync(self.io);
-        try self.ttl_word_file.sync(self.io);
-        try self.events_file.sync(self.io);
+        try os.syncToDisk(self.io, self.index_file);
+        try os.syncToDisk(self.io, self.ttl_sample_file);
+        try os.syncToDisk(self.io, self.ttl_word_file);
+        try os.syncToDisk(self.io, self.events_file);
         maxStore(&self.stats.max_sync_us, @intCast(t0.untilNow(self.io, .awake).toMicroseconds()));
         _ = self.stats.syncs.fetchAdd(1, .monotonic);
         self.last_sync = Io.Clock.awake.now(self.io);
@@ -500,7 +497,7 @@ pub const Recorder = struct {
 
     fn syncDir(self: *Recorder) !void {
         const f: Io.File = .{ .handle = self.dir.handle, .flags = .{ .nonblocking = false } };
-        try f.sync(self.io);
+        try os.syncToDisk(self.io, f);
     }
 
     fn drainEvents(self: *Recorder) !void {
@@ -529,7 +526,7 @@ pub const Recorder = struct {
         var fw = f.writer(self.io, &buf);
         try writeToml(&fw.interface, self, final_end);
         try fw.interface.flush();
-        try f.sync(self.io);
+        try os.syncToDisk(self.io, f);
         f.close(self.io);
         try Io.Dir.rename(self.dir, tmp, self.dir, "meta.toml", self.io);
     }

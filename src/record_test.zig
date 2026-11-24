@@ -7,12 +7,14 @@
 //! Files go to /tmp/dimna-record-test-<pid>/<test>/ and are removed afterwards.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const testing = std.testing;
 const Io = std.Io;
 const Atomic = std.atomic.Value;
 const types = @import("types.zig");
 const record = @import("record.zig");
 const events = @import("events.zig");
+const os = @import("os.zig");
 const BlockRing = @import("ring.zig").BlockRing;
 const Recorder = record.Recorder;
 const IndexRecord = record.IndexRecord;
@@ -154,7 +156,7 @@ const TmpRoot = struct {
 
     fn init(name: []const u8) !TmpRoot {
         var t: TmpRoot = .{};
-        const p = try std.fmt.bufPrint(&t.buf, "/tmp/dimna-record-test-{d}/{s}", .{ std.os.linux.getpid(), name });
+        const p = try std.fmt.bufPrint(&t.buf, "/tmp/dimna-record-test-{d}/{s}", .{ os.getpid(), name });
         t.len = p.len;
         Io.Dir.cwd().deleteTree(testing.io, p) catch {};
         try Io.Dir.cwd().createDirPath(testing.io, p);
@@ -167,8 +169,8 @@ const TmpRoot = struct {
         Io.Dir.cwd().deleteTree(testing.io, self.path()) catch {};
         // The per-process parent, once the last test's folder is gone (fails while others remain).
         var pbuf: [64]u8 = undefined;
-        const parent = std.fmt.bufPrintSentinel(&pbuf, "/tmp/dimna-record-test-{d}", .{std.os.linux.getpid()}, 0) catch return;
-        _ = std.os.linux.rmdir(parent);
+        const parent = std.fmt.bufPrint(&pbuf, "/tmp/dimna-record-test-{d}", .{os.getpid()}) catch return;
+        Io.Dir.cwd().deleteDir(testing.io, parent) catch {};
     }
 };
 
@@ -650,6 +652,7 @@ test "recorder: a write failure does not hold the producer, and what was indexed
     // The recorder reports the failure with `log.err`, and the test runner counts any
     // error logged during a test as a failure of that test. So this one runs in a child
     // process, whose exit status is the result. Its stderr goes to a file, shown if it fails.
+    if (builtin.os.tag == .macos) return failureInChildDarwin();
     const linux = std.os.linux;
     const tmp = try TmpRoot.init("failure");
     defer tmp.deinit();
@@ -682,6 +685,50 @@ test "recorder: a write failure does not hold the producer, and what was indexed
     }
     const st: u32 = @bitCast(status);
     if (!linux.W.IFEXITED(st) or linux.W.EXITSTATUS(st) != 0) {
+        if (Io.Dir.cwd().readFileAlloc(testing.io, err_path, testing.allocator, .limited(1 << 20))) |text| {
+            defer testing.allocator.free(text);
+            std.debug.print("{s}", .{text});
+        } else |_| {}
+        return failure("the write-failure scenario failed (status {x}; its stderr is above)", .{st});
+    }
+}
+
+/// The write-failure test on macOS: the same steps as on Linux, through the C library's
+/// `fork`, `dup2`, `waitpid`, `kill` and `_exit`. The child of a process with threads may
+/// call only async-signal-safe functions until it execs, by POSIX; this child runs the
+/// scenario (allocations, threads, files) all the same, as the Linux child does.
+fn failureInChildDarwin() !void {
+    const c = std.c;
+    const tmp = try TmpRoot.init("failure");
+    defer tmp.deinit();
+    var ebuf: [192]u8 = undefined;
+    const err_path = try std.fmt.bufPrintSentinel(&ebuf, "{s}/child-stderr.txt", .{tmp.path()}, 0);
+    const pid = c.fork();
+    if (pid < 0) return failure("fork failed", .{});
+    if (pid == 0) {
+        const fd = c.open(err_path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, @as(c_uint, 0o600));
+        if (fd >= 0) _ = c.dup2(fd, 2);
+        failureScenario(tmp.path()) catch |e| {
+            std.debug.print("recorder test (write failure): {t}\n", .{e});
+            c._exit(1);
+        };
+        c._exit(0);
+    }
+    var status: c_int = 0;
+    const t0 = Io.Clock.awake.now(testing.io);
+    while (true) {
+        const w = c.waitpid(pid, &status, c.W.NOHANG);
+        if (w < 0) return failure("waitpid failed", .{});
+        if (w == pid) break;
+        if (t0.untilNow(testing.io, .awake).toMilliseconds() > 3 * wait_limit_ms) {
+            _ = c.kill(pid, .KILL);
+            _ = c.waitpid(pid, &status, 0);
+            return failure("the write-failure scenario hung", .{});
+        }
+        try testing.io.sleep(.fromMilliseconds(5), .awake);
+    }
+    const st: u32 = @bitCast(status);
+    if (!c.W.IFEXITED(st) or c.W.EXITSTATUS(st) != 0) {
         if (Io.Dir.cwd().readFileAlloc(testing.io, err_path, testing.allocator, .limited(1 << 20))) |text| {
             defer testing.allocator.free(text);
             std.debug.print("{s}", .{text});

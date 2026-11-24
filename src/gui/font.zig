@@ -13,6 +13,7 @@ const std = @import("std");
 const c = @import("gui_c");
 const theme = @import("theme.zig");
 const shape = @import("shape.zig");
+const fontfind = @import("fontfind.zig");
 const log = std.log.scoped(.font);
 
 /// Pixels each side; room for the fixed glyphs and a few thousand drawn on demand.
@@ -69,7 +70,7 @@ pub const Font = struct {
     /// "Lato") at `px` pixels.
     pub fn init(gpa: std.mem.Allocator, family: [:0]const u8, px: u32) !Font {
         var path_buf: [std.fs.max_path_bytes:0]u8 = undefined;
-        const path = try findFont(family, &path_buf);
+        const path = try fontfind.findFont(family, &path_buf);
 
         var lib: c.FT_Library = null;
         if (c.FT_Init_FreeType(&lib) != 0) return error.FreeType;
@@ -114,7 +115,7 @@ pub const Font = struct {
             var want_buf: [48:0]u8 = undefined;
             const want = std.fmt.bufPrintSentinel(&want_buf, "sans-serif:charset={x}", .{cp}, 0) catch continue;
             var other_buf: [std.fs.max_path_bytes:0]u8 = undefined;
-            const other_path = findFont(want, &other_buf) catch continue;
+            const other_path = fontfind.findFont(want, &other_buf) catch continue;
             var other: c.FT_Face = null;
             if (c.FT_New_Face(lib, other_path.ptr, 0, &other) != 0) continue;
             defer _ = c.FT_Done_Face(other);
@@ -138,7 +139,7 @@ pub const Font = struct {
     /// ordinary glyphs. A character the face lacks is drawn with the ordinary glyph.
     pub fn addMono(self: *Font, family: [:0]const u8) !void {
         var path_buf: [std.fs.max_path_bytes:0]u8 = undefined;
-        const path = try findFont(family, &path_buf);
+        const path = try fontfind.findFont(family, &path_buf);
         var lib: c.FT_Library = null;
         if (c.FT_Init_FreeType(&lib) != 0) return error.FreeType;
         defer _ = c.FT_Done_FreeType(lib);
@@ -322,43 +323,6 @@ pub const Codepoints = struct {
         return cp;
     }
 };
-
-/// Whether some installed font has every one of `cps` (fontconfig's font list filtered by
-/// character set; `fc-match` would not do: it always answers with something).
-pub fn anyFontHas(cps: []const u32) bool {
-    const pat = c.FcPatternCreate() orelse return false;
-    defer c.FcPatternDestroy(pat);
-    const cs = c.FcCharSetCreate() orelse return false;
-    defer c.FcCharSetDestroy(cs);
-    for (cps) |cp| _ = c.FcCharSetAddChar(cs, cp);
-    _ = c.FcPatternAddCharSet(pat, "charset", cs);
-    const os = c.FcObjectSetCreate() orelse return false;
-    defer c.FcObjectSetDestroy(os);
-    _ = c.FcObjectSetAdd(os, "file");
-    const set = c.FcFontList(null, pat, os) orelse return false;
-    defer c.FcFontSetDestroy(set);
-    return set.*.nfont > 0;
-}
-
-test "anyFontHas: Latin yes, an unassigned code point no" {
-    try std.testing.expect(anyFontHas(&.{ 'A', 'z' }));
-    try std.testing.expect(!anyFontHas(&.{0x10FFFD}));
-}
-
-fn findFont(family: [:0]const u8, buf: *[std.fs.max_path_bytes:0]u8) ![:0]const u8 {
-    const cfg = c.FcInitLoadConfigAndFonts() orelse return error.Fontconfig;
-    defer c.FcConfigDestroy(cfg);
-    const pattern = c.FcNameParse(family.ptr) orelse return error.Fontconfig;
-    defer c.FcPatternDestroy(pattern);
-    _ = c.FcConfigSubstitute(cfg, pattern, c.FcMatchPattern);
-    c.FcDefaultSubstitute(pattern);
-    var result: c.FcResult = c.FcResultNoMatch;
-    const match = c.FcFontMatch(cfg, pattern, &result) orelse return error.FontNotFound;
-    defer c.FcPatternDestroy(match);
-    var file: [*c]c.FcChar8 = null;
-    if (c.FcPatternGetString(match, c.FC_FILE, 0, &file) != c.FcResultMatch or file == null) return error.FontNotFound;
-    return std.fmt.bufPrintSentinel(buf, "{s}", .{std.mem.span(@as([*:0]const u8, @ptrCast(file)))}, 0) catch error.FontNotFound;
-}
 
 /// Quads for one frame's text and rectangles, in pixel coordinates.
 pub const Batch = struct {

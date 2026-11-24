@@ -156,7 +156,7 @@ pub const Tiles = struct {
         const class = std.fmt.bufPrintSentinel(&class_buf, "{s}-tiles", .{self.env.app_id}, 0) catch "dimna-tiles";
         try win.init("dimna spikes", class, self.env.key_debug);
         defer win.deinit();
-        var gpu = try gpu_mod.Gpu.init(gpa, .{ .display = win.display, .surface = win.surface }, .fifo, self.display_gpu);
+        var gpu = try gpu_mod.Gpu.init(gpa, win.gpuTarget(), .fifo, self.display_gpu);
         defer gpu.deinit();
         var face = try font.Font.init(gpa, std.mem.sliceTo(&self.font_buf, 0), self.font_px);
         defer face.deinit(gpa);
@@ -206,13 +206,13 @@ pub const Tiles = struct {
             _ = view.scale.tick(msOf(now));
             view.publish(&shared.report, &det, now);
             if (!dirty or !win.frame_ready or now - last_draw < picture_ms * std.time.ns_per_ms) continue;
-            if (win.resized or gpu.swapchain == .null) {
+            if (win.resized or gpu.unsized()) {
                 try gpu.resize(win.width, win.height);
                 win.resized = false;
             }
             var drawn = scene;
-            drawn.width = @floatFromInt(gpu.extent.width);
-            drawn.height = @floatFromInt(gpu.extent.height);
+            drawn.width = @floatFromInt(gpu.pixelSize().width);
+            drawn.height = @floatFromInt(gpu.pixelSize().height);
             drawn.mouse_x = @floatCast(in.pointer_x);
             drawn.mouse_y = @floatCast(in.pointer_y);
             batch.clear();

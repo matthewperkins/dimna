@@ -108,3 +108,33 @@ so latency settles at what the machine's timing needs. The once-a-second log lin
 the margin, the longest wait between blocks and the oldest block the feeder met, for
 finding the cause when gaps do happen.
 `--no-audio` or `audio = false` turns it off; `volume_db = -6` sets the starting volume.
+
+### The device's period
+
+`audio_period = 128` in the config (or `--audio-period 128`) is the period dimna asks the
+sound device for, in frames: a power of two from 16 to 1024, 128 by default. Anything else
+is refused (on the command line dimna does not start; in the config a warning, and the
+default stays). The device's buffer is two periods. A device may not take what is asked:
+the start-up line in the log (`audio output: 48000 Hz, 64 frames per period, device
+buffer 128`) says what it gave, and that is what is used.
+
+Through PipeWire (ALSA's `default` on most desktops) the device's side of the latency is
+that buffer plus two of PipeWire's quanta, and the quantum follows what dimna asks for only
+down to PipeWire's own period. So with a period other than 128, and the environment
+variable `PIPEWIRE_LATENCY` not set already, dimna sets it to `<period>/48000` at start-up
+(PipeWire's ALSA plugin takes its quantum from it), and says so in the log. A value you set
+yourself is left as it is; at the default period nothing is set. On a machine without
+PipeWire the variable does nothing.
+
+Measured on the rig with the board (dimna at normal priority, the display running beside
+it, 40 to 60 s each), the latency as reported and its device part:
+
+| `audio_period` | in all | device | gaps | sound dropped |
+|---|---|---|---|---|
+| 128 (the default) | 16.8 to 17.3 ms | 10.6 ms | 0 to 1 | 0 |
+| 64 | 10.1 ms | 5.2 ms | 0 | 0 |
+| 32 (two runs) | 6.9, 7.5 ms | 2.6 ms | 0, 1 | 0 |
+
+Try 64 first. Before settling on 32, watch `gaps` and `dropped` in the once-a-second audio
+line of the log under the machine's real load (cameras, encoding, whatever else runs during
+an experiment): the smaller the period, the less room there is for a late wake-up.

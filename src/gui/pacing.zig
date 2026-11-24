@@ -13,7 +13,7 @@
 
 const std = @import("std");
 const Presented = @import("window.zig").Presented;
-const DrawResult = @import("gpu.zig").Gpu.DrawResult;
+const DrawResult = @import("gpu.zig").DrawResult;
 const log = std.log.scoped(.dimna);
 
 const skip_backoff_min: i128 = 250 * std.time.ns_per_ms;
@@ -125,8 +125,10 @@ pub const Pacer = struct {
         return @intCast(std.math.clamp(@divFloor(self.draw_at - now, std.time.ns_per_ms), 0, 2));
     }
 
-    /// A frame reached the screen. `clock` is the compositor's presentation clock id.
-    pub fn presented(self: *Pacer, p: Presented, now: i128, clock: i64) void {
+    /// A frame reached the screen. `on_now_clock`: its time is on the clock `now` is read
+    /// from (`Window.presentsOnNowClock`); `clock`: the presentation clock's number, for the
+    /// warning when it is not.
+    pub fn presented(self: *Pacer, p: Presented, now: i128, on_now_clock: bool, clock: i64) void {
         const acquired = self.frame_acquired[p.tag % self.frame_acquired.len];
         if (acquired != 0) {
             const ms = @as(f64, @floatFromInt(p.time_ns - acquired)) / 1e6;
@@ -181,7 +183,7 @@ pub const Pacer = struct {
         self.last_present_ns = p.time_ns;
         if (!self.clock_checked) {
             self.clock_checked = true;
-            if (clock != 1) log.warn("presentation clock is {d}, not CLOCK_MONOTONIC: latency figures will be off", .{clock});
+            if (!on_now_clock) log.warn("presentation clock is {d}, not CLOCK_MONOTONIC: latency figures will be off", .{clock});
         }
     }
 

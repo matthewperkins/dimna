@@ -24,7 +24,7 @@ pub const pyramid = @import("pyramid.zig");
 pub const overview = @import("overview.zig");
 pub const spikes = @import("spikes.zig");
 pub const board_config = @import("board_config.zig");
-pub const usbfs = @import("usbfs.zig");
+pub const usb = @import("usb.zig");
 pub const ft600 = @import("ft600.zig");
 pub const oni_usb = @import("oni_usb.zig");
 pub const tile_view = @import("tile_view.zig");
@@ -34,6 +34,7 @@ pub const control_view = @import("control_view.zig");
 pub const independence_test = @import("independence_test.zig");
 pub const published = @import("published.zig");
 pub const clock = @import("clock.zig");
+pub const os = @import("os.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());

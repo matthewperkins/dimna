@@ -3,11 +3,11 @@
 [Back to the README](../README.md)
 
 Design notes that used to sit at the top of `src/gui/main.zig`. The code is in
-`src/gui/pacing.zig` (when to draw, the margin, the recovery skip) and `src/gui/window.zig`
-(presentation feedback, the tearing request). Figures are from the rig: Hyprland 0.57,
-NVIDIA RTX 2000 Ada, 60 Hz, measured with the program's own once-a-second log line (the
-time from a sample's block reaching the ring to the frame showing it being presented, from
-Wayland presentation feedback).
+`src/gui/pacing.zig` (when to draw, the margin, the recovery skip) and
+`src/gui/window_wayland.zig` (presentation feedback, the tearing request). Figures are from
+the rig: Hyprland 0.57, NVIDIA RTX 2000 Ada, 60 Hz, measured with the program's own
+once-a-second log line (the time from a sample's block reaching the ring to the frame
+showing it being presented, from Wayland presentation feedback).
 
 ## In short
 

@@ -400,26 +400,7 @@ pub fn freeBytes(path: []const u8) ?u64 {
     if (path.len == 0 or path.len >= z.len) return null;
     @memcpy(z[0..path.len], path);
     z[path.len] = 0;
-    // struct statfs on 64-bit Linux.
-    const Statfs = extern struct {
-        type: i64,
-        bsize: i64,
-        blocks: u64,
-        bfree: u64,
-        bavail: u64,
-        files: u64,
-        ffree: u64,
-        fsid: [2]i32,
-        namelen: i64,
-        frsize: i64,
-        flags: i64,
-        spare: [4]i64,
-    };
-    var st: Statfs = undefined;
-    const linux = std.os.linux;
-    const rc = linux.syscall2(.statfs, @intFromPtr(&z), @intFromPtr(&st));
-    if (linux.errno(rc) != .SUCCESS) return null;
-    return st.bavail * @as(u64, @intCast(st.bsize));
+    return dimna.os.freeBytes(&z);
 }
 
 /// Anything that means samples are not being kept: shown across the display until the
