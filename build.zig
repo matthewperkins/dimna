@@ -205,6 +205,7 @@ pub fn build(b: *std.Build) void {
 
     // ---- zig build release: one tarball per entry of release_targets, in zig-out/release. ----
     addRelease(b, inputs, &.{
+        b.path("LICENSE"),
         b.path("vendor/liboni/LICENSE"),
         b.path("vendor/stb/LICENSE"),
         b.dependency("wayland", .{}).path("LICENSE"),
@@ -407,11 +408,12 @@ fn addRelease(b: *std.Build, inputs: Inputs, licences: []const std.Build.LazyPat
 }
 
 /// The licence files in a release, by the order addRelease is given them.
-const licence_names = [_][]const u8{ "liboni.LICENSE", "stb.LICENSE", "zig-wayland.LICENSE", "vulkan-zig.LICENSE" };
+const licence_names = [_][]const u8{ "dimna.LICENSE", "liboni.LICENSE", "stb.LICENSE", "zig-wayland.LICENSE", "vulkan-zig.LICENSE" };
 
 const licences_readme =
     \\Licences of the code in these binaries
     \\
+    \\dimna.LICENSE        dimna itself: the GNU General Public License, version 3
     \\liboni.LICENSE       liboni (MIT), vendor/liboni, built into both programs
     \\stb.LICENSE          stb_image and stb_image_write (public domain or MIT), in dimna
     \\zig-wayland.LICENSE  zig-wayland (MIT), its Wayland bindings are in dimna
@@ -419,8 +421,6 @@ const licences_readme =
     \\
     \\The bindings are generated from the Wayland protocol XMLs and the Vulkan registry
     \\(vk.xml); their licences are in the files' own headers (vendor/ in the source tree).
-    \\
-    \\MISSING: dimna's own licence. dimna has no licence file yet.
     \\
 ;
 

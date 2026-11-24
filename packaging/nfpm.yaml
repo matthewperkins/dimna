@@ -17,9 +17,8 @@ priority: optional
 maintainer: Matthew Perkins <matthew.perkins@mssm.edu>
 vendor: dimna
 homepage: https://github.com/matthewperkins/dimna
-# dimna has no licence file yet (licenses/README in the package says so); the third-party
-# licences are in /usr/share/doc/dimna/licenses.
-license: LicenseRef-dimna-no-licence-yet
+# dimna's licence and the third-party ones are in /usr/share/doc/dimna/licenses.
+license: GPL-3.0-only
 description: |-
   Acquisition, display and recording for the Open Ephys acquisition board
   dimna acquires, displays and records electrophysiology from the Open Ephys acquisition
@@ -176,6 +175,10 @@ contents:
       mode: 0644
   - src: licenses/README
     dst: /usr/share/doc/dimna/licenses/README
+    file_info:
+      mode: 0644
+  - src: licenses/dimna.LICENSE
+    dst: /usr/share/doc/dimna/licenses/dimna.LICENSE
     file_info:
       mode: 0644
   - src: licenses/liboni.LICENSE
