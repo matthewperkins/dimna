@@ -101,7 +101,7 @@ jobs:
   # nothing for the release (Mac users build from source) and, until it has passed here
   # once, does not hold a release back: `release` does not need it.
   macos:
-    runs-on: macos-15
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
