@@ -59,36 +59,56 @@ kind of response opto-tagging looks for.
 ## Linux and macOS
 
 The programs, the config file, the keys and the recording format are the same on both.
-What differs is what draws, sounds and talks to the board:
+Linux (x86_64) is where dimna is used for recordings from animals: Wayland and Vulkan, with
+packages to install. macOS (Apple silicon) is newer: AppKit and Metal, built from source,
+the board reached with no driver; it has recorded from the board without losing a sample,
+but has not yet had a soak of hours. [docs/platforms.md](docs/platforms.md) sets the two
+side by side.
 
-| | Linux | macOS |
-|---|---|---|
-| machines | x86_64, any distribution with glibc 2.34+ or musl | Apple silicon (tried on macOS 27, a MacBook Air M4) |
-| windows and graphics | Wayland directly, Vulkan | AppKit, Metal |
-| sound | ALSA (PipeWire behind it on most desktops) | Core Audio |
-| the board's USB | the kernel's usbfs; a udev rule gives access | IOKit; no driver, no rule, no permission asked |
-| fonts | fontconfig | Core Text |
-| how to get it | `.deb`, `.rpm`, tarballs, or from source | from source (no `.app` yet) |
-| sample to screen | 1.6 to 2.6 ms, fullscreen with tearing | about 20 ms by default (waits for the refresh, an even scroll); 6 to 7 ms with `--tearing`, fullscreen, on a 60 Hz screen, as macOS reports it |
-| a block's delivery from the board | 0.76 ms on average | 0.73 ms on average |
+## Quick start
 
-On a Mac the display is quickest fullscreen (`--monitor "Built-in Retina Display"`, or
-another screen's name as macOS shows it); Cmd-Tab, Cmd-H and Cmd-M work from there. With
-no `scheme_image` in the config, the Mac takes its colours from dimna's icon.
+**Installing a release** (Linux, x86_64): the GitHub release page has a `.deb` (Debian 12+, Ubuntu
+22.04+), an `.rpm` (Rocky/Alma/RHEL 9, Fedora) and tarballs for any glibc 2.34+ or musl
+distribution. The packages set up the board's udev rule and the real-time limits; then add
+yourself to the two groups they create and log out and in:
+
+    sudo apt install ./dimna_<version>-1_amd64.deb     # or: sudo dnf install ./dimna-<version>-1.x86_64.rpm
+    sudo usermod -aG dimna,realtime $USER
+
+**From source**, on Linux or macOS (Zig 0.17.1; what each system needs is in
+[docs/install.md](docs/install.md)):
+
+    zig build --release=safe
+    zig-out/bin/dimna --sim 32,16            # simulated headstages, in a window: no board needed
+    zig-out/bin/dimna                        # the board; ~/.config/dimna/config.toml decides the rest
+    zig-out/bin/dimna-headless --seconds 600 --record ~/somewhere    # no windows
+
+Press **`?`** on the display for every key and mouse action. `dimna --help` lists the
+options. Only one program can hold the board at a time. A first config file and the three
+windows are in [docs/getting-started.md](docs/getting-started.md).
 
 ## Status
 
-Linux: used on one rig (RHD2132 and RHD2216 headstages, 30 kHz), for recordings from
-animals. macOS: newer and less tried. The same board and headstages ran on a MacBook Air
-through Apple's USB-C Digital AV Multiport Adapter at 5 Gb/s: ten minutes recorded and
-verified with nothing lost, and the display, tiles and sound from the board. Not yet done
-there: a soak of hours, a recording compared against the rig's, a latency measurement that
-is not macOS's own report, and an installable app. Until those are done, record animals on
-Linux.
+Used on one rig (RHD2132 and RHD2216 headstages, 30 kHz). What has been checked and how is
+in the commit messages; what is known to be wrong, unexplained or never tested is in
+[docs/OPEN.md](docs/OPEN.md). It is not an Open Ephys product.
 
-What has been checked and how is in the commit messages; what is known to be wrong,
-unexplained or never tested is in [docs/OPEN.md](docs/OPEN.md). It is not an Open Ephys
-product.
+## Documentation
+
+| | |
+|---|---|
+| [docs/getting-started.md](docs/getting-started.md) | building and running, the three windows, a first config, languages, where recordings go |
+| [docs/platforms.md](docs/platforms.md) | Linux and macOS: what each uses, the figures on each, how far each has been tried |
+| [docs/install.md](docs/install.md) | installing (packages, tarballs, groups), building on Linux and on macOS, the two ways to reach the FT600, the headless tool |
+| [docs/display.md](docs/display.md) | panels and their config, filters, reference, triggered sweeps, TTL, review, notes, languages |
+| [docs/tiles-and-audio.md](docs/tiles-and-audio.md) | spike tiles, focus and listening, thresholds, the audio chain |
+| [docs/control.md](docs/control.md) | the control window, recording, board settings, alarms, saving the view |
+| [docs/recording.md](docs/recording.md) | the session layout, the recording format, how the recorder is tested |
+| [docs/hardware.md](docs/hardware.md) | what is written to the board, changing settings while acquiring |
+| [docs/latency.md](docs/latency.md) | what display latency was measured, and how frames are paced |
+| [docs/OPEN.md](docs/OPEN.md) | known faults, unexplained observations, what was never tested |
+| [docs/plans/](docs/plans/) | the plans the work was delegated from, and their rules of evidence; `macos-port.md` is the Mac port's record |
+| [docs/readability-review.md](docs/readability-review.md), [docs/review-as-claude.md](docs/review-as-claude.md) | two code reviews, and what was done about them |
 
 ## Licence
 
@@ -102,117 +122,3 @@ colour-scheme image and to write its swatch (see `vendor/stb/README.md`). The Wa
 protocol XMLs (`vendor/wayland-protocols`) and the Vulkan registry (`vendor/vulkan/vk.xml`)
 the bindings are generated from are vendored too, with their versions and checksums in the
 README of each folder.
-
-## Quick start
-
-**Installing a release** (Linux, x86_64): the GitHub release page has a `.deb` (Debian 12+, Ubuntu
-22.04+), an `.rpm` (Rocky/Alma/RHEL 9, Fedora) and tarballs for any glibc 2.34+ or musl
-distribution. The packages set up the board's udev rule and the real-time limits; then add
-yourself to the two groups they create and log out and in:
-
-    sudo apt install ./dimna_<version>-1_amd64.deb     # or: sudo dnf install ./dimna-<version>-1.x86_64.rpm
-    sudo usermod -aG dimna,realtime $USER
-
-From a tarball, `packaging/install-user.sh` adds the menu entry without root and prints the
-root steps. [docs/install.md](docs/install.md) has the details, and how to build from source
-on any distribution (Zig 0.17.1 from ziglang.org, `packaging/get-zig.sh`, and the package
-names of the development files per distribution).
-
-**Building from source**, on either system:
-
-    zig build --release=safe                 # Zig 0.17.1
-                                             # Linux: needs Wayland, Vulkan loader, FreeType, fontconfig, ALSA,
-                                             # xkbcommon (development files); no glslc: shaders are checked in
-                                             # optional at run time: harfbuzz and fribidi (Persian),
-                                             # Noto Sans CJK SC (Chinese), Noto Sans Arabic or Vazirmatn
-                                             # macOS: needs Apple's Command Line Tools, and from Homebrew
-                                             # pkg-config and freetype (optional: harfbuzz, fribidi)
-    zig build test                           # about 280 tests, none needs a display or the board
-    zig build -Dgui=false --release=safe     # dimna-headless only: no GUI libraries, no pkg-config
-
-    zig-out/bin/dimna --sim 32,16            # simulated headstages, in a window
-    zig-out/bin/dimna                        # the board; ~/.config/dimna/config.toml decides the rest
-    zig-out/bin/dimna-headless --seconds 600 --record ~/somewhere    # soak test, no windows
-
-    packaging/install-desktop.sh             # Linux: a launcher entry and icon for this checkout
-
-    zig build release                        # Linux: tarballs for other distributions (glibc 2.34+, musl),
-                                             # in zig-out/release; see docs/install.md, "Release build"
-
-Press **`?`** on the display for every key and mouse action. `dimna --help` lists the
-options. Only one program can hold the board at a time.
-
-## The three windows
-
-| window | what it is for |
-|---|---|
-| the neural display | the traces, in panels you lay out in the config; meant for a monitor of its own, fullscreen |
-| the control window | Record, notes, audio, board settings and each panel's settings, in sections that open on a click |
-| the spike tiles | one tile per electrode with its last spike waveforms, threshold, noise and rate |
-
-Left click focuses a channel (amber, in both the tiles and the display); right click
-listens to it (♪). Shift+wheel scrolls back in time, `l` returns to live.
-
-## A minimal config
-
-`~/.config/dimna/config.toml` (the same path on macOS):
-
-    monitor = "DP-2"          # the display goes fullscreen there (macOS: "Built-in Retina Display")
-    tearing = true            # lowest latency; on Linux it needs the compositor's cooperation
-    scheme_image = "~/Pictures/lab.jpg"   # optional: take the GUI's colours from this picture
-    language = "en"           # optional: en, de, fr, pt, pl, zh or fa (see Languages)
-
-    [board]
-    lower_hz = 0.1
-    half_channels = "A1"      # a 16-channel headstage on an RHD2132
-
-    [[panel]]
-    name = "Port A"
-    source = "A1"
-    rect = [0.0, 0.0, 0.5, 1.0]
-    band = [300, 6000]        # display only; the recording is always as acquired
-
-What you change while running (scales, filters, thresholds, which sections are open) is
-kept in `views.toml` beside it by "Save view"; the config itself is never rewritten except
-for its `[board]` table, by "Save as default".
-
-## Languages
-
-The windows can show English, German (`de`), French (`fr`), Brazilian Portuguese (`pt`),
-Polish (`pl`), Simplified Chinese (`zh`) or Persian (`fa`): set `language` in the config,
-or leave it out to follow `LANG`. Only the windows' texts change: log messages, `--help`,
-config keys and recordings stay in English.
-
-- Nothing extra is needed for the Latin-script languages. Chinese needs a Chinese font
-  (Noto Sans CJK SC). Persian needs an Arabic-script font (Noto Sans Arabic or
-  Vazirmatn) and, to join its letters, HarfBuzz and FriBidi. These are loaded at run time
-  only when needed, never linked. Without them dimna says what is missing and shows
-  English. macOS comes with fonts for both; Persian still needs HarfBuzz and FriBidi
-  (from Homebrew).
-- In Persian the control window is mirrored and reads from the right. The neural display
-  and the spike tiles keep their left-to-right layout, since that is the direction of time.
-- The translations are drafts that native speakers have not yet reviewed. Each language's
-  notes for a reviewer are in `docs/translations/`, and corrections are welcome. The
-  messages are in `src/gui/lang/<code>.zig`.
-
-## Recordings
-
-One session per press of Record, under `~/dimna-recordings/<date_time>/ephys/`, with
-`~/dimna-recordings/current` pointing at the newest so other programs (a camera recorder)
-can write beside it. Raw int16 samples, TTL edges, typed notes and a text `meta.toml`.
-`tools/dimna_read.py` is the reference reader and verifies every chunk.
-
-## More
-
-| | |
-|---|---|
-| [docs/install.md](docs/install.md) | installing (packages, tarballs, groups), building on Linux and on macOS, the two ways to reach the FT600, the headless tool |
-| [docs/display.md](docs/display.md) | panels and their config, filters, reference, triggered sweeps, TTL, review, notes, languages |
-| [docs/tiles-and-audio.md](docs/tiles-and-audio.md) | spike tiles, focus and listening, thresholds, the audio chain |
-| [docs/control.md](docs/control.md) | the control window, recording, board settings, alarms, saving the view |
-| [docs/recording.md](docs/recording.md) | the session layout, the recording format, how the recorder is tested |
-| [docs/hardware.md](docs/hardware.md) | what is written to the board, changing settings while acquiring |
-| [docs/latency.md](docs/latency.md) | what display latency was measured, and how frames are paced |
-| [docs/OPEN.md](docs/OPEN.md) | known faults, unexplained observations, what was never tested |
-| [docs/plans/](docs/plans/) | the plans the work was delegated from, and their rules of evidence; `macos-port.md` is the Mac port's record |
-| [docs/readability-review.md](docs/readability-review.md), [docs/review-as-claude.md](docs/review-as-claude.md) | two code reviews, and what was done about them |
