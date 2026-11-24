@@ -229,8 +229,9 @@ verifies it; it needs Python 3.11 or newer with numpy), Ctrl-C ending a recordin
   tiles on the right, and dimna comes to the front. Cmd-Q closes like the close button;
   keys with Cmd held are not dimna's.
 
-Not yet: the board (the Mac's USB backend is a stand-in that finds no device, so opening
-the board fails as with none plugged in), an `.app`.
+The board: the Mac's USB backend (IOKit; no driver to install, no permission asked) is
+written but has not yet been run with a board (`docs/plans/macos-step8-usb.md`). Not yet:
+an `.app`.
 
 ## Build details
 

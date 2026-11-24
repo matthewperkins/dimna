@@ -343,6 +343,16 @@ panel); Linux wording in shared text (`--monitor DP-2`, "the Vulkan present mode
 `$XDG_CONFIG_HOME`, "not CLOCK_MONOTONIC"), left alone because changing it changes the
 Linux binary.
 
+### Step 8: the IOKit USB backend, written, not yet run with a board (2026-11-24)
+
+`src/usb_iokit.c` (the IOKit calls, plain C) and `src/usb_darwin.zig` (the contract, the
+error mapping, the tests) replace the stand-in. What is assumed until the board has been
+used, and the sessions that will show it, are in `docs/plans/macos-step8-usb.md`.
+
+Also since the last entry: on the Mac the display waits for the refresh by default
+(`--present fifo`, the owner's choice by eye on 2026-11-16: about 20 ms, an even scroll);
+`--tearing` is the quick mode. dimna is under the GPL, version 3 (`LICENSE`).
+
 ## The layout aimed at
 
 Names are proposals; the step that makes each file settles its name.

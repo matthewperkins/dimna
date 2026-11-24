@@ -301,8 +301,10 @@ fn addCore(
     const dimna = if (system_dirs == null) b.addModule("dimna", dimna_options) else b.createModule(dimna_options);
     dimna.linkLibrary(liboni);
     // macOS: the power assertion that keeps the machine awake while acquiring
-    // (src/os_darwin.zig, IOPMAssertionCreateWithName) and the strings it takes.
+    // (src/os_darwin.zig, IOPMAssertionCreateWithName) and the strings it takes; and the
+    // USB backend's IOKit calls (src/usb_darwin.zig calls src/usb_iokit.c).
     if (target.result.os.tag == .macos) {
+        dimna.addCSourceFile(.{ .file = b.path("src/usb_iokit.c"), .flags = &.{ "-Wall", "-Wextra" } });
         dimna.linkFramework("IOKit", .{});
         dimna.linkFramework("CoreFoundation", .{});
     }
