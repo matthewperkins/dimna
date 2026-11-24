@@ -18,6 +18,8 @@ env:
   ZIG_VERSION: "0.17.1"
   ZIG_SHA256: "3581863e3cbcfd0fce0efc682ce7e9e93da96668a977791d356a26d2a7e9b17a"
   # https://github.com/goreleaser/nfpm/releases/download/v2.48.0/checksums.txt
+  # the same index, "0.17.1" / "aarch64-macos"
+  ZIG_MACOS_SHA256: "75f1bc7a1e9852f17ec9a0c1895f767c4ec56d46bc8a834920eece1d0359dd8d"
   NFPM_VERSION: "2.48.0"
   NFPM_SHA256: "6d7f9a28b2f397934403950fcbba83f598b08d02edbe79a0815b3b4897341750"
 
@@ -94,6 +96,18 @@ jobs:
       - name: dimna --help on Void musl (not yet required)
         continue-on-error: true
         run: docker run --rm -v "$PWD:/w" -w /w ghcr.io/void-linux/void-musl:latest sh -c 'sh packaging/ci-test-install.sh xbps-libs && sh packaging/ci-test-install.sh run musl/bin'
+
+  # macOS on Apple silicon: builds and tests from source (packaging/ci-macos.sh). It makes
+  # nothing for the release (Mac users build from source) and, until it has passed here
+  # once, does not hold a release back: `release` does not need it.
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build and test
+        run: sh packaging/ci-macos.sh
 
   release:
     if: github.ref_type == 'tag'

@@ -87,6 +87,15 @@ Press **`?`** on the display for every key and mouse action. `dimna --help` list
 options. Only one program can hold the board at a time. A first config file and the three
 windows are in [docs/getting-started.md](docs/getting-started.md).
 
+## Languages
+
+The windows can be shown in English, German, French, Brazilian Portuguese, Polish,
+Simplified Chinese or Persian (mirrored, read from the right), so that someone new to a
+rig can work in the language they read most easily. Put `language = "de"` (or `fr`, `pt`,
+`pl`, `zh`, `fa`) in `~/.config/dimna/config.toml`, or leave it out to follow the system's
+`LANG`. The translations are drafts that native speakers have not yet reviewed, and
+corrections are welcome: [docs/getting-started.md](docs/getting-started.md), "Languages".
+
 ## Status
 
 Used on one rig (RHD2132 and RHD2216 headstages, 30 kHz). Supported gateware: 2.x (2.0.0
