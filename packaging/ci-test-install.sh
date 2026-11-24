@@ -167,6 +167,7 @@ packaged_files="
 /usr/share/dimna/tools/dimna_read.py=../tools/dimna_read.py
 /usr/share/doc/dimna/README.md=../README.md
 /usr/share/doc/dimna/licenses/README
+/usr/share/doc/dimna/licenses/dimna.LICENSE
 "
 
 check_installed() {

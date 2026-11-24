@@ -57,8 +57,13 @@ kind of response opto-tagging looks for.
 
 Used on one rig (RHD2132 and RHD2216 headstages, 30 kHz). What has been checked and how
 is in the commit messages; what is known to be wrong, unexplained or never tested is in
-[docs/OPEN.md](docs/OPEN.md). There is no licence file yet. It is not an Open Ephys
-product.
+[docs/OPEN.md](docs/OPEN.md). It is not an Open Ephys product.
+
+## Licence
+
+Copyright (C) 2026 Matthew Perkins. dimna is free software: you can redistribute it and
+modify it under the terms of the GNU General Public License, version 3, as published by
+the Free Software Foundation ([LICENSE](LICENSE)). It comes with no warranty of any kind.
 
 Third-party code: liboni (MIT) is vendored in `vendor/liboni`; stb_image and
 stb_image_write by Sean Barrett (public domain / MIT) in `vendor/stb`, used only to read the
