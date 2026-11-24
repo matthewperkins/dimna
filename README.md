@@ -122,3 +122,9 @@ colour-scheme image and to write its swatch (see `vendor/stb/README.md`). The Wa
 protocol XMLs (`vendor/wayland-protocols`) and the Vulkan registry (`vendor/vulkan/vk.xml`)
 the bindings are generated from are vendored too, with their versions and checksums in the
 README of each folder.
+
+## Icon
+
+The icon shows Kalila and Dimna, the two jackals of the *Tales of Bidpai* that dimna and its
+sibling kalila are named after. It is an original drawing, covered by the repository's licence;
+credits and inspiration are in [packaging/icon/ICON-CREDITS.md](packaging/icon/ICON-CREDITS.md).
