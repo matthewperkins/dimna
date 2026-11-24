@@ -171,11 +171,15 @@ pub const BoardAction = union(enum) {
 };
 
 /// The answer to "the board settings changed; save them?" on quitting.
-pub const QuitAnswer = enum { save, discard, cancel };
+/// `stop_recording`: from the prompt shown while recording ("Stop recording and quit").
+pub const QuitAnswer = enum { save, discard, cancel, stop_recording };
 
 /// Shown instead of the controls when quitting with changed board settings.
 pub const QuitPrompt = struct {
     active: bool = false,
+    /// Asked while recording: whether to stop the recording and quit, or keep recording.
+    /// Only its buttons answer it; asking to quit again does not.
+    recording: bool = false,
     changes: dimna.board_config.Diff = .{},
     /// The config file the settings would be saved to.
     path_buf: [200]u8 = undefined,
@@ -518,6 +522,13 @@ fn titleSection(ui: *ui_mod.Ui, snap: *const Snapshot, shared: *Shared) void {
 /// Shown instead of everything below the title when quitting with changed board settings.
 fn quitPrompt(ui: *ui_mod.Ui, q: *const QuitPrompt, shared: *Shared) void {
     ui.separator();
+    if (q.recording) {
+        ui.text(i18n.text(.quit_recording_heading), theme.text_warn);
+        ui.newline();
+        if (ui.button(i18n.text(.btn_keep_recording), true)) shared.push(.{ .quit_answer = .cancel });
+        if (ui.button(i18n.text(.btn_stop_recording_and_quit), false)) shared.push(.{ .quit_answer = .stop_recording });
+        return;
+    }
     ui.text(i18n.text(.quit_heading), theme.text_bright);
     ui.newline();
     for (0..q.changes.count) |i| {
@@ -1198,6 +1209,7 @@ const layout_states = [_]LayoutState{
     .{ .name = "all closed, Headstages open by itself: settings not the config file's", .open = .{} },
     .{ .name = "AUX open of four panels", .open = .{ .panels = &.{"AUX"} } },
     .{ .name = "panel summaries: triggered, filtered, TTL", .open = .{} },
+    .{ .name = "quit asked while recording", .open = .{ .all = true } },
 };
 
 /// The snapshots the layout is frozen for (one per `layout_states`), written into `out`.
@@ -1220,6 +1232,10 @@ fn layoutSnapshots(out: []Snapshot) void {
     out[15].board.setNote("view saved to {s}", .{"/home/user/.config/dimna/views.toml"});
     out[16] = out[7];
     out[17] = summarySnapshot(&out[0]);
+    // Asked to quit while recording: only Keep recording and Stop recording and quit.
+    out[18] = out[1];
+    out[18].quit_prompt.active = true;
+    out[18].quit_prompt.recording = true;
 }
 
 /// Panels whose summaries say the most: triggered on a row's spikes and filtered;

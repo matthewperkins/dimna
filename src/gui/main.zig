@@ -373,6 +373,10 @@ fn runDisplay(init: std.process.Init, env: *const Env, args: *const Args, config
     var acq_since_ns: i128 = nowNs();
     var quiet = false;
     var quiet_spells: u64 = 0;
+    // Asking to quit while recording with no control window: the notice, and until when a
+    // second request quits.
+    var quit_notice: display_mod.Notice = .{};
+    var quit_confirm_until_ns: i128 = 0;
     // Runs on when acquisition ends on an error: the alarm says so, and a recording in
     // progress is kept until it is stopped.
     while (!win.closed) {
@@ -416,8 +420,16 @@ fn runDisplay(init: std.process.Init, env: *const Env, args: *const Args, config
         // Quitting (q or Esc here, Quit in the control window) asks first if the board
         // settings were changed; a second request quits.
         var quit = display.applyInput(input);
+        // Closing the display window (its close button, the compositor's close key, Cmd-Q
+        // on macOS) asks to quit like Ctrl+Q: the window stays until the answer is to quit.
+        if (win.closed) {
+            win.closed = false;
+            quit = true;
+        }
         win.setCursor(display.cursor);
         var quit_answer: ?control.QuitAnswer = null;
+        // Whether there is a control window to ask in.
+        const can_ask_quit = control_thread != null and !shared.closed.load(.acquire);
         // A test run's recording (DIMNA_TEST_RECORD_AT), as if Record had been clicked.
         if (test_record_at) |at| {
             if (!args.control and @as(f64, @floatFromInt(nowNs() - t_start)) / 1e9 >= at) {
@@ -557,16 +569,37 @@ fn runDisplay(init: std.process.Init, env: *const Env, args: *const Args, config
                     board_ctl.quit_prompt.active = false;
                 },
                 .discard => break,
-                .cancel => board_ctl.quit_prompt.active = false,
+                .cancel => {
+                    board_ctl.quit_prompt.active = false;
+                    board_ctl.quit_prompt.recording = false;
+                },
+                // "Stop recording and quit": the recording is closed as the loop ends
+                // (recording.deinit); first the question about unsaved settings, if any.
+                .stop_recording => {
+                    board_ctl.quit_prompt.active = false;
+                    board_ctl.quit_prompt.recording = false;
+                    recording.requestStop();
+                    if (!board_ctl.askBeforeQuit(&acq.requested, view_file.unsaved(view), can_ask_quit)) break;
+                },
             };
             snap_dirty = true;
         }
         if (quit) {
-            if (!board_ctl.askBeforeQuit(
-                &acq.requested,
-                view_file.unsaved(view),
-                control_thread != null and !shared.closed.load(.acquire),
-            )) break;
+            if (recording.active()) {
+                // Never straight out of a recording. With the control window: its prompt,
+                // which only its buttons answer (asking again changes nothing). Without
+                // one: a notice over the display, and a second request while it is up.
+                if (can_ask_quit) {
+                    board_ctl.quit_prompt.active = true;
+                    board_ctl.quit_prompt.recording = true;
+                } else if (nowNs() < quit_confirm_until_ns) {
+                    break;
+                } else {
+                    quit_notice = .{};
+                    quit_notice.say(.notice_quit_recording, .{}, .notice_quit_recording_how, .{});
+                    quit_confirm_until_ns = nowNs() + display_mod.Notice.seconds * std.time.ns_per_s;
+                }
+            } else if (!board_ctl.askBeforeQuit(&acq.requested, view_file.unsaved(view), can_ask_quit)) break;
             snap_dirty = true;
         }
         // Sample rate or channel set: stop, reconfigure the board, and start again with
@@ -599,6 +632,11 @@ fn runDisplay(init: std.process.Init, env: *const Env, args: *const Args, config
         // The recorder has finished (asked to, or because writing failed).
         if (recording.poll(pl.fs)) |ended| {
             snap_dirty = true;
+            // Nothing left to ask about.
+            if (board_ctl.quit_prompt.recording) {
+                board_ctl.quit_prompt.active = false;
+                board_ctl.quit_prompt.recording = false;
+            }
             if (ended == .failed) alarms.recording_failed = true;
         }
         // While recording, the control window's counts move four times a second.
@@ -635,7 +673,7 @@ fn runDisplay(init: std.process.Init, env: *const Env, args: *const Args, config
         audio_shared.alarm.store(status.alarm_len > 0, .monotonic);
         status.recording = recording.active();
         // One banner at a time: the language's first, then the colour scheme's.
-        status.notice = if (language_notice.shown(nowNs())) &language_notice else if (scheme_notice.shown(nowNs())) &scheme_notice else null;
+        status.notice = if (quit_confirm_until_ns > nowNs() and quit_notice.shown(nowNs())) &quit_notice else if (language_notice.shown(nowNs())) &language_notice else if (scheme_notice.shown(nowNs())) &scheme_notice else null;
         status.rec_seconds = recording.seconds(nowNs());
         if (input.num_keys > 0 or input.scroll_x != 0 or input.scroll_y != 0 or input.pinch != 1 or
             display.target != snap_target) snap_dirty = true;

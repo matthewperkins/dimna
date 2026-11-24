@@ -2362,3 +2362,13 @@ text 739 358 { 225, 230, 240, 255 } "? TTL"
 text 348 358 { 150, 160, 178, 255 } "triggered   -10.0 / +40.0 ms   on TTL 3"
 rect 12 384 776 1 { 48, 52, 62, 255 }
 text 172 394 { 150, 160, 178, 255 } "Press ? on the display for its keys and mouse actions, and the tile window's."
+== quit asked while recording: 177 quads, ends at x 356 y 102
+text 748 14 { 225, 230, 240, 255 } "dimna"
+text 460 14 { 150, 160, 178, 255 } "Simulator   40 channels at 30000 Hz"
+text 660 42 { 255, 190, 90, 255 } "disk nearly full"
+rect 12 68 776 1 { 48, 52, 62, 255 }
+text 140 78 { 255, 190, 90, 255 } "A recording is running. Quitting stops it; what has been recorded so far is kept."
+rect 658 102 130 24 { 52, 96, 170, 255 } -> .{ .quit_answer = .cancel }
+text 667 106 { 225, 230, 240, 255 } "Keep recording"
+rect 450 102 202 24 { 38, 43, 54, 255 } -> .{ .quit_answer = .stop_recording }
+text 459 106 { 225, 230, 240, 255 } "Stop recording and quit"

@@ -307,7 +307,7 @@ pub const key_help = [_]KeyHelp{
     .{ .window = .display, .key = .key_tilde, .what = .help_adc_toggle },
     .{ .window = .display, .key = .key_shift_a, .what = .help_acknowledge },
     .{ .window = .display, .key = .key_question, .what = .help_these_keys },
-    .{ .window = .display, .key = .key_q_or_esc, .what = .help_quit },
+    .{ .window = .display, .key = .key_ctrl_q_or_esc, .what = .help_quit },
     .{ .window = .tiles, .key = .key_wheel, .what = .help_tiles_scale_shown },
     .{ .window = .tiles, .key = .key_ctrl_wheel, .what = .help_tiles_scale_one },
     .{ .window = .tiles, .key = .key_ctrl_shift_wheel, .what = .help_tiles_threshold },
@@ -812,7 +812,8 @@ pub const Display = struct {
             // Esc with the key summary up hides it, and does not quit.
             if (k.isNamed(.escape) and self.help) {
                 self.help = false;
-            } else if (k.isNamed(.escape) or k.is('q')) quit = true;
+            } else if (k.isNamed(.escape) or (k.is('q') and in_given.ctrl)) quit = true;
+            // Plain q does not quit: it is too near the keys used all the time (r, t, w).
         }
         if (self.set.len == 0) return quit;
         var in = in_given;
@@ -2740,7 +2741,7 @@ fn helpTurn(d: *Display, notes: *notes_mod.Notes, given: Input) bool {
     return d.applyInput(in);
 }
 
-test "?: shows and hides the key summary and starts no note; / alone still does; Esc hides it, else quits" {
+test "?: shows and hides the key summary and starts no note; / alone still does; Esc hides it, else quits; Ctrl+Q quits, q does not" {
     var d = clickDisplay(5);
     var notes: notes_mod.Notes = .{};
     // Shift+/ typing "?": shown, no note.
@@ -2756,10 +2757,13 @@ test "?: shows and hides the key summary and starts no note; / alone still does;
     _ = helpTurn(&d, &notes, typedInput("/", "?", true));
     try testing.expect(!helpTurn(&d, &notes, typedInput("\x1b", "", false)));
     try testing.expect(!d.help);
-    // Esc without it: quit. q quits with it shown, too.
+    // Esc without it: quit. Ctrl+Q quits with it shown, too; plain q never does.
     try testing.expect(helpTurn(&d, &notes, typedInput("\x1b", "", false)));
     _ = helpTurn(&d, &notes, typedInput("/", "?", true));
-    try testing.expect(helpTurn(&d, &notes, typedInput("q", "q", false)) and d.help);
+    try testing.expect(!helpTurn(&d, &notes, typedInput("q", "q", false)) and d.help);
+    var ctrl_q = typedInput("q", "", false);
+    ctrl_q.ctrl = true;
+    try testing.expect(helpTurn(&d, &notes, ctrl_q) and d.help);
     d.help = false;
     // Shift is read from the text, not the modifier state: "?" typed with Shift already
     // let go is ?, and "/" typed with Shift still held (as reported) is /.

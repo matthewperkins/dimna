@@ -137,7 +137,7 @@ pub const usage =
     \\  Shift+a                        acknowledge an alarm (the red bar: samples lost, or the
     \\                                 recording failed)
     \\  ?                              the keys, over the display (? or Esc closes them)
-    \\  q or Esc                       quit
+    \\  Ctrl+Q or Esc                  quit (while recording: asks first)
     \\
 ;
 
