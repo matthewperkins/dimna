@@ -98,8 +98,8 @@ jobs:
         run: docker run --rm -v "$PWD:/w" -w /w ghcr.io/void-linux/void-musl:latest sh -c 'sh packaging/ci-test-install.sh xbps-libs && sh packaging/ci-test-install.sh run musl/bin'
 
   # macOS on Apple silicon: builds and tests from source (packaging/ci-macos.sh). It makes
-  # nothing for the release (Mac users build from source) and, until it has passed here
-  # once, does not hold a release back: `release` does not need it.
+  # nothing for the release (Mac users build from source), but a release waits for it: a
+  # tag whose Mac build or tests fail gets no draft. First passed here on 2026-11-24.
   macos:
     runs-on: macos-latest
     steps:
@@ -111,7 +111,7 @@ jobs:
 
   release:
     if: github.ref_type == 'tag'
-    needs: [build, test-package, test-musl]
+    needs: [build, test-package, test-musl, macos]
     runs-on: ubuntu-latest
     permissions:
       contents: write

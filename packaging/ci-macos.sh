@@ -34,6 +34,9 @@ trap cleanup EXIT
 command -v pkg-config >/dev/null 2>&1 || brew install pkg-config
 pkg-config --exists freetype2 || brew install freetype
 pkg-config --exists freetype2 || fail "pkg-config does not find freetype2"
+# HarfBuzz and FriBidi are loaded at run time for Persian; without them seven shaping tests
+# skip themselves (as they did on the runner's first pass).
+[ -e /opt/homebrew/lib/libharfbuzz.dylib ] && [ -e /opt/homebrew/lib/libfribidi.dylib ] || brew install harfbuzz fribidi
 
 zig_tar=zig-aarch64-macos-$ZIG_VERSION.tar.xz
 # ziglang.org first, then community mirrors (https://ziglang.org/download/community-mirrors.txt):
