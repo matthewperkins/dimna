@@ -89,9 +89,11 @@ windows are in [docs/getting-started.md](docs/getting-started.md).
 
 ## Status
 
-Used on one rig (RHD2132 and RHD2216 headstages, 30 kHz). What has been checked and how is
-in the commit messages; what is known to be wrong, unexplained or never tested is in
-[docs/OPEN.md](docs/OPEN.md). It is not an Open Ephys product.
+Used on one rig (RHD2132 and RHD2216 headstages, 30 kHz). Supported gateware: 2.x (2.0.0
+is the only version dimna has been run on; with an older one it warns and carries on,
+untested). What has been checked and how is in the commit messages; what is known to be
+wrong, unexplained or never tested is in [docs/OPEN.md](docs/OPEN.md). It is not an Open
+Ephys product.
 
 ## Documentation
 

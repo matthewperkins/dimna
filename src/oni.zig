@@ -13,7 +13,9 @@ pub const OpenError = error{
     DriverNotFound,
     /// No board answered.
     NoBoard,
-    /// The board's gateware is too old for this liboni (update it to ≥ 2.0.0).
+    /// The driver refused the board's USB chip: its FT600 is not configured as this driver
+    /// needs (FIFO mode "600", optional features off; `oni_usb.zig`, as upstream's driver).
+    /// Said upstream to mean gateware older than 2.0.0; that link is not shown by any code here.
     BadController,
 };
 

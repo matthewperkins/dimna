@@ -233,6 +233,9 @@ pub const Board = struct {
         self.fw = .{ (v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff, (v >> 24) & 0xff };
         log.info("ECP5-ONI gateware v{d}.{d}.{d}", .{ self.fw[0], self.fw[1], self.fw[2] });
         if (self.fw[0] == 0) log.warn("gateware v{d}.{d}.{d} is outdated and should be updated", .{ self.fw[0], self.fw[1], self.fw[2] });
+        // Supported: gateware 2.x, the only one dimna has been run on (2.0.0). An older one is
+        // not refused (the 1.5 thresholds below are upstream's), but nothing here was tried on it.
+        if (self.fw[0] < 2) log.warn("gateware v{d}.{d}.{d} is older than 2.0.0: dimna supports and has only been run on 2.x; update the gateware, or expect the untested", .{ self.fw[0], self.fw[1], self.fw[2] });
         self.has_i2c_support = semverGe(self.fw, .{ 1, 5, 0 });
         self.has_memmon = semverGe(self.fw, .{ 1, 5, 1 });
         self.device_id = self.ctx.readReg(device_info, 0) catch 0;
