@@ -177,6 +177,17 @@ fn runDisplay(init: std.process.Init, env: *const Env, args: *const Args, config
                 scheme_notice.say(.notice_colours_failed, .{ .reason = sdiag.message() }, .notice_colours_where, .{ .where = where });
             }
         } else log.warn("scheme image '{s}': the path is too long; using the built-in colours", .{args.scheme_image});
+    } else if (builtin.os.tag == .macos) {
+        // On macOS, with no image named: the colours of dimna's icon (the picture the
+        // program carries for the Dock), which is what the owner's Linux rig names as its
+        // `scheme_image`, so the two look alike. No banner: nothing was asked for.
+        if (scheme.decode(@embedFile("dimna-icon.png"))) |img| {
+            defer img.deinit();
+            if (scheme.derivePixels(img.rgb, img.w, img.h, 4)) |r| {
+                theme.apply(r.scheme);
+                log.info("colour scheme from dimna's icon (the default on macOS; scheme_image in the config file changes it)", .{});
+            }
+        } else |_| {}
     }
 
     // ---- the source: simulator or board ----
