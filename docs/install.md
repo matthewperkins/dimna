@@ -229,9 +229,12 @@ verifies it; it needs Python 3.11 or newer with numpy), Ctrl-C ending a recordin
   tiles on the right, and dimna comes to the front. Cmd-Q closes like the close button;
   keys with Cmd held are not dimna's.
 
-The board: the Mac's USB backend (IOKit; no driver to install, no permission asked) is
-written but has not yet been run with a board (`docs/plans/macos-step8-usb.md`). Not yet:
-an `.app`.
+The board: the Mac's USB backend (IOKit; no driver to install, no permission asked) has
+run the board on a MacBook Air M4 through Apple's USB-C Digital AV Multiport Adapter at
+5 Gb/s: ten minutes recorded and verified with nothing lost, delivery delay 0.73 ms on
+average as on Linux, with an occasional block 10 to 17 ms late. A soak of hours, an
+unplugged cable and a comparison with the rig are still to do
+(`docs/plans/macos-step8-usb.md`). Not yet: an `.app`.
 
 ## Build details
 

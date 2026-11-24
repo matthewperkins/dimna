@@ -12,8 +12,8 @@
 //! the interfaces are opened one by one in `claimInterface`. macOS asks for no permission
 //! for a device no kernel driver has taken.
 //!
-//! NOT YET RUN WITH A BOARD (docs/plans/macos-step8-usb.md). What is assumed until then is
-//! marked "to check" below.
+//! First run with a board on 2026-11-24 (docs/plans/macos-step8-usb.md has what was seen).
+//! What is still assumed is marked "to check" below.
 
 const std = @import("std");
 const log = std.log.scoped(.usb);
@@ -222,7 +222,7 @@ fn abortEvery() ?u32 {
 }
 
 /// What a finished bulk transfer means. A transfer this side gave up is a timeout whatever
-/// IOKit calls its end (`kIOReturnAborted` is expected; to check), unless the device has
+/// IOKit calls its end (`kIOReturnAborted` is expected), unless the device has
 /// gone or the endpoint stalled. A read that IOKit reports as an underrun (fewer bytes than
 /// asked; to check whether it ever does for a bulk pipe) is a short read, not an error.
 fn bulkResult(r: i32, actual: u32, timed_out: bool) Error!Transfer {

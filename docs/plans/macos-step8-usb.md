@@ -86,6 +86,53 @@ Stop at the first thing that is not as expected, and write down what was seen.
    one from the rig (`tools/dimna_compare.py`).
 9. BOARD **The display**: `zig-out/bin/dimna` with the board, fullscreen.
 
+## What the sessions showed (2026-11-24)
+
+MacBook Air M4, macOS 27, the board (RHD2132 on A1, RHD2216 on B1, 48 channels, 30 kHz)
+through Apple's A2119 adapter, no animal. The owner gave leave for the day's runs.
+
+1. **Registry and claim**: found 1, location 01210000, bus 1, address 4, speed 5000; both
+   interfaces claimed and released. Assumptions 3 and 4 hold (no driver had the board, no
+   permission was asked).
+2. **Ten seconds, traced**: firmware 1.09, gateware v2.0.0, both headstages found; 300032
+   samples, `dropped=0 gaps=0 bad=0`, delivery avg 0.75 ms, worst 3.27 ms, CLEAN. No read
+   timed out, so this run alone showed nothing about assumption 1. With
+   `DIMNA_USB_TEST_ABORT_EVERY=3` (a switch added for this, `usb_darwin.zig`): 92 reads
+   given up, 61 of them with 1024 to 6144 bytes already in, 300000 samples, CLEAN. Most
+   reads given up at once still completed in full before the abort took hold. With the
+   count of a given-up read reported as 0 on purpose: `could not open the board: OniFailed
+   (liboni: Received malformed frame)`. Assumptions 1 and 2 hold.
+3. **Open and close twenty times** (2 s each): 20 of 20 CLEAN, also straight after the
+   broken run above.
+4. **Ten minutes recorded**: 17999968 samples in 562499 blocks, `dropped=0 gaps=0 bad=0`,
+   600 of 600 seconds clean; `dimna_read.py`: complete, gaps 0, OK. Delivery avg 0.73 ms;
+   the worst block of a second: median 1.49 ms, 99th percentile 9.38 ms, max 16.64 ms, 25
+   of the 600 seconds above 5 ms (the rig's worst over 45 s was 2.58 ms). Nothing was
+   lost in them (hardware buffer peak 0.0 %). Not explained; the laptop was in use.
+5. **Unplug**: not done yet.
+6. **Soak**: see below.
+7. **Delivery delay by USB block** (10 s each, all CLEAN):
+
+   | usb block | delivery avg / worst | CPU per 10 s (user + sys) | transfers per s |
+   |---|---|---|---|
+   | 24576 | 2.09 / 4.42 ms | 0.78 s | 493 |
+   | 8192 (default) | 0.73 / 1.63 ms | 1.31 s | 1,467 |
+   | 4096 | 0.44 / 17.15 ms | 1.74 s | 2,925 |
+   | 2048 | 0.23 / 0.51 ms | 1.13 s | 5,808 |
+
+   The averages are the rig's. The CPU per transfer is about twice the rig's at 8192
+   (assumption 7: mostly system time). The one 17 ms block at 4096 is the same kind of
+   straggler as in session 4.
+8. **Against the rig**: not done (needs the same signal recorded on both machines).
+9. **The display with the board**: the program opened the board, streamed 20 s (121 MB)
+   and closed cleanly, but drew no frames (0 fps); the simulator drew none either at that
+   moment, so it was the screen's state (asleep or locked), not the board. To be repeated
+   with the owner at the screen.
+
+Not answered yet: assumption 5 (unplug) and 6 (no underrun was seen, which is not proof).
+The disk had 43 GB free, less than four hours of recording (41 GB), so the soak runs
+without `--record`.
+
 ## Break it on purpose
 
 Without a board, once each: `mapError` sending `kIOReturnExclusiveAccess` to `Io`;
