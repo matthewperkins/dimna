@@ -36,8 +36,21 @@ pkg-config --exists freetype2 || brew install freetype
 pkg-config --exists freetype2 || fail "pkg-config does not find freetype2"
 
 zig_tar=zig-aarch64-macos-$ZIG_VERSION.tar.xz
-curl -fsSL --retry 3 -o "$work/$zig_tar" "https://ziglang.org/download/$ZIG_VERSION/$zig_tar"
-(cd "$work" && echo "$ZIG_MACOS_SHA256  $zig_tar" | shasum -a 256 -c -)
+# ziglang.org first, then community mirrors (https://ziglang.org/download/community-mirrors.txt):
+# from GitHub's macOS runner the download from ziglang.org hung for 19 minutes without a
+# byte (2026-11-24), so every try has a time limit. Whatever serves the file, it is
+# checked against the sha256 the workflow gives.
+got=
+for base in "https://ziglang.org/download/$ZIG_VERSION" "https://pkg.machengine.org/zig" "https://zigmirror.hryx.net/zig" "https://zig.linus.dev/zig"; do
+    echo "ci-macos: fetching $base/$zig_tar"
+    if curl -fsSL --connect-timeout 20 --max-time 180 -o "$work/$zig_tar" "$base/$zig_tar" &&
+        (cd "$work" && echo "$ZIG_MACOS_SHA256  $zig_tar" | shasum -a 256 -c -); then
+        got=1
+        break
+    fi
+    rm -f "$work/$zig_tar"
+done
+[ -n "$got" ] || fail "could not download $zig_tar with the right checksum from ziglang.org or a mirror"
 tar -xJf "$work/$zig_tar" -C "$work"
 PATH=$work/zig-aarch64-macos-$ZIG_VERSION:$PATH
 zig version
