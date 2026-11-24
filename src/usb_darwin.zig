@@ -185,7 +185,14 @@ pub const Device = struct {
         if (self.handle == null) return error.Io;
         var actual: u32 = 0;
         var timed_out: c_int = 0;
-        const r = dimna_usb_bulk(self.handle, endpoint, buf.ptr, @intCast(buf.len), timeout_ms, &actual, &timed_out);
+        var wait_ms = timeout_ms;
+        if (abortEvery()) |n| {
+            if (endpoint & 0x80 != 0 and buf.len > 64) {
+                abort_count +%= 1;
+                if (abort_count % n == 0) wait_ms = 0;
+            }
+        }
+        const r = dimna_usb_bulk(self.handle, endpoint, buf.ptr, @intCast(buf.len), wait_ms, &actual, &timed_out);
         return bulkResult(r, actual, timed_out != 0) catch |err| {
             if (err == error.Io) log.debug("ep {x:0>2} transfer failed: {x:0>8} after {d} bytes", .{ endpoint, @as(u32, @bitCast(r)), actual });
             return err;
@@ -196,6 +203,23 @@ pub const Device = struct {
         dimna_usb_clear_halt(self.handle, endpoint);
     }
 };
+
+/// A test switch (docs/plans/macos-step8-usb.md): `DIMNA_USB_TEST_ABORT_EVERY=N` gives up
+/// every Nth read of more than 64 bytes at once, as if its time were up, so that reads are
+/// cut off part way while the board streams and the stream's own checks show whether a
+/// byte was lost or repeated. Off unless set.
+var abort_every: ?u32 = null;
+var abort_count: u32 = 0;
+fn abortEvery() ?u32 {
+    if (abort_every == null) {
+        const v = std.c.getenv("DIMNA_USB_TEST_ABORT_EVERY") orelse {
+            abort_every = 0;
+            return null;
+        };
+        abort_every = std.fmt.parseInt(u32, std.mem.span(v), 10) catch 0;
+    }
+    return if (abort_every.? == 0) null else abort_every.?;
+}
 
 /// What a finished bulk transfer means. A transfer this side gave up is a timeout whatever
 /// IOKit calls its end (`kIOReturnAborted` is expected; to check), unless the device has
