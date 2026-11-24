@@ -130,11 +130,12 @@ instead (it also takes a config folder: see the script).
    `dimna` and `realtime` groups, `usermod`, log out and in (`install-user.sh` in a release
    tarball prints the exact commands).
 
-## macOS (so far: the simulator, no board)
+## macOS
 
-On a Mac with Apple silicon (tried on macOS 27), the core and `dimna-headless` build and
-run from the simulator, and `dimna --sim 32,16` opens its windows (AppKit) and draws
-(Metal). The board is not ported yet.
+On a Mac with Apple silicon (tried on macOS 27), `dimna` and `dimna-headless` build from
+source and run from the simulator or the board: windows through AppKit, drawing with
+Metal, sound through Core Audio, the board through IOKit (nothing to install for it). There
+is no `.app` yet.
 
 1. **Zig 0.17.1**: `zig-aarch64-macos-0.17.1.tar.xz` from https://ziglang.org/download/,
    checked and unpacked anywhere, as above (no root needed). The build also needs Apple's

@@ -5,7 +5,8 @@
 <h1 align="center">dimna</h1>
 
 Acquisition, display and recording for the Open Ephys acquisition board (the ECP5 / FT600
-USB 3 / ONI board), written in Zig. Linux and Wayland only.
+USB 3 / ONI board), written in Zig. It runs on Linux (Wayland) and on macOS (Apple
+silicon), with each system's own windows, graphics, sound and USB behind one shared core.
 
 It is built for one job: recording single units and EMG from an animal without losing a
 sample, while showing the signals with as little delay as the screen allows.
@@ -13,11 +14,13 @@ sample, while showing the signals with as little delay as the screen allows.
 - **Records** to a simple, append-only format with a checksum per chunk; a failing disk or
   a crash costs at most the last second, and never stops acquisition.
 - **Shows** the traces on the GPU, 1.6 to 2.6 ms from a sample's arrival to the screen
-  (fullscreen with tearing under Hyprland), with display-only filters, common average
-  reference, triggered sweeps, TTL lanes, scroll-back review and typed notes.
+  on Linux (fullscreen with tearing under Hyprland; the Mac's figures are under "Linux and
+  macOS"), with display-only filters, common average reference, triggered sweeps, TTL
+  lanes, scroll-back review and typed notes.
 - **Spike tiles and spike audio** for judging and hearing units, with one detection
   threshold per channel that can follow the noise or be dragged to a value.
-- **Talks to the board** through its own USB code (no FTDI library needed), and writes
+- **Talks to the board** through its own USB code (no FTDI library or driver needed, on
+  either system), and writes
   only volatile registers.
 
 Its sibling is kalila (formerly oers), the same instrument in Rust; dimna began
@@ -53,11 +56,39 @@ kind of response opto-tagging looks for.
 
 ![Port A triggered on the laser](docs/images/laser.png)
 
+## Linux and macOS
+
+The programs, the config file, the keys and the recording format are the same on both.
+What differs is what draws, sounds and talks to the board:
+
+| | Linux | macOS |
+|---|---|---|
+| machines | x86_64, any distribution with glibc 2.34+ or musl | Apple silicon (tried on macOS 27, a MacBook Air M4) |
+| windows and graphics | Wayland directly, Vulkan | AppKit, Metal |
+| sound | ALSA (PipeWire behind it on most desktops) | Core Audio |
+| the board's USB | the kernel's usbfs; a udev rule gives access | IOKit; no driver, no rule, no permission asked |
+| fonts | fontconfig | Core Text |
+| how to get it | `.deb`, `.rpm`, tarballs, or from source | from source (no `.app` yet) |
+| sample to screen | 1.6 to 2.6 ms, fullscreen with tearing | about 20 ms by default (waits for the refresh, an even scroll); 6 to 7 ms with `--tearing`, fullscreen, on a 60 Hz screen, as macOS reports it |
+| a block's delivery from the board | 0.76 ms on average | 0.73 ms on average |
+
+On a Mac the display is quickest fullscreen (`--monitor "Built-in Retina Display"`, or
+another screen's name as macOS shows it); Cmd-Tab, Cmd-H and Cmd-M work from there. With
+no `scheme_image` in the config, the Mac takes its colours from dimna's icon.
+
 ## Status
 
-Used on one rig (RHD2132 and RHD2216 headstages, 30 kHz). What has been checked and how
-is in the commit messages; what is known to be wrong, unexplained or never tested is in
-[docs/OPEN.md](docs/OPEN.md). It is not an Open Ephys product.
+Linux: used on one rig (RHD2132 and RHD2216 headstages, 30 kHz), for recordings from
+animals. macOS: newer and less tried. The same board and headstages ran on a MacBook Air
+through Apple's USB-C Digital AV Multiport Adapter at 5 Gb/s: ten minutes recorded and
+verified with nothing lost, and the display, tiles and sound from the board. Not yet done
+there: a soak of hours, a recording compared against the rig's, a latency measurement that
+is not macOS's own report, and an installable app. Until those are done, record animals on
+Linux.
+
+What has been checked and how is in the commit messages; what is known to be wrong,
+unexplained or never tested is in [docs/OPEN.md](docs/OPEN.md). It is not an Open Ephys
+product.
 
 ## Licence
 
@@ -74,7 +105,7 @@ README of each folder.
 
 ## Quick start
 
-**Installing a release** (x86_64): the GitHub release page has a `.deb` (Debian 12+, Ubuntu
+**Installing a release** (Linux, x86_64): the GitHub release page has a `.deb` (Debian 12+, Ubuntu
 22.04+), an `.rpm` (Rocky/Alma/RHEL 9, Fedora) and tarballs for any glibc 2.34+ or musl
 distribution. The packages set up the board's udev rule and the real-time limits; then add
 yourself to the two groups they create and log out and in:
@@ -87,22 +118,25 @@ root steps. [docs/install.md](docs/install.md) has the details, and how to build
 on any distribution (Zig 0.17.1 from ziglang.org, `packaging/get-zig.sh`, and the package
 names of the development files per distribution).
 
-**Building from source:**
+**Building from source**, on either system:
 
-    zig build --release=safe                 # Zig 0.17.1; needs Wayland, Vulkan loader, FreeType, fontconfig, ALSA,
+    zig build --release=safe                 # Zig 0.17.1
+                                             # Linux: needs Wayland, Vulkan loader, FreeType, fontconfig, ALSA,
                                              # xkbcommon (development files); no glslc: shaders are checked in
                                              # optional at run time: harfbuzz and fribidi (Persian),
                                              # Noto Sans CJK SC (Chinese), Noto Sans Arabic or Vazirmatn
-    zig build test                           # about 270 tests, none needs a display or the board
+                                             # macOS: needs Apple's Command Line Tools, and from Homebrew
+                                             # pkg-config and freetype (optional: harfbuzz, fribidi)
+    zig build test                           # about 280 tests, none needs a display or the board
     zig build -Dgui=false --release=safe     # dimna-headless only: no GUI libraries, no pkg-config
 
     zig-out/bin/dimna --sim 32,16            # simulated headstages, in a window
     zig-out/bin/dimna                        # the board; ~/.config/dimna/config.toml decides the rest
     zig-out/bin/dimna-headless --seconds 600 --record ~/somewhere    # soak test, no windows
 
-    packaging/install-desktop.sh             # a launcher entry and icon for this checkout
+    packaging/install-desktop.sh             # Linux: a launcher entry and icon for this checkout
 
-    zig build release                        # tarballs for other distributions (glibc 2.34+, musl),
+    zig build release                        # Linux: tarballs for other distributions (glibc 2.34+, musl),
                                              # in zig-out/release; see docs/install.md, "Release build"
 
 Press **`?`** on the display for every key and mouse action. `dimna --help` lists the
@@ -121,10 +155,10 @@ listens to it (♪). Shift+wheel scrolls back in time, `l` returns to live.
 
 ## A minimal config
 
-`~/.config/dimna/config.toml`:
+`~/.config/dimna/config.toml` (the same path on macOS):
 
-    monitor = "DP-2"          # the display goes fullscreen there
-    tearing = true            # lowest latency; needs the compositor's cooperation
+    monitor = "DP-2"          # the display goes fullscreen there (macOS: "Built-in Retina Display")
+    tearing = true            # lowest latency; on Linux it needs the compositor's cooperation
     scheme_image = "~/Pictures/lab.jpg"   # optional: take the GUI's colours from this picture
     language = "en"           # optional: en, de, fr, pt, pl, zh or fa (see Languages)
 
@@ -153,7 +187,8 @@ config keys and recordings stay in English.
   (Noto Sans CJK SC). Persian needs an Arabic-script font (Noto Sans Arabic or
   Vazirmatn) and, to join its letters, HarfBuzz and FriBidi. These are loaded at run time
   only when needed, never linked. Without them dimna says what is missing and shows
-  English.
+  English. macOS comes with fonts for both; Persian still needs HarfBuzz and FriBidi
+  (from Homebrew).
 - In Persian the control window is mirrored and reads from the right. The neural display
   and the spike tiles keep their left-to-right layout, since that is the direction of time.
 - The translations are drafts that native speakers have not yet reviewed. Each language's
@@ -171,7 +206,7 @@ can write beside it. Raw int16 samples, TTL edges, typed notes and a text `meta.
 
 | | |
 |---|---|
-| [docs/install.md](docs/install.md) | installing (packages, tarballs, groups), building, the two ways to reach the FT600, the headless tool |
+| [docs/install.md](docs/install.md) | installing (packages, tarballs, groups), building on Linux and on macOS, the two ways to reach the FT600, the headless tool |
 | [docs/display.md](docs/display.md) | panels and their config, filters, reference, triggered sweeps, TTL, review, notes, languages |
 | [docs/tiles-and-audio.md](docs/tiles-and-audio.md) | spike tiles, focus and listening, thresholds, the audio chain |
 | [docs/control.md](docs/control.md) | the control window, recording, board settings, alarms, saving the view |
@@ -179,5 +214,5 @@ can write beside it. Raw int16 samples, TTL edges, typed notes and a text `meta.
 | [docs/hardware.md](docs/hardware.md) | what is written to the board, changing settings while acquiring |
 | [docs/latency.md](docs/latency.md) | what display latency was measured, and how frames are paced |
 | [docs/OPEN.md](docs/OPEN.md) | known faults, unexplained observations, what was never tested |
-| [docs/plans/](docs/plans/) | the plans the work was delegated from, and their rules of evidence |
+| [docs/plans/](docs/plans/) | the plans the work was delegated from, and their rules of evidence; `macos-port.md` is the Mac port's record |
 | [docs/readability-review.md](docs/readability-review.md), [docs/review-as-claude.md](docs/review-as-claude.md) | two code reviews, and what was done about them |
