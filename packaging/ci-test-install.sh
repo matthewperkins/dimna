@@ -239,6 +239,12 @@ package_test() { # DIR
         [ $# = 1 ] && [ -f "$1" ] || fail "expected one .deb in $dir, found: $*"
         say "apt-get install $1"
         export DEBIAN_FRONTEND=noninteractive
+        # Ubuntu's container images are minimised: dpkg skips /usr/share/doc and more, which
+        # a real Ubuntu install does not. Drop that, so the package installs as on a desktop.
+        if [ -f /etc/dpkg/dpkg.cfg.d/excludes ]; then
+            echo "note: removing the minimised image's dpkg path excludes"
+            rm -f /etc/dpkg/dpkg.cfg.d/excludes
+        fi
         apt-get update
         apt-get install -y "$1"
         remove="apt-get purge -y dimna"

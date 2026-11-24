@@ -81,7 +81,8 @@ match the host driver).
        from one file). Dependencies are package names, so they are written per format and
        must allow for renames: Debian 13 and Ubuntu 24.04 call ALSA's library
        `libasound2t64`, older releases `libasound2`, so the `.deb` depends on
-       `libasound2 | libasound2t64`; check every other name the same way.
+       `libasound2t64 | libasound2 (>= 1.1)` (in that order and versioned: Ubuntu 24.04's
+       liboss4-salsa-asound2 also provides a bare `libasound2` and lacks ALSA's symbols); check every other name the same way.
      - **Built and tested by GitHub Actions, not on the rig** (decided with the owner,
        2026-11-14). See "Release workflow" below.
      - Downloads from the GitHub release page at first. An apt/dnf repository (or a PPA
@@ -428,7 +429,7 @@ in `build.zig` for Rocky: whether it needs a change is for the first run to show
   every `src` is a path in the release. Version `${DIMNA_VERSION}`: for a tag, the tag must be
   `v` + `build.zig.zon`'s version or packaging fails; otherwise `<version>-dev.g<commit>`.
   Dependencies, `.deb`: `libc6 (>= 2.34)`, `libwayland-client0`, `libvulkan1`, `libfreetype6`,
-  `libfontconfig1`, `libxkbcommon0`, `libasound2 | libasound2t64`, `passwd`; `.rpm`: by
+  `libfontconfig1`, `libxkbcommon0`, `libasound2t64 | libasound2 (>= 1.1)`, `passwd`; `.rpm`: by
   soname (`libwayland-client.so.0()(64bit)` and so on, `libc.so.6(GLIBC_2.34)(64bit)`), which
   is what rpm records for the libraries whatever the package is called, plus `Requires(post)`
   `shadow-utils` and `glibc-common` (groupadd, getent). Suggests: HarfBuzz, FriBidi, fonts.
