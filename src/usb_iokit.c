@@ -14,6 +14,7 @@
 #include <IOKit/usb/IOUSBLib.h>
 #include <mach/mach.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -267,6 +268,14 @@ static void completed(void *refcon, IOReturn result, void *arg0) {
     d->done = 1;
 }
 
+// DIMNA_USB_STATS=N: every read of more than 64 bytes that took longer than N microseconds
+// (4000 if N is below 100), or was started more than that after the one before it ended, is reported on stderr with where
+// the time went: `away` (between the reads: the caller's work and sleep), `submit` (starting
+// the transfer), `wait` (until its completion arrived). For finding late blocks.
+static int stats_on = -1;
+static uint64_t stats_last_end, stats_start, stats_limit = 4000;
+static uint64_t now_us(void) { return clock_gettime_nsec_np(CLOCK_UPTIME_RAW) / 1000u; }
+
 static uint64_t now_ms(void) { return clock_gettime_nsec_np(CLOCK_UPTIME_RAW) / 1000000u; }
 
 // Waits up to `ms` for a message on `port` and runs the completion it carries. Returns 0
@@ -301,11 +310,20 @@ IOReturn dimna_usb_bulk(void *handle, uint8_t endpoint, void *buf, uint32_t len,
     if (!pipe) return kIOReturnNotFound;
     claimed *c = &d->ifs[d->ep_if[e]];
 
+    if (stats_on < 0) {
+        const char *v = getenv("DIMNA_USB_STATS");
+        stats_on = v != NULL;
+        if (v && atoi(v) >= 100) stats_limit = (uint64_t)atoi(v);
+        stats_start = now_us();
+    }
+    int stats = stats_on && (endpoint & 0x80) && len > 64;
+    uint64_t t0 = stats ? now_us() : 0;
     d->done = 0;
     IOReturn r = (endpoint & 0x80) ? (*c->intf)->ReadPipeAsync(c->intf, pipe, buf, len, completed, d)
                                    : (*c->intf)->WritePipeAsync(c->intf, pipe, buf, len, completed, d);
     if (r != kIOReturnSuccess) return r;
 
+    uint64_t t1 = stats ? now_us() : 0;
     uint64_t deadline = now_ms() + (uint64_t)(timeout_ms > 0 ? timeout_ms : 0);
     while (!d->done) {
         uint64_t now = now_ms();
@@ -332,6 +350,14 @@ IOReturn dimna_usb_bulk(void *handle, uint8_t endpoint, void *buf, uint32_t len,
         }
         // It completed on its own just before the abort took hold: not a timeout.
         if (d->result == kIOReturnSuccess) *timed_out = 0;
+    }
+    if (stats) {
+        uint64_t t2 = now_us();
+        uint64_t away = stats_last_end ? t0 - stats_last_end : 0;
+        if (away > stats_limit || t2 - t0 > stats_limit)
+            fprintf(stderr, "usb-stats t=%.3f s away %.2f ms submit %.2f ms wait %.2f ms bytes %u%s\n", (double)(t0 - stats_start) / 1e6,
+                    (double)away / 1e3, (double)(t1 - t0) / 1e3, (double)(t2 - t1) / 1e3, d->bytes, *timed_out ? " TIMEOUT" : "");
+        stats_last_end = t2;
     }
     *actual = d->bytes;
     return d->result;

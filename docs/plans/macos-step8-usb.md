@@ -133,6 +133,33 @@ Not answered yet: assumption 5 (unplug) and 6 (no underrun was seen, which is no
 The disk had 43 GB free, less than four hours of recording (41 GB), so the soak runs
 without `--record`.
 
+## The late blocks (2026-11-24, afternoon)
+
+`DIMNA_USB_STATS=N` (`usb_iokit.c`) reports every read slower than N microseconds with
+where the time went. What it showed, the board streaming to `dimna-headless`:
+
+- Machine idle, 420 s: one slow read. All ten cores busy (`yes`), 120 s: none, worst
+  block 3.7 ms. So it is not CPU load.
+- The simulator's display redrawing beside it (`dimna --sim --tearing`), 90 to 120 s:
+  12 to 73 slow reads a run (six runs), blocks up to 21 ms late. Most of the time is
+  `away`: the thread came back 2 to 5 ms late from the pacing sleep of about 0.6 ms
+  (`oni_usb.readStream`).
+- Not cured by `mach_wait_until` in place of `nanosleep` (20 slow reads), nor by the
+  thread's policy: no time-constraint policy 57 and 36, not preemptible 24, a 10 ms
+  constraint 73.
+- With pacing off (`DIMNA_USB_PACE=0`) the thread waits in the USB transfer instead of a
+  timer: 0, 3 and 4 slow reads under the same load, and no more CPU on the Mac (1.17 s
+  against 1.25 s per 10 s; 5,600 transfers a second against 1,470).
+
+So pacing is off by default on macOS (`oni_usb.zig`; Linux unchanged). Why a timer wakes
+this thread late while the screen is busy is not known.
+
+With that, the display on the board for 60 s: the longest wait for a block in a second,
+median 1.9 ms, 95th percentile 2.5 ms (before: 2.0 and 4.4). One stall is left that is
+not in the USB reads (no slow read was reported): about 8 s after the start the audio
+feeder waited 50 ms for a block and the sound had 19 gaps (26.9 ms and 1 gap in the run
+before). Not found yet.
+
 ## Break it on purpose
 
 Without a board, once each: `mapError` sending `kIOReturnExclusiveAccess` to `Io`;

@@ -25,9 +25,14 @@ const aux_size = 8192;
 
 const gpa = std.heap.c_allocator;
 
-/// `DIMNA_USB_PACE=0` turns read pacing off (see `readStream`).
+/// Read pacing (see `readStream`) is on by default on Linux and off on macOS, where the
+/// thread wakes late from the pacing sleep whenever the screen is busy (2 to 5 ms late,
+/// blocks up to 17 ms late, measured 2026-11-24 on an M4; a real-time policy and
+/// `mach_wait_until` made no difference) but promptly from a USB transfer, and where
+/// reading without pacing costs no more CPU. `DIMNA_USB_PACE=0` or `=1` chooses.
+const pace_default = @import("builtin").os.tag != .macos;
 fn pacing() bool {
-    const v = std.c.getenv("DIMNA_USB_PACE") orelse return true;
+    const v = std.c.getenv("DIMNA_USB_PACE") orelse return pace_default;
     return v[0] != '0';
 }
 
