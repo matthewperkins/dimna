@@ -158,7 +158,12 @@ With that, the display on the board for 60 s: the longest wait for a block in a 
 median 1.9 ms, 95th percentile 2.5 ms (before: 2.0 and 4.4). One stall is left that is
 not in the USB reads (no slow read was reported): about 8 s after the start the audio
 feeder waited 50 ms for a block and the sound had 19 gaps (26.9 ms and 1 gap in the run
-before). Not found yet.
+before). Found the same afternoon: it is the audio feeder's own 0.5 ms polling sleep
+(`audio_out.zig`), which on an ordinary thread came back 5 to 58 ms late, 12 times in
+150 s (45 gaps in the sound). With the user-interactive class: 2 late sleeps, 7 ms at
+worst, 5 gaps. With the acquisition thread's time-constraint policy: none, 3 gaps. The
+feeder now asks for that policy on macOS. The display thread's class made no difference
+that two runs each could show (a frame over 30 ms in 0 to 3 of 117 seconds either way).
 
 ## Break it on purpose
 

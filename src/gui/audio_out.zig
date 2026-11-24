@@ -30,6 +30,7 @@
 //! locks.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const dimna = @import("dimna");
 const audio = dimna.audio;
 // The sound device, chosen at compile time (the name is the Linux backend's, kept so that
@@ -248,6 +249,13 @@ pub const AudioOut = struct {
 
     fn feed(self: *AudioOut) !void {
         const gpa = self.gpa;
+        // macOS wakes an ordinary thread late from a short sleep, now and then by tens of
+        // milliseconds (the 0.5 ms sleep below took up to 58 ms with the board streaming,
+        // 2026-11-24: blocks reached the queue that late and the sound had gaps). With the
+        // acquisition thread's scheduling it did not happen in 150 s; the user-interactive
+        // class alone left sleeps of 7 ms. The feeder's work per block is far below what
+        // that policy allows. Linux is left as it was.
+        if (builtin.os.tag == .macos) _ = dimna.os.setThreadRealtime(0);
         var reader = dimna.ring.LossyReader.init(self.ring);
         var blk = try dimna.types.Block.init(gpa, self.nch, self.block_samples);
         defer blk.deinit(gpa);
