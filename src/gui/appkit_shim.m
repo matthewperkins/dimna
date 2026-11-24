@@ -56,6 +56,7 @@ static atomic_int live_windows;
 @property(strong) CAMetalLayer *layer;
 @property(strong) CADisplayLink *link;
 @property BOOL fullscreen;
+@property double cutX0, cutX1, cutBottom;
 - (void)post:(DimnaAwEvent *)ev;
 @end
 
@@ -268,6 +269,20 @@ static uint32_t refreshOf(NSScreen *screen) {
         [o post:&ev];
     }
 }
+// The fullscreen display sits above the menu bar's level, which is above every other
+// application's windows too. While dimna is not the active application it steps down to
+// the ordinary level, so that Cmd-Tab shows the application switched to; and back up when
+// dimna is active again.
+- (void)applicationDidResignActive:(NSNotification *)note {
+    (void)note;
+    for (DimnaWindowObj *o in windows)
+        if (o.fullscreen) o.window.level = NSNormalWindowLevel;
+}
+- (void)applicationDidBecomeActive:(NSNotification *)note {
+    (void)note;
+    for (DimnaWindowObj *o in windows)
+        if (o.fullscreen) o.window.level = NSMainMenuWindowLevel + 1;
+}
 - (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication *)app {
     (void)app;
     [self closeAll:nil];
@@ -291,6 +306,10 @@ static void ensureApp(void) {
     NSMenuItem *quit = [[NSMenuItem alloc] initWithTitle:@"Quit dimna" action:@selector(closeAll:)
                                            keyEquivalent:@"q"];
     quit.target = app_delegate;
+    // Hide (Cmd-H) and Minimize (Cmd-M) go to AppKit's own actions.
+    [app_menu addItem:[[NSMenuItem alloc] initWithTitle:@"Hide dimna" action:@selector(hide:) keyEquivalent:@"h"]];
+    [app_menu addItem:[[NSMenuItem alloc] initWithTitle:@"Minimize" action:@selector(performMiniaturize:) keyEquivalent:@"m"]];
+    [app_menu addItem:[NSMenuItem separatorItem]];
     [app_menu addItem:quit];
     app_item.submenu = app_menu;
     NSApp.mainMenu = bar;
@@ -569,7 +588,16 @@ int dimna_aw_fullscreen(DimnaAwWindow *w, const char *name) {
           // What the latency probe found quickest: a borderless window over the whole
           // screen, above the menu bar (tools/metal-latency, "--fullscreen").
           o.fullscreen = YES;
-          o.window.styleMask = NSWindowStyleMaskBorderless;
+          // Borderless, but it can still be put in the Dock (Cmd-M).
+          o.window.styleMask = NSWindowStyleMaskBorderless | NSWindowStyleMaskMiniaturizable;
+          // The camera housing: the strip the menu bar would have had, between the two
+          // areas of it that the screen does show.
+          if (s.safeAreaInsets.top > 0) {
+              double scale = s.backingScaleFactor;
+              o.cutX0 = NSWidth(s.auxiliaryTopLeftArea) * scale;
+              o.cutX1 = (NSWidth(s.frame) - NSWidth(s.auxiliaryTopRightArea)) * scale;
+              o.cutBottom = s.safeAreaInsets.top * scale;
+          }
           // A titled window keeps its shadow when it becomes borderless, and a window with
           // a shadow is composited: measured, a refresh more with sync on (48.8 ms against
           // 16.3) until the shadow is off.
@@ -586,6 +614,25 @@ int dimna_aw_fullscreen(DimnaAwWindow *w, const char *name) {
       }
     });
     return found;
+}
+
+int dimna_aw_top_cut(DimnaAwWindow *w, double cut[3]) {
+    DimnaWindowObj *o = (__bridge DimnaWindowObj *)w;
+    if (!o.fullscreen || o.cutBottom <= 0 || o.cutX1 <= o.cutX0) return 0;
+    cut[0] = o.cutX0;
+    cut[1] = o.cutX1;
+    cut[2] = o.cutBottom;
+    return 1;
+}
+
+void dimna_aw_set_icon(const void *bytes, size_t len) {
+    static atomic_int set;
+    if (atomic_exchange(&set, 1)) return;
+    NSData *data = [NSData dataWithBytes:bytes length:len];
+    dispatch_async(dispatch_get_main_queue(), ^{
+      NSImage *image = [[NSImage alloc] initWithData:data];
+      if (image) NSApp.applicationIconImage = image;
+    });
 }
 
 void dimna_aw_want_frame(DimnaAwWindow *w) {

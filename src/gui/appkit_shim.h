@@ -115,6 +115,13 @@ void dimna_aw_set_cursor(DimnaAwWindow *w, int cursor);
 // The window covers screen `name` (case ignored), borderless, above the menu bar, with the
 // menu bar and the Dock hidden while dimna is the active application. 0: no such screen.
 int dimna_aw_fullscreen(DimnaAwWindow *w, const char *name);
+// The part of the top edge the fullscreen window's screen does not show (a laptop's camera
+// housing): `cut` gets its left edge, right edge and depth in pixels of the window. 0: the
+// window is not fullscreen, or its screen has none.
+int dimna_aw_top_cut(DimnaAwWindow *w, double cut[3]);
+// The application's picture in the Dock and the application switcher, from an image
+// file's bytes (PNG). Any thread; the first call counts.
+void dimna_aw_set_icon(const void *bytes, size_t len);
 // The display link asks for one refresh (`DIMNA_AW_FRAME`) after this call. Any thread.
 void dimna_aw_want_frame(DimnaAwWindow *w);
 // On the thread drawing: asks `drawable` (an id<CAMetalDrawable>) to report when it

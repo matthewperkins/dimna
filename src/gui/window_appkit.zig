@@ -410,6 +410,9 @@ pub const Window = struct {
         }
         self.handle = handle;
         self.layer = c.dimna_aw_layer(handle);
+        // The Dock's and the application switcher's picture (a plain executable has none).
+        const icon = @embedFile("dimna-icon.png");
+        c.dimna_aw_set_icon(icon.ptr, icon.len);
         self.width = info.width_px;
         self.height = info.height_px;
         self.num_screens = info.num_screens;
@@ -438,6 +441,15 @@ pub const Window = struct {
         @memcpy(buf[0..monitor.len], monitor);
         buf[monitor.len] = 0;
         return c.dimna_aw_fullscreen(self.handle, &buf) != 0;
+    }
+
+    /// The part of the top edge the screen does not show under this fullscreen window (the
+    /// camera housing of a Mac laptop): left edge, right edge and depth in pixels. Null
+    /// when the window is not fullscreen or its screen has none.
+    pub fn topCut(self: *const Window) ?[3]f32 {
+        var cut: [3]f64 = undefined;
+        if (c.dimna_aw_top_cut(self.handle, &cut) == 0) return null;
+        return .{ @floatCast(cut[0]), @floatCast(cut[1]), @floatCast(cut[2]) };
     }
 
     /// Nothing to declare on macOS.

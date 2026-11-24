@@ -21,6 +21,7 @@
 //! measured: docs/latency.md. Scripted input for tests (--script): script.zig.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const dimna = @import("dimna");
 const window_mod = @import("window.zig");
 const Window = window_mod.Window;
@@ -216,9 +217,13 @@ fn runDisplay(init: std.process.Init, env: *const Env, args: *const Args, config
     try win.init("dimna", app_id, env.key_debug);
     defer win.deinit();
     const fullscreen = args.monitor.len > 0;
+    // The camera housing's cut-out in a Mac laptop's screen, which a fullscreen window covers.
+    var top_cut: ?[3]f32 = null;
     if (fullscreen) {
         if (win.fullscreenOn(args.monitor)) {
             log.info("fullscreen on {s}", .{args.monitor});
+            if (builtin.os.tag == .macos) top_cut = win.topCut();
+            if (top_cut) |cut| log.info("the screen's cut-out: {d:.0} to {d:.0} px, {d:.0} px deep; titles keep clear of it", .{ cut[0], cut[1], cut[2] });
         } else {
             log.err("no monitor named '{s}'; there are:", .{args.monitor});
             var i: usize = 0;
@@ -264,6 +269,7 @@ fn runDisplay(init: std.process.Init, env: *const Env, args: *const Args, config
     // The parts the loop uses all the time. They stay at these addresses across a restart;
     // their contents, and pl.fs, pl.nch and pl.bs, change.
     const display = &pl.display;
+    if (top_cut) |cut| display.top_cut = .{ .x0 = cut[0], .x1 = cut[1], .bottom = cut[2] };
     const layout = &pl.layout;
     const acq = &pl.acq;
     const ring = &pl.ring;
@@ -283,9 +289,12 @@ fn runDisplay(init: std.process.Init, env: *const Env, args: *const Args, config
 
     try pl.run();
 
-    // The control window, on its own thread (see control.zig).
+    // The control window, on its own thread (see control.zig). On a Mac's screen (two
+    // pixels to the point) the default 14 px is 7 points, small for a window that is read
+    // and clicked: 20 px there unless the config file says what `font_px` is.
+    const control_font_px: u32 = if (builtin.os.tag == .macos and !args.font_px_given) 20 else args.font_px;
     var shared: control.Shared = .{};
-    var control_cfg: control.Config = .{ .gpa = gpa, .shared = &shared, .display_gpu = &gpu, .font_px = args.font_px, .env = env };
+    var control_cfg: control.Config = .{ .gpa = gpa, .shared = &shared, .display_gpu = &gpu, .font_px = control_font_px, .env = env };
     // Which of its sections are open: from the view file, then as the control window
     // reports them; saved with the panels by "Save view".
     var control_view = dimna.control_view.ControlView.read(args.views_doc);

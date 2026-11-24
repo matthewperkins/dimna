@@ -381,6 +381,10 @@ pub const Display = struct {
     /// The font's line height when it was last drawn (0 before, and without a font): the
     /// header strip of a triggered panel is made from it (`Panel.bodyRect`).
     line_h: f32 = 0,
+    /// A part of the top edge that the screen does not show (a Mac laptop's camera housing
+    /// under a fullscreen window), in pixels: a panel's title that would run under it is
+    /// drawn at the panel's right instead. Null: none.
+    top_cut: ?TopCut = null,
     /// The ADC panels are hidden (`~`), and the panels beside them stretched over them. Not
     /// saved.
     adc_hidden: bool = false,
@@ -1104,7 +1108,7 @@ pub const Display = struct {
         self.size = .{ width, height };
         self.line_h = @round(batch.font.line_height);
         batch.clear();
-        var o: Output = .{ .draws = draws, .fills = fills, .batch = batch, .line_h = @round(batch.font.line_height) };
+        var o: Output = .{ .draws = draws, .fills = fills, .batch = batch, .line_h = @round(batch.font.line_height), .top_cut = self.top_cut };
         const scene: Scene = .{ .surface = surface, .layout = layout, .newest = newest, .review = review, .notes = notes };
         for (self.set.items[0..self.set.len], 0..) |*p, i| {
             if (!p.hidden) self.drawPanel(&o, &scene, p, i);
@@ -1330,7 +1334,10 @@ pub const Display = struct {
 
 /// What one frame is drawn into: the trace draws, the fills and the batch of text and
 /// rectangles, each in the order drawn (later is on top).
+pub const TopCut = struct { x0: f32, x1: f32, bottom: f32 };
+
 const Output = struct {
+    top_cut: ?TopCut = null,
     draws: *[max_draws]gpu_mod.PanelDraw,
     fills: *[max_fills]gpu_mod.Fill,
     batch: *font.Batch,
@@ -1676,7 +1683,11 @@ fn panelTitle(o: *Output, p: *const Panel, r: panels_mod.Rect, in_review: bool, 
         });
     // A lane strip is short: its title goes to the right, clear of the lane labels. A
     // triggered panel's too, in the strip kept for it above the rows.
-    const right = p.kind == .ttl or p.mode == .triggered;
+    var right = p.kind == .ttl or p.mode == .triggered;
+    if (!right) if (o.top_cut) |cut| {
+        // Under the screen's cut-out from the left: to the right, where the user can read it.
+        right = title_y < cut.bottom and px + 8 < cut.x1 and px + 8 + batch.font.width(title) > cut.x0;
+    };
     var x = if (right) px + @as(f32, @floatFromInt(r.w)) - batch.font.width(title) - 8 else px + 8;
     // A triggered panel's title wider than the panel starts at its left edge and runs off
     // the right, rather than off the left (where the display's edge would cut its start).
@@ -3585,6 +3596,28 @@ test "titles: the short label, the scale without a space, none when every row ha
     try testing.expect(lineWith(text, "text 8 6 ", "\"A   2.00 s   400µV/row   300-6000 Hz   CAR\"") != null);
     try testing.expect(lineWith(text, "text 508 6 ", "\"B   500 ms   400µV/row   CAR\"") != null);
     try testing.expect(std.mem.indexOf(u8, text, "Port A") == null);
+}
+
+test "a title that would run under the screen's cut-out is drawn at the panel's right" {
+    const st = try testing.allocator.create(FrameState);
+    defer testing.allocator.destroy(st);
+    frameState(st, 0);
+    // 1000 px wide; panel B starts at 500. A cut-out from 450 to 600, 30 px deep, covers the
+    // start of B's title (at 508) and none of A's (8 to 8 + 8 * 42).
+    st.display.top_cut = .{ .x0 = 450, .x1 = 600, .bottom = 30 };
+    const text = try frameText(testing.allocator, st);
+    defer testing.allocator.free(text);
+    try testing.expect(lineWith(text, "text 8 6 ", "\"A   2.00 s   400µV/row   300-6000 Hz   CAR\"") != null);
+    const b_title = "B   500 ms   400µV/row   CAR";
+    const chars = b_title.len - 1; // µ is two bytes
+    var want_buf: [32]u8 = undefined;
+    const want = try std.fmt.bufPrint(&want_buf, "text {d} 6 ", .{1000 - 8 - 8 * chars});
+    try testing.expect(lineWith(text, want, b_title) != null);
+    // A cut-out that B's title is clear of (shallower than the title's line): as before.
+    st.display.top_cut = .{ .x0 = 450, .x1 = 600, .bottom = 6 };
+    const text2 = try frameText(testing.allocator, st);
+    defer testing.allocator.free(text2);
+    try testing.expect(lineWith(text2, "text 508 6 ", b_title) != null);
 }
 
 test "a triggered panel: the title ends 8 px from the right edge, without the window, above the rows" {

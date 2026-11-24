@@ -482,6 +482,7 @@ fn addMacGui(
         const appkit_c_mod = appkit_c.createModule();
         for ([_]*std.Build.Module{ gui_mod, gui_test_mod }, [_]bool{ false, true }) |m, is_test| {
             m.addImport("appkit_c", appkit_c_mod);
+            m.addAnonymousImport("dimna-icon.png", .{ .root_source_file = b.path("packaging/icon/dimna-256.png") });
             m.addCSourceFile(.{
                 .file = b.path("src/gui/appkit_shim.m"),
                 .flags = if (is_test) &.{ "-fobjc-arc", "-DDIMNA_APPKIT_TEST" } else &.{"-fobjc-arc"},

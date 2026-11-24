@@ -52,6 +52,8 @@ pub const Args = struct {
     /// Font for labels: a fontconfig name and a size in pixels.
     font: []const u8 = "sans-serif",
     font_px: u32 = 14,
+    /// The config file gave `font_px` (otherwise macOS draws the control window larger).
+    font_px_given: bool = false,
     /// The view file (panel settings saved from the control window), applied on top of the
     /// config's panels.
     views_doc: dimna.toml.Document = .{ .entries = &.{} },
@@ -161,6 +163,7 @@ pub fn applyConfig(a: *Args, doc: dimna.toml.Document) void {
             a.font = e.value.string;
         } else if (std.mem.eql(u8, e.key, "font_px") and e.value == .number and e.value.number >= 6 and e.value.number <= 64) {
             a.font_px = @intFromFloat(e.value.number);
+            a.font_px_given = true;
         } else if (std.mem.eql(u8, e.key, "tiles") and e.value == .boolean) {
             a.tiles = e.value.boolean;
         } else if (std.mem.eql(u8, e.key, "audio") and e.value == .boolean) {
