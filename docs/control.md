@@ -85,9 +85,19 @@ The control window's Headstages section changes them for the run:
 - **Save as default** writes the settings in use into the config's `[board]` table (only
   that table is rewritten; the file is replaced by rename, so a config that is a symlink
   becomes a plain file).
-- **On quitting** (q or Esc on the display, or Quit), if the settings differ from what the
-  config gave at launch, the control window lists the differences and asks: save as
-  default and quit, quit without saving, or cancel. A second q quits without saving.
+- **On quitting** (Ctrl+Q or Esc on the display, closing the display window, or Quit; plain
+  `q` does not quit), if the settings differ from what the config gave at launch, the
+  control window lists the differences and asks: save as default and quit, quit without
+  saving, or cancel. A second request quits without saving.
+- **While recording, nothing quits without asking.** The control window says a recording is
+  running and offers Keep recording (the default) or Stop recording and quit; only those
+  buttons answer, and asking to quit again changes nothing. Stop recording and quit closes
+  the recording properly, then asks about unsaved settings as above. If the control window
+  has been closed, a notice over the display says so instead, and a second Ctrl+Q (or Esc)
+  while it is up, within 8 s, stops the recording and quits. The display has no signal
+  handler: a `SIGTERM` or `SIGINT` (a shutdown, say) ends it at once without closing the
+  recording, which then keeps what was synced (at most the last second is lost) and lacks
+  `meta.toml`'s `[final]` section, as after a crash.
 
 ## Alarms
 

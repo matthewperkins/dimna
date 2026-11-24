@@ -49,7 +49,8 @@ ADC panel. The ADC samples are still acquired, recorded and fed to the display m
 
 Without `[[panel]]` tables there is one panel per headstage, side by side. Wheel (Y scale),
 Alt+wheel or pinch (time base) and the keys `- = [ ] r` act on the panel under the pointer,
-marked by a bar along its top; `q` quits. **`?` shows every key and mouse action** of the
+marked by a bar along its top; Ctrl+Q or Esc quits (plain `q` does not; while recording
+it asks first, see docs/control.md). **`?` shows every key and mouse action** of the
 display and of the tile window in a panel over the display (Esc or `?` closes it);
 `dimna --help` prints the display's.
 Ctrl+wheel scales only the row under the pointer; that row's label then shows its own
