@@ -81,6 +81,25 @@ const nowNs = dimna.clock.nowNs;
 /// PipeWire's ALSA plugin, which reads the C library's environment.
 extern "c" fn setenv(name: [*:0]const u8, value: [*:0]const u8, overwrite: c_int) c_int;
 
+/// Set by SIGTERM, SIGINT or SIGHUP (a shutdown, Ctrl-C in the terminal, the terminal
+/// closed): the loop then ends as if quitting, so a recording in progress is closed
+/// properly. Not asked about, unlike Ctrl+Q: whoever sends the signal has decided. The
+/// handler is reset by its first signal, so a second one ends dimna at once.
+var stop_signal: std.atomic.Value(std.posix.SIG) = .init(@fromBackingInt(@intCast(0)));
+
+fn onStopSignal(sig: std.posix.SIG) callconv(.c) void {
+    stop_signal.store(sig, .release);
+}
+
+fn catchStopSignals() void {
+    const act: std.posix.Sigaction = .{
+        .handler = .{ .handler = onStopSignal },
+        .mask = std.posix.sigemptyset(),
+        .flags = std.posix.SA.RESTART | std.posix.SA.RESETHAND,
+    };
+    for ([_]std.posix.SIG{ .TERM, .INT, .HUP }) |sig| std.posix.sigaction(sig, &act, null);
+}
+
 pub fn main(init: std.process.Init) !u8 {
     const io = init.io;
     const gpa = init.gpa;
@@ -379,7 +398,12 @@ fn runDisplay(init: std.process.Init, env: *const Env, args: *const Args, config
     var quit_confirm_until_ns: i128 = 0;
     // Runs on when acquisition ends on an error: the alarm says so, and a recording in
     // progress is kept until it is stopped.
+    catchStopSignals();
     while (!win.closed) {
+        if (@backingInt(stop_signal.load(.acquire)) != 0) {
+            log.info("signal {t}: quitting{s}", .{ stop_signal.load(.acquire), if (recording.active()) "; the recording is closed first" else "" });
+            break;
+        }
         // Wake for events, for new samples (every 2 ms), or when the frame is due.
         const wait_ms = pacer.waitMs(nowNs());
         try win.pump(wait_ms);

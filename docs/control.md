@@ -94,10 +94,11 @@ The control window's Headstages section changes them for the run:
   buttons answer, and asking to quit again changes nothing. Stop recording and quit closes
   the recording properly, then asks about unsaved settings as above. If the control window
   has been closed, a notice over the display says so instead, and a second Ctrl+Q (or Esc)
-  while it is up, within 8 s, stops the recording and quits. The display has no signal
-  handler: a `SIGTERM` or `SIGINT` (a shutdown, say) ends it at once without closing the
-  recording, which then keeps what was synced (at most the last second is lost) and lacks
-  `meta.toml`'s `[final]` section, as after a crash.
+  while it is up, within 8 s, stops the recording and quits.
+- **`SIGTERM`, `SIGINT` or `SIGHUP`** (a shutdown, Ctrl-C in the terminal that started dimna,
+  that terminal closed) quit at once, without asking: whoever sends the signal has decided.
+  The recording is closed properly first, as with Stop recording. A second signal ends
+  dimna immediately, in case closing hangs.
 
 ## Alarms
 
