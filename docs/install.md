@@ -274,8 +274,8 @@ Each is also left unpacked beside it. A tarball holds `bin/dimna`, `bin/dimna-he
 `packaging/` (the files named in `build.zig`'s `release_packaging`: `install-user.sh`, the udev
 rule, the limits file, the menu entry, its launcher and icons, the simulator config,
 `nfpm.yaml` and the package scripts, `ci-test-install.sh`), `tools/dimna_read.py`,
-`README.md`, `licenses/` (liboni, stb, zig-wayland, vulkan-zig; **dimna's own licence is
-missing**: there is none yet), `BUILD-INFO`, `COMMIT` (`git describe`) and `CHECK`.
+`README.md`, `licenses/` (dimna's own, the GPL version 3, and those of liboni, stb,
+zig-wayland and vulkan-zig), `BUILD-INFO`, `COMMIT` (`git describe`) and `CHECK`.
 `<version>` is the one in `build.zig.zon`. Using one: "A tarball", above.
 
 **Testing one.** `packaging/ci-test-install.sh run <unpacked>/bin` (or `tarball FILE.tar.gz`)
