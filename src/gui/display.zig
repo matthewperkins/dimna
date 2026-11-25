@@ -1833,49 +1833,63 @@ fn helpPanel(o: *Output, width: u32, height: u32) void {
     const pad: f32 = 12;
     const title = i18n.text(.help_title);
     const headings = [2][]const u8{ i18n.text(.help_heading_display), i18n.text(.help_heading_tiles) };
+    const mono = helpMono(title, headings);
     // Per column: how wide its keys and its descriptions are, and how many lines.
     var key_w: [2]f32 = @splat(0);
     var what_w: [2]f32 = @splat(0);
     var lines: [2]usize = @splat(0);
     for (key_help) |k| {
         const c = @backingInt(k.window);
-        key_w[c] = @max(key_w[c], helpWidth(f, i18n.textOf(k.key)));
-        what_w[c] = @max(what_w[c], helpWidth(f, i18n.textOf(k.what)), helpWidth(f, headings[c]));
+        key_w[c] = @max(key_w[c], helpWidth(f, i18n.textOf(k.key), mono));
+        what_w[c] = @max(what_w[c], helpWidth(f, i18n.textOf(k.what), mono), helpWidth(f, headings[c], mono));
         lines[c] += 1;
     }
     const sp = f.widthMono("  ");
     const col_w = [2]f32{ key_w[0] + sp + what_w[0], key_w[1] + sp + what_w[1] };
     const gap = f.widthMono("    ");
-    const w = @max(col_w[0] + gap + col_w[1], helpWidth(f, title)) + 2 * pad;
+    const w = @max(col_w[0] + gap + col_w[1], helpWidth(f, title, mono)) + 2 * pad;
     const h = @as(f32, @floatFromInt(@max(lines[0], lines[1]) + 3)) * line_h + 2 * pad;
     const x0 = @round(@max(0, (@as(f32, @floatFromInt(width)) - w) / 2));
     const y0 = @round(@max(0, (@as(f32, @floatFromInt(height)) - h) / 2));
     batch.rect(x0, y0, w, h, theme.help_backing);
-    _ = helpText(batch, x0 + pad, y0 + pad, title, theme.help_title);
+    _ = helpText(batch, x0 + pad, y0 + pad, title, theme.help_title, mono);
     const col_x = [2]f32{ x0 + pad, x0 + pad + col_w[0] + gap };
     var row: [2]usize = @splat(0);
-    for (headings, col_x) |heading, x| _ = helpText(batch, x, y0 + pad + 2 * line_h, heading, theme.help_title);
+    for (headings, col_x) |heading, x| _ = helpText(batch, x, y0 + pad + 2 * line_h, heading, theme.help_title, mono);
     for (key_help) |k| {
         const c = @backingInt(k.window);
         const y = y0 + pad + @as(f32, @floatFromInt(row[c] + 3)) * line_h;
-        _ = helpText(batch, col_x[c], y, i18n.textOf(k.key), theme.help_key);
-        _ = helpText(batch, col_x[c] + key_w[c] + sp, y, i18n.textOf(k.what), theme.help_text);
+        _ = helpText(batch, col_x[c], y, i18n.textOf(k.key), theme.help_key, mono);
+        _ = helpText(batch, col_x[c] + key_w[c] + sp, y, i18n.textOf(k.what), theme.help_text, mono);
         row[c] += 1;
     }
 }
 
-/// The key summary's text: ASCII in the fixed-width font, so English's columns line up;
-/// any other in the ordinary font, which shapes and has every script.
-fn helpText(batch: *font.Batch, x: f32, y: f32, string: []const u8, colour: font.Colour) f32 {
-    return if (isAscii(string)) batch.textMono(x, y, string, colour) else batch.text(x, y, string, colour);
+/// The key summary's text: in the fixed-width font (`mono`), so that its columns line up,
+/// or in the ordinary font, which shapes and has every script. One font for the whole
+/// summary (`helpMono`): a line in another font than its neighbours looks like a mistake.
+fn helpText(batch: *font.Batch, x: f32, y: f32, string: []const u8, colour: font.Colour, mono: bool) f32 {
+    return if (mono) batch.textMono(x, y, string, colour) else batch.text(x, y, string, colour);
 }
 
-fn helpWidth(f: *const font.Font, string: []const u8) f32 {
-    return if (isAscii(string)) f.widthMono(string) else f.width(string);
+fn helpWidth(f: *const font.Font, string: []const u8, mono: bool) f32 {
+    return if (mono) f.widthMono(string) else f.width(string);
 }
 
-fn isAscii(string: []const u8) bool {
-    for (string) |c| if (c >= 0x80) return false;
+/// Whether the key summary is drawn in the fixed-width font: only if every one of its
+/// strings is Latin-1 (what the fixed-width glyphs cover: English, German, French,
+/// Portuguese). A language with any other character has the whole summary in the ordinary
+/// font.
+fn helpMono(title: []const u8, headings: [2][]const u8) bool {
+    if (!isLatin1(title)) return false;
+    for (headings) |h| if (!isLatin1(h)) return false;
+    for (key_help) |k| if (!isLatin1(i18n.textOf(k.key)) or !isLatin1(i18n.textOf(k.what))) return false;
+    return true;
+}
+
+fn isLatin1(string: []const u8) bool {
+    var it: font.Codepoints = .{ .bytes = string };
+    while (it.next()) |cp| if (cp > 0xff) return false;
     return true;
 }
 

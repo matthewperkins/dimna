@@ -23,9 +23,11 @@ const last_cp = 255;
 /// and the small triangles before a heading that opens (closed) or closes (open).
 const extra_cps = [_]u21{ 0x03C3, 0x2013, 0x2192, 0x266A, 0x25B8, 0x25BE };
 const white_block = 4;
-/// The fixed-width glyphs: printable ASCII.
+/// The fixed-width glyphs: Latin-1 (printable ASCII, and the accented letters and signs
+/// above it, "µ" among them), so that a key summary in English, German, French or
+/// Portuguese is in one font throughout.
 const mono_first = 32;
-const mono_last = 126;
+const mono_last = 255;
 
 pub const Vertex = extern struct {
     pos: [2]f32,
@@ -479,9 +481,11 @@ test "fixed-width text uses the fixed-width glyphs where there are, the ordinary
     f.has_mono = true;
     try std.testing.expectEqual(27, f.widthMono("abc"));
     try std.testing.expectEqual(21, f.width("abc"));
-    // Beyond ASCII ("µ"), and an ASCII character the face lacked ('b'): ordinary.
+    // Latin-1 beyond ASCII ("µ") is fixed-width too.
+    try std.testing.expectEqual(27, f.widthMono("a\u{b5}c"));
+    // Beyond Latin-1 ("ł"), and a character the face lacked ('b'): ordinary.
     f.mono['b' - mono_first] = .{};
-    try std.testing.expectEqual(9 + 7 + 9, f.widthMono("a\u{b5}c"));
+    try std.testing.expectEqual(9 + f.width("\u{142}") + 9, f.widthMono("a\u{142}c"));
     try std.testing.expectEqual(9 + 7 + 9, f.widthMono("abc"));
     // Drawn: the quads' atlas positions say which glyph each is, the pen moves by its
     // advance.
