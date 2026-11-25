@@ -106,6 +106,55 @@ Each is one agent's work with its own plan file, evidence and "done means".
    languages on the display, the control window and the tiles looked at by the owner;
    the benchmark; then the default switched, the docs, and decisions 3 and 4 carried out.
 
+## What step 2 found (2026-11-24; `tools/coretext-probe/`, its `results/`)
+
+Measured on the owner's Mac (macOS 27); the lead rebuilt the probe and saw the same for
+the line layouts and the optical size. Timings vary by tens of per cent between runs.
+
+- **The seam sits a line higher on the Mac.** Core Text gives no bidi levels and no
+  visual order apart from a laid-out line (only ICU symbols the SDK does not publish
+  would). A `CTTypesetter` line, given the string with U+2066/U+2069 around the Latin and
+  digit stretches and a base writing direction in its paragraph style, does bidi, shaping
+  and fallback together and keeps dimna's rules: "300-6000" in order, digits European,
+  the direction forced. So the interface's shaping entry is "a string, isolated by the
+  shared code, with a base direction, laid out"; the FreeType backend does bidi and runs
+  inside it. Step 1 has been told.
+- **Glyphs**: a run's glyph ids are the font file's (they equal FreeType's); coverage
+  comes from `CTFontDrawGlyphs` into an alpha-only 8-bit `CGBitmapContext` with font
+  smoothing off (smoothing on adds 17 to 21 % ink). Core Text does not hint: against
+  unhinted FreeType the bitmaps differ by 1 to 2 of 255 on average at 20 to 24 px, against
+  dimna's hinted ones by 11 to 38 at 14 px. Advances are fractional (FreeType's hinted
+  ones are whole pixels). So the text will look softer, not the same.
+- **The system font is a variable font and Core Text picks its optical size from the
+  point size**: 17 at 14 px, where dimna today draws the file's default (28). At 14 px
+  "Port A 300-6000 Hz" is 134 px wide against 128. `kCTFontOpticalSizeAttribute` "none"
+  gives today's widths.
+- **Fallbacks**: by itself Core Text takes Persian from SF Arabic and Chinese from PingFang
+  UI SC (which FreeType cannot open at all), the note U+266A from Helvetica Neue, and
+  the other five symbols from the system font. With a cascade list it uses dimna's named
+  fonts (Geeza Pro, Hiragino Sans GB). It does not scale a fallback to the primary's
+  capitals; the heights needed to do so are there.
+- **A name that is not installed** gives Helvetica, without an error or a download (with
+  the two "prevent" options set).
+- **Cost**: a 40-character Latin line about 7 us, a Persian one 31 to 38 us, a Chinese one
+  17 to 20 us (HarfBuzz and FriBidi: about 3 to 6); a new glyph 8 to 10 us (FreeType 6 to
+  8), with single outliers of 1 to 4 ms; a font made from a file 3 ms each time, by name
+  or the UI font far less. dimna lays each string out once (the cache).
+- **Threads**: three threads, each with its own font, line and bitmap context, ran ten
+  seconds without a wrong result; the Core Text headers promise thread safety.
+- **Isolate marks** can come back as a zero-width glyph at the start of a line.
+
+What the lead will build to unless the owner says otherwise (each follows from "use what
+macOS uses", decisions 1 and 2):
+
+- the system font **with** Core Text's optical sizing (labels about 5 % wider than today
+  at 14 px; the layouts are made from measured widths, so they follow);
+- Core Text's own fallbacks (SF Arabic, PingFang), no named list and no scaling of
+  fallbacks on the Mac; a `font` named in the config is still honoured;
+- coverage with font smoothing off; glyphs at whole-pixel pens with advances rounded, as
+  today, so that one bitmap per glyph serves every position;
+- fonts by name or as the UI font, never from a file.
+
 ## Tests: looser where a real font is involved
 
 The owner's ruling (2026-11-24): slight differences in appearance across the systems are
