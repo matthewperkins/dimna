@@ -124,6 +124,10 @@ pub const Acquisition = struct {
     /// Held from `start` to `join`: the machine does not sleep when idle (macOS; nothing
     /// on Linux, where it takes no bytes).
     awake: os.Awake = .{},
+    /// False: the machine is not asked to stay awake. For a test that runs in a forked
+    /// child: on macOS the request goes through Core Foundation, which may not be used
+    /// for the first time after a fork (the child is killed).
+    keep_awake: bool = true,
 
     commands: events.Spsc(Command, 32) = .{},
     /// Applied settings changes, for the recorder (events.tsv). Single consumer.
@@ -151,7 +155,7 @@ pub const Acquisition = struct {
         self.requested = self.source.settings();
         self.in_use.publish(&self.requested);
         try self.source.start(self.health);
-        self.awake = os.keepAwake();
+        self.awake = if (self.keep_awake) os.keepAwake() else .{};
         self.thread = std.Thread.spawn(.{}, run, .{self}) catch |e| {
             os.allowSleep(&self.awake);
             self.source.stop() catch {};

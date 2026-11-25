@@ -180,8 +180,11 @@ fn expectNeverTorn(comptime E: type, comptime len: usize) !void {
     var last: E = 0;
     // A fixed time rather than a number of reads: with the writer never pausing, many
     // reads give up (see `read`), and how many depends on the machine.
+    // On a busy machine (the tests run beside compiles) the reader may get few whole reads
+    // in that time, so it goes on, for at most 20 s, until it has had enough of them.
     const until = clock.nowNs() + 500 * std.time.ns_per_ms;
-    while (clock.nowNs() < until) {
+    const give_up = until + 20 * std.time.ns_per_s;
+    while (clock.nowNs() < until or (reads < 10 and clock.nowNs() < give_up)) {
         if (!ctx.p.read(&out, &seen)) continue;
         reads += 1;
         for (out.f) |x| {

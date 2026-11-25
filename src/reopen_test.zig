@@ -203,7 +203,7 @@ fn scenario(root: []const u8) !void {
     defer ring.deinit(gpa);
     const me = ring.addConsumer().?;
     var health: types.Health = .{};
-    var acq: Acquisition = .{ .io = io, .source = .{ .sim = &sim }, .ring = &ring, .health = &health, .scratch = try .init(gpa, nch, settings.block_samples) };
+    var acq: Acquisition = .{ .io = io, .source = .{ .sim = &sim }, .ring = &ring, .health = &health, .scratch = try .init(gpa, nch, settings.block_samples), .keep_awake = false };
     defer acq.scratch.deinit(gpa);
     const info: record.Info = .{ .layout = layout, .settings = settings, .gateware = @splat(0), .board_id = 0, .cable_delay = @splat(0), .board_kind = "simulated", .session = true };
 
