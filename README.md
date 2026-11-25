@@ -132,6 +132,26 @@ Ephys product.
 | [docs/plans/](docs/plans/) | the plans the work was delegated from, and their rules of evidence; `macos-port.md` is the Mac port's record |
 | [docs/readability-review.md](docs/readability-review.md), [docs/review-as-claude.md](docs/review-as-claude.md) | two code reviews, and what was done about them |
 
+## Built on Open Ephys's work
+
+dimna exists because the Open Ephys team publishes its hardware, gateware and software
+openly.
+
+The ONI protocol in dimna is spoken entirely by [liboni](https://github.com/open-ephys/liboni)
+(MIT; vendored in `vendor/liboni`), written by Jonathan Newman, Aarón Cuevas López and
+contributors, and called directly from Zig. Its driver interface is what let dimna replace
+FTDI's closed USB library with its own driver without touching the protocol code. Its
+FT600 driver, largely Aarón Cuevas López's work, was both the template for that driver
+and the reference it was tested against; it still runs in dimna on Linux as
+`--driver d3xx`.
+
+The board code (`src/board.zig`, `src/registers.zig`) is a port of the Open Ephys
+[acquisition-board plugin](https://github.com/open-ephys-plugins/rhythm-oni-plugin): every
+register write, its order and its timing follow it, so the board and the Intan chips are
+set up exactly as the Open Ephys GUI sets them up.
+
+dimna is not an Open Ephys product, and its faults are its own.
+
 ## Licence
 
 Copyright (C) 2026 Matthew Perkins. dimna is free software: you can redistribute it and
