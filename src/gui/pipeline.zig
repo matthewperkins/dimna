@@ -132,6 +132,26 @@ pub const Pipeline = struct {
         return refused;
     }
 
+    /// After acquisition ended on a read error: stops what is left (the tiles, the audio
+    /// monitor, the ended thread and the source), has the source opened again with
+    /// `settings` as at launch (`Source.reopen`), checks that the data has the shape it had,
+    /// and makes everything anew as `restart` does (the new run's sample numbers start at
+    /// 0 again). Does not start: the caller attaches a recording to the new ring first,
+    /// then calls `run`. On an error nothing was made anew (the old parts are still whole)
+    /// and nothing runs; it may be called again.
+    pub fn reopen(self: *Pipeline, settings: dimna.types.Settings) !void {
+        self.halt();
+        const before = self.layout;
+        try self.source.reopen(settings);
+        if (!dimna.acquisition.sameShape(self.source.layout(), before)) {
+            log.err("the board came back with another layout (headstages, channels or rate); not restarting", .{});
+            return error.LayoutChanged;
+        }
+        const old_set = self.display.set;
+        try self.assemble(&old_set, self.display.audio, self.display.thresholds, false);
+        log.info("opened again: {d} channels ({d} electrode) at {d} Hz", .{ self.nch, self.layout.num_electrodes, self.fs });
+    }
+
     /// Makes every part for the source's present layout, then replaces the old ones.
     /// `carry`: the panels as they were, whose hand-set values are kept where the new
     /// panels correspond. `strict`: panels that do not fit the source are an error

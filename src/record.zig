@@ -95,6 +95,12 @@ pub const Info = struct {
     session: bool = false,
     /// What the TTL input lines are connected to ("" = not named), written to meta.toml.
     ttl_names: [8][]const u8 = @splat(""),
+    /// A session folder (absolute) this recording continues, after acquisition was
+    /// restarted: the files go into its first free `ephys_<n>/` (n from 2), and the
+    /// `current` link is left as it is. Needs `session`.
+    continue_in: ?[]const u8 = null,
+    /// The text of the `start` event in events.tsv (copied; "" by default).
+    start_text: []const u8 = "",
 };
 
 pub const Stats = struct {
@@ -185,6 +191,12 @@ pub const Recorder = struct {
     done: Atomic(bool) = .init(false),
     failure: ?anyerror = null,
     thread: ?std.Thread = null,
+    /// Why the recording was stopped, if not by request (`setStopReason`): the `stop`
+    /// event's text and `[final] reason`.
+    stop_reason_buf: [200]u8 = undefined,
+    stop_reason_len: usize = 0,
+    start_text_buf: [300]u8 = undefined,
+    start_text_len: usize = 0,
 
     /// Creates `<root>/<local date_time>/` and its files, and writes the first meta.toml.
     /// Registers a ring reader: the recording starts with the next block acquired, whether
@@ -199,34 +211,50 @@ pub const Recorder = struct {
         var created_buf: [40]u8 = undefined;
         const lt = localNow(&name_buf, &created_buf);
 
-        try Io.Dir.cwd().createDirPath(io, root);
-        var root_dir = try Io.Dir.cwd().openDir(io, root, .{});
+        const root_path = info.continue_in orelse root;
+        try Io.Dir.cwd().createDirPath(io, root_path);
+        var root_dir = try Io.Dir.cwd().openDir(io, root_path, .{});
         defer root_dir.close(io);
-        // A second recording within the same second gets a suffix.
         var final_name_buf: [72]u8 = undefined;
         var final_name: []const u8 = lt.name;
-        var attempt: usize = 1;
-        while (true) : (attempt += 1) {
-            root_dir.createDir(io, final_name, .default_dir) catch |e| switch (e) {
-                error.PathAlreadyExists => {
-                    final_name = try std.fmt.bufPrint(&final_name_buf, "{s}_{d}", .{ lt.name, attempt + 1 });
-                    continue;
-                },
-                else => return e,
-            };
-            break;
-        }
         var sub_buf: [96]u8 = undefined;
-        const sub: []const u8 = if (info.session) try std.fmt.bufPrint(&sub_buf, "{s}/ephys", .{final_name}) else final_name;
-        if (info.session) try root_dir.createDir(io, sub, .default_dir);
+        var sub: []const u8 = undefined;
+        if (info.continue_in != null) {
+            // The next of ephys_2, ephys_3, ... in the session being continued.
+            std.debug.assert(info.session);
+            var n: usize = 2;
+            while (true) : (n += 1) {
+                sub = try std.fmt.bufPrint(&sub_buf, "ephys_{d}", .{n});
+                root_dir.createDir(io, sub, .default_dir) catch |e| switch (e) {
+                    error.PathAlreadyExists => continue,
+                    else => return e,
+                };
+                break;
+            }
+        } else {
+            // A second recording within the same second gets a suffix.
+            var attempt: usize = 1;
+            while (true) : (attempt += 1) {
+                root_dir.createDir(io, final_name, .default_dir) catch |e| switch (e) {
+                    error.PathAlreadyExists => {
+                        final_name = try std.fmt.bufPrint(&final_name_buf, "{s}_{d}", .{ lt.name, attempt + 1 });
+                        continue;
+                    },
+                    else => return e,
+                };
+                break;
+            }
+            sub = if (info.session) try std.fmt.bufPrint(&sub_buf, "{s}/ephys", .{final_name}) else final_name;
+            if (info.session) try root_dir.createDir(io, sub, .default_dir);
+        }
         // `iterate` gives a real descriptor (not O_PATH), which fsync needs (`syncDir`).
         var dir = try root_dir.openDir(io, sub, .{ .iterate = true });
         errdefer dir.close(io);
-        const root_abs = try Io.Dir.cwd().realPathFileAlloc(io, root, gpa);
+        const root_abs = try Io.Dir.cwd().realPathFileAlloc(io, root_path, gpa);
         defer gpa.free(root_abs);
         const path = try std.fmt.allocPrint(gpa, "{s}/{s}", .{ root_abs, sub });
         errdefer gpa.free(path);
-        if (info.session) pointCurrent(root_dir, final_name);
+        if (info.session and info.continue_in == null) pointCurrent(root_dir, final_name);
 
         var files: [5]Io.File = undefined;
         const names = [5][]const u8{ "samples.i16", "index.bin", "ttl_sample.i64", "ttl_word.u16", "events.tsv" };
@@ -271,6 +299,10 @@ pub const Recorder = struct {
         };
         @memcpy(self.created_local[0..lt.created.len], lt.created);
         self.created_len = lt.created.len;
+        self.start_text_len = @min(info.start_text.len, self.start_text_buf.len);
+        @memcpy(self.start_text_buf[0..self.start_text_len], info.start_text[0..self.start_text_len]);
+        self.info.start_text = "";
+        self.info.continue_in = null;
         try self.events_file.writeStreamingAll(io, "sample\tkind\ttext\n");
         try self.writeMeta(null);
         try self.syncDir();
@@ -300,6 +332,19 @@ pub const Recorder = struct {
     /// meta.toml. `done` turns true when it has; then call `finish`, which no longer waits.
     pub fn requestStop(self: *Recorder) void {
         self.stop_flag.store(true, .release);
+    }
+
+    /// Says why the recording is being stopped, when it is not the user's request (for
+    /// example "acquisition stopped by a read error (OniFailed)"): the `stop` event's text
+    /// and `[final] reason`. Call before `requestStop` or `finish`. Cut to 200 bytes.
+    pub fn setStopReason(self: *Recorder, reason: []const u8) void {
+        const n = @min(reason.len, self.stop_reason_buf.len);
+        @memcpy(self.stop_reason_buf[0..n], reason[0..n]);
+        self.stop_reason_len = n;
+    }
+
+    fn stopReason(self: *const Recorder) []const u8 {
+        return self.stop_reason_buf[0..self.stop_reason_len];
     }
 
     /// Stops the recording as `requestStop` does and waits for it. Acquisition may carry
@@ -376,7 +421,7 @@ pub const Recorder = struct {
         }
         try self.flushChunk();
         try self.drainEvents();
-        try self.event(self.last_sample_end, "stop", "");
+        try self.event(self.last_sample_end, "stop", self.stopReason());
         try self.sync();
         try self.writeMeta(self.last_sample_end);
         try self.syncDir();
@@ -400,7 +445,7 @@ pub const Recorder = struct {
         if (self.first_sample == null) {
             self.first_sample = b.first_sample;
             self.first_sample_shared.store(b.first_sample, .release);
-            try self.event(b.first_sample, "start", "");
+            try self.event(b.first_sample, "start", self.start_text_buf[0..self.start_text_len]);
         }
         const gap = if (self.next_expected) |e| b.first_sample != e else false;
         if (gap) {
@@ -745,6 +790,11 @@ fn writeToml(w: *Io.Writer, r: *const Recorder, final_end: ?i64) !void {
             "# [settings] holds the values at the start. Each change after it is an events.tsv line\n# of the kind named below; settings_changed is true when there was any.\nsettings_changed = {}\namplifier_events = {d}\namplifier_failed_events = {d}\nleds_events = {d}\n",
             .{ se.any(), se.amplifier, se.amplifier_failed, se.leds },
         );
+        if (r.stop_reason_len > 0) {
+            try w.writeAll("reason = ");
+            try tomlStr(w, r.stopReason());
+            try w.writeAll("\n");
+        }
     }
 }
 

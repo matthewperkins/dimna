@@ -114,9 +114,16 @@ when the monitor is muted or off:
 - no data has come from the board for 0.5 s (a USB read waits up to 1 s and then simply
   tries again, so a board that goes quiet raises no error of its own): the bar counts the
   seconds while it lasts, and says how many such spells there were until acknowledged;
-- acquisition stopped on an error (a cable pulled, a read failure). The display stays up
-  (it used to close), and a recording in progress is kept until you stop it; once
-  acknowledged, an amber bar stays, since nothing is being read until dimna is restarted.
+- acquisition stopped on an error (a cable pulled, a read failure). The display stays up.
+  The recording in progress is closed at once (its `[final]` says why), and the board is
+  opened again, as at launch: up to 6 attempts, after 0.5, 1, 2, 5, 10 and 30 s; a board
+  that is not on the bus at all is waited for, looked for every second, without using up
+  an attempt (the bar says which). When it is running again the recording goes on in a new
+  folder of the same session (`ephys_2/`, ...), and the bar says acquisition was restarted
+  and how long was not acquired, until acknowledged. The attempts come back after a run of
+  60 s. When every attempt has failed the bar says so; once acknowledged, an amber bar
+  stays, since nothing is being read until dimna is restarted. (Simulator only so far:
+  `docs/plans/reopen-after-read-error.md`.)
 
 An amber bar warns earlier, while the disk is more than 5 s behind, and goes when it has
 caught up.
@@ -130,6 +137,6 @@ says how long and how many GB are left; under 5 minutes, and again under 1, a re
 until acknowledged. On btrfs the free space moves only when a transaction commits (every
 120 s with `commit=120`), which is why the window is 5 minutes and the recorder's rate is
 the floor. `DIMNA_TEST_DISK_RESERVE_GB=<GB>` counts that much more as full, for testing. On the simulator,
-`DIMNA_TEST_SIM_STALL=<at s>,<for s>` makes it go quiet once and `DIMNA_TEST_SIM_FAIL_AT=<s>`
-makes it fail with a read error. `DIMNA_TEST_RECORD_FAIL_AFTER=<samples>`, `DIMNA_TEST_RECORD_STALL=<samples>,<ms>`
+`DIMNA_TEST_SIM_STALL=<at s>,<for s>` makes it go quiet once and `DIMNA_TEST_SIM_FAIL_AT=<s>[,<times>]`
+makes it fail with a read error (that many seconds into a run, for the first `times` runs, 1 by default). `DIMNA_TEST_RECORD_FAIL_AFTER=<samples>`, `DIMNA_TEST_RECORD_STALL=<samples>,<ms>`
 and `DIMNA_TEST_RING_SECONDS=<s>` make these happen on purpose, for testing.

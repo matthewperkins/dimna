@@ -430,6 +430,8 @@ pub const Alarms = struct {
         gaps: u64 = 0,
         /// Times the board went quiet (`Board.stalled_s` reached `stall_s`).
         stalls: u64 = 0,
+        /// Times acquisition was restarted after a read error (`dimna.reopen`).
+        restarts: u64 = 0,
     };
 
     /// Whether the board is being read: how long since the last block (while acquiring),
@@ -437,6 +439,33 @@ pub const Alarms = struct {
     pub const Board = struct {
         stalled_s: f64 = 0,
         ended: ?anyerror = null,
+        /// While acquisition is down after a read error and the board is being opened
+        /// again; null when it is not (running, or given up).
+        reopening: ?Reopening = null,
+        /// The last read error that led to a restart, the time not acquired over all
+        /// restarts, and whether a recording goes on (for the restarted alarm).
+        restart_err: ?anyerror = null,
+        down_s: f64 = 0,
+        recording: bool = false,
+    };
+
+    pub const Reopening = struct {
+        /// The board is not on the bus: waited for, `seconds` so far. Otherwise the next
+        /// attempt (`n` of `of`) is in `seconds`.
+        absent: bool,
+        seconds: f64,
+        n: usize = 0,
+        of: usize = 0,
+
+        /// What `r` is doing at `now_ns`, or null (running, or given up).
+        pub fn from(r: *const dimna.reopen.Reopen, now_ns: i128) ?Reopening {
+            const next = r.nextAttempt();
+            return switch (r.state) {
+                .waiting => .{ .absent = false, .seconds = @as(f64, @floatFromInt(@max(0, r.due_ns - now_ns))) / 1e9, .n = next.n, .of = next.of },
+                .absent => .{ .absent = true, .seconds = @as(f64, @floatFromInt(now_ns - r.stopped_ns)) / 1e9 },
+                .running, .gave_up => null,
+            };
+        }
     };
 
     /// No block for this long while acquiring: the board has gone quiet (blocks come every
@@ -461,12 +490,27 @@ pub const Alarms = struct {
             self.disk_seen = disk_level;
             self.ended_seen = board.ended != null;
         }
+        // Running again: the next time it ends is a new alarm.
+        if (board.ended == null) self.ended_seen = false;
         // The disk got more room (files deleted, cameras stopped): alarm again next time.
         self.disk_seen = @min(self.disk_seen, disk_level);
         // Here and below: a text too long for its buffer is cut (the writer keeps what fit).
         var w: Io.Writer = .fixed(&status.alarm_buf);
         const sep = "   |   ";
-        if (board.ended) |err| if (!self.ended_seen) i18n.print(&w, .alarm_acquisition_stopped, .{ .err = err }) catch {};
+        if (board.ended) |err| if (!self.ended_seen) {
+            if (board.reopening) |r| {
+                if (r.absent)
+                    i18n.print(&w, .alarm_reopen_absent, .{ .err = err, .seconds = r.seconds }) catch {}
+                else
+                    i18n.print(&w, .alarm_reopen_waiting, .{ .err = err, .seconds = r.seconds, .n = r.n, .of = r.of }) catch {};
+            } else i18n.print(&w, .alarm_acquisition_stopped, .{ .err = err }) catch {};
+        };
+        if (now.restarts > self.seen.restarts) {
+            const k = now.restarts - self.seen.restarts;
+            w.writeAll(if (w.buffered().len > 0) sep else "") catch {};
+            i18n.printCount(&w, "alarm_restarted", k, .{ .times = k, .err = board.restart_err orelse error.Unknown, .lost = board.down_s }) catch {};
+            if (board.recording) i18n.print(&w, .alarm_restarted_recording, .{}) catch {};
+        }
         if (board.ended == null and board.stalled_s >= stall_s) {
             w.writeAll(if (w.buffered().len > 0) sep else "") catch {};
             i18n.print(&w, .alarm_no_data, .{ .seconds = board.stalled_s }) catch {};
@@ -499,7 +543,14 @@ pub const Alarms = struct {
         // Not yet lost, but on the way: the recorder is far behind acquisition, or the disk
         // is filling.
         var ww: Io.Writer = .fixed(&status.warning_buf);
-        if (board.ended) |err| if (self.ended_seen) i18n.print(&ww, .warn_acquisition_stopped, .{ .err = err }) catch {};
+        if (board.ended) |err| if (self.ended_seen) {
+            if (board.reopening) |r| {
+                if (r.absent)
+                    i18n.print(&ww, .warn_reopen_absent, .{ .err = err, .seconds = r.seconds }) catch {}
+                else
+                    i18n.print(&ww, .warn_reopen_waiting, .{ .err = err, .seconds = r.seconds, .n = r.n, .of = r.of }) catch {};
+            } else i18n.print(&ww, .warn_acquisition_stopped, .{ .err = err }) catch {};
+        };
         if (behind_s) |behind| {
             if (behind > 5) {
                 ww.writeAll(if (ww.buffered().len > 0) "   |   " else "") catch {};
@@ -609,6 +660,11 @@ pub const Recording = struct {
     root_len: usize = 0,
     /// Faults to make in each recorder started, for testing the alarms (`Env.record_test`).
     fault: Env.RecordTest = .{},
+    /// After a recording was closed because acquisition stopped on a read error: the
+    /// session folder the next one continues in, once the board is open again
+    /// (`resumeIn`); empty when there is none. Cleared by Stop and by any start.
+    resume_buf: [std.fs.max_path_bytes]u8 = undefined,
+    resume_len: usize = 0,
 
     /// Sets the folder sessions are made under ("~/" is the home folder, `home`).
     pub fn setRoot(self: *Recording, dir: []const u8, home: []const u8) void {
@@ -646,6 +702,8 @@ pub const Recording = struct {
         now_ns: i128,
     ) bool {
         if (self.recorder != null) return true;
+        // `info.continue_in` may point into the buffer: cleared once the recorder is made.
+        defer self.resume_len = 0;
         // What happened before this recording is not its events or its notes.
         while (events.pop()) |_| {}
         while (self.notes.pop()) |_| {}
@@ -677,12 +735,35 @@ pub const Recording = struct {
         return true;
     }
 
-    /// Asks the recorder to finish; `poll` reports when it has.
+    /// Asks the recorder to finish; `poll` reports when it has. A recording waiting to go
+    /// on after a read error (`resumeIn`) is not started.
     pub fn requestStop(self: *Recording) void {
+        self.resume_len = 0;
         const r = self.recorder orelse return;
         if (self.status.state != .recording) return;
         r.requestStop();
         self.status.state = .stopping;
+    }
+
+    /// Acquisition stopped on `err`: the recording is closed (up to the last block
+    /// acquired) with the reason in its `[final]`, and the session is kept for the one that
+    /// goes on once the board is open again (`resumeIn`). Nothing if not recording, or if
+    /// already stopping at the user's request.
+    pub fn closeForRestart(self: *Recording, err: anyerror) void {
+        const r = self.recorder orelse return;
+        if (self.status.state != .recording) return;
+        var buf: [128]u8 = undefined;
+        r.setStopReason(std.fmt.bufPrint(&buf, "acquisition stopped by a read error ({t})", .{err}) catch "acquisition stopped by a read error");
+        const session_dir = self.status.path();
+        self.resume_len = @min(session_dir.len, self.resume_buf.len);
+        @memcpy(self.resume_buf[0..self.resume_len], session_dir[0..self.resume_len]);
+        r.requestStop();
+        self.status.state = .stopping;
+    }
+
+    /// The session folder a recording closed by `closeForRestart` goes on in, or null.
+    pub fn resumeIn(self: *const Recording) ?[]const u8 {
+        return if (self.resume_len > 0) self.resume_buf[0..self.resume_len] else null;
     }
 
     pub const Ended = enum { complete, failed };
@@ -1050,4 +1131,51 @@ test "board alarms: quiet now, quiet before (until acknowledged), and acquisitio
     _ = a.update(&st, .{ .stalls = 1 }, .{ .ended = error.SimulatedReadError }, null, null, &ack);
     try std.testing.expectEqual(@as(usize, 0), st.alarm_len);
     try std.testing.expectEqualStrings("acquisition stopped (SimulatedReadError): nothing is being read; restart dimna", st.warning());
+}
+
+test "board alarms: opening the board again, waiting for it, and the restart (until acknowledged)" {
+    var a: Alarms = .{};
+    var st: display_mod.Status = .{};
+    var ack = false;
+    const err = error.OniFailed;
+    _ = a.update(&st, .{}, .{ .ended = err, .reopening = .{ .absent = false, .seconds = 4.2, .n = 3, .of = 6 } }, null, null, &ack);
+    try std.testing.expectEqualStrings("ACQUISITION STOPPED (OniFailed): opening the board again in 4 s (attempt 3 of 6)", st.alarm());
+    _ = a.update(&st, .{}, .{ .ended = err, .reopening = .{ .absent = true, .seconds = 12 } }, null, null, &ack);
+    try std.testing.expectEqualStrings("THE BOARD IS GONE (OniFailed): waiting for it to come back (12 s so far)", st.alarm());
+    // Acknowledged while waiting: a warning that goes on saying so.
+    ack = true;
+    _ = a.update(&st, .{}, .{ .ended = err, .reopening = .{ .absent = true, .seconds = 13 } }, null, null, &ack);
+    try std.testing.expectEqual(@as(usize, 0), st.alarm_len);
+    try std.testing.expectEqualStrings("the board is gone (OniFailed): waiting for it to come back (13 s so far)", st.warning());
+    // Running again: an alarm that it happened, until acknowledged.
+    _ = a.update(&st, .{ .restarts = 1 }, .{ .restart_err = err, .down_s = 14.04, .recording = true }, null, null, &ack);
+    try std.testing.expectEqualStrings("ACQUISITION RESTARTED ONCE after a read error (OniFailed): 14.0 s not acquired; the recording goes on in a new folder", st.alarm());
+    try std.testing.expectEqual(@as(usize, 0), st.warning_len);
+    // It ends again before that is acknowledged: both, and this end is an alarm again
+    // although the last one was acknowledged.
+    _ = a.update(&st, .{ .restarts = 1 }, .{ .ended = err, .reopening = .{ .absent = false, .seconds = 1, .n = 2, .of = 6 }, .restart_err = err, .down_s = 14.04 }, null, null, &ack);
+    try std.testing.expectEqualStrings("ACQUISITION STOPPED (OniFailed): opening the board again in 1 s (attempt 2 of 6)   |   ACQUISITION RESTARTED ONCE after a read error (OniFailed): 14.0 s not acquired", st.alarm());
+    _ = a.update(&st, .{ .restarts = 2 }, .{ .restart_err = err, .down_s = 15 }, null, null, &ack);
+    try std.testing.expectEqualStrings("ACQUISITION RESTARTED 2 TIMES after read errors (OniFailed): 15.0 s not acquired", st.alarm());
+    ack = true;
+    _ = a.update(&st, .{ .restarts = 2 }, .{}, null, null, &ack);
+    try std.testing.expectEqual(@as(usize, 0), st.alarm_len);
+    // Given up: as before.
+    _ = a.update(&st, .{ .restarts = 2 }, .{ .ended = err }, null, null, &ack);
+    try std.testing.expectEqualStrings("ACQUISITION STOPPED (OniFailed): the board is not being read", st.alarm());
+}
+
+test "Reopening.from: what the reopen is doing, for the alarm" {
+    var r: dimna.reopen.Reopen = .init(.{}, 0);
+    try std.testing.expectEqual(@as(?Alarms.Reopening, null), Alarms.Reopening.from(&r, 0));
+    r.ended(error.OniFailed, 0);
+    const w = Alarms.Reopening.from(&r, 100 * std.time.ns_per_ms).?;
+    try std.testing.expect(!w.absent);
+    try std.testing.expectApproxEqAbs(0.4, w.seconds, 1e-9);
+    try std.testing.expectEqual(1, w.n);
+    try std.testing.expectEqual(6, w.of);
+    r.result(error.BoardAbsent, 500 * std.time.ns_per_ms);
+    const g = Alarms.Reopening.from(&r, 3 * std.time.ns_per_s).?;
+    try std.testing.expect(g.absent);
+    try std.testing.expectApproxEqAbs(3.0, g.seconds, 1e-9);
 }

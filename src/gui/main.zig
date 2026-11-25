@@ -256,6 +256,7 @@ fn runDisplay(init: std.process.Init, env: *const Env, args: *const Args, config
         sim.?.stall_at_s = env.sim_stall_at;
         sim.?.stall_s = env.sim_stall_s;
         sim.?.fail_at_s = env.sim_fail_at;
+        sim.?.fail_times = env.sim_fail_times;
         log.info("simulated board: {d} headstages, {d} units", .{ sim_spec.len, sim.?.units.len });
         break :blk .{ .sim = &sim.? };
     };
@@ -419,8 +420,14 @@ fn runDisplay(init: std.process.Init, env: *const Env, args: *const Args, config
     // second request quits.
     var quit_notice: display_mod.Notice = .{};
     var quit_confirm_until_ns: i128 = 0;
-    // Runs on when acquisition ends on an error: the alarm says so, and a recording in
-    // progress is kept until it is stopped.
+    // When acquisition ends on a read error: the recording in progress is closed with the
+    // reason, the board is opened again as `reopen` says, and the recording goes on in a
+    // new folder of the same session (docs/plans/reopen-after-read-error.md). If it cannot
+    // be, the display runs on and the alarm says so.
+    var reopen: dimna.reopen.Reopen = .init(.{}, nowNs());
+    // The counts of the runs before the present one (a restart makes the ring and the
+    // source's counters anew): what the alarms add to the present ones.
+    var carried: session.Alarms.Counts = .{};
     catchStopSignals();
     while (!win.closed) {
         if (@backingInt(stop_signal.load(.acquire)) != 0) {
@@ -497,20 +504,7 @@ fn runDisplay(init: std.process.Init, env: *const Env, args: *const Args, config
                         // Review of an earlier recording ends where a new one begins.
                         review.active = false;
                         alarms.seen.gaps = 0;
-                        if (!recording.start(gpa, io, ring, .{
-                            .layout = layout.*,
-                            .settings = source.settings(),
-                            .gateware = if (board) |b| b.fw else @splat(0),
-                            .board_id = if (board) |b| b.device_id else 0,
-                            .cable_delay = if (board) |b| b.cable_delay else @splat(0),
-                            .board_kind = if (board != null) "Open Ephys acquisition board (ECP5, FT600, ONI)" else "simulated",
-                            .session = true,
-                            .ttl_names = names: {
-                                var names: [8][]const u8 = undefined;
-                                for (&names, 1..) |*n, line| n.* = display.set.ttlName(line);
-                                break :names names;
-                            },
-                        }, &acq.events, nowNs())) alarms.recording_failed = true;
+                        if (!recording.start(gpa, io, ring, recordInfo(layout, source, if (board) |*b| b else null, &display.set), &acq.events, nowNs())) alarms.recording_failed = true;
                     } else if (!on) recording.requestStop();
                 },
                 .note_preset => |n| notes.stampPreset(n, note_stamp, recording.sessionPath()),
@@ -698,9 +692,80 @@ fn runDisplay(init: std.process.Init, env: *const Env, args: *const Args, config
                 if (session.freeBytes(recording.sessionPath())) |free| disk.add(now_s, free, recording.written());
             }
         } else if (disk.len > 0) disk.reset();
+        // Acquisition ended on a read error: the recording is closed at once (everything
+        // acquired is in the ring), and the board opened again when `reopen` says.
+        if (acq.done.load(.acquire) and reopen.state == .running) {
+            const err = acq.failure orelse error.AcquisitionEnded;
+            reopen.ended(err, nowNs());
+            recording.closeForRestart(err);
+            if (reopen.state == .gave_up) {
+                log.err("acquisition stopped ({t}); no attempts left to open the board again", .{err});
+            } else log.warn("acquisition stopped ({t}); opening the board again (attempt {d} of {d})", .{ err, reopen.nextAttempt().n, reopen.nextAttempt().of });
+            snap_dirty = true;
+        }
+        // Once the recording has been closed (it reads the ring the reopen replaces). One
+        // started with Record while acquisition was down is closed the same way, and goes
+        // on in its session once the board is open again.
+        if (reopen.due(nowNs()) and recording.recorder != null) recording.closeForRestart(reopen.read_error orelse error.AcquisitionEnded);
+        if (reopen.due(nowNs()) and recording.recorder == null) {
+            snap_dirty = true;
+            const was = reopen.state;
+            // The counts that the new ring and the source's start set back to 0.
+            const before: session.Alarms.Counts = .{
+                .overflow = acq.ring_overflow.load(.monotonic),
+                .dropped = health.dropped_samples.load(.monotonic),
+            };
+            review.drop();
+            overview.end();
+            tiles_shared.initial_view = tile_view;
+            const outcome: anyerror!void = if (pl.reopen(acq.requested)) |_| ok: {
+                carried.overflow += before.overflow;
+                carried.dropped += before.dropped;
+                overview.deinit();
+                overview = try dimna.overview.Overview.init(gpa, io, layout, overview_budget);
+                board_ctl.pending = acq.requested;
+                newest = 0;
+                newest_acquired_ns = 0;
+                pacer.drawn_newest = 0;
+                quiet = false;
+                // The recording goes on, attached before acquisition starts, so it has
+                // the new run's first block.
+                if (recording.resumeIn()) |session_dir| {
+                    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+                    const dir = path_buf[0..session_dir.len];
+                    @memcpy(dir, session_dir);
+                    var text_buf: [128]u8 = undefined;
+                    var info = recordInfo(layout, source, if (board) |*b| b else null, &display.set);
+                    info.continue_in = dir;
+                    info.start_text = std.fmt.bufPrint(&text_buf, "after a read error ({t}); continues the recording before it in this session", .{reopen.read_error.?}) catch "after a read error";
+                    // Its gaps are counted from 0, as at Record.
+                    alarms.seen.gaps = 0;
+                    if (!recording.start(gpa, io, ring, info, &acq.events, nowNs())) alarms.recording_failed = true;
+                }
+                pl.run() catch |e| {
+                    // As a failed attempt: nothing runs (`run` stopped what it started).
+                    acq.failure = e;
+                    acq.done.store(true, .release);
+                    recording.closeForRestart(e);
+                    break :ok e;
+                };
+                acq_since_ns = nowNs();
+                break :ok {};
+            } else |e| e;
+            reopen.result(outcome, nowNs());
+            if (outcome) |_| {
+                log.warn("acquisition restarted after a read error ({t}), {d} time(s) so far", .{ reopen.read_error.?, reopen.restarts });
+            } else |e| {
+                if (e == error.BoardAbsent) {
+                    if (was != .absent) log.warn("the board is gone; waiting for it", .{});
+                } else if (reopen.state == .gave_up) {
+                    log.err("opening the board again failed ({t}); no attempts left", .{e});
+                } else log.warn("opening the board again failed ({t}); attempt {d} of {d} next", .{ e, reopen.nextAttempt().n, reopen.nextAttempt().of });
+            }
+        }
         // The board: how long since the newest block came in (blocks drained above), and
         // whether acquisition has ended on an error.
-        const ended: ?anyerror = if (acq.done.load(.acquire)) acq.failure orelse error.AcquisitionEnded else null;
+        const ended: ?anyerror = if (acq.done.load(.acquire)) reopen.read_error orelse (acq.failure orelse error.AcquisitionEnded) else null;
         const stalled_s: f64 = if (ended != null) 0 else @as(f64, @floatFromInt(nowNs() - @max(newest_acquired_ns, acq_since_ns))) / 1e9;
         if (stalled_s >= session.Alarms.stall_s and !quiet) {
             quiet = true;
@@ -712,11 +777,19 @@ fn runDisplay(init: std.process.Init, env: *const Env, args: *const Args, config
         }
         // Alarms: anything that means samples are not being kept.
         if (alarms.update(&status, .{
-            .overflow = acq.ring_overflow.load(.monotonic),
-            .dropped = health.dropped_samples.load(.monotonic),
+            .overflow = carried.overflow + acq.ring_overflow.load(.monotonic),
+            .dropped = carried.dropped + health.dropped_samples.load(.monotonic),
             .gaps = recording.gaps(),
             .stalls = quiet_spells,
-        }, .{ .stalled_s = stalled_s, .ended = ended }, recording.behind(pl.bs, pl.fs), if (recording.active()) disk.left() else null, &display.acknowledged)) snap_dirty = true;
+            .restarts = reopen.restarts,
+        }, .{
+            .stalled_s = stalled_s,
+            .ended = ended,
+            .reopening = if (ended != null) session.Alarms.Reopening.from(&reopen, nowNs()) else null,
+            .restart_err = reopen.read_error,
+            .down_s = @as(f64, @floatFromInt(reopen.down_ns)) / 1e9,
+            .recording = recording.active() or recording.resumeIn() != null,
+        }, recording.behind(pl.bs, pl.fs), if (recording.active()) disk.left() else null, &display.acknowledged)) snap_dirty = true;
         audio_shared.alarm.store(status.alarm_len > 0, .monotonic);
         status.recording = recording.active();
         // One banner at a time: the language's first, then the colour scheme's.
@@ -833,4 +906,22 @@ fn runDisplay(init: std.process.Init, env: *const Env, args: *const Args, config
         return 1;
     }
     return 0;
+}
+
+/// What a recording of the source as it is now says about itself (meta.toml).
+fn recordInfo(layout: *const dimna.types.Layout, source: dimna.source.Source, board: ?*const dimna.board.Board, set: *const dimna.panels.Set) dimna.record.Info {
+    return .{
+        .layout = layout.*,
+        .settings = source.settings(),
+        .gateware = if (board) |b| b.fw else @splat(0),
+        .board_id = if (board) |b| b.device_id else 0,
+        .cable_delay = if (board) |b| b.cable_delay else @splat(0),
+        .board_kind = if (board != null) "Open Ephys acquisition board (ECP5, FT600, ONI)" else "simulated",
+        .session = true,
+        .ttl_names = names: {
+            var names: [8][]const u8 = undefined;
+            for (&names, 1..) |*n, line| n.* = set.ttlName(line);
+            break :names names;
+        },
+    };
 }

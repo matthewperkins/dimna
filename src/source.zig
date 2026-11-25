@@ -21,6 +21,15 @@ pub const Source = union(enum) {
             .sim => |s| s.stop(),
         }
     }
+    /// After acquisition ended on a read error and the source was stopped: opened again as
+    /// at launch, with `new` settings, ready to `start` (see `Board.reopen`).
+    /// `error.BoardAbsent`: no board on the bus; it can only be waited for.
+    pub fn reopen(self: Source, new: types.Settings) !void {
+        switch (self) {
+            .board => |b| try b.reopen(new),
+            .sim => |s| try s.reopen(new),
+        }
+    }
     pub fn readBlock(self: Source, blk: *types.Block) !void {
         switch (self) {
             .board => |b| try b.readBlock(blk),

@@ -182,6 +182,9 @@ pub const Board = struct {
     /// What AuxCmd3 banks 0..4 hold, as last uploaded (null = unknown), so live changes only
     /// write the entries that differ. Forgotten on every board reset, to be safe.
     cmd3_banks: [5]?registers.CommandList = @splat(null),
+    /// Set by `close`: `ctx` is gone. A `reopen` that failed leaves the board so; `close`
+    /// is then a no-op and `reopen` may be tried again.
+    closed: bool = false,
 
     /// Open the first ONI acquisition board on the FT600 bus, initialize it and scan ports.
     /// Uses default settings; apply others with `applySettings` afterwards (as oers does, so a
@@ -204,8 +207,40 @@ pub const Board = struct {
     }
 
     pub fn close(self: *Board) void {
+        if (self.closed) return;
         self.stop() catch |e| log.warn("stop on close failed: {t}", .{e});
         self.ctx.deinit();
+        self.closed = true;
+    }
+
+    pub const ReopenError = oni.OpenError || Error || error{
+        /// No board on the bus at all (the driver's `ONI_EDEVID`): it can only be waited for.
+        BoardAbsent,
+        /// A board answered, but not the one that was open (another board ID).
+        OtherBoard,
+    };
+
+    /// After acquisition ended on a read error (and `stop` has been tried): closes the
+    /// board and opens it again exactly as at launch, `open` then `applySettings(settings)`,
+    /// so it writes nothing that a launch with `settings` would not. Then `start` it as
+    /// usual. If it fails, the board stays closed (`close` is a no-op) and this may be
+    /// called again.
+    pub fn reopen(self: *Board, settings: Settings) ReopenError!void {
+        const io = self.io;
+        const driver = self.driver;
+        const was_id = self.device_id;
+        self.close();
+        var b = Board.open(io, driver) catch |e| {
+            if (e == error.NoBoard and oni.lastOpenFoundNoBoard()) return error.BoardAbsent;
+            return e;
+        };
+        errdefer b.close();
+        if (b.device_id != was_id) {
+            log.err("a board with ID 0x{x} answered, not 0x{x} as before; not continuing with it", .{ b.device_id, was_id });
+            return error.OtherBoard;
+        }
+        try b.applySettings(settings);
+        self.* = b;
     }
 
     fn detect(self: *Board) Error!void {

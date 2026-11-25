@@ -76,6 +76,15 @@ pub const Sim = struct {
     stall_at_s: ?f64 = null,
     stall_s: f64 = 0,
     fail_at_s: ?f64 = null,
+    /// How many runs fail at `fail_at_s` (each run counts from its own start): the first
+    /// `fail_times` after `fail_at_s` is set; later runs go on.
+    fail_times: u32 = 1,
+    /// For testing the reopen after a read error: the next `reopen_absent` calls to `reopen`
+    /// report the board gone, then the next `reopen_failures` fail outright.
+    reopen_absent: u32 = 0,
+    reopen_failures: u32 = 0,
+    /// Calls to `reopen` so far.
+    reopens: u32 = 0,
     sample: i64 = 0,
     t0: Io.Timestamp = .zero,
     health: ?*Health = null,
@@ -209,6 +218,22 @@ pub const Sim = struct {
         self.running = false;
     }
 
+    /// The board's `reopen`, simulated: stopped, given `settings` again, ready to `start`.
+    /// `reopen_absent` and `reopen_failures` make it fail first.
+    pub fn reopen(self: *Sim, settings: Settings) !void {
+        self.reopens += 1;
+        self.running = false;
+        if (self.reopen_absent > 0) {
+            self.reopen_absent -= 1;
+            return error.BoardAbsent;
+        }
+        if (self.reopen_failures > 0) {
+            self.reopen_failures -= 1;
+            return error.SimulatedOpenError;
+        }
+        try self.applySettings(settings);
+    }
+
     fn generateSample(self: *Sim, blk: *Block) void {
         const fs = self.sample_rate;
         const ne = self.lfp_state.len;
@@ -302,7 +327,10 @@ pub const Sim = struct {
         blk.clear();
         std.debug.assert(blk.num_channels == self.nch);
         const at_s = @as(f64, @floatFromInt(self.sample)) / self.sample_rate;
-        if (self.fail_at_s) |f| if (at_s >= f) return error.SimulatedReadError;
+        if (self.fail_at_s) |f| if (at_s >= f and self.fail_times > 0) {
+            self.fail_times -= 1;
+            return error.SimulatedReadError;
+        };
         if (self.stall_at_s) |s| if (at_s >= s) {
             self.stall_at_s = null;
             try self.io.sleep(.fromNanoseconds(@intFromFloat(self.stall_s * 1e9)), .awake);

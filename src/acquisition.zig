@@ -114,6 +114,28 @@ pub const Acquisition = struct {
         os.allowSleep(&self.awake);
     }
 
+    /// After the thread ended on a read error (`done`, `failure` set): joins it, stops the
+    /// source (as `join`), has it opened again with `settings` (`Source.reopen`: as at
+    /// launch), and checks that the data has the shape it had (`layout`). Then the thread
+    /// is ready for `start` again, which the caller makes once whatever must see the first
+    /// block (a recorder) is attached to the ring. On an error nothing is started and this
+    /// may be called again. `error.LayoutChanged`: the board came back with other
+    /// headstages or channels (the ring and everything after it are for the old ones).
+    /// The ring, its readers and the counters are kept; the source's `Health` is reset by
+    /// `start`, as at launch. Not on the acquisition thread.
+    pub fn reopenSource(self: *Acquisition, settings: Settings, layout: types.Layout) !void {
+        std.debug.assert(self.done.load(.acquire));
+        self.join();
+        try self.source.reopen(settings);
+        if (!sameShape(self.source.layout(), layout)) {
+            log.err("the board came back with another layout (headstages, channels or rate); not restarting", .{});
+            return error.LayoutChanged;
+        }
+        self.stop_flag.store(false, .release);
+        self.done.store(false, .release);
+        self.failure = null;
+    }
+
     /// Queues one command for the acquisition thread.
     pub fn submit(self: *Acquisition, cmd: Command) ApplyError!void {
         if (!self.commands.push(cmd)) return error.QueueFull;
@@ -250,6 +272,19 @@ pub const Acquisition = struct {
     }
 };
 
+/// Whether blocks of `a` and `b` have the same shape and meaning: rate, board clock,
+/// headstages (slot, chip, channels) and the AUX and ADC channels.
+pub fn sameShape(a: types.Layout, b: types.Layout) bool {
+    if (a.sample_rate != b.sample_rate or a.hw_clock_hz != b.hw_clock_hz or a.num_headstages != b.num_headstages or
+        a.num_electrodes != b.num_electrodes or a.num_aux != b.num_aux or a.num_adc != b.num_adc or
+        a.ttl_lines != b.ttl_lines) return false;
+    for (a.headstageSlice(), b.headstageSlice()) |x, y| {
+        if (x.slot != y.slot or x.num_channels != y.num_channels or x.first_channel != y.first_channel or
+            x.has_bno != y.has_bno or !std.mem.eql(u8, x.chip, y.chip)) return false;
+    }
+    return true;
+}
+
 /// The `SCHED_FIFO` priority the acquisition thread asks for: above PipeWire's own thread
 /// inside dimna (`data-loop.0`), which asks for 88 and gets what the limit allows.
 pub const realtime_priority = 90;
@@ -324,6 +359,29 @@ test "setRealtime: 90 when the limit allows it, else the limit's value (run unde
         try testing.expectEqual(1, seen.policy);
         try testing.expectEqual(p, seen.priority);
     } else try testing.expectEqual(0, seen.priority);
+}
+
+test "sameShape: the same layout, and each way one can differ" {
+    var a: types.Layout = .{ .sample_rate = 30000, .hw_clock_hz = 50e6, .num_headstages = 2, .num_electrodes = 48, .num_adc = 8 };
+    a.headstages[0] = .{ .slot = 0, .chip = "RHD2132", .num_channels = 32, .first_channel = 0, .has_bno = false };
+    a.headstages[1] = .{ .slot = 2, .chip = "RHD2216", .num_channels = 16, .first_channel = 32, .has_bno = false };
+    try testing.expect(sameShape(a, a));
+    var b = a;
+    b.sample_rate = 20000;
+    try testing.expect(!sameShape(a, b));
+    b = a;
+    b.num_adc = 0;
+    try testing.expect(!sameShape(a, b));
+    b = a;
+    b.headstages[1].slot = 3;
+    try testing.expect(!sameShape(a, b));
+    b = a;
+    b.headstages[0].chip = "RHD2164";
+    try testing.expect(!sameShape(a, b));
+    b = a;
+    b.num_headstages = 1;
+    b.num_electrodes = 32;
+    try testing.expect(!sameShape(a, b));
 }
 
 test "classify sorts settings changes" {

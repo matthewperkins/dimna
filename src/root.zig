@@ -7,6 +7,7 @@ pub const oni = @import("oni.zig");
 pub const board = @import("board.zig");
 pub const ring = @import("ring.zig");
 pub const acquisition = @import("acquisition.zig");
+pub const reopen = @import("reopen.zig");
 pub const sim = @import("sim.zig");
 pub const source = @import("source.zig");
 pub const record = @import("record.zig");
@@ -39,4 +40,5 @@ pub const os = @import("os.zig");
 test {
     @import("std").testing.refAllDecls(@This());
     _ = @import("record_test.zig");
+    _ = @import("reopen_test.zig");
 }

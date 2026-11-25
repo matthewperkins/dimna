@@ -73,6 +73,14 @@ that ignores keys it does not know is unaffected, so `format_version` stays 1.
 `tools/version-test.sh` builds dimna-headless with git, with `-Dgit=false` and with git
 not on `PATH`, records a second from the simulator with each, and checks both keys.
 
+**After a read error** (prototype, simulator only so far; `docs/plans/reopen-after-read-error.md`):
+the recording is closed at once, with `[final] reason = "acquisition stopped by a read error (...)"`
+(the same text as its `stop` event; the key is absent after a stop by the user), and once
+the board is open again the recording goes on in a new folder of the same session,
+`SESSION/ephys_2/` (then `ephys_3/`, ...), whose sample numbers start at 0 again and whose
+`start` event says what it continues. Each folder is a complete v1 recording. The `reason`
+key is new in version 1; readers that ignore unknown keys are unaffected.
+
 Crash safety: once a second `samples.i16` is synced, then the index records for it are written
 and synced, so every index record points at data already on disk. After a crash the indexed
 data is CRC-verifiable and any tail beyond it is kept but unverified.

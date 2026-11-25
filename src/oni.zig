@@ -25,6 +25,11 @@ threadlocal var last_rc: c_int = 0;
 pub fn lastError() c_int {
     return last_rc;
 }
+/// After `Context.open` failed with `error.NoBoard`: true if the driver found no board on
+/// the bus at all (`ONI_EDEVID`, from both drivers), as against one it could not open.
+pub fn lastOpenFoundNoBoard() bool {
+    return last_rc == c.ONI_EDEVID;
+}
 pub fn errorStr(rc: c_int) []const u8 {
     return std.mem.span(c.oni_error_str(rc));
 }

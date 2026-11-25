@@ -22,6 +22,13 @@
 //! off (must be refused while recording), LEDs on/off at 4/6 s, lower bandwidth 300 Hz at
 //! 8 s and back to 1 Hz at 14 s, upper bandwidth 1 kHz at 18 s and back to 7.5 kHz at 22 s.
 //!
+//! After a read error the board is opened again and acquisition restarted, as
+//! `dimna.reopen` says (up to 6 attempts over about 48 s; a board that is gone is waited
+//! for); a recording is closed with the reason and the next one is a new folder under the
+//! same root. Any restart makes the exit status 1. With --sim,
+//! `DIMNA_TEST_SIM_FAIL_AT=<s>[,<times>]` makes the simulator fail with a read error that
+//! many seconds into a run, for that many runs (1 by default), for testing this.
+//!
 //! Prints one status line per second. `delivery` is how much later than the quickest block of
 //! that second a block's newest sample reached the ring (USB block granularity shows here).
 //! Besides the driver's own counters it checks, as a
@@ -144,6 +151,12 @@ pub fn main(init: std.process.Init) !u8 {
         error.BoardOpenFailed => return 1,
         else => return e,
     };
+    if (sim) |*sm| if (init.environ_map.get("DIMNA_TEST_SIM_FAIL_AT")) |v| {
+        var it = std.mem.splitScalar(u8, v, ',');
+        sm.fail_at_s = std.fmt.parseFloat(f64, it.first()) catch null;
+        sm.fail_times = std.fmt.parseInt(u32, it.next() orelse "1", 10) catch 1;
+        if (sm.fail_at_s) |at| log.info("the simulator fails with a read error {d} s into a run, {d} time(s)", .{ at, sm.fail_times });
+    };
 
     const layout = source.layout();
     logLayout(layout);
@@ -158,7 +171,7 @@ pub fn main(init: std.process.Init) !u8 {
     const me = ring.addConsumer().?;
     var rec: ?*dimna.record.Recorder = null;
     if (args.record_root) |root| {
-        rec = createRecorder(gpa, io, &ring, root, layout, source, if (board) |*b| b else null) catch return 1;
+        rec = createRecorder(gpa, io, &ring, root, layout, source, if (board) |*b| b else null, "") catch return 1;
     }
     var health: dimna.types.Health = .{};
     var acq: dimna.acquisition.Acquisition = .{
@@ -179,12 +192,17 @@ pub fn main(init: std.process.Init) !u8 {
     var live: LiveTest = .{};
     var soak: Soak = .{
         .io = io,
+        .gpa = gpa,
         .ring = &ring,
         .me = me,
         .health = &health,
         .acq = &acq,
         .rec = rec,
         .timing = .{ .period_ns = 1e9 / layout.sample_rate },
+        .layout = layout,
+        .record_root = args.record_root,
+        .board = if (board) |*b| b else null,
+        .reopen = .init(.{}, Io.Clock.awake.now(io).nanoseconds),
     };
     try acq.start();
     const run_ms = soak.run(args, &live);
@@ -193,8 +211,9 @@ pub fn main(init: std.process.Init) !u8 {
     acq.join();
     soak.drain();
 
-    const rec_ok = if (rec) |r| try finishRecording(gpa, r, soak.cont.consumed_samples) else true;
-    return summarize(&soak, layout, run_ms, failed, live.ok, rec_ok);
+    if (soak.rec) |r| soak.closeRecording(r, null);
+    soak.carry();
+    return summarize(&soak, layout, run_ms, failed, live.ok, soak.rec_ok);
 }
 
 /// Opens the simulator (`--sim`) or the board, applies the settings, and returns the source,
@@ -246,8 +265,10 @@ fn createRecorder(
     layout: dimna.types.Layout,
     source: dimna.source.Source,
     board: ?*const Board,
+    start_text: []const u8,
 ) !*dimna.record.Recorder {
     return dimna.record.Recorder.create(gpa, io, ring, root, .{
+        .start_text = start_text,
         .layout = layout,
         .settings = source.settings(),
         .gateware = if (board) |b| b.fw else @splat(0),
@@ -404,9 +425,18 @@ const Timing = struct {
     }
 };
 
+/// The source's counters of the runs before the present one (`Health` is reset at each start).
+const Carried = struct {
+    dropped: u64 = 0,
+    gaps: u64 = 0,
+    bad: u64 = 0,
+    read_errors: u64 = 0,
+};
+
 /// The acquisition loop: reads the ring as a consumer, prints one line per second.
 const Soak = struct {
     io: Io,
+    gpa: std.mem.Allocator,
     ring: *dimna.ring.BlockRing,
     me: usize,
     health: *dimna.types.Health,
@@ -417,14 +447,28 @@ const Soak = struct {
     next_tick: i64 = 1,
     last_samples: u64 = 0,
     ring_peak: usize = 0,
+    layout: dimna.types.Layout,
+    record_root: ?[]const u8,
+    board: ?*const Board,
+    reopen: dimna.reopen.Reopen,
+    carried: Carried = .{},
+    /// Samples this consumer had seen when the present recording began.
+    rec_from: u64 = 0,
+    /// Every recording so far held what it should and closed cleanly.
+    rec_ok: bool = true,
+    /// The last recording's folder (for the next one's start event).
+    last_path_buf: [std.fs.max_path_bytes]u8 = undefined,
+    last_path_len: usize = 0,
 
-    /// Runs until --seconds, Ctrl-C or the acquisition thread ending; returns the run time in ms.
+    /// Runs until --seconds, Ctrl-C, or acquisition ending for good (a read error that
+    /// could not be recovered from); returns the run time in ms.
     fn run(self: *Soak, args: Args, live: *LiveTest) i64 {
         const io = self.io;
         const t_start = Io.Clock.awake.now(io);
         var run_ms: i64 = 0;
-        while (!interrupted.load(.acquire) and !self.acq.done.load(.acquire)) {
+        while (!interrupted.load(.acquire) and self.reopen.state != .gave_up) {
             self.readAll();
+            self.recover();
             const elapsed_ms = t_start.untilNow(io, .awake).toMilliseconds();
             if (args.live_test) live.poll(self.acq, elapsed_ms, self.rec != null);
             if (elapsed_ms >= self.next_tick * 1000) self.second();
@@ -496,6 +540,111 @@ const Soak = struct {
         self.next_tick += 1;
     }
 
+    /// After a read error: closes the recording with the reason, then opens the source
+    /// again when `reopen` says, with a new recording attached before acquisition starts.
+    fn recover(self: *Soak) void {
+        const io = self.io;
+        const now = Io.Clock.awake.now(io).nanoseconds;
+        if (self.reopen.state == .running and self.acq.done.load(.acquire)) {
+            const err = self.acq.failure orelse error.AcquisitionEnded;
+            self.drain();
+            if (self.rec) |r| {
+                var buf: [128]u8 = undefined;
+                self.closeRecording(r, std.fmt.bufPrint(&buf, "acquisition stopped by a read error ({t})", .{err}) catch "acquisition stopped by a read error");
+                self.rec = null;
+            }
+            self.reopen.ended(err, now);
+            if (self.reopen.state == .gave_up) {
+                log.err("acquisition stopped ({t}); no attempts left", .{err});
+            } else log.warn("acquisition stopped ({t}); opening the board again in {d} ms (attempt {d} of {d})", .{
+                err,
+                @divTrunc(self.reopen.due_ns - now, std.time.ns_per_ms),
+                self.reopen.nextAttempt().n,
+                self.reopen.nextAttempt().of,
+            });
+            return;
+        }
+        if (!self.reopen.due(now)) return;
+        const was = self.reopen.state;
+        const outcome = self.acq.reopenSource(self.acq.requested, self.layout);
+        if (outcome) |_| {
+            self.carry();
+            // The consumer's checks start again with the new run's numbering.
+            self.cont.expect_next = null;
+            self.cont.last_hw = null;
+            // `Health.samples` starts again from 0 too (the per-second line takes differences).
+            self.last_samples = 0;
+            if (self.record_root) |root| self.newRecording(root);
+            if (self.acq.start()) |_| {
+                self.reopen.result({}, now);
+                log.warn("acquisition restarted after a read error ({t}), {d} time(s) so far", .{ self.reopen.read_error.?, self.reopen.restarts });
+            } else |e| {
+                // As a failed attempt; `start` stopped the source again. The recording
+                // just begun holds nothing: closed, and another made at the next attempt.
+                self.acq.done.store(true, .release);
+                if (self.rec) |r| {
+                    self.closeRecording(r, "acquisition could not be started again");
+                    self.rec = null;
+                }
+                self.reopen.result(e, now);
+                log.warn("starting acquisition again failed ({t})", .{e});
+            }
+        } else |e| {
+            self.reopen.result(e, now);
+            if (e == error.BoardAbsent) {
+                if (was != .absent) log.warn("the board is gone; waiting for it", .{});
+            } else if (self.reopen.state == .gave_up) {
+                log.err("opening the board again failed ({t}); no attempts left", .{e});
+            } else log.warn("opening the board again failed ({t}); attempt {d} of {d} in {d} ms", .{
+                e,
+                self.reopen.nextAttempt().n,
+                self.reopen.nextAttempt().of,
+                @divTrunc(self.reopen.due_ns - now, std.time.ns_per_ms),
+            });
+        }
+    }
+
+    /// The source's counters so far into `carried` (its `Health` is reset at each start).
+    fn carry(self: *Soak) void {
+        const h = self.health;
+        self.carried.dropped += h.dropped_samples.swap(0, .monotonic);
+        self.carried.gaps += h.discontinuities.swap(0, .monotonic);
+        self.carried.bad += h.bad_frames.swap(0, .monotonic);
+        self.carried.read_errors += h.read_errors.swap(0, .monotonic);
+    }
+
+    /// Closes `r` (with `reason`, if not a plain stop) and checks it holds every sample
+    /// this consumer saw while it was open.
+    fn closeRecording(self: *Soak, r: *dimna.record.Recorder, reason: ?[]const u8) void {
+        if (reason) |why| r.setStopReason(why);
+        self.last_path_len = @min(r.path.len, self.last_path_buf.len);
+        @memcpy(self.last_path_buf[0..self.last_path_len], r.path[0..self.last_path_len]);
+        const ok = finishRecording(self.gpa, r, self.cont.consumed_samples - self.rec_from) catch false;
+        if (!ok) self.rec_ok = false;
+    }
+
+    /// The next recording, under `root`, attached before acquisition starts again.
+    fn newRecording(self: *Soak, root: []const u8) void {
+        var buf: [std.fs.max_path_bytes + 96]u8 = undefined;
+        const text = std.fmt.bufPrint(&buf, "after a read error ({t}); continues {s}", .{
+            self.reopen.read_error orelse error.AcquisitionEnded,
+            self.last_path_buf[0..self.last_path_len],
+        }) catch "after a read error";
+        const r = createRecorder(self.gpa, self.io, self.ring, root, self.layout, self.acq.source, self.board, text) catch {
+            self.rec_ok = false;
+            return;
+        };
+        r.events_in = &self.acq.events;
+        r.start() catch |e| {
+            log.err("could not start the recording: {t}", .{e});
+            _ = r.finish();
+            self.rec_ok = false;
+            return;
+        };
+        self.rec = r;
+        self.rec_from = self.cont.consumed_samples;
+    }
+
     /// Drains what the thread committed before it stopped.
     fn drain(self: *Soak) void {
         while (self.ring.readSlot(self.me)) |b| {
@@ -531,9 +680,11 @@ fn summarize(soak: *const Soak, layout: dimna.types.Layout, run_ms: i64, failed:
     const health = soak.health;
     const acq = soak.acq;
     const cont = &soak.cont;
-    const dropped = health.dropped_samples.load(.monotonic);
-    const gaps = health.discontinuities.load(.monotonic);
-    const bad = health.bad_frames.load(.monotonic);
+    // Every run's counters, `carry` having moved them into `carried`.
+    const dropped = soak.carried.dropped;
+    const gaps = soak.carried.gaps;
+    const bad = soak.carried.bad;
+    const restarts = soak.reopen.restarts;
     const overflow = acq.ring_overflow.load(.monotonic);
     // Rate over the acquisition window (the drain after stopping adds at most a few blocks).
     const secs = @as(f64, @floatFromInt(run_ms)) / 1000.0;
@@ -551,14 +702,18 @@ fn summarize(soak: *const Soak, layout: dimna.types.Layout, run_ms: i64, failed:
         "delivery delay of a block's newest sample, beyond the quickest in each second: avg {d:.2} ms, worst {d:.2} ms\n",
         .{ t.delay_avg_sum / t.delay_ticks, t.delay_max },
     );
+    if (restarts > 0) std.debug.print(
+        "acquisition was restarted {d} time(s) after read errors ({t}); about {d:.2} s not acquired\n",
+        .{ restarts, soak.reopen.read_error.?, @as(f64, @floatFromInt(soak.reopen.down_ns)) / 1e9 },
+    );
     if (failed) {
-        log.err("acquisition thread ended early: {t}", .{acq.failure orelse error.Unknown});
+        log.err("acquisition thread ended early: {t}", .{acq.failure orelse (soak.reopen.read_error orelse error.Unknown)});
         return 1;
     }
     const nominal = layout.hw_clock_hz / layout.sample_rate;
     const tstep_ok = cont.tstep_max == 0 or (@as(f64, @floatFromInt(cont.tstep_min)) > 0.5 * nominal and
         @as(f64, @floatFromInt(cont.tstep_max)) < 1.5 * nominal);
-    const clean = live_ok and rec_ok and dropped == 0 and gaps == 0 and bad == 0 and overflow == 0 and cont.gap_blocks == 0 and tstep_ok;
+    const clean = live_ok and rec_ok and restarts == 0 and dropped == 0 and gaps == 0 and bad == 0 and overflow == 0 and cont.gap_blocks == 0 and tstep_ok;
     std.debug.print("{s}\n", .{if (clean) "CLEAN" else "PROBLEMS (see counters above)"});
     return if (clean) 0 else 1;
 }

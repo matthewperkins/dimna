@@ -310,6 +310,12 @@ pub const stepper_sweeps_other = "{[count]d} sweeps";
 // ---- Alarms across the display (until acknowledged) ----
 
 pub const alarm_acquisition_stopped = "ACQUISITION STOPPED ({[err]t}): the board is not being read";
+pub const alarm_reopen_waiting = "ACQUISITION STOPPED ({[err]t}): opening the board again in {[seconds]d:.0} s (attempt {[n]d} of {[of]d})";
+pub const alarm_reopen_absent = "THE BOARD IS GONE ({[err]t}): waiting for it to come back ({[seconds]d:.0} s so far)";
+pub const alarm_restarted_one = "ACQUISITION RESTARTED ONCE after a read error ({[err]t}): {[lost]d:.1} s not acquired";
+pub const alarm_restarted_other = "ACQUISITION RESTARTED {[times]d} TIMES after read errors ({[err]t}): {[lost]d:.1} s not acquired";
+/// Follows `alarm_restarted_*` while recording.
+pub const alarm_restarted_recording = "; the recording goes on in a new folder";
 pub const alarm_no_data = "NO DATA FROM THE BOARD FOR {[seconds]d:.1} s";
 pub const alarm_quiet_times_one = "THE BOARD WENT QUIET ONCE (0.5 s or more without data)";
 pub const alarm_quiet_times_other = "THE BOARD WENT QUIET {[times]d} TIMES (0.5 s or more without data)";
@@ -325,6 +331,8 @@ pub const alarm_disk_full_in = "THE DISK IS FULL IN {[left]s}";
 // ---- Warnings across the display (while their cause lasts) ----
 
 pub const warn_acquisition_stopped = "acquisition stopped ({[err]t}): nothing is being read; restart dimna";
+pub const warn_reopen_waiting = "acquisition stopped ({[err]t}): opening the board again in {[seconds]d:.0} s (attempt {[n]d} of {[of]d})";
+pub const warn_reopen_absent = "the board is gone ({[err]t}): waiting for it to come back ({[seconds]d:.0} s so far)";
 pub const warn_disk_behind = "the disk is {[behind]d:.0} s behind (samples are lost at 30 s)";
 pub const warn_disk_full_in = "the disk is full in {[left]s} ({[gb]d:.1} GB left)";
 /// "about 12 min", "about 40 s": the time left, in the disk messages.
