@@ -1469,3 +1469,94 @@ test "Persian: alef stands as tall as the primary's capitals, not shrunk to its 
     // matching lines would have drawn alef at little more than half the height.
     try testing.expect(e.faces[ar].line_height > f.line_height);
 }
+
+// A record of what is drawn, to compare two builds (the text seam was moved behind
+// `text_backend.zig` with this as its evidence). Not part of the usual run: set
+// DIMNA_TEXT_DUMP to the file to write. For every message of every language, the strings
+// the tests above shape and some fixed-width text, at 14 and 24 px, read left to right and
+// right to left: one line per string and way of drawing it (`text`, `textMono`, `label`,
+// `width`) with what it returned, the vertex count and a hash of the vertices; then each
+// font's faces and a hash of its atlas.
+test "dump: the vertices and atlas of strings in every language, for comparing builds" {
+    const path = std.c.getenv("DIMNA_TEXT_DUMP") orelse return error.SkipZigTest;
+    const gpa = testing.allocator;
+    const i18n = @import("i18n.zig");
+    var strings: std.ArrayList([]const u8) = .empty;
+    defer strings.deinit(gpa);
+    for (std.enums.values(i18n.Language)) |lang| {
+        for (std.enums.values(i18n.Id)) |id| try strings.append(gpa, i18n.textOfIn(lang, id));
+    }
+    try strings.appendSlice(gpa, &.{
+        "\u{633}\u{644}\u{627}\u{645}",                                                                 "\u{633}",                                                             "\u{644}",                                "\u{627}",
+        "\u{644}\u{627}",                                                                               "\u{644}\u{645}",                                                      "\u{628}\u{627}",                         "\u{641}\u{6cc}\u{644}\u{62a}\u{631} 300-6000 Hz",
+        "300-6000 Hz",
+        "阈值",
+        "\u{142}",                                                                                      "A   2.00 s   400\u{b5}V/row   300\u{2013}6000 Hz   \u{3c3} \u{2192}", "a \u{142}",                              "b \u{142}",
+        "Simulator \u{641}\u{6cc}\u{644}\u{62a}\u{631}",                                                "Simulator",                                                           "12 \u{641}\u{6cc}\u{644}\u{62a}\u{631}", "\u{142}\u{f3}d\u{17a} 300 Hz",
+        "\u{641} (-10 ms) \u{641}",                                                                     "\u{641} 50% \u{641} 2",                                               "\u{9608}\u{503c} 300-6000 Hz",           "\u{641}\u{6cc}\u{644}\u{62a}\u{631} 142-6000 Hz \u{6a9}\u{627}\u{646}\u{627}\u{644} 42",
+        "\u{901a}\u{9053} 7 \u{9608}\u{503c} 21 \u{5fae}\u{4f0f} \u{6ee4}\u{6ce2}\u{5668} 300-6000 Hz", "e\u{301} a\u{308}",                                                   "\u{5e9}\u{5dc}\u{5d5}\u{5dd} abc",       "ab\xc3",
+        "\x80x\xc3y",                                                                                   "\u{266a} \u{25b8} \u{25be}",                                          "",                                       " ",
+        "\u{6f1}\u{6f2}\u{6f3} \u{66b}",
+    });
+    // Fixed-width text, as the display lays out in columns.
+    const mono_strings = [_][]const u8{
+        "  12.345 ms   -0.250 uV   ch 01 02 03",
+        "0123456789 ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz",
+        "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~",
+        "\u{b5}V \u{142} \u{641}",
+    };
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(gpa);
+    const vertices = try gpa.alloc(font.Vertex, 6 * 512);
+    defer gpa.free(vertices);
+    const saved_rtl = start_rtl;
+    defer start_rtl = saved_rtl;
+    for ([_][:0]const u8{ "sans-serif", "Lato", "DejaVu Sans" }) |family| {
+        for ([_]u32{ 14, 24 }) |px| {
+            for ([_]bool{ false, true }) |rtl| {
+                start_rtl = rtl;
+                var line: [256]u8 = undefined;
+                var f = font.Font.init(gpa, family, px) catch |e| {
+                    try out.appendSlice(gpa, try std.fmt.bufPrint(&line, "font {s} {d} px rtl {}: {t}\n", .{ family, px, rtl, e }));
+                    continue;
+                };
+                defer f.deinit(gpa);
+                const mono: []const u8 = if (f.addMono("monospace")) "mono" else |e| @errorName(e);
+                var path_buf: [std.fs.max_path_bytes:0]u8 = undefined;
+                const found = fontfind.findFont(family, &path_buf) catch "?";
+                try out.appendSlice(gpa, try std.fmt.bufPrint(&line, "file {s}; shaping libraries loaded: {}\n", .{ found, libs() != null }));
+                try out.appendSlice(gpa, try std.fmt.bufPrint(&line, "font {s} {d} px rtl {}: ascent {d} line {d} engine {} {s}\n", .{ family, px, rtl, f.ascent, f.line_height, f.engine != null, mono }));
+                var batch: font.Batch = .{ .font = &f, .vertices = vertices };
+                const Way = enum { text, textMono, label, width };
+                for ([_][]const []const u8{ strings.items, &mono_strings }, 0..) |set, which| {
+                    for (set, 0..) |s, k| {
+                        for (std.enums.values(Way)) |way| {
+                            batch.clear();
+                            const x: f32 = 3.4;
+                            const y: f32 = 7.6;
+                            const white: font.Colour = .{ 255, 255, 255, 255 };
+                            const r = switch (way) {
+                                .text => batch.text(x, y, s, white),
+                                .textMono => batch.textMono(x, y, s, white),
+                                .label => batch.label(x, y, s, white),
+                                .width => f.width(s),
+                            };
+                            const h = std.hash.Wyhash.hash(0, std.mem.sliceAsBytes(vertices[0..batch.len]));
+                            try out.appendSlice(gpa, try std.fmt.bufPrint(&line, "{d}.{d} {t}: {x:0>8} {d} {x:0>16}\n", .{ which, k, way, @as(u32, @bitCast(r)), batch.len, h }));
+                        }
+                    }
+                }
+                if (f.engine) |e| {
+                    for (e.faces[0..e.nfaces], 0..) |face, k| {
+                        try out.appendSlice(gpa, try std.fmt.bufPrint(&line, "face {d}: line {d}\n", .{ k, face.line_height }));
+                    }
+                    try out.appendSlice(gpa, try std.fmt.bufPrint(&line, "named {d} cap {?d} glyphs {d} pen {d} {d} {d} full {}\n", .{ e.named, e.cap_px, e.glyphs.count(), e.pen.x, e.pen.y, e.pen.shelf_h, e.full }));
+                }
+                try out.appendSlice(gpa, try std.fmt.bufPrint(&line, "atlas {x:0>16} dirty {?any}\n", .{ std.hash.Wyhash.hash(0, f.atlas), f.takeDirty() }));
+            }
+        }
+    }
+    const file = try std.Io.Dir.cwd().createFile(testing.io, std.mem.span(path), .{});
+    defer file.close(testing.io);
+    try file.writeStreamingAll(testing.io, out.items);
+}
