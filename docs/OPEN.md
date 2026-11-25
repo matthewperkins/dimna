@@ -55,6 +55,15 @@ seen, so it can be told apart from a guess. Remove an entry when it is fixed or 
 - **`Display.frame` never reads `Display.acknowledged`**: acknowledging works because the
   alarm is taken out of `Status` (session.zig). Correct today, easy to break.
 
+- **macOS, Persian text: two copies of FreeType work on one face.** dimna on macOS has its
+  own FreeType (static, `vendor/freetype`, 2.14.3) and hands its faces to HarfBuzz
+  (`shape.zig`, `hb_ft_font_create_referenced`), which is Homebrew's and links Homebrew's
+  FreeType. Both are 2.14.3 today and the shaping tests pass (2026-11-24). With another
+  FreeType in Homebrew (2.15.0 is its stable) the two differ; what happens then has not
+  been tried. Only strings that are shaped are affected (Persian and other joined or
+  right-to-left scripts), and only where HarfBuzz and FriBidi are installed. Found by
+  reading. `docs/plans/macos-coretext-text.md` removes it.
+
 ## Tried, and not possible on this board
 
 - **Different amplifier settings per port** (the band and the DSP high-pass of port A's
