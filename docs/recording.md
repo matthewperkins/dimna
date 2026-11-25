@@ -127,6 +127,14 @@ absent from recordings made before them and from recordings with no probe named:
 must then decide for itself (the owner's pipeline gave every wire its own place 1 mm from
 the next, which is `group = "each"`).
 
+How others do it, for comparison: EMUsort (Kilosort 4 for Myomatrix EMG arrays, Sober lab)
+uses no real geometry either. Its `Group: emg_chan_list` is a list of channel lists, one
+per separately implanted thread or muscle, each sorted on its own; within a group it lays
+the channels on a made-up line at a small pitch, so that templates span all of them. A
+Myomatrix array of 4 threads with 4 bipolar signals each is `group = 4` here, and each
+group's channels are one row of `emg_chan_list`. (Read from EMUsort's config template and
+`create_probe` in November 2026; not run.)
+
 ### After a read error
 
 (Simulator only so far; `docs/plans/reopen-after-read-error.md`.) The recording is closed
