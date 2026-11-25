@@ -1,0 +1,6 @@
+FreeType 2.14.3 (vendor/freetype, static); HarfBuzz 14.3.0; FriBidi 1.0.16
+== Q7: threads. One iteration = three lines laid out (Latin, Persian with isolates, Chinese; glyphs, positions, advances hashed) + 8 glyphs rasterised, each into a context made for it, hashed.
+  reference hash e9896863056549fe (second call e9896863056549fe: same)
+  baseline, own CTFont                           1 thread(s), 3.0 s: 32160 iterations (32160); 10713/s total, 10713/s per thread; results differing from the single-thread reference: 0
+  each thread makes its own CTFont (as dimna)    3 thread(s), 10.0 s: 301804 iterations (100506, 100646, 100652); 30161/s total, 10054/s per thread; results differing from the single-thread reference: 0
+  three threads share one CTFont (not dimna)     3 thread(s), 5.0 s: 167167 iterations (55699, 55688, 55780); 33411/s total, 11137/s per thread; results differing from the single-thread reference: 0

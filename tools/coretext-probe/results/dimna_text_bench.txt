@@ -1,0 +1,7 @@
+[font] (warn): font atlas full: glyphs not yet drawn are drawn as the missing glyph
+text frame, 200 labels (shaping libraries loaded: true):
+fast path            0.094 ms
+shaped, first frame  1.474 ms (laying out and rasterizing; 216 glyphs in the map)
+shaped, cache miss   0.843 ms (glyphs already drawn)
+shaped, cached       0.037 ms
+[font] (warn): font atlas full: glyphs not yet drawn are drawn as the missing glyph

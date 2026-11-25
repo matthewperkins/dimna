@@ -1,0 +1,356 @@
+FreeType 2.14.3 (vendor/freetype, static); HarfBuzz 14.3.0; FriBidi 1.0.16
+== Q1: glyph coverage: Core Text (CTFontDrawGlyphs into an 8-bit kCGImageAlphaOnly CGBitmapContext, no CTM scale) against FreeType (FT_Set_Pixel_Sizes, FT_LOAD_RENDER)
+   Size: CTFontCreateWithFontDescriptor(desc, px) drawn into an unscaled context: 1 pt = 1 pixel (checked below: CT upem and advances scale as FT's do).
+
+-- System (SFNS.ttf) at 14 px: FT ps=.SFNS-Regular upem=2048; CT ps=.SFNS-Regular (descriptor 3) size=14.0 upem=2048 opsz=17.0
+   17 glyphs; glyph-id mismatches CT vs FT: 0
+   advance: CT a whole number of pixels for 0/17; |CT - FT hinted| mean 0.548 max 1.182; |CT - FT unhinted (linear)| mean 0.5509 max 0.9980 px
+   ink box, CT (smooth off) vs FT hinted: same left 10/17, same top 5/17, same width and height 2/17
+   total coverage over the 17 glyphs: FT hinted 83483, FT unhinted 84488
+   CT smooth off, subpixel off: coverage sum 86672 (x1.038 of FT hinted) | vs FT hinted: mean 41.94 max 250 | vs FT unhinted: mean 34.06 max 234 | CT at pen +.25/.5/.75 against itself at 0: mean 0.00 0.00 0.00
+   CT smooth ON,  subpixel off: coverage sum 101268 (x1.213 of FT hinted) | vs FT hinted: mean 40.84 max 255 | vs FT unhinted: mean 34.05 max 238 | CT at pen +.25/.5/.75 against itself at 0: mean 0.00 0.00 0.00
+   CT smooth off, subpixel ON : coverage sum 86672 (x1.038 of FT hinted) | vs FT hinted: mean 41.94 max 250 | vs FT unhinted: mean 34.06 max 234 | CT at pen +.25/.5/.75 against itself at 0: mean 20.77 39.86 56.47
+   CT smooth ON,  subpixel ON : coverage sum 101268 (x1.213 of FT hinted) | vs FT hinted: mean 40.84 max 255 | vs FT unhinted: mean 34.05 max 238 | CT at pen +.25/.5/.75 against itself at 0: mean 20.48 39.89 56.50
+-- Helvetica Neue at 14 px: FT ps=HelveticaNeue upem=1000; CT ps=HelveticaNeue (descriptor 0) size=14.0 upem=1000 opsz=nan
+   17 glyphs; glyph-id mismatches CT vs FT: 0
+   advance: CT a whole number of pixels for 0/17; |CT - FT hinted| mean 0.236 max 0.446; |CT - FT unhinted (linear)| mean 0.0000 max 0.0000 px
+   ink box, CT (smooth off) vs FT hinted: same left 17/17, same top 9/17, same width and height 6/17
+   total coverage over the 17 glyphs: FT hinted 85192, FT unhinted 87287
+   CT smooth off, subpixel off: coverage sum 89077 (x1.046 of FT hinted) | vs FT hinted: mean 25.05 max 229 | vs FT unhinted: mean 14.21 max 149 | CT at pen +.25/.5/.75 against itself at 0: mean 0.00 0.00 0.00
+   CT smooth ON,  subpixel off: coverage sum 103668 (x1.217 of FT hinted) | vs FT hinted: mean 28.98 max 229 | vs FT unhinted: mean 21.31 max 156 | CT at pen +.25/.5/.75 against itself at 0: mean 0.00 0.00 0.00
+   CT smooth off, subpixel ON : coverage sum 89077 (x1.046 of FT hinted) | vs FT hinted: mean 25.05 max 229 | vs FT unhinted: mean 14.21 max 149 | CT at pen +.25/.5/.75 against itself at 0: mean 22.84 40.94 59.46
+   CT smooth ON,  subpixel ON : coverage sum 103668 (x1.217 of FT hinted) | vs FT hinted: mean 28.98 max 229 | vs FT unhinted: mean 21.31 max 156 | CT at pen +.25/.5/.75 against itself at 0: mean 21.24 40.86 59.08
+-- Menlo at 14 px: FT ps=Menlo-Regular upem=2048; CT ps=Menlo-Regular (descriptor 0) size=14.0 upem=2048 opsz=nan
+   17 glyphs; glyph-id mismatches CT vs FT: 0
+   advance: CT a whole number of pixels for 0/17; |CT - FT hinted| mean 0.429 max 0.429; |CT - FT unhinted (linear)| mean 0.0000 max 0.0000 px
+   ink box, CT (smooth off) vs FT hinted: same left 17/17, same top 8/17, same width and height 7/17
+   total coverage over the 17 glyphs: FT hinted 92326, FT unhinted 95275
+   CT smooth off, subpixel off: coverage sum 96232 (x1.042 of FT hinted) | vs FT hinted: mean 11.13 max 211 | vs FT unhinted: mean 4.51 max 56 | CT at pen +.25/.5/.75 against itself at 0: mean 0.00 0.00 0.00
+   CT smooth ON,  subpixel off: coverage sum 110967 (x1.202 of FT hinted) | vs FT hinted: mean 18.26 max 222 | vs FT unhinted: mean 12.72 max 90 | CT at pen +.25/.5/.75 against itself at 0: mean 0.00 0.00 0.00
+   CT smooth off, subpixel ON : coverage sum 96232 (x1.042 of FT hinted) | vs FT hinted: mean 11.13 max 211 | vs FT unhinted: mean 4.51 max 56 | CT at pen +.25/.5/.75 against itself at 0: mean 20.23 39.14 53.80
+   CT smooth ON,  subpixel ON : coverage sum 110967 (x1.202 of FT hinted) | vs FT hinted: mean 18.26 max 222 | vs FT unhinted: mean 12.72 max 90 | CT at pen +.25/.5/.75 against itself at 0: mean 20.14 38.42 55.44
+-- Hiragino Sans GB at 14 px: FT ps=HiraginoSansGB-W3 upem=1000; CT ps=HiraginoSansGB-W3 (descriptor 0) size=14.0 upem=1000 opsz=nan
+   9 glyphs; glyph-id mismatches CT vs FT: 0
+   advance: CT a whole number of pixels for 9/9; |CT - FT hinted| mean 0.000 max 0.000; |CT - FT unhinted (linear)| mean 0.0001 max 0.0001 px
+   ink box, CT (smooth off) vs FT hinted: same left 9/9, same top 9/9, same width and height 4/9
+   total coverage over the 9 glyphs: FT hinted 134024, FT unhinted 128514
+   CT smooth off, subpixel off: coverage sum 130860 (x0.976 of FT hinted) | vs FT hinted: mean 37.77 max 233 | vs FT unhinted: mean 12.04 max 74 | CT at pen +.25/.5/.75 against itself at 0: mean 0.00 0.00 0.00
+   CT smooth ON,  subpixel off: coverage sum 159530 (x1.190 of FT hinted) | vs FT hinted: mean 42.46 max 233 | vs FT unhinted: mean 20.06 max 94 | CT at pen +.25/.5/.75 against itself at 0: mean 0.00 0.00 0.00
+   CT smooth off, subpixel ON : coverage sum 130860 (x0.976 of FT hinted) | vs FT hinted: mean 37.77 max 233 | vs FT unhinted: mean 12.04 max 74 | CT at pen +.25/.5/.75 against itself at 0: mean 21.39 39.21 53.08
+   CT smooth ON,  subpixel ON : coverage sum 159530 (x1.190 of FT hinted) | vs FT hinted: mean 42.46 max 233 | vs FT unhinted: mean 20.06 max 94 | CT at pen +.25/.5/.75 against itself at 0: mean 22.67 40.99 56.90
+-- Geeza Pro at 14 px: FT ps=GeezaPro upem=2212; CT ps=GeezaPro (descriptor 0) size=14.0 upem=2212 opsz=nan
+   11 glyphs; glyph-id mismatches CT vs FT: 0
+   advance: CT a whole number of pixels for 0/11; |CT - FT hinted| mean 0.463 max 1.348; |CT - FT unhinted (linear)| mean 0.0001 max 0.0001 px
+   ink box, CT (smooth off) vs FT hinted: same left 8/11, same top 8/11, same width and height 2/11
+   total coverage over the 11 glyphs: FT hinted 46023, FT unhinted 48297
+   CT smooth off, subpixel off: coverage sum 48005 (x1.043 of FT hinted) | vs FT hinted: mean 36.81 max 239 | vs FT unhinted: mean 2.07 max 46 | CT at pen +.25/.5/.75 against itself at 0: mean 0.00 0.00 0.00
+   CT smooth ON,  subpixel off: coverage sum 58611 (x1.274 of FT hinted) | vs FT hinted: mean 35.33 max 254 | vs FT unhinted: mean 12.49 max 79 | CT at pen +.25/.5/.75 against itself at 0: mean 0.00 0.00 0.00
+   CT smooth off, subpixel ON : coverage sum 48005 (x1.043 of FT hinted) | vs FT hinted: mean 36.81 max 239 | vs FT unhinted: mean 2.07 max 46 | CT at pen +.25/.5/.75 against itself at 0: mean 16.42 31.73 40.83
+   CT smooth ON,  subpixel ON : coverage sum 58611 (x1.274 of FT hinted) | vs FT hinted: mean 35.33 max 254 | vs FT unhinted: mean 12.49 max 79 | CT at pen +.25/.5/.75 against itself at 0: mean 17.21 32.86 43.87
+-- System (SFNS.ttf), CT optical sizing none at 14 px: FT ps=.SFNS-Regular upem=2048; CT ps=.SFNS-Regular (descriptor 3) size=14.0 upem=2048 opsz=nan
+   17 glyphs; glyph-id mismatches CT vs FT: 0
+   advance: CT a whole number of pixels for 0/17; |CT - FT hinted| mean 0.279 max 0.915; |CT - FT unhinted (linear)| mean 0.1914 max 0.1914 px
+   ink box, CT (smooth off) vs FT hinted: same left 14/17, same top 8/17, same width and height 2/17
+   total coverage over the 17 glyphs: FT hinted 83483, FT unhinted 84488
+   CT smooth off, subpixel off: coverage sum 85460 (x1.024 of FT hinted) | vs FT hinted: mean 33.58 max 255 | vs FT unhinted: mean 17.70 max 189 | CT at pen +.25/.5/.75 against itself at 0: mean 0.00 0.00 0.00
+   CT smooth ON,  subpixel off: coverage sum 100195 (x1.200 of FT hinted) | vs FT hinted: mean 35.48 max 255 | vs FT unhinted: mean 22.21 max 192 | CT at pen +.25/.5/.75 against itself at 0: mean 0.00 0.00 0.00
+   CT smooth off, subpixel ON : coverage sum 85460 (x1.024 of FT hinted) | vs FT hinted: mean 33.58 max 255 | vs FT unhinted: mean 17.70 max 189 | CT at pen +.25/.5/.75 against itself at 0: mean 20.59 38.44 55.67
+   CT smooth ON,  subpixel ON : coverage sum 100195 (x1.200 of FT hinted) | vs FT hinted: mean 35.48 max 255 | vs FT unhinted: mean 22.21 max 192 | CT at pen +.25/.5/.75 against itself at 0: mean 19.85 38.39 54.78
+
+-- System (SFNS.ttf) at 20 px: FT ps=.SFNS-Regular upem=2048; CT ps=.SFNS-Regular (descriptor 3) size=20.0 upem=2048 opsz=20.0
+   17 glyphs; glyph-id mismatches CT vs FT: 0
+   advance: CT a whole number of pixels for 0/17; |CT - FT hinted| mean 0.499 max 1.191; |CT - FT unhinted (linear)| mean 0.3516 max 0.8037 px
+   ink box, CT (smooth off) vs FT hinted: same left 14/17, same top 3/17, same width and height 1/17
+   total coverage over the 17 glyphs: FT hinted 166477, FT unhinted 171672
+   CT smooth off, subpixel off: coverage sum 172847 (x1.038 of FT hinted) | vs FT hinted: mean 33.30 max 242 | vs FT unhinted: mean 25.88 max 208 | CT at pen +.25/.5/.75 against itself at 0: mean 0.00 0.00 0.00
+   CT smooth ON,  subpixel off: coverage sum 203325 (x1.221 of FT hinted) | vs FT hinted: mean 36.84 max 255 | vs FT unhinted: mean 28.99 max 237 | CT at pen +.25/.5/.75 against itself at 0: mean 0.00 0.00 0.00
+   CT smooth off, subpixel ON : coverage sum 172847 (x1.038 of FT hinted) | vs FT hinted: mean 33.30 max 242 | vs FT unhinted: mean 25.88 max 208 | CT at pen +.25/.5/.75 against itself at 0: mean 15.93 31.26 45.83
+   CT smooth ON,  subpixel ON : coverage sum 203325 (x1.221 of FT hinted) | vs FT hinted: mean 36.84 max 255 | vs FT unhinted: mean 28.99 max 237 | CT at pen +.25/.5/.75 against itself at 0: mean 15.86 30.97 45.82
+-- Helvetica Neue at 20 px: FT ps=HelveticaNeue upem=1000; CT ps=HelveticaNeue (descriptor 0) size=20.0 upem=1000 opsz=nan
+   17 glyphs; glyph-id mismatches CT vs FT: 0
+   advance: CT a whole number of pixels for 0/17; |CT - FT hinted| mean 0.255 max 0.480; |CT - FT unhinted (linear)| mean 0.0000 max 0.0000 px
+   ink box, CT (smooth off) vs FT hinted: same left 17/17, same top 6/17, same width and height 3/17
+   total coverage over the 17 glyphs: FT hinted 181657, FT unhinted 179079
+   CT smooth off, subpixel off: coverage sum 178179 (x0.981 of FT hinted) | vs FT hinted: mean 15.91 max 174 | vs FT unhinted: mean 1.33 max 40 | CT at pen +.25/.5/.75 against itself at 0: mean 0.00 0.00 0.00
+   CT smooth ON,  subpixel off: coverage sum 208541 (x1.148 of FT hinted) | vs FT hinted: mean 22.03 max 174 | vs FT unhinted: mean 14.45 max 103 | CT at pen +.25/.5/.75 against itself at 0: mean 0.00 0.00 0.00
+   CT smooth off, subpixel ON : coverage sum 178179 (x0.981 of FT hinted) | vs FT hinted: mean 15.91 max 174 | vs FT unhinted: mean 1.33 max 40 | CT at pen +.25/.5/.75 against itself at 0: mean 16.29 31.68 46.64
+   CT smooth ON,  subpixel ON : coverage sum 208541 (x1.148 of FT hinted) | vs FT hinted: mean 22.03 max 174 | vs FT unhinted: mean 14.45 max 103 | CT at pen +.25/.5/.75 against itself at 0: mean 15.88 31.84 46.37
+-- Menlo at 20 px: FT ps=Menlo-Regular upem=2048; CT ps=Menlo-Regular (descriptor 0) size=20.0 upem=2048 opsz=nan
+   17 glyphs; glyph-id mismatches CT vs FT: 0
+   advance: CT a whole number of pixels for 0/17; |CT - FT hinted| mean 0.041 max 0.041; |CT - FT unhinted (linear)| mean 0.0000 max 0.0000 px
+   ink box, CT (smooth off) vs FT hinted: same left 16/17, same top 13/17, same width and height 7/17
+   total coverage over the 17 glyphs: FT hinted 205663, FT unhinted 194827
+   CT smooth off, subpixel off: coverage sum 193798 (x0.942 of FT hinted) | vs FT hinted: mean 14.09 max 253 | vs FT unhinted: mean 1.70 max 49 | CT at pen +.25/.5/.75 against itself at 0: mean 0.00 0.00 0.00
+   CT smooth ON,  subpixel off: coverage sum 224957 (x1.094 of FT hinted) | vs FT hinted: mean 19.00 max 251 | vs FT unhinted: mean 13.11 max 105 | CT at pen +.25/.5/.75 against itself at 0: mean 0.00 0.00 0.00
+   CT smooth off, subpixel ON : coverage sum 193798 (x0.942 of FT hinted) | vs FT hinted: mean 14.09 max 253 | vs FT unhinted: mean 1.70 max 49 | CT at pen +.25/.5/.75 against itself at 0: mean 16.44 31.47 45.81
+   CT smooth ON,  subpixel ON : coverage sum 224957 (x1.094 of FT hinted) | vs FT hinted: mean 19.00 max 251 | vs FT unhinted: mean 13.11 max 105 | CT at pen +.25/.5/.75 against itself at 0: mean 15.10 29.48 42.65
+-- Hiragino Sans GB at 20 px: FT ps=HiraginoSansGB-W3 upem=1000; CT ps=HiraginoSansGB-W3 (descriptor 0) size=20.0 upem=1000 opsz=nan
+   9 glyphs; glyph-id mismatches CT vs FT: 0
+   advance: CT a whole number of pixels for 9/9; |CT - FT hinted| mean 0.000 max 0.000; |CT - FT unhinted (linear)| mean 0.0000 max 0.0000 px
+   ink box, CT (smooth off) vs FT hinted: same left 9/9, same top 0/9, same width and height 0/9
+   total coverage over the 9 glyphs: FT hinted 271102, FT unhinted 262049
+   CT smooth off, subpixel off: coverage sum 262216 (x0.967 of FT hinted) | vs FT hinted: mean 27.37 max 255 | vs FT unhinted: mean 0.83 max 44 | CT at pen +.25/.5/.75 against itself at 0: mean 0.00 0.00 0.00
+   CT smooth ON,  subpixel off: coverage sum 323145 (x1.192 of FT hinted) | vs FT hinted: mean 29.73 max 248 | vs FT unhinted: mean 18.35 max 118 | CT at pen +.25/.5/.75 against itself at 0: mean 0.00 0.00 0.00
+   CT smooth off, subpixel ON : coverage sum 262216 (x0.967 of FT hinted) | vs FT hinted: mean 27.37 max 255 | vs FT unhinted: mean 0.83 max 44 | CT at pen +.25/.5/.75 against itself at 0: mean 17.82 34.10 48.60
+   CT smooth ON,  subpixel ON : coverage sum 323145 (x1.192 of FT hinted) | vs FT hinted: mean 29.73 max 248 | vs FT unhinted: mean 18.35 max 118 | CT at pen +.25/.5/.75 against itself at 0: mean 17.70 34.67 49.52
+-- Geeza Pro at 20 px: FT ps=GeezaPro upem=2212; CT ps=GeezaPro (descriptor 0) size=20.0 upem=2212 opsz=nan
+   11 glyphs; glyph-id mismatches CT vs FT: 0
+   advance: CT a whole number of pixels for 0/11; |CT - FT hinted| mean 0.391 max 0.863; |CT - FT unhinted (linear)| mean 0.0001 max 0.0001 px
+   ink box, CT (smooth off) vs FT hinted: same left 9/11, same top 7/11, same width and height 3/11
+   total coverage over the 11 glyphs: FT hinted 88455, FT unhinted 98946
+   CT smooth off, subpixel off: coverage sum 98068 (x1.109 of FT hinted) | vs FT hinted: mean 24.89 max 207 | vs FT unhinted: mean 1.64 max 46 | CT at pen +.25/.5/.75 against itself at 0: mean 0.00 0.00 0.00
+   CT smooth ON,  subpixel off: coverage sum 119671 (x1.353 of FT hinted) | vs FT hinted: mean 29.82 max 224 | vs FT unhinted: mean 13.68 max 102 | CT at pen +.25/.5/.75 against itself at 0: mean 0.00 0.00 0.00
+   CT smooth off, subpixel ON : coverage sum 98068 (x1.109 of FT hinted) | vs FT hinted: mean 24.89 max 207 | vs FT unhinted: mean 1.64 max 46 | CT at pen +.25/.5/.75 against itself at 0: mean 15.07 26.11 37.25
+   CT smooth ON,  subpixel ON : coverage sum 119671 (x1.353 of FT hinted) | vs FT hinted: mean 29.82 max 224 | vs FT unhinted: mean 13.68 max 102 | CT at pen +.25/.5/.75 against itself at 0: mean 13.82 27.00 39.83
+-- System (SFNS.ttf), CT optical sizing none at 20 px: FT ps=.SFNS-Regular upem=2048; CT ps=.SFNS-Regular (descriptor 3) size=20.0 upem=2048 opsz=nan
+   17 glyphs; glyph-id mismatches CT vs FT: 0
+   advance: CT a whole number of pixels for 0/17; |CT - FT hinted| mean 0.453 max 1.258; |CT - FT unhinted (linear)| mean 0.2734 max 0.2734 px
+   ink box, CT (smooth off) vs FT hinted: same left 10/17, same top 4/17, same width and height 1/17
+   total coverage over the 17 glyphs: FT hinted 166477, FT unhinted 171672
+   CT smooth off, subpixel off: coverage sum 169967 (x1.021 of FT hinted) | vs FT hinted: mean 21.78 max 221 | vs FT unhinted: mean 2.64 max 56 | CT at pen +.25/.5/.75 against itself at 0: mean 0.00 0.00 0.00
+   CT smooth ON,  subpixel off: coverage sum 199969 (x1.201 of FT hinted) | vs FT hinted: mean 27.26 max 250 | vs FT unhinted: mean 13.04 max 100 | CT at pen +.25/.5/.75 against itself at 0: mean 0.00 0.00 0.00
+   CT smooth off, subpixel ON : coverage sum 169967 (x1.021 of FT hinted) | vs FT hinted: mean 21.78 max 221 | vs FT unhinted: mean 2.64 max 56 | CT at pen +.25/.5/.75 against itself at 0: mean 16.34 31.75 45.84
+   CT smooth ON,  subpixel ON : coverage sum 199969 (x1.201 of FT hinted) | vs FT hinted: mean 27.26 max 250 | vs FT unhinted: mean 13.04 max 100 | CT at pen +.25/.5/.75 against itself at 0: mean 15.68 30.23 43.51
+
+-- System (SFNS.ttf) at 24 px: FT ps=.SFNS-Regular upem=2048; CT ps=.SFNS-Regular (descriptor 3) size=24.0 upem=2048 opsz=24.0
+   17 glyphs; glyph-id mismatches CT vs FT: 0
+   advance: CT a whole number of pixels for 0/17; |CT - FT hinted| mean 0.544 max 1.585; |CT - FT unhinted (linear)| mean 0.2889 max 0.4283 px
+   ink box, CT (smooth off) vs FT hinted: same left 12/17, same top 12/17, same width and height 2/17
+   total coverage over the 17 glyphs: FT hinted 259237, FT unhinted 247479
+   CT smooth off, subpixel off: coverage sum 246065 (x0.949 of FT hinted) | vs FT hinted: mean 30.32 max 255 | vs FT unhinted: mean 7.30 max 84 | CT at pen +.25/.5/.75 against itself at 0: mean 0.00 0.00 0.00
+   CT smooth ON,  subpixel off: coverage sum 289484 (x1.117 of FT hinted) | vs FT hinted: mean 28.31 max 253 | vs FT unhinted: mean 15.09 max 137 | CT at pen +.25/.5/.75 against itself at 0: mean 0.00 0.00 0.00
+   CT smooth off, subpixel ON : coverage sum 246065 (x0.949 of FT hinted) | vs FT hinted: mean 30.32 max 255 | vs FT unhinted: mean 7.30 max 84 | CT at pen +.25/.5/.75 against itself at 0: mean 14.51 28.75 41.99
+   CT smooth ON,  subpixel ON : coverage sum 289484 (x1.117 of FT hinted) | vs FT hinted: mean 28.31 max 253 | vs FT unhinted: mean 15.09 max 137 | CT at pen +.25/.5/.75 against itself at 0: mean 14.31 27.99 39.75
+-- Helvetica Neue at 24 px: FT ps=HelveticaNeue upem=1000; CT ps=HelveticaNeue (descriptor 0) size=24.0 upem=1000 opsz=nan
+   17 glyphs; glyph-id mismatches CT vs FT: 0
+   advance: CT a whole number of pixels for 0/17; |CT - FT hinted| mean 0.311 max 0.480; |CT - FT unhinted (linear)| mean 0.0000 max 0.0001 px
+   ink box, CT (smooth off) vs FT hinted: same left 17/17, same top 10/17, same width and height 4/17
+   total coverage over the 17 glyphs: FT hinted 261522, FT unhinted 257799
+   CT smooth off, subpixel off: coverage sum 256294 (x0.980 of FT hinted) | vs FT hinted: mean 11.90 max 151 | vs FT unhinted: mean 1.50 max 49 | CT at pen +.25/.5/.75 against itself at 0: mean 0.00 0.00 0.00
+   CT smooth ON,  subpixel off: coverage sum 299994 (x1.147 of FT hinted) | vs FT hinted: mean 15.10 max 175 | vs FT unhinted: mean 15.02 max 109 | CT at pen +.25/.5/.75 against itself at 0: mean 0.00 0.00 0.00
+   CT smooth off, subpixel ON : coverage sum 256294 (x0.980 of FT hinted) | vs FT hinted: mean 11.90 max 151 | vs FT unhinted: mean 1.50 max 49 | CT at pen +.25/.5/.75 against itself at 0: mean 14.65 28.23 41.35
+   CT smooth ON,  subpixel ON : coverage sum 299994 (x1.147 of FT hinted) | vs FT hinted: mean 15.10 max 175 | vs FT unhinted: mean 15.02 max 109 | CT at pen +.25/.5/.75 against itself at 0: mean 14.06 27.74 40.86
+-- Menlo at 24 px: FT ps=Menlo-Regular upem=2048; CT ps=Menlo-Regular (descriptor 0) size=24.0 upem=2048 opsz=nan
+   17 glyphs; glyph-id mismatches CT vs FT: 0
+   advance: CT a whole number of pixels for 0/17; |CT - FT hinted| mean 0.449 max 0.449; |CT - FT unhinted (linear)| mean 0.0000 max 0.0000 px
+   ink box, CT (smooth off) vs FT hinted: same left 17/17, same top 11/17, same width and height 7/17
+   total coverage over the 17 glyphs: FT hinted 283642, FT unhinted 280069
+   CT smooth off, subpixel off: coverage sum 278203 (x0.981 of FT hinted) | vs FT hinted: mean 15.36 max 255 | vs FT unhinted: mean 1.52 max 48 | CT at pen +.25/.5/.75 against itself at 0: mean 0.00 0.00 0.00
+   CT smooth ON,  subpixel off: coverage sum 323032 (x1.139 of FT hinted) | vs FT hinted: mean 21.11 max 247 | vs FT unhinted: mean 14.03 max 120 | CT at pen +.25/.5/.75 against itself at 0: mean 0.00 0.00 0.00
+   CT smooth off, subpixel ON : coverage sum 278203 (x0.981 of FT hinted) | vs FT hinted: mean 15.36 max 255 | vs FT unhinted: mean 1.52 max 48 | CT at pen +.25/.5/.75 against itself at 0: mean 13.86 26.58 39.45
+   CT smooth ON,  subpixel ON : coverage sum 323032 (x1.139 of FT hinted) | vs FT hinted: mean 21.11 max 247 | vs FT unhinted: mean 14.03 max 120 | CT at pen +.25/.5/.75 against itself at 0: mean 13.10 25.74 38.25
+-- Hiragino Sans GB at 24 px: FT ps=HiraginoSansGB-W3 upem=1000; CT ps=HiraginoSansGB-W3 (descriptor 0) size=24.0 upem=1000 opsz=nan
+   9 glyphs; glyph-id mismatches CT vs FT: 0
+   advance: CT a whole number of pixels for 9/9; |CT - FT hinted| mean 0.000 max 0.000; |CT - FT unhinted (linear)| mean 0.0001 max 0.0001 px
+   ink box, CT (smooth off) vs FT hinted: same left 9/9, same top 6/9, same width and height 2/9
+   total coverage over the 9 glyphs: FT hinted 386123, FT unhinted 377446
+   CT smooth off, subpixel off: coverage sum 377877 (x0.979 of FT hinted) | vs FT hinted: mean 16.88 max 181 | vs FT unhinted: mean 0.71 max 42 | CT at pen +.25/.5/.75 against itself at 0: mean 0.00 0.00 0.00
+   CT smooth ON,  subpixel off: coverage sum 465537 (x1.206 of FT hinted) | vs FT hinted: mean 26.85 max 208 | vs FT unhinted: mean 18.35 max 132 | CT at pen +.25/.5/.75 against itself at 0: mean 0.00 0.00 0.00
+   CT smooth off, subpixel ON : coverage sum 377877 (x0.979 of FT hinted) | vs FT hinted: mean 16.88 max 181 | vs FT unhinted: mean 0.71 max 42 | CT at pen +.25/.5/.75 against itself at 0: mean 15.40 30.30 44.10
+   CT smooth ON,  subpixel ON : coverage sum 465537 (x1.206 of FT hinted) | vs FT hinted: mean 26.85 max 208 | vs FT unhinted: mean 18.35 max 132 | CT at pen +.25/.5/.75 against itself at 0: mean 15.17 29.97 44.07
+-- Geeza Pro at 24 px: FT ps=GeezaPro upem=2212; CT ps=GeezaPro (descriptor 0) size=24.0 upem=2212 opsz=nan
+   11 glyphs; glyph-id mismatches CT vs FT: 0
+   advance: CT a whole number of pixels for 0/11; |CT - FT hinted| mean 0.416 max 1.107; |CT - FT unhinted (linear)| mean 0.0001 max 0.0001 px
+   ink box, CT (smooth off) vs FT hinted: same left 9/11, same top 8/11, same width and height 4/11
+   total coverage over the 11 glyphs: FT hinted 133137, FT unhinted 142770
+   CT smooth off, subpixel off: coverage sum 141274 (x1.061 of FT hinted) | vs FT hinted: mean 24.22 max 218 | vs FT unhinted: mean 1.46 max 37 | CT at pen +.25/.5/.75 against itself at 0: mean 0.00 0.00 0.00
+   CT smooth ON,  subpixel off: coverage sum 172435 (x1.295 of FT hinted) | vs FT hinted: mean 28.31 max 251 | vs FT unhinted: mean 13.33 max 121 | CT at pen +.25/.5/.75 against itself at 0: mean 0.00 0.00 0.00
+   CT smooth off, subpixel ON : coverage sum 141274 (x1.061 of FT hinted) | vs FT hinted: mean 24.22 max 218 | vs FT unhinted: mean 1.46 max 37 | CT at pen +.25/.5/.75 against itself at 0: mean 12.10 21.74 31.60
+   CT smooth ON,  subpixel ON : coverage sum 172435 (x1.295 of FT hinted) | vs FT hinted: mean 28.31 max 251 | vs FT unhinted: mean 13.33 max 121 | CT at pen +.25/.5/.75 against itself at 0: mean 12.94 23.26 33.59
+-- System (SFNS.ttf), CT optical sizing none at 24 px: FT ps=.SFNS-Regular upem=2048; CT ps=.SFNS-Regular (descriptor 3) size=24.0 upem=2048 opsz=nan
+   17 glyphs; glyph-id mismatches CT vs FT: 0
+   advance: CT a whole number of pixels for 0/17; |CT - FT hinted| mean 0.561 max 1.484; |CT - FT unhinted (linear)| mean 0.3281 max 0.3281 px
+   ink box, CT (smooth off) vs FT hinted: same left 12/17, same top 11/17, same width and height 3/17
+   total coverage over the 17 glyphs: FT hinted 259237, FT unhinted 247479
+   CT smooth off, subpixel off: coverage sum 245175 (x0.946 of FT hinted) | vs FT hinted: mean 30.39 max 255 | vs FT unhinted: mean 2.56 max 65 | CT at pen +.25/.5/.75 against itself at 0: mean 0.00 0.00 0.00
+   CT smooth ON,  subpixel off: coverage sum 288344 (x1.112 of FT hinted) | vs FT hinted: mean 26.87 max 254 | vs FT unhinted: mean 13.57 max 120 | CT at pen +.25/.5/.75 against itself at 0: mean 0.00 0.00 0.00
+   CT smooth off, subpixel ON : coverage sum 245175 (x0.946 of FT hinted) | vs FT hinted: mean 30.39 max 255 | vs FT unhinted: mean 2.56 max 65 | CT at pen +.25/.5/.75 against itself at 0: mean 14.45 28.85 42.48
+   CT smooth ON,  subpixel ON : coverage sum 288344 (x1.112 of FT hinted) | vs FT hinted: mean 26.87 max 254 | vs FT unhinted: mean 13.57 max 120 | CT at pen +.25/.5/.75 against itself at 0: mean 13.90 27.41 40.68
+
+-- which pixel formats give coverage: 'Port A' glyphs, system UI font at 14 px, summed coverage and difference to the alpha-only result
+  smoothing off: alpha-only (kCGImageAlphaOnly, no color space) coverage 26664 | DeviceGray white-on-black 26664 (mean diff to alpha-only over glyph boxes 0.00, max 0) | gray black-on-white inverted 26664
+  smoothing ON : alpha-only (kCGImageAlphaOnly, no color space) coverage 30927 | DeviceGray white-on-black 38040 (mean diff to alpha-only over glyph boxes 15.73, max 88) | gray black-on-white inverted 30927
+-- a string, whole-pixel pens
+"Port A 300-6000 Hz", System (SFNS.ttf) at 14 px: string width with whole-pixel pens: CT 134 px, FT 128 px; total coverage CT 90116, FT hinted 88629, FT unhinted 90592 (CT/FT hinted 1.017)
+  CT at CT's own pens   vs FT hinted at FT's pens  : mean |diff| over pixels with ink in either 118.7 of 255, max 255 (998 such pixels)
+  CT at FT's pens       vs FT hinted               : mean |diff| over pixels with ink in either 50.7 of 255, max 250 (778 such pixels)
+  CT at FT's pens       vs FT unhinted             : mean |diff| over pixels with ink in either 42.6 of 255, max 224 (777 such pixels)
+  wrote $T/out/s0_ct_14.pgm (176x28)
+  wrote $T/out/s0_ct_at_ft_pens_14.pgm (176x28)
+  wrote $T/out/s0_ft_14.pgm (176x28)
+  wrote $T/out/s0_ft_unhinted_14.pgm (176x28)
+  wrote $T/out/s0_diff_own_pens_14.pgm (176x28)
+  Core Text (font smoothing off), its own pens, 'Port A':
+  |                                                            |
+  |                                                            |
+  |     +###*=                ..          #-         -#%#-    -|
+  |     *+::-#+               -#         -##        -#: :%:  :%|
+  |     *=   :%   =#%+   *-*%=%%#-       *-%.       .    *=  *=|
+  |     *=   -%  =#::**  %#-:.=#.       .% ++           -%   %:|
+  |     *=  .#*  %:   %: %=   -#        =+ .%         #%#.   @.|
+  |     *%#%@#  .@    #- %:   -#        #-  %:        ..=%:  %:|
+  |     *+::.   .%    *= %:   -#       :@@@@@*           ++  #-|
+  |     *=       %.   %: %:   -#       ++   .%      *.   =#  *+|
+  |     *=       +*  =#  %:   :%.      %:    #-     +*  .#=  .%|
+  |     *=        *%%#.  %:    *%-    -%     =#      +%%%=    -|
+  |                                                            |
+  |                                                            |
+  |                                                            |
+  |                                                            |
+  FreeType (hinted, as dimna), 'Port A':
+  |                                                            |
+  |                                                            |
+  |    .@@@%+                         @@=       .*%%*.   -#%#: |
+  |    .@  .#+             .@        -+%#       #+  *#  :%: -%.|
+  |    .@   :%             .@        *:+@:      =   :%  #=   ++|
+  |    .@   :%   +%%=  .@-@@@@-     .% .%+          ++  %.   -#|
+  |    .@   **  ** .#= .@= :@       =+  *%       .%%+  .@    :%|
+  |    .@%%%*   %.  -% .@  .@       #:  :@-        :#= .@    :%|
+  |    .@      .@   :% .@  .@      .@%%%%@#         :%  @.   -#|
+  |    .@       %.  -% .@  .@      +*    =@    :*   :%  #=   ++|
+  |    .@       ** .#= .@  .@.     %:     %-    %= .#+  :%: -%.|
+  |    .@        +%%+  .@   +%-   :%      =#    .*%%+    -#%#: |
+  |                                                            |
+  |                                                            |
+  |                                                            |
+  |                                                            |
+"Port A 300-6000 Hz", System (SFNS.ttf) at 20 px: string width with whole-pixel pens: CT 182 px, FT 175 px; total coverage CT 183204, FT hinted 175825, FT unhinted 183841 (CT/FT hinted 1.042)
+  CT at CT's own pens   vs FT hinted at FT's pens  : mean |diff| over pixels with ink in either 137.0 of 255, max 255 (1778 such pixels)
+  CT at FT's pens       vs FT hinted               : mean |diff| over pixels with ink in either 49.0 of 255, max 255 (1289 such pixels)
+  CT at FT's pens       vs FT unhinted             : mean |diff| over pixels with ink in either 35.4 of 255, max 175 (1315 such pixels)
+  wrote $T/out/s0_ct_20.pgm (248x40)
+  wrote $T/out/s0_ct_at_ft_pens_20.pgm (248x40)
+  wrote $T/out/s0_ft_20.pgm (248x40)
+  wrote $T/out/s0_ft_unhinted_20.pgm (248x40)
+  wrote $T/out/s0_diff_own_pens_20.pgm (248x40)
+"Port A 300-6000 Hz", System (SFNS.ttf) at 24 px: string width with whole-pixel pens: CT 217 px, FT 209 px; total coverage CT 263411, FT hinted 274594, FT unhinted 265722 (CT/FT hinted 0.959)
+  CT at CT's own pens   vs FT hinted at FT's pens  : mean |diff| over pixels with ink in either 113.8 of 255, max 255 (2234 such pixels)
+  CT at FT's pens       vs FT hinted               : mean |diff| over pixels with ink in either 54.5 of 255, max 255 (1816 such pixels)
+  CT at FT's pens       vs FT unhinted             : mean |diff| over pixels with ink in either 12.5 of 255, max 84 (1676 such pixels)
+  wrote $T/out/s0_ct_24.pgm (296x48)
+  wrote $T/out/s0_ct_at_ft_pens_24.pgm (296x48)
+  wrote $T/out/s0_ft_24.pgm (296x48)
+  wrote $T/out/s0_ft_unhinted_24.pgm (296x48)
+  wrote $T/out/s0_diff_own_pens_24.pgm (296x48)
+"Port A 300-6000 Hz", System (SFNS.ttf), CT optical sizing none at 14 px: string width with whole-pixel pens: CT 128 px, FT 128 px; total coverage CT 88768, FT hinted 88629, FT unhinted 90592 (CT/FT hinted 1.002)
+  CT at CT's own pens   vs FT hinted at FT's pens  : mean |diff| over pixels with ink in either 51.0 of 255, max 255 (793 such pixels)
+  CT at FT's pens       vs FT hinted               : mean |diff| over pixels with ink in either 48.9 of 255, max 255 (789 such pixels)
+  CT at FT's pens       vs FT unhinted             : mean |diff| over pixels with ink in either 27.8 of 255, max 194 (750 such pixels)
+  wrote $T/out/s5_ct_14.pgm (176x28)
+  wrote $T/out/s5_ct_at_ft_pens_14.pgm (176x28)
+  wrote $T/out/s5_ft_14.pgm (176x28)
+  wrote $T/out/s5_ft_unhinted_14.pgm (176x28)
+  wrote $T/out/s5_diff_own_pens_14.pgm (176x28)
+  Core Text (font smoothing off), its own pens, 'Port A':
+  |                                                            |
+  |                                                            |
+  |     ####+.               .        :#.       .+#%*:   =#%+. |
+  |     @.  -%:              #-       *#+       #-  :%  +*  :%.|
+  |     @.   *+  +%*-  .#-%.*%%+      %.%           .%  @.   +=|
+  |     @.   %- #*:-%: :%+: :%=.     -* #:        .:#= .%    =*|
+  |     @: .+%.:%   =* :@    #-      #- -*       .%@+  -%    -#|
+  |     @@@@#: =*   :% :%    #-     .%::-%         .=% :%    =*|
+  |     @:.    =*   :% :%    #-     =%%%%%-          %- @    ++|
+  |     @.     :#   =* :%    #-     %:   -#    .#    #- %-   %-|
+  |     @.      %= .%- :%    *=    :%     %.    %+  -%. -%: +# |
+  |     @.      .#%%=  :%    -%+   ++     *=    .#%%#:   =%%*. |
+  |                                                            |
+  |                                                            |
+  |                                                            |
+  |                                                            |
+  FreeType (hinted, as dimna), 'Port A':
+  |                                                            |
+  |                                                            |
+  |    .@@@%+                         @@=       .*%%*.   -#%#: |
+  |    .@  .#+             .@        -+%#       #+  *#  :%: -%.|
+  |    .@   :%             .@        *:+@:      =   :%  #=   ++|
+  |    .@   :%   +%%=  .@-@@@@-     .% .%+          ++  %.   -#|
+  |    .@   **  ** .#= .@= :@       =+  *%       .%%+  .@    :%|
+  |    .@%%%*   %.  -% .@  .@       #:  :@-        :#= .@    :%|
+  |    .@      .@   :% .@  .@      .@%%%%@#         :%  @.   -#|
+  |    .@       %.  -% .@  .@      +*    =@    :*   :%  #=   ++|
+  |    .@       ** .#= .@  .@.     %:     %-    %= .#+  :%: -%.|
+  |    .@        +%%+  .@   +%-   :%      =#    .*%%+    -#%#: |
+  |                                                            |
+  |                                                            |
+  |                                                            |
+  |                                                            |
+"Port A 300-6000 Hz", System (SFNS.ttf), CT optical sizing none at 20 px: string width with whole-pixel pens: CT 178 px, FT 175 px; total coverage CT 181765, FT hinted 175825, FT unhinted 183841 (CT/FT hinted 1.034)
+  CT at CT's own pens   vs FT hinted at FT's pens  : mean |diff| over pixels with ink in either 96.5 of 255, max 255 (1499 such pixels)
+  CT at FT's pens       vs FT hinted               : mean |diff| over pixels with ink in either 37.1 of 255, max 221 (1272 such pixels)
+  CT at FT's pens       vs FT unhinted             : mean |diff| over pixels with ink in either 8.2 of 255, max 56 (1241 such pixels)
+  wrote $T/out/s5_ct_20.pgm (248x40)
+  wrote $T/out/s5_ct_at_ft_pens_20.pgm (248x40)
+  wrote $T/out/s5_ft_20.pgm (248x40)
+  wrote $T/out/s5_ft_unhinted_20.pgm (248x40)
+  wrote $T/out/s5_diff_own_pens_20.pgm (248x40)
+"Port A 300-6000 Hz", System (SFNS.ttf), CT optical sizing none at 24 px: string width with whole-pixel pens: CT 219 px, FT 209 px; total coverage CT 262979, FT hinted 274594, FT unhinted 265722 (CT/FT hinted 0.958)
+  CT at CT's own pens   vs FT hinted at FT's pens  : mean |diff| over pixels with ink in either 129.7 of 255, max 255 (2347 such pixels)
+  CT at FT's pens       vs FT hinted               : mean |diff| over pixels with ink in either 54.0 of 255, max 255 (1822 such pixels)
+  CT at FT's pens       vs FT unhinted             : mean |diff| over pixels with ink in either 6.6 of 255, max 65 (1660 such pixels)
+  wrote $T/out/s5_ct_24.pgm (296x48)
+  wrote $T/out/s5_ct_at_ft_pens_24.pgm (296x48)
+  wrote $T/out/s5_ft_24.pgm (296x48)
+  wrote $T/out/s5_ft_unhinted_24.pgm (296x48)
+  wrote $T/out/s5_diff_own_pens_24.pgm (296x48)
+"Port A 300-6000 Hz", Helvetica Neue at 14 px: string width with whole-pixel pens: CT 125 px, FT 125 px; total coverage CT 93658, FT hinted 90494, FT unhinted 92933 (CT/FT hinted 1.035)
+  CT at CT's own pens   vs FT hinted at FT's pens  : mean |diff| over pixels with ink in either 23.9 of 255, max 229 (740 such pixels)
+  CT at FT's pens       vs FT hinted               : mean |diff| over pixels with ink in either 23.9 of 255, max 229 (740 such pixels)
+  CT at FT's pens       vs FT unhinted             : mean |diff| over pixels with ink in either 18.1 of 255, max 149 (739 such pixels)
+  wrote $T/out/s1_ct_14.pgm (176x28)
+  wrote $T/out/s1_ct_at_ft_pens_14.pgm (176x28)
+  wrote $T/out/s1_ft_14.pgm (176x28)
+  wrote $T/out/s1_ft_unhinted_14.pgm (176x28)
+  wrote $T/out/s1_diff_own_pens_14.pgm (176x28)
+  Core Text (font smoothing off), its own pens, 'Port A':
+  |                                                            |
+  |                                                            |
+  |     %@@@%+:               ::        -@=        .*##=    +##|
+  |     %=...=%.              +=        **#        %-.:%=  #+..|
+  |     %-    %-  +%%+  .# *+*%%#      .% %:      .+   ++ :%   |
+  |     %-   .@. *#::#* .%*+::**:      =+ ++          -%: -#   |
+  |     %*++*%# .%.  .%:.@=   +=       %: .%         %@*  -#   |
+  |     %#+++=  -#    #-.@.   +=      :%---%-          ** -#   |
+  |     %-      -#    #=.@    +=      *######     ..   :% :%   |
+  |     %-      :%    %-.@    +=     .%.   .@.    =#   .% .@.  |
+  |     %-       #+  +% .@    ++     =#     #+    .%-  **  #* .|
+  |     %-       .#%%#. .@    :%%    #=     =%     -%%%*.  .#%%|
+  |                                                            |
+  |                                                            |
+  |                                                            |
+  |                                                            |
+  FreeType (hinted, as dimna), 'Port A':
+  |                                                            |
+  |                                                            |
+  |     %@@@%#-                         -@=        .*%%=   .*%%|
+  |     %-   =%.              +=        **#        %= .#=  #* .|
+  |     %-    #=              +=       .%.%:      :%   +* .@   |
+  |     %-    #= .*%%*. .#.#+#@@%      =* *+       .  .%- :%   |
+  |     %-   =%. #+  +# .%*:  +=       %- :%         %@*  -#   |
+  |     %@@@%#- -%    %-.@:   +=      :%   %-         .** -#   |
+  |     %-      =#    *=.@    +=      *@@@@@#      .   :@ :%   |
+  |     %-      -%    %-.@    +=     .%.   .@.    =*   :% .@.  |
+  |     %-       #+  +# .@    ++     =#     #+    .%- .#+  #* .|
+  |     %-       .*%%*. .@    -%%    #=     =%     :#%%+   .*%%|
+  |                                                            |
+  |                                                            |
+  |                                                            |
+  |                                                            |
+"Port A 300-6000 Hz", Helvetica Neue at 20 px: string width with whole-pixel pens: CT 177 px, FT 177 px; total coverage CT 189917, FT hinted 193565, FT unhinted 190795 (CT/FT hinted 0.981)
+  CT at CT's own pens   vs FT hinted at FT's pens  : mean |diff| over pixels with ink in either 24.7 of 255, max 174 (1304 such pixels)
+  CT at FT's pens       vs FT hinted               : mean |diff| over pixels with ink in either 24.7 of 255, max 174 (1304 such pixels)
+  CT at FT's pens       vs FT unhinted             : mean |diff| over pixels with ink in either 3.4 of 255, max 40 (1275 such pixels)
+  wrote $T/out/s1_ct_20.pgm (248x40)
+  wrote $T/out/s1_ct_at_ft_pens_20.pgm (248x40)
+  wrote $T/out/s1_ft_20.pgm (248x40)
+  wrote $T/out/s1_ft_unhinted_20.pgm (248x40)
+  wrote $T/out/s1_diff_own_pens_20.pgm (248x40)
+"Port A 300-6000 Hz", Helvetica Neue at 24 px: string width with whole-pixel pens: CT 212 px, FT 212 px; total coverage CT 273254, FT hinted 280583, FT unhinted 274849 (CT/FT hinted 0.974)
+  CT at CT's own pens   vs FT hinted at FT's pens  : mean |diff| over pixels with ink in either 15.3 of 255, max 151 (1706 such pixels)
+  CT at FT's pens       vs FT hinted               : mean |diff| over pixels with ink in either 15.3 of 255, max 151 (1706 such pixels)
+  CT at FT's pens       vs FT unhinted             : mean |diff| over pixels with ink in either 4.0 of 255, max 49 (1676 such pixels)
+  wrote $T/out/s1_ct_24.pgm (296x48)
+  wrote $T/out/s1_ct_at_ft_pens_24.pgm (296x48)
+  wrote $T/out/s1_ft_24.pgm (296x48)
+  wrote $T/out/s1_ft_unhinted_24.pgm (296x48)
+  wrote $T/out/s1_diff_own_pens_24.pgm (296x48)

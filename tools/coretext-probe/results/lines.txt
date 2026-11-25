@@ -1,0 +1,187 @@
+FreeType 2.14.3 (vendor/freetype, static); HarfBuzz 14.3.0; FriBidi 1.0.16
+== Q4: lines through CTTypesetter/CTLine, the system UI font at 14 px (no cascade list: Core Text's own fallback)
+-- Latin: Port A  (6 code points)
+  base natural, plain
+    1 run(s), typographic width 39.983 px
+    run 0: LTR chars [0,6) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 6 glyphs, run width 39.983
+    left to right, one entry per glyph (the character it stands for): P o r t   A
+    CTLineCreateWithAttributedString (natural) gives the same glyphs and positions as the typesetter's line: yes
+  base forced LTR, plain
+    1 run(s), typographic width 39.983 px
+    run 0: LTR chars [0,6) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 6 glyphs, run width 39.983
+    left to right, one entry per glyph (the character it stands for): P o r t   A
+  base forced RTL, plain
+    1 run(s), typographic width 39.983 px
+    run 0: LTR chars [0,6) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 6 glyphs, run width 39.983
+    left to right, one entry per glyph (the character it stands for): P o r t   A
+-- Persian word (seen lam alef meem): سلام  (4 code points)
+  base natural, plain
+    1 run(s), typographic width 25.478 px
+    run 0: RTL chars [0,4) font .SFArabic-Regular (.SF Arabic) size 14.00, 3 glyphs, run width 25.478
+      glyphs (gid@x+advance[char index]): 635@0.00+7.22[3] 966@7.22+8.22[1] 350@15.44+10.04[0]
+    left to right, one entry per glyph (the character it stands for): م ل س
+    CTLineCreateWithAttributedString (natural) gives the same glyphs and positions as the typesetter's line: yes
+  base forced LTR, plain
+    1 run(s), typographic width 25.478 px
+    run 0: RTL chars [0,4) font .SFArabic-Regular (.SF Arabic) size 14.00, 3 glyphs, run width 25.478
+      glyphs (gid@x+advance[char index]): 635@0.00+7.22[3] 966@7.22+8.22[1] 350@15.44+10.04[0]
+    left to right, one entry per glyph (the character it stands for): م ل س
+  base forced RTL, plain
+    1 run(s), typographic width 25.478 px
+    run 0: RTL chars [0,4) font .SFArabic-Regular (.SF Arabic) size 14.00, 3 glyphs, run width 25.478
+      glyphs (gid@x+advance[char index]): 635@0.00+7.22[3] 966@7.22+8.22[1] 350@15.44+10.04[0]
+    left to right, one entry per glyph (the character it stands for): م ل س
+-- Persian with a range: فیلتر 300-6000 Hz  (17 code points)
+  base natural, plain
+    7 run(s), typographic width 118.029 px
+    run 0: LTR chars [15,17) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 2 glyphs, run width 17.637
+      glyphs (gid@x+advance[char index]): 112@0.00+10.24[15] 970@10.24+7.40[16]
+    run 1: RTL chars [14,15) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 1 glyphs, run width 3.787
+      glyphs (gid@x+advance[char index]): 3@17.64+3.79[14]
+    run 2: LTR chars [10,14) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 4 glyphs, run width 34.768
+      glyphs (gid@x+advance[char index]): 1317@21.42+8.76[10] 1308@30.19+8.67[11] 1308@38.86+8.67[12] 1308@47.52+8.67[13]
+    run 3: RTL chars [9,10) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 1 glyphs, run width 6.453
+      glyphs (gid@x+advance[char index]): 1404@56.19+6.45[9]
+    run 4: LTR chars [6,9) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 3 glyphs, run width 25.963
+      glyphs (gid@x+advance[char index]): 1313@62.64+8.63[6] 1308@71.27+8.67[7] 1308@79.94+8.67[8]
+    run 5: RTL chars [5,6) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 1 glyphs, run width 3.787
+      glyphs (gid@x+advance[char index]): 3@88.61+3.79[5]
+    run 6: RTL chars [0,5) font .SFArabic-Regular (.SF Arabic) size 14.00, 8 glyphs, run width 25.635
+      glyphs (gid@x+advance[char index]): 286@92.39+6.19[4] 1251@98.59+-0.31[3] 44@98.28+4.57[3] 610@102.85+4.89[2] 1253@107.73+-0.31[1] 44@107.43+6.34[1] 1242@113.76+-1.77[0] 457@111.99+6.04[0]
+    left to right, one entry per glyph (the character it stands for): H z   6 0 0 0 - 3 0 0   ر ت ت ل ی ی ف ف
+    CTLineCreateWithAttributedString (natural) gives the same glyphs and positions as the typesetter's line: yes
+  base forced LTR, plain
+    6 run(s), typographic width 118.029 px
+    run 0: LTR chars [10,14) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 4 glyphs, run width 34.768
+      glyphs (gid@x+advance[char index]): 1317@0.00+8.76[10] 1308@8.76+8.67[11] 1308@17.43+8.67[12] 1308@26.10+8.67[13]
+    run 1: RTL chars [9,10) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 1 glyphs, run width 6.453
+      glyphs (gid@x+advance[char index]): 1404@34.77+6.45[9]
+    run 2: LTR chars [6,9) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 3 glyphs, run width 25.963
+      glyphs (gid@x+advance[char index]): 1313@41.22+8.63[6] 1308@49.85+8.67[7] 1308@58.52+8.67[8]
+    run 3: RTL chars [5,6) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 1 glyphs, run width 3.787
+      glyphs (gid@x+advance[char index]): 3@67.18+3.79[5]
+    run 4: RTL chars [0,5) font .SFArabic-Regular (.SF Arabic) size 14.00, 8 glyphs, run width 25.635
+      glyphs (gid@x+advance[char index]): 286@70.97+6.19[4] 1251@77.16+-0.31[3] 44@76.86+4.57[3] 610@81.42+4.89[2] 1253@86.31+-0.31[1] 44@86.00+6.34[1] 1242@92.34+-1.77[0] 457@90.57+6.04[0]
+    run 5: LTR chars [14,17) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 3 glyphs, run width 21.424
+      glyphs (gid@x+advance[char index]): 3@96.61+3.79[14] 112@100.39+10.24[15] 970@110.63+7.40[16]
+    left to right, one entry per glyph (the character it stands for): 6 0 0 0 - 3 0 0   ر ت ت ل ی ی ف ف   H z
+  base forced RTL, plain
+    7 run(s), typographic width 118.029 px
+    run 0: LTR chars [15,17) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 2 glyphs, run width 17.637
+      glyphs (gid@x+advance[char index]): 112@0.00+10.24[15] 970@10.24+7.40[16]
+    run 1: RTL chars [14,15) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 1 glyphs, run width 3.787
+      glyphs (gid@x+advance[char index]): 3@17.64+3.79[14]
+    run 2: LTR chars [10,14) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 4 glyphs, run width 34.768
+      glyphs (gid@x+advance[char index]): 1317@21.42+8.76[10] 1308@30.19+8.67[11] 1308@38.86+8.67[12] 1308@47.52+8.67[13]
+    run 3: RTL chars [9,10) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 1 glyphs, run width 6.453
+      glyphs (gid@x+advance[char index]): 1404@56.19+6.45[9]
+    run 4: LTR chars [6,9) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 3 glyphs, run width 25.963
+      glyphs (gid@x+advance[char index]): 1313@62.64+8.63[6] 1308@71.27+8.67[7] 1308@79.94+8.67[8]
+    run 5: RTL chars [5,6) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 1 glyphs, run width 3.787
+      glyphs (gid@x+advance[char index]): 3@88.61+3.79[5]
+    run 6: RTL chars [0,5) font .SFArabic-Regular (.SF Arabic) size 14.00, 8 glyphs, run width 25.635
+      glyphs (gid@x+advance[char index]): 286@92.39+6.19[4] 1251@98.59+-0.31[3] 44@98.28+4.57[3] 610@102.85+4.89[2] 1253@107.73+-0.31[1] 44@107.43+6.34[1] 1242@113.76+-1.77[0] 457@111.99+6.04[0]
+    left to right, one entry per glyph (the character it stands for): H z   6 0 0 0 - 3 0 0   ر ت ت ل ی ی ف ف
+  base natural, with U+2066/U+2069 around the Latin/digit stretches
+    3 run(s), typographic width 118.029 px
+    run 0: LTR chars [7,19) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 11 glyphs, run width 88.607
+      glyphs (gid@x+advance[char index]): 1313@0.00+8.63[7] 1308@8.63+8.67[8] 1308@17.29+8.67[9] 1404@25.96+6.45[10] 1317@32.42+8.76[11] 1308@41.18+8.67[12] 1308@49.85+8.67[13] 1308@58.52+8.67[14] 3@67.18+3.79[15] 112@70.97+10.24[16] 970@81.21+7.40[17]
+    run 1: RTL chars [5,7) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 1 glyphs, run width 3.787
+      glyphs (gid@x+advance[char index]): 3@88.61+3.79[5]
+    run 2: RTL chars [0,5) font .SFArabic-Regular (.SF Arabic) size 14.00, 8 glyphs, run width 25.635
+      glyphs (gid@x+advance[char index]): 286@92.39+6.19[4] 1251@98.59+-0.31[3] 44@98.28+4.57[3] 610@102.85+4.89[2] 1253@107.73+-0.31[1] 44@107.43+6.34[1] 1242@113.76+-1.77[0] 457@111.99+6.04[0]
+    left to right, one entry per glyph (the character it stands for): 3 0 0 - 6 0 0 0   H z   ر ت ت ل ی ی ف ف
+  base forced LTR, with U+2066/U+2069 around the Latin/digit stretches
+    3 run(s), typographic width 118.029 px
+    run 0: RTL chars [0,5) font .SFArabic-Regular (.SF Arabic) size 14.00, 8 glyphs, run width 25.635
+      glyphs (gid@x+advance[char index]): 286@0.00+6.19[4] 1251@6.19+-0.31[3] 44@5.89+4.57[3] 610@10.45+4.89[2] 1253@15.34+-0.31[1] 44@15.03+6.34[1] 1242@21.37+-1.77[0] 457@19.60+6.04[0]
+    run 1: LTR chars [5,7) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 1 glyphs, run width 3.787
+      glyphs (gid@x+advance[char index]): 3@25.63+3.79[5]
+    run 2: LTR chars [7,19) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 11 glyphs, run width 88.607
+      glyphs (gid@x+advance[char index]): 1313@29.42+8.63[7] 1308@38.05+8.67[8] 1308@46.72+8.67[9] 1404@55.38+6.45[10] 1317@61.84+8.76[11] 1308@70.60+8.67[12] 1308@79.27+8.67[13] 1308@87.94+8.67[14] 3@96.61+3.79[15] 112@100.39+10.24[16] 970@110.63+7.40[17]
+    left to right, one entry per glyph (the character it stands for): ر ت ت ل ی ی ف ف   3 0 0 - 6 0 0 0   H z
+  base forced RTL, with U+2066/U+2069 around the Latin/digit stretches
+    3 run(s), typographic width 118.029 px
+    run 0: LTR chars [7,19) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 11 glyphs, run width 88.607
+      glyphs (gid@x+advance[char index]): 1313@0.00+8.63[7] 1308@8.63+8.67[8] 1308@17.29+8.67[9] 1404@25.96+6.45[10] 1317@32.42+8.76[11] 1308@41.18+8.67[12] 1308@49.85+8.67[13] 1308@58.52+8.67[14] 3@67.18+3.79[15] 112@70.97+10.24[16] 970@81.21+7.40[17]
+    run 1: RTL chars [5,7) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 1 glyphs, run width 3.787
+      glyphs (gid@x+advance[char index]): 3@88.61+3.79[5]
+    run 2: RTL chars [0,5) font .SFArabic-Regular (.SF Arabic) size 14.00, 8 glyphs, run width 25.635
+      glyphs (gid@x+advance[char index]): 286@92.39+6.19[4] 1251@98.59+-0.31[3] 44@98.28+4.57[3] 610@102.85+4.89[2] 1253@107.73+-0.31[1] 44@107.43+6.34[1] 1242@113.76+-1.77[0] 457@111.99+6.04[0]
+    left to right, one entry per glyph (the character it stands for): 3 0 0 - 6 0 0 0   H z   ر ت ت ل ی ی ف ف
+-- Chinese label: 通道 3 阈值 5  (9 code points)
+  base natural, plain
+    4 run(s), typographic width 84.056 px
+    run 0: LTR chars [0,2) font .PingFangUITextSC-Regular (.PingFang UI SC) size 14.00, 2 glyphs, run width 27.782
+    run 1: LTR chars [2,5) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 3 glyphs, run width 16.201
+    run 2: LTR chars [5,7) font .PingFangUITextSC-Regular (.PingFang UI SC) size 14.00, 2 glyphs, run width 27.782
+    run 3: LTR chars [7,9) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 2 glyphs, run width 12.291
+    left to right, one entry per glyph (the character it stands for): 通 道   3   阈 值   5
+    CTLineCreateWithAttributedString (natural) gives the same glyphs and positions as the typesetter's line: yes
+  base forced LTR, plain
+    4 run(s), typographic width 84.056 px
+    run 0: LTR chars [0,2) font .PingFangUITextSC-Regular (.PingFang UI SC) size 14.00, 2 glyphs, run width 27.782
+    run 1: LTR chars [2,5) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 3 glyphs, run width 16.201
+    run 2: LTR chars [5,7) font .PingFangUITextSC-Regular (.PingFang UI SC) size 14.00, 2 glyphs, run width 27.782
+    run 3: LTR chars [7,9) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 2 glyphs, run width 12.291
+    left to right, one entry per glyph (the character it stands for): 通 道   3   阈 值   5
+  base forced RTL, plain
+    4 run(s), typographic width 84.056 px
+    run 0: LTR chars [0,2) font .PingFangUITextSC-Regular (.PingFang UI SC) size 14.00, 2 glyphs, run width 27.782
+    run 1: LTR chars [2,5) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 3 glyphs, run width 16.201
+    run 2: LTR chars [5,7) font .PingFangUITextSC-Regular (.PingFang UI SC) size 14.00, 2 glyphs, run width 27.782
+    run 3: LTR chars [7,9) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 2 glyphs, run width 12.291
+    left to right, one entry per glyph (the character it stands for): 通 道   3   阈 值   5
+-- Latin name then Persian: Port A فیلتر  (12 code points)
+  base natural, plain
+    2 run(s), typographic width 69.405 px
+    run 0: LTR chars [0,7) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 7 glyphs, run width 43.771
+    run 1: RTL chars [7,12) font .SFArabic-Regular (.SF Arabic) size 14.00, 8 glyphs, run width 25.635
+    left to right, one entry per glyph (the character it stands for): P o r t   A   ر ت ت ل ی ی ف ف
+    CTLineCreateWithAttributedString (natural) gives the same glyphs and positions as the typesetter's line: yes
+  base forced LTR, plain
+    2 run(s), typographic width 69.405 px
+    run 0: LTR chars [0,7) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 7 glyphs, run width 43.771
+    run 1: RTL chars [7,12) font .SFArabic-Regular (.SF Arabic) size 14.00, 8 glyphs, run width 25.635
+    left to right, one entry per glyph (the character it stands for): P o r t   A   ر ت ت ل ی ی ف ف
+  base forced RTL, plain
+    3 run(s), typographic width 69.405 px
+    run 0: RTL chars [7,12) font .SFArabic-Regular (.SF Arabic) size 14.00, 8 glyphs, run width 25.635
+    run 1: RTL chars [6,7) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 1 glyphs, run width 3.787
+    run 2: LTR chars [0,6) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 6 glyphs, run width 39.983
+    left to right, one entry per glyph (the character it stands for): ر ت ت ل ی ی ف ف   P o r t   A
+  base natural, with U+2066/U+2069 around the Latin/digit stretches
+    4 run(s), typographic width 69.405 px
+    run 0: RTL chars [9,14) font .SFArabic-Regular (.SF Arabic) size 14.00, 8 glyphs, run width 25.635
+    run 1: RTL chars [7,9) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 1 glyphs, run width 3.787
+    run 2: LTR chars [1,7) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 6 glyphs, run width 39.983
+    run 3: RTL chars [0,1) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 1 glyphs, run width 0.000
+    left to right, one entry per glyph (the character it stands for): ر ت ت ل ی ی ف ف   P o r t   A <LRI>
+  base forced LTR, with U+2066/U+2069 around the Latin/digit stretches
+    4 run(s), typographic width 69.405 px
+    run 0: LTR chars [0,1) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 1 glyphs, run width 0.000
+    run 1: LTR chars [1,7) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 6 glyphs, run width 39.983
+    run 2: LTR chars [7,9) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 1 glyphs, run width 3.787
+    run 3: RTL chars [9,14) font .SFArabic-Regular (.SF Arabic) size 14.00, 8 glyphs, run width 25.635
+    left to right, one entry per glyph (the character it stands for): <LRI> P o r t   A   ر ت ت ل ی ی ف ف
+  base forced RTL, with U+2066/U+2069 around the Latin/digit stretches
+    4 run(s), typographic width 69.405 px
+    run 0: RTL chars [9,14) font .SFArabic-Regular (.SF Arabic) size 14.00, 8 glyphs, run width 25.635
+    run 1: RTL chars [7,9) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 1 glyphs, run width 3.787
+    run 2: LTR chars [1,7) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 6 glyphs, run width 39.983
+    run 3: RTL chars [0,1) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 1 glyphs, run width 0.000
+    left to right, one entry per glyph (the character it stands for): ر ت ت ل ی ی ف ف   P o r t   A <LRI>
+-- a cascade list (kCTFontCascadeListAttribute: Geeza Pro, Hiragino Sans GB; both installed) on the system UI font
+  فیلتر <LRI>300-6000 Hz<PDI>
+    3 run(s), typographic width 114.717 px
+    run 0: LTR chars [7,19) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 11 glyphs, run width 88.607
+    run 1: RTL chars [5,7) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 1 glyphs, run width 3.787
+    run 2: RTL chars [0,5) font GeezaPro (Geeza Pro) size 14.00, 5 glyphs, run width 22.323
+    left to right, one entry per glyph (the character it stands for): 3 0 0 - 6 0 0 0   H z   ر ت ل ی ف
+  通道 3 阈值 5
+    4 run(s), typographic width 84.492 px
+    run 0: LTR chars [0,2) font HiraginoSansGB-W3 (Hiragino Sans GB) size 14.00, 2 glyphs, run width 28.000
+    run 1: LTR chars [2,5) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 3 glyphs, run width 16.201
+    run 2: LTR chars [5,7) font HiraginoSansGB-W3 (Hiragino Sans GB) size 14.00, 2 glyphs, run width 28.000
+    run 3: LTR chars [7,9) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 2 glyphs, run width 12.291
+    left to right, one entry per glyph (the character it stands for): 通 道   3   阈 值   5
