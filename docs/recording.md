@@ -73,13 +73,33 @@ that ignores keys it does not know is unaffected, so `format_version` stays 1.
 `tools/version-test.sh` builds dimna-headless with git, with `-Dgit=false` and with git
 not on `PATH`, records a second from the simulator with each, and checks both keys.
 
-**After a read error** (prototype, simulator only so far; `docs/plans/reopen-after-read-error.md`):
-the recording is closed at once, with `[final] reason = "acquisition stopped by a read error (...)"`
-(the same text as its `stop` event; the key is absent after a stop by the user), and once
-the board is open again the recording goes on in a new folder of the same session,
-`SESSION/ephys_2/` (then `ephys_3/`, ...), whose sample numbers start at 0 again and whose
-`start` event says what it continues. Each folder is a complete v1 recording. The `reason`
-key is new in version 1; readers that ignore unknown keys are unaffected.
+### After a read error
+
+(Simulator only so far; `docs/plans/reopen-after-read-error.md`.) The recording is closed
+at once, and the board is opened again. Once it runs, the recording goes on in a new folder
+of the same session, `SESSION/ephys_2/` (then `ephys_3/`, ...; dimna-headless, which has no
+sessions, makes a new `ROOT/YYYY-MM-DD_HH-MM-SS/`). Each folder is a complete v1 recording,
+and each numbers its samples from 0. Keys added within version 1 (absent in older
+recordings, and absent here except after such a restart):
+
+    # in the recording that was closed:
+    [final]
+    reason = "acquisition stopped by a read error (OniFailed)"   # also its `stop` event's text
+
+    # in the one that goes on:
+    [start]
+    first_sample = 0
+    continues = "/home/me/dimna-recordings/2026-11-12_14-03-22/ephys"   # the folder before it
+    continues_end_sample = 1830000   # that recording's [final] end_sample, in its numbering
+    gap_estimate_s = 3.214           # time acquired by neither (estimate, see below)
+
+`reason` is absent after a stop by the user. `gap_estimate_s` is from the host's clock:
+from the arrival of the earlier recording's last block to that of this one's first block,
+less that block's own duration. Samples are not counted across the gap (the board's sample
+counter starts again), so it is an estimate, good to a few milliseconds; it is written at
+the clean stop, with `[final]` (an interrupted recording has `continues` and
+`continues_end_sample` but not this key). The new recording's `start` event says what it
+continues, too. `tools/dimna_read.py` prints both.
 
 Crash safety: once a second `samples.i16` is synced, then the index records for it are written
 and synced, so every index record points at data already on disk. After a crash the indexed

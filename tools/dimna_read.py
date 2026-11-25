@@ -8,7 +8,9 @@
 Run as a script to verify a recording: every index record's CRC against samples.i16, chunk
 contiguity, file sizes, TTL edges, and the [final] counts (of settings changes too, against
 events.tsv). It warns when settings changed during the recording: [settings] in meta.toml
-holds the values at the start, and each change is a line of events.tsv.
+holds the values at the start, and each change is a line of events.tsv. It says when the
+recording continues another after a restart on a read error ([start] continues), and why it
+was stopped when that was not the user's request ([final] reason).
 
     python3 dimna_read.py RECORDING_DIR
 """
@@ -163,6 +165,16 @@ def main(argv):
         sd = x.std(axis=0)
         print(f"  electrode SD over the first {x.shape[0] / r.sample_rate:.1f} s (uV): "
               f"min {sd.min():.2f}, median {np.median(sd):.2f}, max {sd.max():.2f}")
+    start = r.meta.get("start", {})
+    if "continues" in start:
+        gap = start.get("gap_estimate_s")
+        print(f"  continues {start['continues']} (which ends at its sample {start.get('continues_end_sample', '?')}) "
+              f"after acquisition was restarted on a read error; "
+              f"{'about %.3f s' % gap if gap is not None else 'an unknown time'} not acquired between them "
+              f"(host clock estimate); this recording numbers its samples from 0 again")
+    reason = r.meta.get("final", {}).get("reason")
+    if reason:
+        print(f"  stopped: {reason}")
     if r.settings_changes:
         print(f"  WARNING: settings changed during the recording ({len(r.settings_changes)} change(s) in "
               f"events.tsv); [settings] holds the values at the start only:")

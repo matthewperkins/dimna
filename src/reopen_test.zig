@@ -248,6 +248,7 @@ fn scenario(root: []const u8) !void {
                 var next = info;
                 next.continue_in = session;
                 next.start_text = "after a read error (SimulatedReadError); continues ephys";
+                next.continues = .{ .path = path1, .end_sample = sum1.end_sample, .last_wall_ns = sum1.last_wall_ns };
                 rec2 = try record.Recorder.create(gpa, io, &ring, root, next);
                 try rec2.?.start();
                 try acq.start();
@@ -304,7 +305,19 @@ fn scenario(root: []const u8) !void {
     try testing.expect(std.mem.indexOf(u8, meta1, "\nreason = \"acquisition stopped by a read error (SimulatedReadError)\"\n") != null);
     try testing.expect(std.mem.indexOf(u8, meta1, "\n[final]\n") != null);
     try testing.expect(std.mem.indexOf(u8, meta2, "\n[final]\n") != null);
-    try testing.expect(std.mem.indexOf(u8, meta2, "reason") == null);
+    try testing.expect(std.mem.indexOf(u8, meta2, "\nreason") == null);
+    // The second names the first, where it ended, and about how long was not acquired:
+    // the read error, then the 20 ms waits before each of the three attempts.
+    var cont_buf: [512]u8 = undefined;
+    const cont = try std.fmt.bufPrint(&cont_buf, "\ncontinues = \"{s}\"\ncontinues_end_sample = {d}\ngap_estimate_s = ", .{ path1, sum1.samples });
+    const at = std.mem.indexOf(u8, meta2, cont) orelse {
+        std.debug.print("meta.toml of the second recording:\n{s}", .{meta2});
+        return error.NoContinuesKeys;
+    };
+    try testing.expect(std.mem.indexOf(u8, meta1, "continues") == null);
+    const gap_text = std.mem.sliceTo(meta2[at + cont.len ..], '\n');
+    const gap = try std.fmt.parseFloat(f64, gap_text);
+    try testing.expect(gap >= 0.06 and gap < 2.0);
     const ev1 = try readFile(path1, "events.tsv");
     defer gpa.free(ev1);
     const ev2 = try readFile(path2, "events.tsv");

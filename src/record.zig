@@ -101,6 +101,18 @@ pub const Info = struct {
     continue_in: ?[]const u8 = null,
     /// The text of the `start` event in events.tsv (copied; "" by default).
     start_text: []const u8 = "",
+    /// The recording this one continues after acquisition was restarted (its folder, its
+    /// end and when its last block arrived: from its `Summary`), written to `[start]`.
+    continues: ?Continues = null,
+
+    pub const Continues = struct {
+        /// Absolute path of the earlier recording's folder (copied).
+        path: []const u8,
+        /// Its `end_sample`, in its own numbering.
+        end_sample: i64,
+        /// Host wall clock (ns since the Unix epoch) when its last block arrived.
+        last_wall_ns: i64,
+    };
 };
 
 pub const Stats = struct {
@@ -197,6 +209,13 @@ pub const Recorder = struct {
     stop_reason_len: usize = 0,
     start_text_buf: [300]u8 = undefined,
     start_text_len: usize = 0,
+    /// `Info.continues`, its path copied here; and, once the first block is in, the
+    /// estimated time between the two recordings (`[start] gap_estimate_s`).
+    continues_path_buf: [std.fs.max_path_bytes]u8 = undefined,
+    continues_path_len: usize = 0,
+    gap_estimate_s: ?f64 = null,
+    /// Host wall clock when the newest block recorded arrived (ns since the Unix epoch).
+    last_wall_ns: i64 = 0,
 
     /// Creates `<root>/<local date_time>/` and its files, and writes the first meta.toml.
     /// Registers a ring reader: the recording starts with the next block acquired, whether
@@ -303,6 +322,11 @@ pub const Recorder = struct {
         @memcpy(self.start_text_buf[0..self.start_text_len], info.start_text[0..self.start_text_len]);
         self.info.start_text = "";
         self.info.continue_in = null;
+        if (info.continues) |cont| {
+            self.continues_path_len = @min(cont.path.len, self.continues_path_buf.len);
+            @memcpy(self.continues_path_buf[0..self.continues_path_len], cont.path[0..self.continues_path_len]);
+            self.info.continues.?.path = self.continues_path_buf[0..self.continues_path_len];
+        }
         try self.events_file.writeStreamingAll(io, "sample\tkind\ttext\n");
         try self.writeMeta(null);
         try self.syncDir();
@@ -325,6 +349,11 @@ pub const Recorder = struct {
         max_write_us: u64,
         max_sync_us: u64,
         failure: ?anyerror,
+        /// The sample after the last one recorded (`[final] end_sample`), and the host wall
+        /// clock when its block arrived (ns since the Unix epoch; 0 if none): what a
+        /// recording that continues this one needs (`Info.continues`).
+        end_sample: i64 = 0,
+        last_wall_ns: i64 = 0,
     };
 
     /// Asks the thread to finish without waiting for it: it records up to the last block
@@ -363,6 +392,8 @@ pub const Recorder = struct {
             .max_write_us = st.max_write_us.load(.monotonic),
             .max_sync_us = st.max_sync_us.load(.monotonic),
             .failure = self.failure,
+            .end_sample = self.last_sample_end,
+            .last_wall_ns = self.last_wall_ns,
         };
         defer self.gpa.destroy(self);
         self.samples_file.close(self.io);
@@ -446,7 +477,14 @@ pub const Recorder = struct {
             self.first_sample = b.first_sample;
             self.first_sample_shared.store(b.first_sample, .release);
             try self.event(b.first_sample, "start", self.start_text_buf[0..self.start_text_len]);
+            if (self.info.continues) |cont| if (cont.last_wall_ns != 0) {
+                // From the arrival of the earlier recording's last block to that of this
+                // one's first, less this block's own samples: host clocks, an estimate.
+                const between_s = @as(f64, @floatFromInt(@as(i64, @intCast(b.acquired_ns + self.wall_offset_ns)) - cont.last_wall_ns)) / 1e9;
+                self.gap_estimate_s = @max(0, between_s - @as(f64, @floatFromInt(b.len)) / self.info.layout.sample_rate);
+            };
         }
+        self.last_wall_ns = @intCast(b.acquired_ns + self.wall_offset_ns);
         const gap = if (self.next_expected) |e| b.first_sample != e else false;
         if (gap) {
             try self.flushChunk();
@@ -767,7 +805,14 @@ fn writeToml(w: *Io.Writer, r: *const Recorder, final_end: ?i64) !void {
         try tomlStr(w, name);
     }
     try w.writeAll("]\n");
-    if (r.first_sample) |fs| try w.print("\n[start]\nfirst_sample = {d}\n", .{fs});
+    if (r.first_sample != null or r.info.continues != null) try w.writeAll("\n[start]\n");
+    if (r.first_sample) |fs| try w.print("first_sample = {d}\n", .{fs});
+    if (r.info.continues) |cont| {
+        try w.writeAll("# Acquisition was restarted after a read error: this recording continues the one in\n# `continues`, which ends at its sample continues_end_sample (each numbers its own samples\n# from 0). gap_estimate_s: the host clock's estimate of the time acquired by neither.\ncontinues = ");
+        try tomlStr(w, cont.path);
+        try w.print("\ncontinues_end_sample = {d}\n", .{cont.end_sample});
+        if (r.gap_estimate_s) |g| try w.print("gap_estimate_s = {f}\n", .{fmtFloat(@round(g * 1e6) / 1e6)});
+    }
     if (final_end) |end| {
         var lt_name: [64]u8 = undefined;
         var lt_created: [40]u8 = undefined;

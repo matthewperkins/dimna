@@ -23,11 +23,15 @@
 //! 8 s and back to 1 Hz at 14 s, upper bandwidth 1 kHz at 18 s and back to 7.5 kHz at 22 s.
 //!
 //! After a read error the board is opened again and acquisition restarted, as
-//! `dimna.reopen` says (up to 6 attempts over about 48 s; a board that is gone is waited
+//! `dimna.reopen` says (up to 4 attempts over about 81 s; a board that is gone is waited
 //! for); a recording is closed with the reason and the next one is a new folder under the
 //! same root. Any restart makes the exit status 1. With --sim,
 //! `DIMNA_TEST_SIM_FAIL_AT=<s>[,<times>]` makes the simulator fail with a read error that
 //! many seconds into a run, for that many runs (1 by default), for testing this.
+//!
+//! A board that goes quiet without an error (no data for 0.5 s) is not reopened: it is an
+//! error line on stderr at once and every 5 s while it lasts, and makes the exit status 1.
+//! With --sim, `DIMNA_TEST_SIM_STALL=<at s>,<for s>` makes the simulator go quiet once.
 //!
 //! Prints one status line per second. `delivery` is how much later than the quickest block of
 //! that second a block's newest sample reached the ring (USB block granularity shows here).
@@ -157,6 +161,12 @@ pub fn main(init: std.process.Init) !u8 {
         sm.fail_times = std.fmt.parseInt(u32, it.next() orelse "1", 10) catch 1;
         if (sm.fail_at_s) |at| log.info("the simulator fails with a read error {d} s into a run, {d} time(s)", .{ at, sm.fail_times });
     };
+    if (sim) |*sm| if (init.environ_map.get("DIMNA_TEST_SIM_STALL")) |v| {
+        var it = std.mem.splitScalar(u8, v, ',');
+        sm.stall_at_s = std.fmt.parseFloat(f64, it.first()) catch null;
+        sm.stall_s = std.fmt.parseFloat(f64, it.next() orelse "0") catch 0;
+        if (sm.stall_at_s) |at| log.info("the simulator goes quiet {d} s into the run, for {d} s", .{ at, sm.stall_s });
+    };
 
     const layout = source.layout();
     logLayout(layout);
@@ -171,7 +181,7 @@ pub fn main(init: std.process.Init) !u8 {
     const me = ring.addConsumer().?;
     var rec: ?*dimna.record.Recorder = null;
     if (args.record_root) |root| {
-        rec = createRecorder(gpa, io, &ring, root, layout, source, if (board) |*b| b else null, "") catch return 1;
+        rec = createRecorder(gpa, io, &ring, root, layout, source, if (board) |*b| b else null, "", null) catch return 1;
     }
     var health: dimna.types.Health = .{};
     var acq: dimna.acquisition.Acquisition = .{
@@ -266,9 +276,11 @@ fn createRecorder(
     source: dimna.source.Source,
     board: ?*const Board,
     start_text: []const u8,
+    continues: ?dimna.record.Info.Continues,
 ) !*dimna.record.Recorder {
     return dimna.record.Recorder.create(gpa, io, ring, root, .{
         .start_text = start_text,
+        .continues = continues,
         .layout = layout,
         .settings = source.settings(),
         .gateware = if (board) |b| b.fw else @splat(0),
@@ -425,6 +437,10 @@ const Timing = struct {
     }
 };
 
+/// No block for this long while acquiring: the board has gone quiet (as the GUI's
+/// `Alarms.stall_s`).
+const quiet_s = 0.5;
+
 /// The source's counters of the runs before the present one (`Health` is reset at each start).
 const Carried = struct {
     dropped: u64 = 0,
@@ -459,6 +475,17 @@ const Soak = struct {
     /// The last recording's folder (for the next one's start event).
     last_path_buf: [std.fs.max_path_bytes]u8 = undefined,
     last_path_len: usize = 0,
+    /// The board gone quiet (`watchQuiet`): when the newest block came (awake clock, ns),
+    /// whether a quiet spell is under way, how many there were and the longest.
+    last_data_ns: i96 = 0,
+    quiet: bool = false,
+    quiet_spells: u64 = 0,
+    quiet_longest_s: f64 = 0,
+    quiet_longest_last: f64 = 0,
+    quiet_report_s: f64 = 5,
+    /// Where it ended, and when its last block arrived (host wall clock, ns).
+    last_end_sample: i64 = 0,
+    last_wall_ns: i64 = 0,
 
     /// Runs until --seconds, Ctrl-C, or acquisition ending for good (a read error that
     /// could not be recovered from); returns the run time in ms.
@@ -469,6 +496,7 @@ const Soak = struct {
         while (!interrupted.load(.acquire) and self.reopen.state != .gave_up) {
             self.readAll();
             self.recover();
+            self.watchQuiet();
             const elapsed_ms = t_start.untilNow(io, .awake).toMilliseconds();
             if (args.live_test) live.poll(self.acq, elapsed_ms, self.rec != null);
             if (elapsed_ms >= self.next_tick * 1000) self.second();
@@ -487,10 +515,39 @@ const Soak = struct {
         while (self.ring.readSlot(self.me)) |b| {
             const now = Io.Clock.awake.now(self.io).nanoseconds;
             self.timing.add(b, now);
+            self.last_data_ns = now;
             self.cont.countBlock(b);
             self.cont.checkClock(b);
             self.ring.release(self.me);
         }
+    }
+
+    /// A board that has gone quiet raises no error (a USB read waits and tries again), and
+    /// is not reopened: it is said on stderr, at once and every 5 s while it lasts, and
+    /// counted (the exit status is 1), as the GUI's alarm does.
+    fn watchQuiet(self: *Soak) void {
+        if (self.reopen.state != .running or self.acq.done.load(.acquire)) {
+            self.quiet = false;
+            return;
+        }
+        const now = Io.Clock.awake.now(self.io).nanoseconds;
+        const since: f64 = @as(f64, @floatFromInt(now - @max(self.last_data_ns, self.reopen.run_started_ns))) / 1e9;
+        if (since >= quiet_s) {
+            if (!self.quiet) {
+                self.quiet = true;
+                self.quiet_spells += 1;
+                self.quiet_report_s = 5;
+                log.err("NO DATA FROM THE BOARD for {d:.1} s: it has gone quiet without an error; it is not opened again, so nothing is being acquired until it sends data", .{since});
+            } else if (since >= self.quiet_report_s) {
+                self.quiet_report_s += 5;
+                log.err("STILL NO DATA FROM THE BOARD: {d:.0} s", .{since});
+            }
+            self.quiet_longest_s = @max(self.quiet_longest_s, since);
+        } else if (self.quiet) {
+            self.quiet = false;
+            log.warn("the board is sending data again, after {d:.1} s without", .{self.quiet_longest_last});
+        }
+        if (self.quiet) self.quiet_longest_last = since;
     }
 
     /// The once-a-second status lines.
@@ -619,8 +676,13 @@ const Soak = struct {
         if (reason) |why| r.setStopReason(why);
         self.last_path_len = @min(r.path.len, self.last_path_buf.len);
         @memcpy(self.last_path_buf[0..self.last_path_len], r.path[0..self.last_path_len]);
-        const ok = finishRecording(self.gpa, r, self.cont.consumed_samples - self.rec_from) catch false;
+        var sum: dimna.record.Recorder.Summary = undefined;
+        sum.end_sample = 0;
+        sum.last_wall_ns = 0;
+        const ok = finishRecording(self.gpa, r, self.cont.consumed_samples - self.rec_from, &sum) catch false;
         if (!ok) self.rec_ok = false;
+        self.last_end_sample = sum.end_sample;
+        self.last_wall_ns = sum.last_wall_ns;
     }
 
     /// The next recording, under `root`, attached before acquisition starts again.
@@ -630,7 +692,11 @@ const Soak = struct {
             self.reopen.read_error orelse error.AcquisitionEnded,
             self.last_path_buf[0..self.last_path_len],
         }) catch "after a read error";
-        const r = createRecorder(self.gpa, self.io, self.ring, root, self.layout, self.acq.source, self.board, text) catch {
+        const r = createRecorder(self.gpa, self.io, self.ring, root, self.layout, self.acq.source, self.board, text, .{
+            .path = self.last_path_buf[0..self.last_path_len],
+            .end_sample = self.last_end_sample,
+            .last_wall_ns = self.last_wall_ns,
+        }) catch {
             self.rec_ok = false;
             return;
         };
@@ -654,12 +720,14 @@ const Soak = struct {
     }
 };
 
-/// Closes the recording and checks it holds every sample the consumer saw.
-fn finishRecording(gpa: std.mem.Allocator, r: *dimna.record.Recorder, consumed_samples: u64) !bool {
+/// Closes the recording and checks it holds every sample the consumer saw. `sum_out`, if
+/// given, gets the recorder's summary.
+fn finishRecording(gpa: std.mem.Allocator, r: *dimna.record.Recorder, consumed_samples: u64, sum_out: ?*dimna.record.Recorder.Summary) !bool {
     var ok = true;
     const path = try gpa.dupe(u8, r.path);
     defer gpa.free(path);
     const sum = r.finish();
+    if (sum_out) |o| o.* = sum;
     if (sum.failure) |e| {
         log.err("recording failed: {t}", .{e});
         ok = false;
@@ -702,6 +770,10 @@ fn summarize(soak: *const Soak, layout: dimna.types.Layout, run_ms: i64, failed:
         "delivery delay of a block's newest sample, beyond the quickest in each second: avg {d:.2} ms, worst {d:.2} ms\n",
         .{ t.delay_avg_sum / t.delay_ticks, t.delay_max },
     );
+    if (soak.quiet_spells > 0) std.debug.print(
+        "the board went quiet {d} time(s) ({d} s or more without data, no error), the longest {d:.1} s\n",
+        .{ soak.quiet_spells, quiet_s, soak.quiet_longest_s },
+    );
     if (restarts > 0) std.debug.print(
         "acquisition was restarted {d} time(s) after read errors ({t}); about {d:.2} s not acquired\n",
         .{ restarts, soak.reopen.read_error.?, @as(f64, @floatFromInt(soak.reopen.down_ns)) / 1e9 },
@@ -713,7 +785,7 @@ fn summarize(soak: *const Soak, layout: dimna.types.Layout, run_ms: i64, failed:
     const nominal = layout.hw_clock_hz / layout.sample_rate;
     const tstep_ok = cont.tstep_max == 0 or (@as(f64, @floatFromInt(cont.tstep_min)) > 0.5 * nominal and
         @as(f64, @floatFromInt(cont.tstep_max)) < 1.5 * nominal);
-    const clean = live_ok and rec_ok and restarts == 0 and dropped == 0 and gaps == 0 and bad == 0 and overflow == 0 and cont.gap_blocks == 0 and tstep_ok;
+    const clean = live_ok and rec_ok and restarts == 0 and soak.quiet_spells == 0 and dropped == 0 and gaps == 0 and bad == 0 and overflow == 0 and cont.gap_blocks == 0 and tstep_ok;
     std.debug.print("{s}\n", .{if (clean) "CLEAN" else "PROBLEMS (see counters above)"});
     return if (clean) 0 else 1;
 }

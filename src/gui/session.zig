@@ -660,11 +660,14 @@ pub const Recording = struct {
     root_len: usize = 0,
     /// Faults to make in each recorder started, for testing the alarms (`Env.record_test`).
     fault: Env.RecordTest = .{},
-    /// After a recording was closed because acquisition stopped on a read error: the
-    /// session folder the next one continues in, once the board is open again
-    /// (`resumeIn`); empty when there is none. Cleared by Stop and by any start.
+    /// After a recording was closed because acquisition stopped on a read error: its
+    /// folder (the next one goes on in the same session, once the board is open again:
+    /// `resumeIn`), and where it ended (from its summary); empty when there is none.
+    /// Cleared by Stop and by any start.
     resume_buf: [std.fs.max_path_bytes]u8 = undefined,
     resume_len: usize = 0,
+    resume_end_sample: i64 = 0,
+    resume_last_wall_ns: i64 = 0,
 
     /// Sets the folder sessions are made under ("~/" is the home folder, `home`).
     pub fn setRoot(self: *Recording, dir: []const u8, home: []const u8) void {
@@ -754,16 +757,30 @@ pub const Recording = struct {
         if (self.status.state != .recording) return;
         var buf: [128]u8 = undefined;
         r.setStopReason(std.fmt.bufPrint(&buf, "acquisition stopped by a read error ({t})", .{err}) catch "acquisition stopped by a read error");
-        const session_dir = self.status.path();
-        self.resume_len = @min(session_dir.len, self.resume_buf.len);
-        @memcpy(self.resume_buf[0..self.resume_len], session_dir[0..self.resume_len]);
+        self.resume_len = @min(r.path.len, self.resume_buf.len);
+        @memcpy(self.resume_buf[0..self.resume_len], r.path[0..self.resume_len]);
+        self.resume_end_sample = 0;
+        self.resume_last_wall_ns = 0;
         r.requestStop();
         self.status.state = .stopping;
     }
 
-    /// The session folder a recording closed by `closeForRestart` goes on in, or null.
-    pub fn resumeIn(self: *const Recording) ?[]const u8 {
-        return if (self.resume_len > 0) self.resume_buf[0..self.resume_len] else null;
+    pub const Resume = struct {
+        /// The session folder the next recording goes into (as `ephys_<n>/`).
+        session: []const u8,
+        /// The recording it continues, for its `[start]`.
+        continues: dimna.record.Info.Continues,
+    };
+
+    /// Where a recording closed by `closeForRestart` goes on, or null. Points into this
+    /// `Recording`: copy before `start`.
+    pub fn resumeIn(self: *const Recording) ?Resume {
+        if (self.resume_len == 0) return null;
+        const prev = self.resume_buf[0..self.resume_len];
+        return .{
+            .session = std.fs.path.dirname(prev) orelse prev,
+            .continues = .{ .path = prev, .end_sample = self.resume_end_sample, .last_wall_ns = self.resume_last_wall_ns },
+        };
     }
 
     pub const Ended = enum { complete, failed };
@@ -775,6 +792,10 @@ pub const Recording = struct {
         if (!r.done.load(.acquire)) return null;
         const sum = r.finish();
         self.recorder = null;
+        if (self.resume_len > 0) {
+            self.resume_end_sample = sum.end_sample;
+            self.resume_last_wall_ns = sum.last_wall_ns;
+        }
         self.status.samples = sum.samples;
         self.status.gaps = sum.gaps;
         if (sum.failure) |err| {
@@ -1138,8 +1159,8 @@ test "board alarms: opening the board again, waiting for it, and the restart (un
     var st: display_mod.Status = .{};
     var ack = false;
     const err = error.OniFailed;
-    _ = a.update(&st, .{}, .{ .ended = err, .reopening = .{ .absent = false, .seconds = 4.2, .n = 3, .of = 6 } }, null, null, &ack);
-    try std.testing.expectEqualStrings("ACQUISITION STOPPED (OniFailed): opening the board again in 4 s (attempt 3 of 6)", st.alarm());
+    _ = a.update(&st, .{}, .{ .ended = err, .reopening = .{ .absent = false, .seconds = 4.2, .n = 3, .of = 4 } }, null, null, &ack);
+    try std.testing.expectEqualStrings("ACQUISITION STOPPED (OniFailed): opening the board again in 4 s (attempt 3 of 4)", st.alarm());
     _ = a.update(&st, .{}, .{ .ended = err, .reopening = .{ .absent = true, .seconds = 12 } }, null, null, &ack);
     try std.testing.expectEqualStrings("THE BOARD IS GONE (OniFailed): waiting for it to come back (12 s so far)", st.alarm());
     // Acknowledged while waiting: a warning that goes on saying so.
@@ -1153,8 +1174,8 @@ test "board alarms: opening the board again, waiting for it, and the restart (un
     try std.testing.expectEqual(@as(usize, 0), st.warning_len);
     // It ends again before that is acknowledged: both, and this end is an alarm again
     // although the last one was acknowledged.
-    _ = a.update(&st, .{ .restarts = 1 }, .{ .ended = err, .reopening = .{ .absent = false, .seconds = 1, .n = 2, .of = 6 }, .restart_err = err, .down_s = 14.04 }, null, null, &ack);
-    try std.testing.expectEqualStrings("ACQUISITION STOPPED (OniFailed): opening the board again in 1 s (attempt 2 of 6)   |   ACQUISITION RESTARTED ONCE after a read error (OniFailed): 14.0 s not acquired", st.alarm());
+    _ = a.update(&st, .{ .restarts = 1 }, .{ .ended = err, .reopening = .{ .absent = false, .seconds = 1, .n = 2, .of = 4 }, .restart_err = err, .down_s = 14.04 }, null, null, &ack);
+    try std.testing.expectEqualStrings("ACQUISITION STOPPED (OniFailed): opening the board again in 1 s (attempt 2 of 4)   |   ACQUISITION RESTARTED ONCE after a read error (OniFailed): 14.0 s not acquired", st.alarm());
     _ = a.update(&st, .{ .restarts = 2 }, .{ .restart_err = err, .down_s = 15 }, null, null, &ack);
     try std.testing.expectEqualStrings("ACQUISITION RESTARTED 2 TIMES after read errors (OniFailed): 15.0 s not acquired", st.alarm());
     ack = true;
@@ -1171,10 +1192,10 @@ test "Reopening.from: what the reopen is doing, for the alarm" {
     r.ended(error.OniFailed, 0);
     const w = Alarms.Reopening.from(&r, 100 * std.time.ns_per_ms).?;
     try std.testing.expect(!w.absent);
-    try std.testing.expectApproxEqAbs(0.4, w.seconds, 1e-9);
+    try std.testing.expectApproxEqAbs(2.9, w.seconds, 1e-9);
     try std.testing.expectEqual(1, w.n);
-    try std.testing.expectEqual(6, w.of);
-    r.result(error.BoardAbsent, 500 * std.time.ns_per_ms);
+    try std.testing.expectEqual(4, w.of);
+    r.result(error.BoardAbsent, 3 * std.time.ns_per_s);
     const g = Alarms.Reopening.from(&r, 3 * std.time.ns_per_s).?;
     try std.testing.expect(g.absent);
     try std.testing.expectApproxEqAbs(3.0, g.seconds, 1e-9);

@@ -14,8 +14,8 @@
 const std = @import("std");
 
 pub const Policy = struct {
-    /// Before attempt 1, 2, ...: 0.5, 1, 2, 5, 10 and 30 s.
-    delays_ms: []const u32 = &.{ 500, 1000, 2000, 5000, 10_000, 30_000 },
+    /// Before attempt 1, 2, 3 and 4: 3, 10, 20 and 48 s (81 s in all; the owner's choice).
+    delays_ms: []const u32 = &.{ 3000, 10_000, 20_000, 48_000 },
     /// While no board is on the bus: how often to look again.
     absent_poll_ms: u32 = 1000,
     /// A restarted run this long gives the attempts back.
@@ -117,10 +117,10 @@ test "attempts follow the delays, then it gives up" {
     var r: Reopen = .init(.{}, 0);
     r.ended(error.OniFailed, 10 * s);
     try testing.expectEqual(State.waiting, r.state);
-    try testing.expect(!r.due(10 * s + 499 * ms));
-    try testing.expect(r.due(10 * s + 500 * ms));
-    var now: i128 = 10 * s + 500 * ms;
-    const delays = [_]i128{ 1000, 2000, 5000, 10_000, 30_000 };
+    try testing.expect(!r.due(13 * s - 1));
+    try testing.expect(r.due(13 * s));
+    var now: i128 = 13 * s;
+    const delays = [_]i128{ 10_000, 20_000, 48_000 };
     for (delays, 2..) |d, n| {
         r.result(error.OniFailed, now);
         try testing.expectEqual(State.waiting, r.state);
@@ -129,6 +129,8 @@ test "attempts follow the delays, then it gives up" {
         now += d * ms;
         try testing.expect(r.due(now));
     }
+    // The fourth attempt fails: 81 s after the read error, no attempts left.
+    try testing.expectEqual(10 * s + 81 * s, now);
     r.result(error.OniFailed, now);
     try testing.expectEqual(State.gave_up, r.state);
     try testing.expect(!r.due(now + 3600 * s));
@@ -138,7 +140,7 @@ test "attempts follow the delays, then it gives up" {
 test "a board that is gone is waited for without using up attempts" {
     var r: Reopen = .init(.{}, 0);
     r.ended(error.OniFailed, 0);
-    var now: i128 = 500 * ms;
+    var now: i128 = 3 * s;
     // An hour of no board on the bus: looked for every second, never given up.
     for (0..3600) |_| {
         try testing.expect(r.due(now));
@@ -158,19 +160,19 @@ test "a board that is gone is waited for without using up attempts" {
 test "a run that fails again soon goes on counting; a stable run gives the attempts back" {
     var r: Reopen = .init(.{}, 0);
     var now: i128 = 0;
-    // Five quick failures, each reopened at once: attempts 1..5 used.
-    for (0..5) |_| {
+    // Three quick failures, each reopened at once: attempts 1..3 used.
+    for (0..3) |_| {
         r.ended(error.OniFailed, now);
         now = r.due_ns;
         r.result({}, now);
         now += 5 * s;
     }
-    try testing.expectEqual(5, r.restarts);
+    try testing.expectEqual(3, r.restarts);
     r.ended(error.OniFailed, now);
-    try testing.expectEqual(6, r.nextAttempt().n);
+    try testing.expectEqual(4, r.nextAttempt().n);
     now = r.due_ns;
     r.result({}, now);
-    // The sixth restart lasts a few seconds: no attempts left.
+    // The fourth restart lasts a few seconds: no attempts left.
     r.ended(error.OniFailed, now + 5 * s);
     try testing.expectEqual(State.gave_up, r.state);
 
@@ -180,5 +182,12 @@ test "a run that fails again soon goes on counting; a stable run gives the attem
     q.result({}, q.due_ns);
     q.ended(error.OniFailed, q.run_started_ns + 60 * s);
     try testing.expectEqual(1, q.nextAttempt().n);
-    try testing.expectEqual(q.stopped_ns + 500 * ms, q.due_ns);
+    try testing.expectEqual(q.stopped_ns + 3 * s, q.due_ns);
+    // One second short of that, the streak goes on.
+    var u: Reopen = .init(.{}, 0);
+    u.ended(error.OniFailed, 0);
+    u.result({}, u.due_ns);
+    u.ended(error.OniFailed, u.run_started_ns + 59 * s);
+    try testing.expectEqual(2, u.nextAttempt().n);
+    try testing.expectEqual(u.stopped_ns + 10 * s, u.due_ns);
 }

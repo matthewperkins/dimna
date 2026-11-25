@@ -730,14 +730,16 @@ fn runDisplay(init: std.process.Init, env: *const Env, args: *const Args, config
                 quiet = false;
                 // The recording goes on, attached before acquisition starts, so it has
                 // the new run's first block.
-                if (recording.resumeIn()) |session_dir| {
-                    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
-                    const dir = path_buf[0..session_dir.len];
-                    @memcpy(dir, session_dir);
-                    var text_buf: [128]u8 = undefined;
+                if (recording.resumeIn()) |resume_at| {
+                    // Copied: `start` clears what `resumeIn` points into.
+                    var prev_buf: [std.fs.max_path_bytes]u8 = undefined;
+                    const prev = prev_buf[0..resume_at.continues.path.len];
+                    @memcpy(prev, resume_at.continues.path);
+                    var text_buf: [std.fs.max_path_bytes + 64]u8 = undefined;
                     var info = recordInfo(layout, source, if (board) |*b| b else null, &display.set);
-                    info.continue_in = dir;
-                    info.start_text = std.fmt.bufPrint(&text_buf, "after a read error ({t}); continues the recording before it in this session", .{reopen.read_error.?}) catch "after a read error";
+                    info.continue_in = std.fs.path.dirname(prev) orelse prev;
+                    info.continues = .{ .path = prev, .end_sample = resume_at.continues.end_sample, .last_wall_ns = resume_at.continues.last_wall_ns };
+                    info.start_text = std.fmt.bufPrint(&text_buf, "after a read error ({t}); continues {s}", .{ reopen.read_error.?, prev }) catch "after a read error";
                     // Its gaps are counted from 0, as at Record.
                     alarms.seen.gaps = 0;
                     if (!recording.start(gpa, io, ring, info, &acq.events, nowNs())) alarms.recording_failed = true;

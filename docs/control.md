@@ -113,10 +113,12 @@ when the monitor is muted or off:
 - the recording has gaps;
 - no data has come from the board for 0.5 s (a USB read waits up to 1 s and then simply
   tries again, so a board that goes quiet raises no error of its own): the bar counts the
-  seconds while it lasts, and says how many such spells there were until acknowledged;
+  seconds while it lasts, and says how many such spells there were until acknowledged.
+  A quiet board is not opened again (the owner's choice); `dimna-headless` says it on
+  stderr at once and every 5 s while it lasts, and exits 1;
 - acquisition stopped on an error (a cable pulled, a read failure). The display stays up.
   The recording in progress is closed at once (its `[final]` says why), and the board is
-  opened again, as at launch: up to 6 attempts, after 0.5, 1, 2, 5, 10 and 30 s; a board
+  opened again, as at launch: up to 4 attempts, after 3, 10, 20 and 48 s; a board
   that is not on the bus at all is waited for, looked for every second, without using up
   an attempt (the bar says which). When it is running again the recording goes on in a new
   folder of the same session (`ephys_2/`, ...), and the bar says acquisition was restarted
