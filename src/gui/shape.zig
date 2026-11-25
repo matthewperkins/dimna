@@ -1,15 +1,15 @@
-//! Text beyond the font's fixed glyphs (`font.zig`). Every such string is split by which
-//! font has its characters (the primary font, then the named fallbacks, then whatever
-//! fontconfig offers for the character), and its glyphs are rasterised into the atlas the
-//! first time they are drawn. Latin Extended, Chinese and the like need nothing more: one
+//! Text beyond the font's fixed glyphs (`font.zig`). Every such string is laid out by the
+//! text backend (`text_backend.zig`), which finds the font for each character (the primary,
+//! then fallbacks), and its glyphs are rasterised into the atlas here the first time they
+//! are drawn. Latin Extended, Chinese and the like need nothing more: one
 //! glyph per code point, left to right, as the fixed glyphs are laid out.
 //!
 //! A string with a character of a right-to-left or joined script (Persian, Hebrew, the
-//! Indic scripts; combining marks) is also shaped: its bidi levels and the shaping of each
-//! piece come from the text backend (`text_backend.zig`; FriBidi and HarfBuzz, loaded with
-//! dlopen the first time such a string is drawn), the runs' visual order from here. Where
-//! the system cannot shape (`libs` is null), that text is laid out unshaped, left to right,
-//! and one line in the log says so.
+//! Indic scripts; combining marks) is also shaped: put in visual order and shaped by the
+//! backend (FriBidi and HarfBuzz, loaded with dlopen the first time such a string is
+//! drawn), given the string isolated as below and its paragraph direction. Where the system
+//! cannot shape (`libs` is null), that text is laid out unshaped, left to right, and one
+//! line in the log says so.
 //!
 //! The result is kept in a cache of laid-out strings, so a label drawn every frame is laid
 //! out once.
@@ -27,44 +27,16 @@
 //! into Arabic numbers and draw "300-6000" as "6000-300".
 
 const std = @import("std");
-const builtin = @import("builtin");
 const font = @import("font.zig");
 const backend = @import("text_backend.zig");
 const log = std.log.scoped(.font);
 
-/// Fonts one engine may hold: the primary, the named fallbacks, and those found for single
-/// characters.
-pub const max_faces = 8;
 /// Laid-out strings kept (least recently used out).
 pub const cache_entries = 2048;
-const no_face: u8 = 0xff;
 
 /// The paragraph direction of the engines made from now on (`Engine.rtl`). Set once at
 /// start-up, from the language, before any font is made.
 pub var start_rtl: bool = false;
-
-/// The fallbacks tried, in order, for characters the primary font lacks. In each group the
-/// first one installed is used.
-const named_fallbacks = switch (builtin.os.tag) {
-    // What macOS installs by default, in /System/Library/Fonts. Chinese: Hiragino Sans GB (a
-    // sans-serif for Simplified Chinese; its regular weight is the collection's first face),
-    // then Heiti SC (STHeiti, the second face of its collection). Not PingFang SC, macOS's
-    // own Chinese font: the interface's copy (PingFangUI.ttc) has only Apple's `hvgl`
-    // outlines, which FreeType cannot read, and the one FreeType reads is a font asset
-    // macOS downloads (/System/Library/AssetsV2), not part of the system itself.
-    // Persian/Arabic: Geeza Pro (macOS's Arabic-script font of the interface before SF
-    // Arabic, which is hidden from lookups by family), then Damascus; both have the Persian
-    // letters and digits.
-    .macos => [_]struct { what: []const u8, families: []const [:0]const u8 }{
-        .{ .what = "Simplified Chinese", .families = &.{ "Hiragino Sans GB", "Heiti SC" } },
-        .{ .what = "Persian/Arabic", .families = &.{ "Geeza Pro", "Damascus" } },
-    },
-    else => [_]struct { what: []const u8, families: []const [:0]const u8 }{
-        // fontconfig's default for zh may be the JP face of the same collection, so SC is named.
-        .{ .what = "Simplified Chinese", .families = &.{"Noto Sans CJK SC"} },
-        .{ .what = "Persian/Arabic", .families = &.{ "Vazirmatn", "Noto Sans Arabic" } },
-    },
-};
 
 /// Bidi and shaping as the backend does them: null if this system cannot (the libraries
 /// are missing; logged once). The first call may load them.
@@ -95,33 +67,15 @@ fn needsShaping(cp: u32) bool {
         (cp >= 0x1E800 and cp <= 0x1EFFF);
 }
 
-/// Marks, joiners and controls: drawn with the font of the character before them.
-fn isMark(cp: u32) bool {
-    return (cp >= 0x0300 and cp <= 0x036F) or (cp >= 0x0483 and cp <= 0x0489) or
-        (cp >= 0x0591 and cp <= 0x05C7) or (cp >= 0x0610 and cp <= 0x061A) or
-        (cp >= 0x064B and cp <= 0x065F) or cp == 0x0670 or (cp >= 0x06D6 and cp <= 0x06ED) or
-        (cp >= 0x200B and cp <= 0x200F) or (cp >= 0x202A and cp <= 0x202E) or
-        (cp >= 0x2060 and cp <= 0x206F) or (cp >= 0xFE00 and cp <= 0xFE0F) or
-        (cp >= 0xFE20 and cp <= 0xFE2F) or cp == 0xFEFF;
-}
-
-/// Spaces and punctuation: drawn with the font of the text around them if it has them.
-fn isNeutral(cp: u32) bool {
-    if (cp < 0x80) return !std.ascii.isAlphanumeric(@intCast(cp));
-    return (cp >= 0xA0 and cp <= 0xBF) or (cp >= 0x2000 and cp <= 0x206F) or
-        cp == 0x060C or cp == 0x061B or cp == 0x061F or (cp >= 0x066A and cp <= 0x066D) or
-        cp == 0x06D4 or (cp >= 0x3000 and cp <= 0x303F) or (cp >= 0xFF00 and cp <= 0xFF0F);
-}
-
 // ---- The engine ----
 
 /// A glyph placed in a laid-out string: `x` pixels right of the string's origin (the pen
-/// plus the shaper's offset), `y` pixels above its baseline.
+/// plus the backend's offset), `y` pixels above its baseline.
 pub const Placed = struct {
     g: font.Glyph,
     x: i32,
     y: i32,
-    /// Which font (index into `Engine.faces`) and which glyph of it.
+    /// Which font (index into `Engine.fonts.faces`) and which glyph of it.
     face: u8,
     gid: u32,
 };
@@ -132,33 +86,12 @@ pub const Shaped = struct {
     width: f32,
 };
 
-const Face = struct {
-    face: backend.Face,
-    /// Pixels from the top of one line to the next, at the size it is set to.
-    line_height: f32,
-};
-
 pub const Engine = struct {
     gpa: std.mem.Allocator,
-    lib: backend.Library,
-    /// The font lookup the fallbacks are found with, kept for the engine's life.
-    matcher: backend.Matcher,
-    faces: [max_faces]Face = undefined,
-    nfaces: u8 = 0,
-    /// `faces[0..named]`: the primary and the named fallbacks; later ones were found for a
-    /// single character.
-    named: u8 = 0,
-    /// The primary's line height (a fallback without a capital letter is scaled to it).
-    line_height: f32,
-    /// The height of the primary's capitals in pixels, which the fallbacks' capitals (or
-    /// alef) are scaled to, so their letters stand as tall as the primary's (null: the
-    /// primary has none; line heights are matched instead).
-    cap_px: ?f32 = null,
+    /// The fonts, by index: the primary (0) and the fallbacks the backend found.
+    fonts: backend.Fonts,
     /// Rasterised glyphs by (font, glyph index).
     glyphs: std.AutoHashMapUnmanaged(u64, font.Glyph) = .empty,
-    /// Characters none of the named fonts has: the font the lookup found for each
-    /// (`no_face`: none).
-    best: std.AutoHashMapUnmanaged(u21, u8) = .empty,
     /// Where the next glyph goes in the atlas.
     pen: font.Font.Pen,
     /// Rows of the atlas changed since `takeDirty`: [first, end).
@@ -178,22 +111,15 @@ pub const Engine = struct {
     /// strong letter. Fixed when the engine is made (`start_rtl`), as the cache holds
     /// strings laid out with it.
     rtl: bool,
-    /// The backend's state for bidi and shaping.
-    shaper: backend.Shaper = .{},
     cache: Cache = .{},
     // Scratch, reused from string to string.
     raw: std.ArrayList(u32) = .empty,
     raw_types: std.ArrayList(u32) = .empty,
     text: std.ArrayList(u32) = .empty,
     marks: std.ArrayList(bool) = .empty,
-    levels: std.ArrayList(i8) = .empty,
-    runs: std.ArrayList(Run) = .empty,
-    order: std.ArrayList(u32) = .empty,
-    items: std.ArrayList(Item) = .empty,
+    mapped: std.ArrayList(backend.FaceGlyph) = .empty,
+    laid: std.ArrayList(backend.RunGlyph) = .empty,
     out: std.ArrayList(Placed) = .empty,
-
-    const Run = struct { start: u32, end: u32, level: i8 };
-    const Item = struct { start: u32, end: u32, face: u8 };
 
     /// Takes `lib` and `primary` (set to the font's size) on success; on failure the caller
     /// still owns them. `f`: the font whose atlas and fixed glyphs this engine extends.
@@ -201,33 +127,17 @@ pub const Engine = struct {
         const self = try gpa.create(Engine);
         self.* = .{
             .gpa = gpa,
-            .lib = lib,
-            .matcher = .init(),
-            .line_height = f.line_height,
+            .fonts = .init(gpa, lib, primary, f.px, f.line_height),
             .pen = f.pen,
             .rtl = start_rtl,
         };
-        self.faces[0] = .{ .face = primary, .line_height = f.line_height };
-        self.nfaces = 1;
-        if (capRatio(&primary)) |r| self.cap_px = r * @as(f32, @floatFromInt(f.px));
         // The fixed glyphs the primary font drew are the same glyphs by index.
         for (f.glyphs, 0..) |g, k| {
             if (g.advance <= 0) continue;
-            const gid = primary.glyphIndex(font.Font.codepointAt(k));
+            const gid = self.fonts.glyphIndex(0, font.Font.codepointAt(k));
             if (gid == 0) continue;
             self.glyphs.put(gpa, key(0, gid), g) catch {};
         }
-        for (named_fallbacks) |fb| {
-            for (fb.families) |family| {
-                var path_buf: [std.fs.max_path_bytes:0]u8 = undefined;
-                const m = self.matcher.match(family, family, &path_buf) orelse continue;
-                if (self.addFace(m.path, m.index)) |at| {
-                    log.info("{s}: {s} (face {d}) at {d:.1} px line height", .{ fb.what, m.path, m.index, self.faces[at].line_height });
-                    break;
-                }
-            } else log.warn("no {s} font ({s}): those characters draw as the missing glyph", .{ fb.what, fb.families[fb.families.len - 1] });
-        }
-        self.named = self.nfaces;
         self.notdef = self.glyph(f.atlas, 0, 0);
         return self;
     }
@@ -235,13 +145,9 @@ pub const Engine = struct {
     pub fn destroy(self: *Engine) void {
         const gpa = self.gpa;
         self.cache.deinit(gpa);
-        for (self.faces[0..self.nfaces]) |face| face.face.deinit();
-        self.shaper.deinit(gpa);
-        self.lib.deinit();
-        self.matcher.deinit();
+        self.fonts.deinit();
         self.glyphs.deinit(gpa);
-        self.best.deinit(gpa);
-        inline for (.{ "raw", "raw_types", "text", "marks", "levels", "runs", "order", "items", "out" }) |name| {
+        inline for (.{ "raw", "raw_types", "text", "marks", "mapped", "laid", "out" }) |name| {
             @field(self, name).deinit(gpa);
         }
         gpa.destroy(self);
@@ -294,7 +200,7 @@ pub const Engine = struct {
     /// Rasterises a glyph into the atlas. One that does not fit is the missing glyph with
     /// its own advance (the first such is logged).
     fn render(self: *Engine, atlas: []u8, face_i: u8, gid: u32) error{NoGlyph}!font.Glyph {
-        const bm = self.faces[face_i].face.render(gid) orelse return error.NoGlyph;
+        const bm = self.fonts.render(face_i, gid) orelse return error.NoGlyph;
         var g: font.Glyph = .{
             .left = @intCast(bm.left),
             .top = @intCast(bm.top),
@@ -327,76 +233,22 @@ pub const Engine = struct {
         return g;
     }
 
-    /// Loads face `index` of `path`, scaled to the primary's line height, as the next font.
-    /// Its index in `faces`, or null (no room, cannot load, not scalable).
-    fn addFace(self: *Engine, path: [:0]const u8, index: c_int) ?u8 {
-        if (self.nfaces >= max_faces) return null;
-        const face = backend.Face.open(self.lib, path, index) catch return null;
-        const lh = (if (self.cap_px) |cap| scaleToCapHeight(&face, cap) else null) orelse face.sizeToLineHeight(self.line_height) orelse {
-            face.deinit();
-            return null;
-        };
-        const at = self.nfaces;
-        self.faces[at] = .{ .face = face, .line_height = lh };
-        self.nfaces += 1;
-        return at;
-    }
-
-    fn covers(self: *const Engine, face: u8, cp: u32) bool {
-        return self.faces[face].face.glyphIndex(cp) != 0;
-    }
-
-    /// Which font draws `cp`, after a character drawn with `current`.
-    fn faceFor(self: *Engine, cp: u32, current: ?u8) u8 {
-        if (current) |f| {
-            if (isMark(cp)) return f;
-            if (isNeutral(cp) and self.covers(f, cp)) return f;
-        }
-        for (0..self.named) |k| if (self.covers(@intCast(k), cp)) return @intCast(k);
-        const cp21: u21 = std.math.cast(u21, cp) orelse return 0;
-        const found = self.best.get(cp21) orelse blk: {
-            const f = self.findFor(cp);
-            self.best.put(self.gpa, cp21, f) catch {};
-            break :blk f;
-        };
-        return if (found == no_face) 0 else found;
-    }
-
-    /// The lookup's best match for `cp`, loaded if it is not yet; `no_face` if there is
-    /// none that has it.
-    fn findFor(self: *Engine, cp: u32) u8 {
-        // Already loaded (a font found for another character)?
-        for (self.named..self.nfaces) |k| {
-            if (self.covers(@intCast(k), cp)) return @intCast(k);
-        }
-        var want_buf: [48:0]u8 = undefined;
-        const want = std.fmt.bufPrintSentinel(&want_buf, "sans-serif:charset={x}", .{cp}, 0) catch return no_face;
-        var path_buf: [std.fs.max_path_bytes:0]u8 = undefined;
-        const m = self.matcher.match(want, null, &path_buf) orelse return no_face;
-        const at = self.addFace(m.path, m.index) orelse return no_face;
-        // Kept if it does not have it after all (it is loaded), but no help with this one.
-        if (!self.covers(at, cp)) return no_face;
-        log.info("U+{X:0>4} from {s}", .{ cp, m.path });
-        return at;
-    }
-
     /// Lays out `self.raw` into `self.out` without shaping: one glyph per code point, from
     /// the font that has it, left to right, each advance rounded as the fixed glyphs' are.
     fn simple(self: *Engine, atlas: []u8) !f32 {
+        self.mapped.clearRetainingCapacity();
+        try self.fonts.mapSimple(self.raw.items, &self.mapped);
         var pen: i32 = 0;
-        var current: ?u8 = null;
-        for (self.raw.items) |cp| {
-            const f = self.faceFor(cp, current);
-            current = f;
-            const gid = self.faces[f].face.glyphIndex(cp);
-            const g = self.glyph(atlas, f, gid);
-            try self.out.append(self.gpa, .{ .g = g, .x = pen, .y = 0, .face = f, .gid = gid });
+        for (self.mapped.items) |m| {
+            const g = self.glyph(atlas, m.face, m.gid);
+            try self.out.append(self.gpa, .{ .g = g, .x = pen, .y = 0, .face = m.face, .gid = m.gid });
             pen += @intFromFloat(@round(g.advance));
         }
         return @floatFromInt(pen);
     }
 
-    /// Shapes `self.raw` into `self.out` with the backend's bidi and shaping; returns the width.
+    /// Shapes `self.raw` into `self.out`: its paragraph direction and isolation decided here,
+    /// laid out by the backend; returns the width.
     fn shape(self: *Engine, l: *const Libs, atlas: []u8) !f32 {
         const gpa = self.gpa;
         self.shaped_calls += 1;
@@ -407,83 +259,27 @@ pub const Engine = struct {
         const base = paragraphDirection(self.raw_types.items, self.rtl);
         try isolateLtr(gpa, raw, self.raw_types.items, &self.text, &self.marks);
 
-        const text = self.text.items;
-        try self.levels.resize(gpa, text.len);
-        // Rule L1 applied (trailing white space to the paragraph's level); the order is done
-        // below.
-        try self.shaper.embeddingLevels(gpa, l, text, base, self.levels.items);
-
-        try runsOf(gpa, self.levels.items, self.marks.items, &self.runs);
-        try visualOrder(gpa, self.runs.items, &self.order);
-
+        self.laid.clearRetainingCapacity();
+        try self.fonts.layout(l, self.text.items, self.marks.items, base, &self.laid);
         var pen: i32 = 0;
-        for (self.order.items) |ri| {
-            const run = self.runs.items[ri];
-            const rtl = run.level & 1 == 1;
-            // The run split by font, in logical order.
-            self.items.clearRetainingCapacity();
-            var current: ?u8 = null;
-            var start = run.start;
-            for (run.start..run.end) |k| {
-                const f = self.faceFor(text[k], current);
-                if (current != null and f != current.?) {
-                    try self.items.append(gpa, .{ .start = start, .end = @intCast(k), .face = current.? });
-                    start = @intCast(k);
-                }
-                current = f;
-            }
-            try self.items.append(gpa, .{ .start = start, .end = run.end, .face = current.? });
-            // Right to left, the pieces go from the right.
-            for (0..self.items.items.len) |j| {
-                const item = self.items.items[if (rtl) self.items.items.len - 1 - j else j];
-                pen = try self.shapeItem(l, atlas, item, rtl, pen);
-            }
-        }
-        return @floatFromInt(pen);
-    }
-
-    /// Shapes one piece of one run with its font, appends its glyphs at `pen`; returns the
-    /// pen after it.
-    fn shapeItem(self: *Engine, l: *const Libs, atlas: []u8, item: Item, rtl: bool, pen_in: i32) !i32 {
-        var run = try self.shaper.shape(l, &self.faces[item.face].face, self.text.items, item.start, item.end, rtl);
-        var pen = pen_in;
-        while (run.next()) |r| {
-            const g = self.glyph(atlas, item.face, r.gid);
-            try self.out.append(self.gpa, .{
+        for (self.laid.items) |r| {
+            const g = self.glyph(atlas, r.face, r.gid);
+            try self.out.append(gpa, .{
                 .g = g,
                 .x = pen + whole(r.x_offset),
                 .y = whole(r.y_offset),
-                .face = item.face,
+                .face = r.face,
                 .gid = r.gid,
             });
             pen += whole(r.x_advance);
         }
-        return pen;
+        return @floatFromInt(pen);
     }
 };
 
 /// Pixels to whole pixels, as the fixed glyphs' advances are rounded.
 fn whole(v: f32) i32 {
     return @intFromFloat(@round(v));
-}
-
-/// The height of `face`'s capital H, or of its alef where it has no Latin (an Arabic-script
-/// font: alef stands as tall as a capital), as a fraction of its em; null if it has
-/// neither or is not scalable.
-fn capRatio(face: *const backend.Face) ?f32 {
-    for ([_]u32{ 'H', 0x0627 }) |cp| {
-        if (face.heightRatio(cp)) |r| return r;
-    }
-    return null;
-}
-
-/// Sets `face`'s size so that its capitals (`capRatio`) are `cap_px` pixels tall; its line
-/// height at that size, or null (no capital to measure: the caller matches line heights).
-/// A font whose line is taller than the primary's for its letters (Arabic-script fonts
-/// leave room for vowel marks) is then not shrunk to fit the primary's line.
-fn scaleToCapHeight(face: *const backend.Face, cap_px: f32) ?f32 {
-    const r = capRatio(face) orelse return null;
-    return face.setEmSize(cap_px / r);
 }
 
 /// The paragraph direction (`bidi.par_*`) for a string of bidi types `types`: right to left if `rtl`
@@ -542,51 +338,6 @@ fn isolateLtr(gpa: std.mem.Allocator, raw: []const u32, types: []const u32, text
         try text.append(gpa, pdi);
         try marks.append(gpa, true);
         i = end;
-    }
-}
-
-/// Runs of one level, in logical order, leaving out the characters flagged in `marks`.
-fn runsOf(gpa: std.mem.Allocator, levels: []const i8, marks: []const bool, runs: *std.ArrayList(Engine.Run)) !void {
-    runs.clearRetainingCapacity();
-    var i: usize = 0;
-    while (i < levels.len) {
-        if (marks[i]) {
-            i += 1;
-            continue;
-        }
-        const start = i;
-        const level = levels[i];
-        while (i < levels.len and !marks[i] and levels[i] == level) i += 1;
-        try runs.append(gpa, .{ .start = @intCast(start), .end = @intCast(i), .level = level });
-    }
-}
-
-/// The runs' visual order, left to right (rule L2: from the highest level down to the
-/// lowest odd one, each stretch of runs at that level or above is reversed).
-fn visualOrder(gpa: std.mem.Allocator, runs: []const Engine.Run, order: *std.ArrayList(u32)) !void {
-    order.clearRetainingCapacity();
-    var max: i8 = 0;
-    var min_odd: i8 = std.math.maxInt(i8);
-    for (runs, 0..) |r, k| {
-        try order.append(gpa, @intCast(k));
-        max = @max(max, r.level);
-        if (r.level & 1 == 1) min_odd = @min(min_odd, r.level);
-    }
-    if (min_odd == std.math.maxInt(i8)) return;
-    const o = order.items;
-    var level = max;
-    while (level >= min_odd) : (level -= 1) {
-        var j: usize = 0;
-        while (j < o.len) {
-            if (runs[o[j]].level < level) {
-                j += 1;
-                continue;
-            }
-            var k = j;
-            while (k < o.len and runs[o[k]].level >= level) k += 1;
-            std.mem.reverse(u32, o[j..k]);
-            j = k;
-        }
     }
 }
 
@@ -692,7 +443,7 @@ fn needLibs() !*const Libs {
 
 /// The named fallback that has `cp`, or null.
 fn fallbackFor(e: *const Engine, cp: u32) ?u8 {
-    for (1..e.named) |k| if (e.covers(@intCast(k), cp)) return @intCast(k);
+    for (1..e.fonts.named) |k| if (e.fonts.covers(@intCast(k), cp)) return @intCast(k);
     return null;
 }
 
@@ -749,30 +500,6 @@ test "Latin and digits inside right-to-left text are isolated as one block; noth
     }
 }
 
-test "runs are put in visual order by rule L2" {
-    const gpa = testing.allocator;
-    var runs: std.ArrayList(Engine.Run) = .empty;
-    defer runs.deinit(gpa);
-    var order: std.ArrayList(u32) = .empty;
-    defer order.deinit(gpa);
-    // Levels 1 1 2 _ 2 1 0 0, an isolate mark between the 2s.
-    const levels = [_]i8{ 1, 1, 2, 2, 2, 1, 0, 0 };
-    const marks = [_]bool{ false, false, false, true, false, false, false, false };
-    try runsOf(gpa, &levels, &marks, &runs);
-    try testing.expectEqual(5, runs.items.len);
-    try testing.expectEqual(Engine.Run{ .start = 0, .end = 2, .level = 1 }, runs.items[0]);
-    try testing.expectEqual(Engine.Run{ .start = 2, .end = 3, .level = 2 }, runs.items[1]);
-    try testing.expectEqual(Engine.Run{ .start = 4, .end = 5, .level = 2 }, runs.items[2]);
-    try visualOrder(gpa, runs.items, &order);
-    // Level 2 first: [1 2] -> [2 1]; then level >= 1: [0 2 1 3] -> [3 1 2 0]; level 0 stays.
-    try testing.expectEqualSlices(u32, &.{ 3, 1, 2, 0, 4 }, order.items);
-    // No odd level: as they are.
-    const ltr = [_]i8{ 0, 0, 2, 2 };
-    try runsOf(gpa, &ltr, &.{ false, false, false, false }, &runs);
-    try visualOrder(gpa, runs.items, &order);
-    try testing.expectEqualSlices(u32, &.{ 0, 1 }, order.items);
-}
-
 test "Persian: the letters of a word are joined, not their isolated forms" {
     _ = try needLibs();
     var f = try testFont();
@@ -801,14 +528,14 @@ test "Persian: lam-alef is one glyph in a font that has the ligature" {
     var f = try font.Font.init(testing.allocator, "DejaVu Sans", 14);
     defer f.deinit(testing.allocator);
     const e = f.engine orelse return skipBecause("no engine for the font");
-    if (!e.covers(0, 0x644)) return skipBecause("DejaVu Sans not installed");
+    if (!e.fonts.covers(0, 0x644)) return skipBecause("DejaVu Sans not installed");
     const la = try shapedCopy(&f, "\u{644}\u{627}");
     defer testing.allocator.free(la);
     try testing.expectEqual(1, la.len);
     try testing.expectEqual(0, la[0].face);
     try testing.expect(la[0].gid != 0);
-    try testing.expect(la[0].gid != e.faces[0].face.glyphIndex(0x644));
-    try testing.expect(la[0].gid != e.faces[0].face.glyphIndex(0x627));
+    try testing.expect(la[0].gid != e.fonts.glyphIndex(0, 0x644));
+    try testing.expect(la[0].gid != e.fonts.glyphIndex(0, 0x627));
 }
 
 test "Persian: lam-alef takes its own forms in a font that draws it as two glyphs" {
@@ -826,7 +553,7 @@ test "Persian: lam-alef takes its own forms in a font that draws it as two glyph
     try testing.expect(la.len == 1 or la.len == 2);
     for (la) |p| {
         try testing.expectEqual(ar, p.face);
-        for ([_]u32{ 0x644, 0x627 }) |cp| try testing.expect(p.gid != f.engine.?.faces[ar].face.glyphIndex(cp));
+        for ([_]u32{ 0x644, 0x627 }) |cp| try testing.expect(p.gid != f.engine.?.fonts.glyphIndex(ar, cp));
         for (lm) |q| try testing.expect(p.gid != q.gid);
         for (ba) |q| try testing.expect(p.gid != q.gid);
     }
@@ -879,7 +606,7 @@ test "without shaping, Persian is drawn letter by letter, left to right, from it
     try testing.expectEqual(4, word.len);
     for (word, [_]u32{ 0x633, 0x644, 0x627, 0x645 }, 0..) |p, cp, k| {
         try testing.expectEqual(ar, p.face);
-        try testing.expectEqual(e.faces[ar].face.glyphIndex(cp), p.gid);
+        try testing.expectEqual(e.fonts.glyphIndex(ar, cp), p.gid);
         if (k > 0) try testing.expect(p.x > word[k - 1].x);
     }
     try testing.expectEqual(0, e.shaped_calls);
@@ -900,8 +627,8 @@ test "Chinese: 阈值 is two glyphs from the CJK font, drawn, its capitals as ta
     }
     try testing.expect(glyphs[1].x > glyphs[0].x);
     // Its capitals as tall as the primary's (to a pixel), not its line as high.
-    if (e.cap_px) |cap| {
-        try testing.expect(@abs(capRatio(&e.faces[cjk].face).? * @as(f32, @floatFromInt(e.faces[cjk].face.ppem())) - cap) <= 1);
+    if (e.fonts.cap_px) |cap| {
+        try testing.expect(@abs(e.fonts.capPx(cjk).? - cap) <= 1);
     }
     // Chinese needs no shaping (nor HarfBuzz or FriBidi).
     try testing.expectEqual(0, e.shaped_calls);
@@ -916,7 +643,7 @@ test "Chinese: 阈值 is two glyphs from the CJK font, drawn, its capitals as ta
 test "Polish: ł is drawn from the primary font" {
     var f = try testFont();
     defer f.deinit(testing.allocator);
-    const gid = f.engine.?.faces[0].face.glyphIndex(0x142);
+    const gid = f.engine.?.fonts.glyphIndex(0, 0x142);
     if (gid == 0) return skipBecause("the primary font has no ł");
     const glyphs = try shapedCopy(&f, "ł");
     defer testing.allocator.free(glyphs);
@@ -1086,7 +813,7 @@ test "Persian read right to left: a Latin name first is on the right, a Persian 
     // The name itself left to right, its letters in order: as laid out alone.
     const name = try shapedCopy(&f, "Simulator");
     defer testing.allocator.free(name);
-    const space = e.faces[0].face.glyphIndex(' ');
+    const space = e.fonts.glyphIndex(0, ' ');
     var k: usize = 0;
     var last_x: i32 = std.math.minInt(i32);
     for (got) |p| {
@@ -1253,13 +980,12 @@ test "Persian: alef stands as tall as the primary's capitals, not shrunk to its 
     defer f.deinit(testing.allocator);
     const e = f.engine.?;
     const ar = fallbackFor(e, 0x0627) orelse return skipBecause("no Persian/Arabic font installed");
-    const cap = e.cap_px orelse return skipBecause("the primary font has no capital H");
-    const face = &e.faces[ar].face;
-    const alef_px = capRatio(face).? * @as(f32, @floatFromInt(face.ppem()));
+    const cap = e.fonts.cap_px orelse return skipBecause("the primary font has no capital H");
+    const alef_px = e.fonts.capPx(ar).?;
     try testing.expect(@abs(alef_px - cap) <= 1);
     // Noto Sans Arabic's line is far taller than the primary's for the same letters, so
     // matching lines would have drawn alef at little more than half the height.
-    try testing.expect(e.faces[ar].line_height > f.line_height);
+    try testing.expect(e.fonts.faces[ar].line_height > f.line_height);
 }
 
 // A record of what is drawn, to compare two builds (the text seam was moved behind
@@ -1339,10 +1065,10 @@ test "dump: the vertices and atlas of strings in every language, for comparing b
                     }
                 }
                 if (f.engine) |e| {
-                    for (e.faces[0..e.nfaces], 0..) |face, k| {
+                    for (e.fonts.faces[0..e.fonts.nfaces], 0..) |face, k| {
                         try out.appendSlice(gpa, try std.fmt.bufPrint(&line, "face {d}: line {d}\n", .{ k, face.line_height }));
                     }
-                    try out.appendSlice(gpa, try std.fmt.bufPrint(&line, "named {d} cap {?d} glyphs {d} pen {d} {d} {d} full {}\n", .{ e.named, e.cap_px, e.glyphs.count(), e.pen.x, e.pen.y, e.pen.shelf_h, e.full }));
+                    try out.appendSlice(gpa, try std.fmt.bufPrint(&line, "named {d} cap {?d} glyphs {d} pen {d} {d} {d} full {}\n", .{ e.fonts.named, e.fonts.cap_px, e.glyphs.count(), e.pen.x, e.pen.y, e.pen.shelf_h, e.full }));
                 }
                 try out.appendSlice(gpa, try std.fmt.bufPrint(&line, "atlas {x:0>16} dirty {?any}\n", .{ std.hash.Wyhash.hash(0, f.atlas), f.takeDirty() }));
             }

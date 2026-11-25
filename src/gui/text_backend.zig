@@ -1,59 +1,62 @@
-//! Text's system-specific part: font lookup, faces, glyph coverage, bidi and shaping. This
-//! file holds what the backends and their callers (`font.zig`, `shape.zig`) agree on and the
-//! choice of this system's backend, at compile time: the types are the backend's own, so a
-//! caller calls the backend's functions directly; there is no indirect call. For now both
-//! systems use `text_freetype.zig` (FreeType; HarfBuzz and FriBidi loaded at run time).
+//! Text's system-specific part: font lookup, faces, glyph coverage, fallback fonts, bidi and
+//! shaping. This file holds what the backends and their callers (`font.zig`, `shape.zig`)
+//! agree on and the choice of this system's backend, at compile time: the types are the
+//! backend's own, so a caller calls the backend's functions directly; there is no indirect
+//! call. For now both systems use `text_freetype.zig` (FreeType; HarfBuzz and FriBidi
+//! loaded at run time).
 //!
-//! Everything else about text is shared policy and stays in `font.zig` and `shape.zig`: the
-//! fast path for the fixed glyphs, the atlas and its packing, the cache, the paragraph
-//! direction and the isolation of Latin text inside right-to-left text, the visual order of
-//! the runs (rule L2), the fallback order, which fonts are scaled to what, the rounding of
-//! advances to whole pixels, the missing glyph.
+//! What is shared policy and stays in `font.zig` and `shape.zig`: the fixed glyphs and their
+//! fast path; whether a string needs shaping at all; the paragraph direction rule and the
+//! isolation of Latin and digit stretches inside right-to-left text (as code points, so
+//! every backend lays out the same isolated string); the cache of laid-out strings; the
+//! atlas, its packing, its dirty rows, "atlas full" and the missing glyph (face 0, glyph 0);
+//! glyphs rasterised on demand, keyed by (face index, glyph id); the rounding of offsets and
+//! advances to whole pixels. What is the backend's: which face draws a character (the
+//! fallback order and the fallbacks themselves, found while laying out), how a fallback is
+//! scaled to the primary, bidi levels and visual order, shaping.
 //!
 //! What a backend must offer, because the callers use it:
 //!
-//! - Font lookup, with `fontfind`'s meaning (patterns in fontconfig's syntax, the errors
-//!   and nulls it documents): `findFont(pattern, buf)`, the name of the font for a pattern
-//!   (what `Face.open` takes, with index 0; also what the log shows); `Matcher` (`init()`,
-//!   `deinit()`, `match(pattern, family, buf)` giving a `Match`, `.path` and `.index`), the
-//!   lookups an engine keeps for its life, for the named fallbacks and for a character no
-//!   named font has.
+//! - `findFont(pattern, buf)`: the name of the font for a pattern, with `fontfind`'s meaning
+//!   (fontconfig's syntax; its errors); what `Face.open` takes, with index 0, and what the
+//!   log shows.
 //! - `Library`: `init() !Library` (`error.FreeType` if it cannot start), `deinit()`. Faces
 //!   are opened from one and closed before it.
-//! - `Face`: one font at one size.
+//! - `Face`: one font at one size, for the fixed glyphs (`font.zig`).
 //!   - `open(lib, name, index) !Face` (`error.FontNotLoaded`), `deinit()`.
-//!   - Sizes: `setPixelSize(px) !void` (an em of `px` pixels; `error.FreeType`), the
-//!     primary, fixed-width and symbol fonts; `setEmSize(em_px) ?f32`, an em of `em_px`
-//!     pixels (as near as the backend sets sizes), giving the line height at that size
-//!     (null: cannot be set); `sizeToLineHeight(target) ?f32`, the size at which the line
-//!     height is nearest `target` pixels, giving that line height (null: not scalable).
-//!   - Metrics at the size set: `ascent()` (top of the line to the baseline) and
-//!     `lineHeight()`, in pixels; `ppem()`, the em in whole pixels.
-//!   - `heightRatio(cp) ?f32`: the height of `cp`'s glyph outline as a fraction of the em,
-//!     unscaled (null: no such glyph, an empty one, or a font that is not scalable); what
-//!     `shape.zig` measures capitals (or alef) with to scale the fallbacks.
+//!   - `setPixelSize(px) !void`: an em of `px` pixels (`error.FreeType`).
+//!   - Metrics at that size: `ascent()` (top of the line to the baseline) and
+//!     `lineHeight()`, in pixels.
 //!   - `glyphIndex(cp) u32`: the glyph for a code point, 0 if the face has none.
-//!   - `render(gid) ?Coverage`: the glyph's bitmap at the size set (null: cannot be drawn).
-//!     Valid until the next call on this face. The caller copies it into the atlas.
+//!   - `render(gid) ?Coverage`: the glyph's bitmap (null: cannot be drawn). Valid until the
+//!     next call on this face. The caller copies it into the atlas.
+//! - `Fonts`: the fonts of one shaping engine, by index (`u8`; 0 is the primary).
+//!   - `init(gpa, lib, primary, px, line_height) Fonts`: takes `lib` and `primary` (set to
+//!     `px`, with that line height); may load fallbacks now (and log them). `deinit()`.
+//!   - `glyphIndex(face, cp) u32` (0: none), `covers(face, cp) bool`, `render(face, gid)
+//!     ?Coverage` (as `Face.render`).
+//!   - `mapSimple(cps, out)`: for laying out without shaping, one `FaceGlyph` per code
+//!     point, in logical order, each from the face that draws it (found now if need be).
+//!     The caller places them left to right by their rendered advances.
+//!   - `layout(l, text, marks, base, out) !void`: a paragraph laid out: `text` as the
+//!     shared code isolated it (`marks[k]` true for the isolates it put in, U+2066 and
+//!     U+2069, which draw nothing), with base direction `base` (`bidi.par_ltr`,
+//!     `bidi.par_rtl`, or `bidi.par_on`: from the first strong letter); appends to `out`
+//!     the glyphs in visual order, left to right, each with its face (found now if need
+//!     be), glyph id, offsets and advance. A glyph may have no advance and no ink. An error
+//!     (out of memory, or the libraries failed) leaves `out` to be discarded: the caller
+//!     lays the string out with `mapSimple` instead.
+//!   - Fields the callers read: `nfaces`, and for the tests `named`, `cap_px`,
+//!     `faces[k].line_height`, `capPx(k)`.
 //! - `shaping() ?*const Shaping`: whether this system can shape (bidi and joined scripts),
 //!   null if not (logged once by the backend). Safe from any thread; the first call may
-//!   load libraries. Everything below takes the `Shaping` it returned.
+//!   load libraries. `Fonts.layout` and `bidiTypes` take what it returned.
 //! - `bidiTypes(l, cps, types)`: each code point's bidi class, as the values in `bidi`
-//!   below (others may be any other value).
-//! - `Shaper`: what one engine keeps for bidi and shaping (buffers, scratch), `.{}` to
-//!   start, `deinit(gpa)`.
-//!   - `embeddingLevels(gpa, l, text, base, levels) !void`: the embedding level of each
-//!     code point of a paragraph (`text`, with any isolates the caller put in), with base
-//!     direction `base` (`bidi.par_ltr`, `bidi.par_rtl`, or `bidi.par_on`: from the first
-//!     strong letter), rule L1 applied (trailing white space to the paragraph's level);
-//!     `error.Bidi` if that failed. The caller orders the runs itself.
-//!   - `shape(l, face, text, start, end, rtl) !Run`: `text[start..end]`, all in `face` and
-//!     one direction, shaped (`text` whole is the context); the glyphs in visual order (left
-//!     to right), `error.Shaping` if it could not. A `Run` is valid until the next call on
-//!     this `Shaper`.
+//!   below (others may be any other value); what the shared code decides the paragraph
+//!   direction and the isolation with.
 //!
-//! Glyph ids (`Face.glyphIndex`, `Run`) are the face's own and only mean something to the
-//! face they came from; the shared code keys its glyph map on (face, id).
+//! Glyph ids are the face's own and only mean something to the face they came from; the
+//! shared code keys its glyph map on (face index, id).
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -64,15 +67,12 @@ const backend = switch (builtin.os.tag) {
 };
 
 pub const findFont = backend.findFont;
-pub const Matcher = backend.Matcher;
-pub const Match = backend.Match;
 pub const Library = backend.Library;
 pub const Face = backend.Face;
+pub const Fonts = backend.Fonts;
 pub const Shaping = backend.Shaping;
 pub const shaping = backend.shaping;
 pub const bidiTypes = backend.bidiTypes;
-pub const Shaper = backend.Shaper;
-pub const Run = backend.Run;
 
 /// A glyph's bitmap: `rows` rows of `width` coverage bytes (0 none, 255 full), row `r` at
 /// `pixels + r * pitch` (`pitch` is not negative where there are rows), placed `left` pixels
@@ -90,9 +90,16 @@ pub const Coverage = struct {
     gray: bool,
 };
 
-/// A glyph of a shaped run: which glyph of the face, its offset from the pen (x right, y up)
-/// and the pen's advance after it, in pixels, not rounded.
+/// A glyph from a face (`Fonts.mapSimple`).
+pub const FaceGlyph = struct {
+    face: u8,
+    gid: u32,
+};
+
+/// A glyph of a laid-out paragraph (`Fonts.layout`): which face and glyph, its offset from
+/// the pen (x right, y up) and the pen's advance after it, in pixels, not rounded.
 pub const RunGlyph = struct {
+    face: u8,
     gid: u32,
     x_offset: f32,
     y_offset: f32,
@@ -100,7 +107,7 @@ pub const RunGlyph = struct {
 };
 
 /// The bidi classes the shared code looks at (`bidiTypes`), and the paragraph directions
-/// (`Shaper.embeddingLevels`). The values are FriBidi's (fribidi-bidi-types.h: its masks
+/// (`Fonts.layout`). The values are FriBidi's (fribidi-bidi-types.h: its masks
 /// combined as there), so the FreeType backend passes FriBidi's through as they are; another
 /// backend gives these values for these classes.
 pub const bidi = struct {
