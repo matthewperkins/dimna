@@ -12,8 +12,8 @@ and macOS is in [platforms.md](platforms.md).
                                              # xkbcommon (development files); no glslc: shaders are checked in
                                              # optional at run time: harfbuzz and fribidi (Persian),
                                              # Noto Sans CJK SC (Chinese), Noto Sans Arabic or Vazirmatn
-                                             # macOS: needs Apple's Command Line Tools, and from Homebrew
-                                             # pkg-config and freetype (optional: harfbuzz, fribidi)
+                                             # macOS: needs Apple's Command Line Tools only
+                                             # (optional, for Persian: harfbuzz and fribidi from Homebrew)
     zig build test                           # about 280 tests, none needs a display or the board
     zig build -Dgui=false --release=safe     # dimna-headless only: no GUI libraries, no pkg-config
 

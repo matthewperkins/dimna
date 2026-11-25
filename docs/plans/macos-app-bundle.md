@@ -42,6 +42,13 @@ casks. Paying for a Developer ID (notarization) stays an open item for the owner
 
 ### FreeType must travel with the app (the main problem)
 
+**Settled on 2026-11-24, by way B:** FreeType 2.14.3 is vendored (`vendor/freetype`) and
+linked statically on macOS; `otool -L zig-out/bin/dimna` lists no `/opt/homebrew` path.
+What is left of this section for the app: FreeType's licence texts
+(`vendor/freetype/FTL.TXT`, `LICENSE.TXT`) go into `Contents/Resources/licenses/`, and
+HarfBuzz and FriBidi (Persian only) are still loaded from Homebrew at run time, if there.
+The text below is as it was written before.
+
 Today `dimna` on macOS links Homebrew's `libfreetype.6.dylib` (`docs/install.md`, macOS,
 step 2): a user without Homebrew's FreeType cannot start the app. Find out with
 `otool -L zig-out/bin/dimna` (expect `/opt/homebrew/opt/freetype/lib/libfreetype.6.dylib`).

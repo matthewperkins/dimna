@@ -410,8 +410,8 @@ fn addGui(
 
 /// dimna and the GUI's test module for macOS, over the core's `dimna` module. The same two
 /// modules over the same files as `addGui`, with the Mac's libraries: no Wayland, Vulkan,
-/// SPIR-V, fontconfig, xkbcommon or ALSA. FreeType through pkg-config (Homebrew's, which a
-/// Mac then needs installed); fonts are found with Core Text and sound goes through Core
+/// SPIR-V, fontconfig, xkbcommon or ALSA. FreeType is built from vendor/freetype and linked
+/// statically (a Mac needs none installed); fonts are found with Core Text and sound goes through Core
 /// Audio, both called through their C interfaces, declared in the Zig files that use them
 /// (src/gui/fontfind_coretext.zig, src/gui/audio_coreaudio.zig). The window is AppKit and
 /// the renderer Metal (src/gui/window_appkit.zig, src/gui/gpu_metal.zig), each through an
@@ -423,12 +423,31 @@ fn addMacGui(
     dimna: *std.Build.Module,
 ) Gui {
     const gui_c = b.addTranslateC(.{ .root_source_file = b.path("src/gui/c_darwin.h"), .target = target, .optimize = optimize });
-    const flags = b.run(&.{ "pkg-config", "--cflags-only-I", "freetype2" });
-    var it = std.mem.tokenizeAny(u8, flags, " \n");
-    while (it.next()) |f| {
-        if (std.mem.startsWith(u8, f, "-I")) gui_c.addIncludePath(.{ .cwd_relative = f[2..] });
-    }
+    gui_c.addIncludePath(b.path("vendor/freetype/include"));
     const gui_c_mod = gui_c.createModule();
+
+    // FreeType, built from vendor/freetype and linked statically, so that dimna on a Mac
+    // needs no library that macOS does not have (no Homebrew, no pkg-config, nothing to
+    // carry in an app). The modules are those of vendor/freetype/dimna/dimna_ftmodule.h;
+    // each .c below is FreeType's own single-file build of a module. Linux uses the
+    // distribution's FreeType (addGui).
+    const freetype_mod = b.createModule(.{ .target = target, .optimize = optimize, .link_libc = true });
+    freetype_mod.addCSourceFiles(.{
+        .root = b.path("vendor/freetype/src"),
+        .files = &.{
+            "base/ftbase.c",     "base/ftinit.c",       "base/ftsystem.c",   "base/ftdebug.c",
+            "base/ftbitmap.c",   "base/ftglyph.c",      "base/ftmm.c",       "base/ftbbox.c",
+            "base/ftsynth.c",    "base/ftgasp.c",       "base/ftfstype.c",   "base/ftstroke.c",
+            "sfnt/sfnt.c",       "truetype/truetype.c", "cff/cff.c",         "psaux/psaux.c",
+            "psnames/psnames.c", "pshinter/pshinter.c", "autofit/autofit.c", "smooth/smooth.c",
+            "raster/raster.c",   "gzip/ftgzip.c",
+        },
+        // As a release build of third-party C: no warnings, no UBSan traps.
+        .flags = &.{ "-DFT2_BUILD_LIBRARY", "-DFT_CONFIG_MODULES_H=<dimna_ftmodule.h>", "-DNDEBUG", "-w", "-fno-sanitize=undefined" },
+    });
+    freetype_mod.addIncludePath(b.path("vendor/freetype/include"));
+    freetype_mod.addIncludePath(b.path("vendor/freetype/dimna"));
+    const freetype = b.addLibrary(.{ .name = "freetype", .root_module = freetype_mod });
     const stb_c = b.addTranslateC(.{ .root_source_file = b.path("vendor/stb/stb.h"), .target = target, .optimize = optimize });
     const stb_mod = stb_c.createModule();
     const gui_mod = b.createModule(.{
@@ -452,8 +471,8 @@ fn addMacGui(
             .flags = &.{ "-DNDEBUG", "-w", "-fno-sanitize=undefined" },
         });
         m.addIncludePath(b.path("vendor/stb"));
-        // Text: Core Text finds the font, FreeType rasterizes it.
-        m.linkSystemLibrary("freetype2", .{});
+        // Text: Core Text finds the font, FreeType (above) rasterizes it.
+        m.linkLibrary(freetype);
         m.linkFramework("CoreText", .{});
         m.linkFramework("CoreFoundation", .{});
         // Sound: the default output device through an output audio unit.

@@ -4,7 +4,8 @@
 #
 #   ZIG_VERSION=... ZIG_MACOS_SHA256=... packaging/ci-macos.sh
 #
-# Installs FreeType and pkg-config with Homebrew if they are missing, downloads Zig and
+# Installs HarfBuzz and FriBidi with Homebrew if they are missing (for the shaping tests;
+# the build itself needs nothing from Homebrew: FreeType is vendor/freetype), downloads Zig and
 # checks it against the sha256 given, then builds and tests as docs/install.md's macOS
 # section says: `zig build test` (the core's tests and the GUI's; no window is opened and
 # nothing is played; the drawing tests need a Metal device and skip without one),
@@ -31,9 +32,6 @@ cleanup() {
 }
 trap cleanup EXIT
 
-command -v pkg-config >/dev/null 2>&1 || brew install pkg-config
-pkg-config --exists freetype2 || brew install freetype
-pkg-config --exists freetype2 || fail "pkg-config does not find freetype2"
 # HarfBuzz and FriBidi are loaded at run time for Persian; without them seven shaping tests
 # skip themselves (as they did on the runner's first pass).
 [ -e /opt/homebrew/lib/libharfbuzz.dylib ] && [ -e /opt/homebrew/lib/libfribidi.dylib ] || brew install harfbuzz fribidi
