@@ -124,7 +124,15 @@ expected, and tests that use real fonts may be loosened to allow them.
 - Each loosened test is broken on purpose once, as `docs/plans/README.md` asks, to show
   it can still fail.
 
-## To decide (owner)
+## Decided by the owner (2026-11-24)
+
+1. Core Text for everything on the Mac (a). 2. The default font is the macOS system UI
+font. 3. FreeType is removed from the Mac at once when Core Text is accepted (no build
+option kept; `vendor/freetype` goes). 4. Linux unchanged. 5. The HarfBuzz hazard is left
+documented (since seen to happen on the CI runner: `docs/OPEN.md`). 6. The app ships first
+on the static FreeType; a new release follows when Core Text is ready. Start: now.
+
+The questions as they were put:
 
 1. **How far.** (a) Core Text for everything on the Mac: rasterising, shaping, lookup;
    FreeType, HarfBuzz and FriBidi gone from the Mac build. (b) Core Text for bidi and

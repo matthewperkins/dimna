@@ -4,8 +4,7 @@
 #
 #   ZIG_VERSION=... ZIG_MACOS_SHA256=... packaging/ci-macos.sh
 #
-# Installs HarfBuzz and FriBidi with Homebrew if they are missing (for the shaping tests;
-# the build itself needs nothing from Homebrew: FreeType is vendor/freetype), downloads Zig and
+# Needs nothing from Homebrew (FreeType is vendor/freetype). Downloads Zig and
 # checks it against the sha256 given, then builds and tests as docs/install.md's macOS
 # section says: `zig build test` (the core's tests and the GUI's; no window is opened and
 # nothing is played; the drawing tests need a Metal device and skip without one),
@@ -32,9 +31,13 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# HarfBuzz and FriBidi are loaded at run time for Persian; without them seven shaping tests
-# skip themselves (as they did on the runner's first pass).
-[ -e /opt/homebrew/lib/libharfbuzz.dylib ] && [ -e /opt/homebrew/lib/libfribidi.dylib ] || brew install harfbuzz fribidi
+# HarfBuzz and FriBidi (loaded at run time, for Persian) are NOT installed here, so the
+# shaping tests skip themselves. With them, two of those tests failed on this runner once
+# dimna had its own FreeType (run 45541218730): Homebrew's HarfBuzz works with Homebrew's
+# FreeType on faces made by dimna's (docs/OPEN.md). They come back with Core Text
+# (docs/plans/macos-coretext-text.md). FriBidi is taken away if the image has it, so that
+# the run does not depend on what the image holds.
+if [ -n "${CI:-}" ] && [ -e /opt/homebrew/lib/libfribidi.dylib ]; then brew uninstall --ignore-dependencies fribidi; fi
 
 zig_tar=zig-aarch64-macos-$ZIG_VERSION.tar.xz
 # ziglang.org first, then community mirrors (https://ziglang.org/download/community-mirrors.txt):

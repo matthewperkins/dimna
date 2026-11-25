@@ -58,11 +58,14 @@ seen, so it can be told apart from a guess. Remove an entry when it is fixed or 
 - **macOS, Persian text: two copies of FreeType work on one face.** dimna on macOS has its
   own FreeType (static, `vendor/freetype`, 2.14.3) and hands its faces to HarfBuzz
   (`shape.zig`, `hb_ft_font_create_referenced`), which is Homebrew's and links Homebrew's
-  FreeType. Both are 2.14.3 today and the shaping tests pass (2026-11-24). With another
-  FreeType in Homebrew (2.15.0 is its stable) the two differ; what happens then has not
-  been tried. Only strings that are shaped are affected (Persian and other joined or
-  right-to-left scripts), and only where HarfBuzz and FriBidi are installed. Found by
-  reading. `docs/plans/macos-coretext-text.md` removes it.
+  FreeType. On the owner's Mac both are 2.14.3 and the shaping tests pass (2026-11-24). On
+  GitHub's macOS runner the same day, with whatever FreeType its Homebrew had, two of them
+  failed (run 45541218730: "Persian with a range in Hz" and "Persian read right to left",
+  a glyph count of 16 where 17 was expected) which had passed there before dimna had its
+  own FreeType. So Persian may be laid out wrongly on a Mac whose Homebrew FreeType is not
+  2.14.3. Only strings that are shaped are affected (Persian and other joined or
+  right-to-left scripts), and only where HarfBuzz and FriBidi are installed. The Mac CI job
+  runs without them for now. `docs/plans/macos-coretext-text.md` removes it.
 
 ## Tried, and not possible on this board
 
