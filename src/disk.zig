@@ -11,7 +11,8 @@ const record = @import("record.zig");
 const os = @import("os.zig");
 
 /// Free space that counts as none. `DIMNA_TEST_DISK_RESERVE_GB` may raise it (for
-/// testing), never lower it (`reserveFrom`).
+/// testing); it may lower it only for the simulator, whose recordings hold no animal's
+/// data (`reserveFrom`).
 pub const reserve_bytes: f64 = 10e9;
 
 /// Time left on the disk below which there is an alarm, each once until acknowledged and
@@ -19,10 +20,13 @@ pub const reserve_bytes: f64 = 10e9;
 pub const alarm_s = [_]f64{ 2 * 3600, 3600, 30 * 60, 5 * 60, 60 };
 pub const warn_s = 2 * 3600;
 
-/// The reserve: `reserve_bytes`, or `test_gb` GB when that is more.
-pub fn reserveFrom(test_gb: ?f64) f64 {
+/// The reserve: `reserve_bytes`, or `test_gb` GB when that is more. With `simulated` (the
+/// samples come from `--sim`, not the board) `test_gb` may also be less, down to 0, so the
+/// tests can record into a small `/tmp`; a recording from the board never gets under 10 GB.
+pub fn reserveFrom(test_gb: ?f64, simulated: bool) f64 {
     const gb = test_gb orelse return reserve_bytes;
-    if (!std.math.isFinite(gb)) return reserve_bytes;
+    if (!std.math.isFinite(gb) or gb < 0) return reserve_bytes;
+    if (simulated) return gb * 1e9;
     return @max(reserve_bytes, gb * 1e9);
 }
 
@@ -245,12 +249,21 @@ test "disk time left with the layout's rate as a floor: a figure from the first 
     try testing.expectApproxEqRel(@as(f64, (50e9 - 50e6 - reserve_bytes) / 20e6), d.left(20e6).?.seconds, 1e-9);
 }
 
-test "the reserve is 10 GB, raised for testing but never lowered" {
-    try testing.expectEqual(@as(f64, 10e9), reserveFrom(null));
-    try testing.expectEqual(@as(f64, 10e9), reserveFrom(2));
-    try testing.expectEqual(@as(f64, 10e9), reserveFrom(-5));
-    try testing.expectEqual(@as(f64, 10e9), reserveFrom(std.math.nan(f64)));
-    try testing.expectEqual(@as(f64, 50e9), reserveFrom(50));
+test "the reserve is 10 GB, raised for testing, lowered only for the simulator" {
+    // From the board: never under 10 GB.
+    try testing.expectEqual(@as(f64, 10e9), reserveFrom(null, false));
+    try testing.expectEqual(@as(f64, 10e9), reserveFrom(2, false));
+    try testing.expectEqual(@as(f64, 10e9), reserveFrom(0, false));
+    try testing.expectEqual(@as(f64, 10e9), reserveFrom(-5, false));
+    try testing.expectEqual(@as(f64, 10e9), reserveFrom(std.math.nan(f64), false));
+    try testing.expectEqual(@as(f64, 50e9), reserveFrom(50, false));
+    // The simulator: what the test asks, 0 included; nonsense still gives 10 GB.
+    try testing.expectEqual(@as(f64, 10e9), reserveFrom(null, true));
+    try testing.expectEqual(@as(f64, 2e9), reserveFrom(2, true));
+    try testing.expectEqual(@as(f64, 0), reserveFrom(0, true));
+    try testing.expectEqual(@as(f64, 10e9), reserveFrom(-5, true));
+    try testing.expectEqual(@as(f64, 10e9), reserveFrom(std.math.inf(f64), true));
+    try testing.expectEqual(@as(f64, 50e9), reserveFrom(50, true));
     try testing.expectEqual(reserve_bytes, (DiskWatch{}).reserve);
 }
 

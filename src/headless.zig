@@ -44,7 +44,8 @@
 //! With --record, the free space where the recording goes: one line at the start (how long
 //! it lasts at this layout), and a WARNING line on stderr each time the time left falls
 //! below 2 h, 1 h, 30 min, 5 min and 1 min (see disk.zig). The last 10 GB count as full
-//! (DIMNA_TEST_DISK_RESERVE_GB=<GB> counts more, for testing). Exit status 2, nothing
+//! (DIMNA_TEST_DISK_RESERVE_GB=<GB> counts more, for testing; with --sim it may also
+//! count less, so the test scripts can record into a small /tmp). Exit status 2, nothing
 //! recorded, with less than that free, or when --seconds needs more than the rest.
 
 const std = @import("std");
@@ -314,7 +315,7 @@ const DiskAlarm = struct {
     /// with less than the reserve free, or one of --seconds that needs more than the rest.
     fn check(init: std.process.Init, args: Args, root: []const u8, layout: dimna.types.Layout) ?DiskAlarm {
         const test_gb: ?f64 = if (init.environ_map.get("DIMNA_TEST_DISK_RESERVE_GB")) |v| std.fmt.parseFloat(f64, v) catch null else null;
-        const reserve = dimna.disk.reserveFrom(test_gb);
+        const reserve = dimna.disk.reserveFrom(test_gb, args.num_sim > 0);
         const rate = dimna.disk.bytesPerSecond(layout);
         const free = dimna.disk.freeBytesNear(root) orelse {
             log.warn("disk: the free space at {s} is not known; not watched", .{root});

@@ -30,7 +30,7 @@ tmp="/tmp/dimna-crash-test-$$"
 mkdir -p "$tmp/rec"
 trap 'rm -rf "$tmp"' EXIT
 
-"$bin" --sim 32,16 --seconds 30 --record "$tmp/rec" >"$tmp/headless.log" 2>&1 &
+DIMNA_TEST_DISK_RESERVE_GB=1 "$bin" --sim 32,16 --seconds 30 --record "$tmp/rec" >"$tmp/headless.log" 2>&1 &
 pid=$!
 sleep "$kill_after"
 if ! kill -0 "$pid" 2>/dev/null; then

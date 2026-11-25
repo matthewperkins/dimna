@@ -93,7 +93,7 @@ got=$work/unzipped/dimna.app
 codesign --verify --strict "$got" || fail "the unpacked bundle's signature does not verify"
 "$got/Contents/MacOS/dimna" --help >/dev/null 2>&1 || fail "dimna --help failed from the bundle"
 mkdir "$work/rec"
-"$got/Contents/MacOS/dimna-headless" --sim 32,16 --seconds 5 --record "$work/rec" >"$work/headless.log" 2>&1 || {
+DIMNA_TEST_DISK_RESERVE_GB=1 "$got/Contents/MacOS/dimna-headless" --sim 32,16 --seconds 5 --record "$work/rec" >"$work/headless.log" 2>&1 || {
     cat "$work/headless.log"
     fail "dimna-headless --sim failed from the bundle"
 }

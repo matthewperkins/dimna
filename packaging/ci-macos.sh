@@ -61,7 +61,7 @@ zig-out/bin/dimna --help >/dev/null 2>&1 || fail "dimna --help failed"
 
 rec=$work/rec
 mkdir "$rec"
-zig-out/bin/dimna-headless --sim 32,16 --seconds 5 --record "$rec" >"$work/headless.log" 2>&1 || {
+DIMNA_TEST_DISK_RESERVE_GB=1 zig-out/bin/dimna-headless --sim 32,16 --seconds 5 --record "$rec" >"$work/headless.log" 2>&1 || {
     cat "$work/headless.log"
     fail "dimna-headless --sim failed"
 }

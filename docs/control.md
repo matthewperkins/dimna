@@ -147,8 +147,10 @@ and how many GB are left; a red alarm, until acknowledged, under 2 hours, and ag
 1 hour, 30 minutes, 5 minutes and 1 minute. On btrfs the free space moves only when a
 transaction commits (every 120 s with `commit=120`), which is why the window is 5 minutes
 and the recorder's rate is the floor. `DIMNA_TEST_DISK_RESERVE_GB=<GB>` counts that much
-as full instead of 10 GB, for testing (a value under 10 is ignored; `dimna-headless` reads
-it too). On the simulator,
+as full instead of 10 GB, for testing (`dimna-headless` reads it too). From the board a
+value under 10 is ignored: a real recording always keeps 10 GB. With `--sim` it may be
+less, down to 0, so the test scripts (`tools/crash-test.sh`, `tools/version-test.sh`, the
+CI's simulator recordings) can record into a small `/tmp`; they set it to 1. On the simulator,
 `DIMNA_TEST_SIM_STALL=<at s>,<for s>` makes it go quiet once and `DIMNA_TEST_SIM_FAIL_AT=<s>[,<times>]`
 makes it fail with a read error (that many seconds into a run, for the first `times` runs, 1 by default). `DIMNA_TEST_RECORD_FAIL_AFTER=<samples>`, `DIMNA_TEST_RECORD_STALL=<samples>,<ms>`
 and `DIMNA_TEST_RING_SECONDS=<s>` make these happen on purpose, for testing.

@@ -46,7 +46,7 @@ run() {
         exit 1
     fi
     mkdir -p "$tmp/$name.rec"
-    if ! "$tmp/$name/bin/dimna-headless" --sim 32 --seconds 1 --record "$tmp/$name.rec" >"$tmp/$name.log" 2>&1; then
+    if ! DIMNA_TEST_DISK_RESERVE_GB=1 "$tmp/$name/bin/dimna-headless" --sim 32 --seconds 1 --record "$tmp/$name.rec" >"$tmp/$name.log" 2>&1; then
         echo "version-test: dimna-headless ($name) failed:" >&2
         cat "$tmp/$name.log" >&2
         exit 1

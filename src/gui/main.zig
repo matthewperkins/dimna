@@ -264,7 +264,7 @@ fn runDisplay(init: std.process.Init, env: *const Env, args: *const Args, config
     // What of the loss counters the user has acknowledged (the alarm shows the rest).
     var alarms: session.Alarms = .{};
     // How long until the recording's disk is full (looked at every 5 s while recording).
-    var disk: dimna.disk.DiskWatch = .{ .reserve = dimna.disk.reserveFrom(env.disk_reserve_gb) };
+    var disk: dimna.disk.DiskWatch = .{ .reserve = dimna.disk.reserveFrom(env.disk_reserve_gb, sim != null) };
     // While not recording: the free space where recordings go, and how long it would last.
     var idle_disk: ?dimna.disk.Left = null;
     var idle_disk_next_s: f64 = 0;
