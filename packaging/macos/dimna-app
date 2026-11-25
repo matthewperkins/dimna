@@ -1,0 +1,14 @@
+#!/bin/sh
+# dimna.app's executable (Info.plist, CFBundleExecutable): starts the dimna beside it, with
+# what it logs appended to ~/Library/Logs/dimna/dimna.log (an app started from Finder,
+# Launchpad or the Dock has no terminal to log to). Arguments are passed on:
+#   open -a dimna --args --sim 32,16
+# From a terminal, run Contents/MacOS/dimna itself and the log stays in the terminal.
+dir=$(cd "$(dirname "$0")" && pwd)
+log_dir=$HOME/Library/Logs/dimna
+mkdir -p "$log_dir" 2>/dev/null
+log=$log_dir/dimna.log
+# Keep the log from growing without end: start afresh past 5 MB, keeping the last one.
+if [ -f "$log" ] && [ "$(wc -c <"$log")" -gt 5242880 ]; then mv -f "$log" "$log.1"; fi
+echo "---- $(date '+%Y-%m-%d %H:%M:%S') dimna $*" >>"$log" 2>/dev/null
+exec "$dir/dimna" "$@" >>"$log" 2>&1

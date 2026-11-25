@@ -2,14 +2,14 @@
 # What the release workflow's macOS job runs (.github/workflows/release.yml), on an Apple
 # silicon runner; it can be run by hand on a Mac too:
 #
-#   ZIG_VERSION=... ZIG_MACOS_SHA256=... packaging/ci-macos.sh
+#   ZIG_VERSION=... ZIG_MACOS_SHA256=... packaging/ci-macos.sh [OUT_DIR]
 #
 # Needs nothing from Homebrew (text is Core Text's). Downloads Zig and
 # checks it against the sha256 given, then builds and tests as docs/install.md's macOS
 # section says: `zig build test` (the core's tests and the GUI's; no window is opened and
 # nothing is played; the drawing tests need a Metal device and skip without one),
 # `zig build --release=safe`, `dimna --help`, and `dimna-headless --sim` recording for 5 s.
-# No board is touched: there is none. Nothing is packaged: Mac users build from source.
+# No board is touched: there is none. With OUT_DIR, dimna.app is then made and zipped there.
 set -eu
 
 : "${ZIG_VERSION:?}" "${ZIG_MACOS_SHA256:?}"
@@ -78,3 +78,17 @@ else
     echo "ci-macos: no Python 3.11+ with numpy; the recording was not read back"
 fi
 echo "PASS: macOS"
+
+# With an output folder: dimna.app and its zip there (packaging/make-macos-app.sh, which
+# checks the bundle itself), for the release.
+if [ "$#" -ge 1 ]; then
+    sh packaging/make-macos-app.sh zig-out/bin "$1"
+    case "$1" in
+    */) app_dir=${1%/} ;;
+    *) app_dir=$1 ;;
+    esac
+    # Only the zip is the release's file.
+    case "$app_dir/dimna.app" in
+    */dimna.app) rm -rf "$app_dir/dimna.app" ;;
+    esac
+fi

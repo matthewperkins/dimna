@@ -60,10 +60,10 @@ kind of response opto-tagging looks for.
 
 The programs, the config file, the keys and the recording format are the same on both.
 Linux (x86_64) is where dimna is used for recordings from animals: Wayland and Vulkan, with
-packages to install. macOS (Apple silicon) is newer: AppKit and Metal, built from source,
-the board reached with no driver; it has recorded from the board without losing a sample,
-but has not yet had a soak of hours. [docs/platforms.md](docs/platforms.md) sets the two
-side by side.
+packages to install. macOS (Apple silicon) is newer: AppKit, Metal and Core Text, an app
+to download, the board reached with no driver and nothing else to install; it has recorded
+from the board without losing a sample, but has not yet had a soak of hours.
+[docs/platforms.md](docs/platforms.md) sets the two side by side.
 
 ## Quick start
 
@@ -74,6 +74,17 @@ yourself to the two groups they create and log out and in:
 
     sudo apt install ./dimna_<version>-1_amd64.deb     # or: sudo dnf install ./dimna-<version>-1.x86_64.rpm
     sudo usermod -aG dimna,realtime $USER
+
+**The Mac app** (Apple silicon; it needs the macOS it was built on or newer, which the
+release's notes name). In a terminal, so that macOS does not hold it back as a download
+from a browser:
+
+    cd ~/Downloads && curl -L -O https://github.com/matthewperkins/dimna/releases/latest/download/dimna-macos-arm64.zip \
+      && unzip -o dimna-macos-arm64.zip && mv dimna.app /Applications/
+
+Then open dimna like any app; `open -a dimna --args --sim 32,16` starts it on simulated
+headstages. [docs/install.md](docs/install.md), "macOS", has the rest (a copy downloaded
+with a browser, the log, the programs from a terminal).
 
 **From source**, on Linux or macOS (Zig 0.17.1; what each system needs is in
 [docs/install.md](docs/install.md)):

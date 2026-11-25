@@ -83,7 +83,7 @@ pub const Info = struct {
     board_id: u32,
     cable_delay: [4]i32,
     board_kind: []const u8 = "Open Ephys acquisition board (ECP5, FT600, ONI)",
-    software: []const u8 = "dimna 0.1.0",
+    software: []const u8 = "dimna 0.2.0",
     /// Session layout: the files go into `<root>/<date_time>/ephys/` (so videos and notes of
     /// the same take can sit beside them), and `<root>/current` is made a link to the
     /// session folder. Otherwise the files go straight into `<root>/<date_time>/`.

@@ -1,6 +1,6 @@
 .{
     .name = .dimna,
-    .version = "0.1.0",
+    .version = "0.2.0",
     .fingerprint = 0x6d7ad18df4cda0dd,
     .minimum_zig_version = "0.17.1",
     .dependencies = .{

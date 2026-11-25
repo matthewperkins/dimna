@@ -132,10 +132,44 @@ instead (it also takes a config folder: see the script).
 
 ## macOS
 
-On a Mac with Apple silicon (tried on macOS 27), `dimna` and `dimna-headless` build from
-source and run from the simulator or the board: windows through AppKit, drawing with
-Metal, sound through Core Audio, the board through IOKit (nothing to install for it). There
-is no `.app` yet.
+On a Mac with Apple silicon, dimna runs from the simulator or the board: windows through
+AppKit, drawing with Metal, text with Core Text, sound through Core Audio, the board
+through IOKit. Nothing has to be installed for any of it. Tried on macOS 27 (the owner's
+Mac) and 26 (the release workflow's runner).
+
+### The app
+
+Each release has `dimna-macos-arm64.zip`: `dimna.app`, made and checked by
+`packaging/make-macos-app.sh` in the release workflow. In a terminal:
+
+    cd ~/Downloads && curl -L -O https://github.com/matthewperkins/dimna/releases/latest/download/dimna-macos-arm64.zip \
+      && unzip -o dimna-macos-arm64.zip && mv dimna.app /Applications/
+
+- **Why `curl`.** The app is signed ad hoc (no Apple Developer ID is paid for, so it is
+  not notarized). What `curl` downloads is not marked as quarantined, so it opens at once.
+  A copy downloaded with a browser is held back by Gatekeeper ("cannot be opened because
+  the developer cannot be verified"): then either System Settings, Privacy & Security,
+  "Open Anyway" once, or `xattr -dr com.apple.quarantine /Applications/dimna.app`.
+- **Which macOS.** The app needs the macOS of the machine it was built on, or newer (the
+  release's notes say which; `LSMinimumSystemVersion` in its Info.plist). It has not been
+  built for, or tried on, anything older.
+- **Starting it.** From Launchpad, Spotlight or the Dock it opens the board, as
+  `dimna` without options does; `open -a dimna --args --sim 32,16` gives it options (here
+  the simulator). `~/.config/dimna/config.toml` is read as always. An app started this way
+  has no `LANG`, so it shows English unless the config has `language`.
+- **The log** of an app started that way is `~/Library/Logs/dimna/dimna.log` (it starts
+  afresh past 5 MB, keeping the last as `dimna.log.1`).
+- **From a terminal**, the programs are inside the app, and log to the terminal:
+
+      /Applications/dimna.app/Contents/MacOS/dimna --sim 32,16
+      /Applications/dimna.app/Contents/MacOS/dimna-headless --seconds 600 --record ~/somewhere
+
+  or, to have them on the `PATH`:
+  `sudo ln -sf /Applications/dimna.app/Contents/MacOS/dimna /usr/local/bin/dimna` (and
+  the same for `dimna-headless`). `tools/dimna_read.py` and the licences are in
+  `dimna.app/Contents/Resources/`.
+
+### From source
 
 1. **Zig 0.17.1**: `zig-aarch64-macos-0.17.1.tar.xz` from https://ziglang.org/download/,
    checked and unpacked anywhere, as above (no root needed). The build also needs Apple's

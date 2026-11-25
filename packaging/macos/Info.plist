@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- dimna.app's Info.plist. packaging/make-macos-app.sh fills in VERSION (build.zig.zon's)
+     and MINOS (what the programs were built for: `minos` in their LC_BUILD_VERSION).
+     CFBundleExecutable is the launcher (packaging/macos/dimna-app), which starts
+     Contents/MacOS/dimna with its log in ~/Library/Logs/dimna/dimna.log. -->
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>dimna</string>
+    <key>CFBundleDisplayName</key>
+    <string>dimna</string>
+    <key>CFBundleIdentifier</key>
+    <string>io.github.matthewperkins.dimna</string>
+    <key>CFBundleExecutable</key>
+    <string>dimna-app</string>
+    <key>CFBundleIconFile</key>
+    <string>dimna</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>VERSION</string>
+    <key>CFBundleVersion</key>
+    <string>VERSION</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.medical</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>MINOS</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSHumanReadableCopyright</key>
+    <string>Copyright (C) 2026 Matthew Perkins. GNU General Public License, version 3.</string>
+</dict>
+</plist>
