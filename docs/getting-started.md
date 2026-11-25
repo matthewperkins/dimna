@@ -13,7 +13,6 @@ and macOS is in [platforms.md](platforms.md).
                                              # optional at run time: harfbuzz and fribidi (Persian),
                                              # Noto Sans CJK SC (Chinese), Noto Sans Arabic or Vazirmatn
                                              # macOS: needs Apple's Command Line Tools only
-                                             # (optional, for Persian: harfbuzz and fribidi from Homebrew)
     zig build test                           # about 280 tests, none needs a display or the board
     zig build -Dgui=false --release=safe     # dimna-headless only: no GUI libraries, no pkg-config
 
@@ -77,8 +76,8 @@ config keys and recordings stay in English.
   (Noto Sans CJK SC). Persian needs an Arabic-script font (Noto Sans Arabic or
   Vazirmatn) and, to join its letters, HarfBuzz and FriBidi. These are loaded at run time
   only when needed, never linked. Without them dimna says what is missing and shows
-  English. macOS comes with fonts for both; Persian still needs HarfBuzz and FriBidi
-  (from Homebrew).
+  English. On macOS every language works with nothing installed: fonts, joining and
+  right-to-left layout are Core Text's.
 - In Persian the control window is mirrored and reads from the right. The neural display
   and the spike tiles keep their left-to-right layout, since that is the direction of time.
 - The translations are drafts that native speakers have not yet reviewed. Each language's

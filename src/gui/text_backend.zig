@@ -2,9 +2,8 @@
 //! shaping. This file holds what the backends and their callers (`font.zig`, `shape.zig`)
 //! agree on and the choice of this system's backend, at compile time: the types are the
 //! backend's own, so a caller calls the backend's functions directly; there is no indirect
-//! call. Linux uses `text_freetype.zig` (FreeType; HarfBuzz and FriBidi loaded at run time);
-//! macOS the same by default, or `text_coretext.zig` (Core Text, CoreGraphics, ICU) when
-//! built with `-Dtext=coretext`, until Core Text's look has been accepted.
+//! call. Linux uses `text_freetype.zig` (FreeType; HarfBuzz and FriBidi loaded at run time),
+//! macOS `text_coretext.zig` (Core Text, CoreGraphics, ICU: all macOS's own).
 //!
 //! What is shared policy and stays in `font.zig` and `shape.zig`: the fixed glyphs and their
 //! fast path; whether a string needs shaping at all; the paragraph direction rule and the
@@ -72,11 +71,7 @@ const builtin = @import("builtin");
 
 const backend = switch (builtin.os.tag) {
     .linux => @import("text_freetype.zig"),
-    // The build's `-Dtext` (FreeType until Core Text's look has been accepted).
-    .macos => switch (@import("text_options").text) {
-        .freetype => @import("text_freetype.zig"),
-        .coretext => @import("text_coretext.zig"),
-    },
+    .macos => @import("text_coretext.zig"),
     else => @compileError("dimna has no text backend for this system yet"),
 };
 

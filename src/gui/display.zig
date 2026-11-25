@@ -1921,7 +1921,7 @@ pub const Text = struct {
     pub fn init(self: *Text, gpa: std.mem.Allocator, gpu: *Gpu, args: Args) void {
         var name_buf: [128]u8 = undefined;
         const family = std.fmt.bufPrintSentinel(&name_buf, "{s}", .{args.font}, 0) catch "sans-serif";
-        var f = font.Font.init(gpa, family, args.font_px) catch |e| {
+        var f = font.Font.init(gpa, family, args.displayFontPx()) catch |e| {
             log.warn("no font '{s}' ({t}): the display has no text", .{ args.font, e });
             return;
         };

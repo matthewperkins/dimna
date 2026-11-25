@@ -7,6 +7,13 @@ const gpu_mod = @import("gpu.zig");
 const audio_out = @import("audio_out.zig");
 const log = std.log.scoped(.dimna);
 
+/// On a Mac's screen (two pixels to the point) the default 14 px is 7 points. Unless the
+/// config file says what `font_px` is, the display's text (titles, row labels, the key
+/// summary) is 20 px there, and the control window's, which is read and clicked, 24 px.
+/// The tiles keep `font_px`.
+const mac_display_font_px = 20;
+const mac_control_font_px = 24;
+
 /// macOS waits for the refresh by default (the owner's choice by eye, 2026-11-16: about 20
 /// ms behind, but the scroll is even on a 60 Hz screen); `--tearing` is the quick mode.
 const present_default: gpu_mod.PresentMode = if (builtin.os.tag == .macos) .fifo else .auto;
@@ -52,13 +59,22 @@ pub const Args = struct {
     /// Font for labels: a fontconfig name and a size in pixels.
     font: []const u8 = "sans-serif",
     font_px: u32 = 14,
-    /// The config file gave `font_px` (otherwise macOS draws the control window larger).
+    /// The config file gave `font_px` (otherwise macOS draws the display's and the control
+    /// window's text larger: `displayFontPx`, `controlFontPx`).
     font_px_given: bool = false,
     /// The view file (panel settings saved from the control window), applied on top of the
     /// config's panels.
     views_doc: dimna.toml.Document = .{ .entries = &.{} },
     /// The parsed config file (panels are read from it once the channel layout is known).
     doc: dimna.toml.Document = .{ .entries = &.{} },
+
+    pub fn displayFontPx(self: *const Args) u32 {
+        return if (builtin.os.tag == .macos and !self.font_px_given) mac_display_font_px else self.font_px;
+    }
+
+    pub fn controlFontPx(self: *const Args) u32 {
+        return if (builtin.os.tag == .macos and !self.font_px_given) mac_control_font_px else self.font_px;
+    }
 };
 
 /// What `dimna --help` prints. Every option `parseArgs` accepts is listed here (a test checks).

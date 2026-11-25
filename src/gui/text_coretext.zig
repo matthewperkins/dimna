@@ -314,6 +314,18 @@ fn fallbackFor(base: *const CTFont, cp: u32) ?*const CTFont {
     return f;
 }
 
+/// Whether some installed font has every one of `cps` (`fontfind.anyFontHas` on macOS): the
+/// font Core Text draws the first with must have the others too. False for none.
+pub fn anyFontHas(cps: []const u32) bool {
+    if (cps.len == 0) return false;
+    const base = own(CTFontCreateUIFontForLanguage(kCTFontUIFontLabel, 0, null)) orelse return false;
+    defer release(base);
+    const f = fallbackFor(base, cps[0]) orelse return false;
+    defer release(f);
+    for (cps) |cp| if (glyphOf(f, cp) == 0) return false;
+    return true;
+}
+
 /// What separates the pattern from the font's PostScript name in what `findFont` writes.
 const name_sep = " = ";
 

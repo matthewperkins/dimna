@@ -127,9 +127,7 @@ Copyright (C) 2026 Matthew Perkins. dimna is free software: you can redistribute
 modify it under the terms of the GNU General Public License, version 3, as published by
 the Free Software Foundation ([LICENSE](LICENSE)). It comes with no warranty of any kind.
 
-Third-party code: liboni (MIT) is vendored in `vendor/liboni`; FreeType (FreeType License
-or GPL version 2 or later) in `vendor/freetype`, built into dimna on macOS only: portions of
-that program are copyright The FreeType Project (www.freetype.org); stb_image and
+Third-party code: liboni (MIT) is vendored in `vendor/liboni`; stb_image and
 stb_image_write by Sean Barrett (public domain / MIT) in `vendor/stb`, used only to read the
 colour-scheme image and to write its swatch (see `vendor/stb/README.md`). The Wayland
 protocol XMLs (`vendor/wayland-protocols`) and the Vulkan registry (`vendor/vulkan/vk.xml`)

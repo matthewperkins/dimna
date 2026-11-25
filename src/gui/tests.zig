@@ -27,6 +27,5 @@ test {
     // above, or have none).
     if (@import("builtin").os.tag == .macos) {
         _ = @import("audio_coreaudio.zig");
-        _ = @import("fontfind_coretext.zig");
     }
 }

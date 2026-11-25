@@ -9,7 +9,7 @@ What differs is what draws, sounds and talks to the board:
 | windows and graphics | Wayland directly, Vulkan | AppKit, Metal |
 | sound | ALSA (PipeWire behind it on most desktops) | Core Audio |
 | the board's USB | the kernel's usbfs; a udev rule gives access | IOKit; no driver, no rule, no permission asked |
-| fonts | fontconfig | Core Text |
+| text | fontconfig finds fonts, FreeType draws them; HarfBuzz and FriBidi, if installed, for Persian | Core Text for all of it; nothing to install for any language |
 | how to get it | `.deb`, `.rpm`, tarballs, or from source | from source (no `.app` yet) |
 | sample to screen | 1.6 to 2.6 ms, fullscreen with tearing | about 20 ms by default (waits for the refresh, an even scroll); 6 to 7 ms with `--tearing`, fullscreen, on a 60 Hz screen, as macOS reports it |
 | a block's delivery from the board | 0.76 ms on average | 0.73 ms on average |

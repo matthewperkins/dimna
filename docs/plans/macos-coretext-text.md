@@ -155,6 +155,23 @@ macOS uses", decisions 1 and 2):
   today, so that one bitmap per glyph serves every position;
 - fonts by name or as the UI font, never from a file.
 
+## Steps 1, 3 and 4 as done (2026-11-24 and 25)
+
+- **Step 1** (the seam): merged as `534b070`. The dump of every string in seven languages
+  (vertices and atlas) was byte-identical before and after on the rig and on the Mac.
+- **Step 3** (`text_coretext.zig`): merged as `66124fd`, behind `-Dtext=coretext`. Both
+  choices passed their tests; a shaped string not in the cache costs about 21 us against
+  about 4 with HarfBuzz and FriBidi (cached strings the same). Two tests were loosened
+  (Core Text draws the space before a Persian word with the system font).
+- **Step 4**: the owner compared the two programs on screen ("basically the same-ish, a
+  touch nicer maybe"). Core Text is now the Mac's text: the build option is gone,
+  `vendor/freetype`, `fontfind_coretext.zig` and `c_darwin.h` are removed, `fontfind` on
+  macOS is Core Text's `findFont` and `anyFontHas`, and the program links only macOS's own
+  libraries (2.25 MB against 2.89 MB). The two-FreeType fault is gone with it, and the
+  Mac CI job runs the Persian tests again (they need nothing installed).
+- Left as it is: `text_freetype.zig` still holds a table of macOS fallback families
+  (Geeza Pro, Hiragino Sans GB) that nothing uses now.
+
 ## Tests: looser where a real font is involved
 
 The owner's ruling (2026-11-24): slight differences in appearance across the systems are

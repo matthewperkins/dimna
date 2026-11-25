@@ -40,7 +40,9 @@ const builtin = @import("builtin");
 
 const backend = switch (builtin.os.tag) {
     .linux => @import("fontfind_fontconfig.zig"),
-    .macos => @import("fontfind_coretext.zig"),
+    // Core Text itself (`text_coretext.zig`): fonts are objects there, not files, so only
+    // `findFont` and `anyFontHas` exist; a `Matcher` is FreeType's need (Linux).
+    .macos => @import("text_coretext.zig"),
     else => @compileError("dimna has no font lookup for this system yet"),
 };
 
@@ -49,11 +51,11 @@ pub const findFont = backend.findFont;
 /// Whether some installed font has every one of these code points.
 pub const anyFontHas = backend.anyFontHas;
 /// A font file's path (in the caller's buffer) and the face's index in it.
-pub const Match = backend.Match;
+pub const Match = if (@hasDecl(backend, "Match")) backend.Match else void;
 /// Lookups kept for a while (a shaping engine's life): `init()`, `deinit()`, and
 /// `match(pattern, family, buf)`, the font for a pattern, with a family only if it is
 /// that family.
-pub const Matcher = backend.Matcher;
+pub const Matcher = if (@hasDecl(backend, "Matcher")) backend.Matcher else void;
 
 test "anyFontHas: Latin yes, an unassigned code point no" {
     try std.testing.expect(anyFontHas(&.{ 'A', 'z' }));

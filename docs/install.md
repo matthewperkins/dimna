@@ -140,13 +140,10 @@ is no `.app` yet.
 1. **Zig 0.17.1**: `zig-aarch64-macos-0.17.1.tar.xz` from https://ziglang.org/download/,
    checked and unpacked anywhere, as above (no root needed). The build also needs Apple's
    Command Line Tools (`xcode-select --install`) for the system's headers and frameworks.
-2. **Nothing else to install.** FreeType is built from `vendor/freetype` and linked into
-   `dimna` (no Homebrew, no `pkg-config`; `otool -L zig-out/bin/dimna` lists only what
-   macOS has). Fonts come from Core Text (Chinese from Hiragino Sans GB, Persian from Geeza
-   Pro, both installed with macOS), sound from Core Audio. No fontconfig, Wayland, Vulkan,
-   xkbcommon or ALSA. Only for Persian and other right-to-left or joined scripts:
-   `brew install harfbuzz fribidi` (loaded when such text is first drawn, from
-   /opt/homebrew/lib or by name; without them dimna says what is missing and shows English).
+2. **Nothing else to install.** Text is Core Text's (fonts, joining and right-to-left
+   layout for Persian, Chinese from the system's own fonts), sound Core Audio's:
+   `otool -L zig-out/bin/dimna` lists only what macOS has. No FreeType, HarfBuzz, FriBidi,
+   fontconfig, Wayland, Vulkan, xkbcommon or ALSA, and nothing from Homebrew.
 3. Build and test:
 
        zig build -Dgui=false --release=safe     # zig-out/bin/dimna-headless only
