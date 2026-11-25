@@ -452,10 +452,12 @@ fn checkComplete(gpa: std.mem.Allocator, rec: *const Recording, c: Checked, sum:
     var amplifier: i64 = 0;
     var amplifier_failed: i64 = 0;
     var leds: i64 = 0;
+    var leds_failed: i64 = 0;
     for (lines) |l| {
         var f = std.mem.splitScalar(u8, l, '\t');
         _ = f.next();
         const kind = f.next() orelse return failure("events.tsv line without a kind: '{s}'", .{l});
+        if (std.mem.eql(u8, kind, "output_failed") and std.mem.startsWith(u8, f.rest(), "set_leds")) leds_failed += 1;
         if (std.mem.eql(u8, kind, "amplifier")) amplifier += 1;
         if (std.mem.eql(u8, kind, "amplifier_failed")) amplifier_failed += 1;
         if (std.mem.eql(u8, kind, "leds")) leds += 1;
@@ -463,7 +465,8 @@ fn checkComplete(gpa: std.mem.Allocator, rec: *const Recording, c: Checked, sum:
     try testing.expectEqual(@as(?i64, amplifier), try rec.metaInt("final", "amplifier_events"));
     try testing.expectEqual(@as(?i64, amplifier_failed), try rec.metaInt("final", "amplifier_failed_events"));
     try testing.expectEqual(@as(?i64, leds), try rec.metaInt("final", "leds_events"));
-    try testing.expectEqual(@as(?bool, amplifier + amplifier_failed + leds > 0), try rec.metaBool("final", "settings_changed"));
+    try testing.expectEqual(@as(?i64, leds_failed), try rec.metaInt("final", "leds_failed_events"));
+    try testing.expectEqual(@as(?bool, amplifier + amplifier_failed + leds + leds_failed > 0), try rec.metaBool("final", "settings_changed"));
 }
 
 fn dupePath(gpa: std.mem.Allocator, r: *const Recorder) ![]u8 {
@@ -904,10 +907,16 @@ test "recorder: [final] says whether settings changed, and counts each kind of c
     defer gpa.free(path);
     r.events_in = evq;
     r.notes_in = notes;
+    // Refused before the recording started (the queue was full with nobody reading):
+    // not this recording's.
+    for (0..evq.buf.len + 3) |_| _ = evq.push(.init(0, "note", "before", .{}));
+    try testing.expectEqual(@as(u64, 3), evq.refused.load(.monotonic));
+    while (evq.pop()) |_| {}
     try r.start();
     var s: i64 = 0;
     for (0..200) |k| {
         // The kinds acquisition.zig writes, and some that are not changes of [settings].
+        if (k == 97) try testing.expect(evq.push(.init(s, "output_failed", "set_leds Timeout", .{})));
         if (k == 20) try testing.expect(evq.push(.init(s, "amplifier", "lower_hz=300.000 upper_hz=7500.0", .{})));
         if (k == 40) try testing.expect(evq.push(.init(s, "leds", "on", .{})));
         if (k == 60) try testing.expect(evq.push(.init(s, "amplifier_failed", "Timeout", .{})));
@@ -930,6 +939,8 @@ test "recorder: [final] says whether settings changed, and counts each kind of c
     try testing.expectEqual(@as(?i64, 2), try rec.metaInt("final", "amplifier_events"));
     try testing.expectEqual(@as(?i64, 1), try rec.metaInt("final", "amplifier_failed_events"));
     try testing.expectEqual(@as(?i64, 1), try rec.metaInt("final", "leds_events"));
+    try testing.expectEqual(@as(?i64, 1), try rec.metaInt("final", "leds_failed_events"));
+    try testing.expectEqual(@as(?i64, 0), try rec.metaInt("final", "events_dropped"));
 }
 
 test "recorder: [final] says settings did not change when no change was written" {
@@ -950,6 +961,8 @@ test "recorder: [final] says settings did not change when no change was written"
     var s: i64 = 0;
     for (0..100) |k| {
         if (k == 50) try testing.expect(notes.push(.init(s, "note", "leds", .{})));
+        // Two events that found the queue full (as `push` counts them).
+        if (k == 60) _ = notes.refused.fetchAdd(2, .monotonic);
         try produce(&ring, s, bs);
         s += bs;
     }
@@ -963,6 +976,8 @@ test "recorder: [final] says settings did not change when no change was written"
     try testing.expectEqual(@as(?i64, 0), try rec.metaInt("final", "amplifier_events"));
     try testing.expectEqual(@as(?i64, 0), try rec.metaInt("final", "amplifier_failed_events"));
     try testing.expectEqual(@as(?i64, 0), try rec.metaInt("final", "leds_events"));
+    try testing.expectEqual(@as(?i64, 0), try rec.metaInt("final", "leds_failed_events"));
+    try testing.expectEqual(@as(?i64, 2), try rec.metaInt("final", "events_dropped"));
 }
 
 test "recorder: meta.toml names the software, and its commit only when the build knew it" {

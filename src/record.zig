@@ -188,6 +188,9 @@ pub const Recorder = struct {
     notes_in: ?*events.EventQueue = null,
     /// events.tsv lines written that change a value of [settings] (for [final]).
     settings_events: SettingsEvents = .{},
+    /// What the two queues had refused (full) when this recording started: `[final]
+    /// events_dropped` is what they refused since.
+    refused_at_start: u64 = 0,
 
     stats: Stats = .{},
     /// For testing how failures are reported (set before `start`): fail the next write
@@ -337,8 +340,17 @@ pub const Recorder = struct {
     }
 
     pub fn start(self: *Recorder) !void {
+        self.refused_at_start = self.refusedNow();
         self.thread = try std.Thread.spawn(.{}, run, .{self});
         self.thread.?.setName(self.io, "recorder") catch {};
+    }
+
+    /// Events the queues have refused so far because they were full (never written).
+    fn refusedNow(self: *const Recorder) u64 {
+        var n: u64 = 0;
+        if (self.events_in) |q| n += q.refused.load(.monotonic);
+        if (self.notes_in) |q| n += q.refused.load(.monotonic);
+        return n;
     }
 
     pub const Summary = struct {
@@ -607,7 +619,7 @@ pub const Recorder = struct {
         for (text[0..@min(text.len, 900)]) |ch| try w.writeByte(if (ch == '\t' or ch == '\n' or ch == '\r') ' ' else ch);
         try w.writeByte('\n');
         try self.events_file.writeStreamingAll(self.io, w.buffered());
-        self.settings_events.count(kind);
+        self.settings_events.count(kind, text);
     }
 
     fn writeMeta(self: *Recorder, final_end: ?i64) !void {
@@ -631,14 +643,18 @@ pub const SettingsEvents = struct {
     amplifier: u64 = 0,
     amplifier_failed: u64 = 0,
     leds: u64 = 0,
+    /// A LED change the board refused: kind "output_failed", text "set_leds <error>"
+    /// (`acquisition.zig`). It may have taken effect.
+    leds_failed: u64 = 0,
 
-    fn count(self: *SettingsEvents, kind: []const u8) void {
+    fn count(self: *SettingsEvents, kind: []const u8, text: []const u8) void {
         if (std.mem.eql(u8, kind, "amplifier")) self.amplifier += 1;
         if (std.mem.eql(u8, kind, "amplifier_failed")) self.amplifier_failed += 1;
         if (std.mem.eql(u8, kind, "leds")) self.leds += 1;
+        if (std.mem.eql(u8, kind, "output_failed") and std.mem.startsWith(u8, text, "set_leds")) self.leds_failed += 1;
     }
     pub fn any(self: SettingsEvents) bool {
-        return self.amplifier + self.amplifier_failed + self.leds > 0;
+        return self.amplifier + self.amplifier_failed + self.leds + self.leds_failed > 0;
     }
 };
 
@@ -832,8 +848,8 @@ fn writeToml(w: *Io.Writer, r: *const Recorder, final_end: ?i64) !void {
         );
         const se = r.settings_events;
         try w.print(
-            "# [settings] holds the values at the start. Each change after it is an events.tsv line\n# of the kind named below; settings_changed is true when there was any.\nsettings_changed = {}\namplifier_events = {d}\namplifier_failed_events = {d}\nleds_events = {d}\n",
-            .{ se.any(), se.amplifier, se.amplifier_failed, se.leds },
+            "# [settings] holds the values at the start. Each change after it is an events.tsv line\n# of the kind named below; settings_changed is true when there was any.\nsettings_changed = {}\namplifier_events = {d}\namplifier_failed_events = {d}\nleds_events = {d}\nleds_failed_events = {d}\n# Events that were never written because their queue was full: when not 0, the counts\n# above and events.tsv may be short.\nevents_dropped = {d}\n",
+            .{ se.any(), se.amplifier, se.amplifier_failed, se.leds, se.leds_failed, r.refusedNow() -| r.refused_at_start },
         );
         if (r.stop_reason_len > 0) {
             try w.writeAll("reason = ");

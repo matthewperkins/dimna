@@ -77,10 +77,16 @@ at. Every other key of `[settings]` needs a restart, which is refused while reco
 `[final]` says whether any change was made, with the number of `events.tsv` lines of each
 kind (keys added in version 1, absent in older recordings):
 
-    settings_changed = true          # any of the three below is not 0
+    settings_changed = true          # any of the four below is not 0
     amplifier_events = 2             # kind "amplifier": band, DSP, fast settle as applied
     amplifier_failed_events = 0      # kind "amplifier_failed": may have taken effect in part
     leds_events = 0                  # kind "leds"
+    leds_failed_events = 0           # kind "output_failed", text "set_leds ...": may have taken effect
+    events_dropped = 0               # events never written: their queue (256) was full
+
+When `events_dropped` is not 0, `events.tsv` and the counts above may be short: a count of
+0 is then not proof that nothing changed. (`leds_failed_events` and `events_dropped` were
+added after the other four; a recording may have those without these.)
 
 When `settings_changed` is true, `[settings]` does not hold for the whole recording; read
 `events.tsv` for where it changed. `tools/dimna_read.py` warns, lists the changes, and checks

@@ -34,7 +34,17 @@ SETTINGS_EVENTS = {
     "amplifier": "amplifier_events",
     "amplifier_failed": "amplifier_failed_events",
     "leds": "leds_events",
+    "leds_failed": "leds_failed_events",
 }
+
+
+def settings_kind(event):
+    """The SETTINGS_EVENTS kind of an events.tsv line (sample, kind, text), or None. A LED
+    change the board refused is written as kind "output_failed", text "set_leds <error>"."""
+    _, kind, text = event
+    if kind == "output_failed":
+        return "leds_failed" if text.startswith("set_leds") else None
+    return kind if kind in SETTINGS_EVENTS else None
 
 
 class Recording:
@@ -69,7 +79,9 @@ class Recording:
         self.complete = "final" in m
         self.events = read_events(self.path / "events.tsv")
         # The events.tsv lines after which [settings] no longer holds: (sample, kind, text).
-        self.settings_changes = [e for e in self.events if e[1] in SETTINGS_EVENTS]
+        self.settings_changes = [e for e in self.events if settings_kind(e)]
+        # Events never written because their queue was full ([final], when it says).
+        self.events_dropped = m.get("final", {}).get("events_dropped", 0)
 
     def sample_numbers(self):
         """Board sample number of every verified row (handles gaps via the index)."""
@@ -118,7 +130,9 @@ class Recording:
                 problems.append(f"{tail} bytes past the last index record in a complete recording")
             if "settings_changed" in f:
                 for kind, key in SETTINGS_EVENTS.items():
-                    n = sum(1 for e in self.settings_changes if e[1] == kind)
+                    n = sum(1 for e in self.settings_changes if settings_kind(e) == kind)
+                    if key == "leds_failed_events" and key not in f:
+                        continue  # written before this key was added
                     if f.get(key) != n:
                         problems.append(f"[final] {key} {f.get(key)} != {n} '{kind}' lines in events.tsv")
                 if f["settings_changed"] != bool(self.settings_changes):
@@ -182,6 +196,9 @@ def main(argv):
             print(f"    sample {sample}: {kind} {text}")
         if len(r.settings_changes) > 10:
             print(f"    ... and {len(r.settings_changes) - 10} more")
+    if r.events_dropped:
+        print(f"  WARNING: {r.events_dropped} event(s) were never written (their queue was full): "
+              f"events.tsv and the counts of settings changes may be short")
     for p in problems:
         print("  PROBLEM:", p)
     print("  OK" if not problems else f"  {len(problems)} problem(s)")
