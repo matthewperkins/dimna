@@ -39,19 +39,23 @@ pub const Source = union(enum) {
     pub fn live(self: Source, cmd: types.LiveCommand) !void {
         switch (self) {
             .board => |b| try b.live(cmd),
-            .sim => |s| s.live(cmd),
+            .sim => |s| try s.live(cmd),
         }
     }
-    /// Gap-free amplifier change. The simulator accepts it and reports what was asked for.
+    /// Gap-free amplifier change. The simulator keeps it in its settings, as the board does,
+    /// and reports what was asked for.
     pub fn setAmpLive(self: Source, a: Board.AmpSettings, now_ns: i96) !Board.AmpActual {
         return switch (self) {
             .board => |b| try b.setAmpLive(a),
-            .sim => .{
-                .lower = a.lower_bandwidth,
-                .upper = a.upper_bandwidth,
-                .dsp_cutoff = a.dsp_cutoff,
-                .switched_ns = now_ns,
-                .writes_before_switch = 0,
+            .sim => |s| sim: {
+                try s.setAmpLive(a);
+                break :sim .{
+                    .lower = a.lower_bandwidth,
+                    .upper = a.upper_bandwidth,
+                    .dsp_cutoff = a.dsp_cutoff,
+                    .switched_ns = now_ns,
+                    .writes_before_switch = 0,
+                };
             },
         };
     }

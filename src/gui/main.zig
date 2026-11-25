@@ -792,6 +792,14 @@ fn runDisplay(init: std.process.Init, env: *const Env, args: *const Args, config
             quiet = false;
             log.warn("the board is sending data again", .{});
         }
+        // A change of settings the board refused: an alarm, and the control window goes
+        // back to what the board holds.
+        if (acq.takeFailure()) |f| {
+            log.err("the board refused a change of settings ({t}: {t})", .{ f.what, f.err });
+            alarms.setting_failed = f;
+            board_ctl.refused(acq.requested);
+            snap_dirty = true;
+        }
         // Alarms: anything that means samples are not being kept.
         if (alarms.update(&status, .{
             .overflow = carried.overflow + acq.ring_overflow.load(.monotonic),

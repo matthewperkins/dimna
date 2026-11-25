@@ -7,6 +7,7 @@
 
 const std = @import("std");
 const types = @import("types.zig");
+const Board = @import("board.zig").Board;
 const Block = types.Block;
 const Health = types.Health;
 const Settings = types.Settings;
@@ -58,6 +59,8 @@ pub const Sim = struct {
     gpa: std.mem.Allocator,
     io: Io,
     settings: Settings = .{},
+    /// For tests: the next this many live commands (`live`, `setAmpLive`) are refused.
+    refuse_live: u32 = 0,
     /// Channels of each simulated headstage (32 = RHD2132, 16 = RHD2216, 64 = RHD2164).
     headstage_channels: [8]usize = @splat(0),
     num_headstages: usize,
@@ -347,11 +350,41 @@ pub const Sim = struct {
         }
     }
 
-    pub fn live(self: *Sim, cmd: types.LiveCommand) void {
+    /// A live command: kept in `settings` as the board keeps it (`Board.live`), so that
+    /// whatever reads the source's settings sees the same on both. `refuse_live` makes the
+    /// next commands fail, for tests.
+    pub fn live(self: *Sim, cmd: types.LiveCommand) !void {
+        if (self.refuse_live > 0) {
+            self.refuse_live -= 1;
+            return error.SimulatedRefusal;
+        }
         switch (cmd) {
             .set_ttl_out => |w| self.ttl_out = w,
-            else => {},
+            .dac_route => {},
+            .set_leds => |on| self.settings.leds = on,
+            .set_dac_hpf => |h| {
+                self.settings.dac_hpf_enabled = h.enabled;
+                self.settings.dac_hpf_hz = h.hz;
+            },
+            .set_noise_slicer => |n| self.settings.noise_slicer = n,
+            .set_ttl_mode => |on| self.settings.ttl_output_mode = on,
+            .set_fast_ttl_settle => |ch| self.settings.fast_ttl_settle = ch,
+            .set_clock_divider => |d| self.settings.clock_divider = d,
         }
+    }
+
+    /// The board's gap-free amplifier change, simulated: kept in `settings` (the simulated
+    /// signal does not change with the band).
+    pub fn setAmpLive(self: *Sim, a: Board.AmpSettings) !void {
+        if (self.refuse_live > 0) {
+            self.refuse_live -= 1;
+            return error.SimulatedRefusal;
+        }
+        self.settings.lower_bandwidth = a.lower_bandwidth;
+        self.settings.upper_bandwidth = a.upper_bandwidth;
+        self.settings.dsp_enabled = a.dsp_enabled;
+        self.settings.dsp_cutoff = a.dsp_cutoff;
+        self.settings.fast_settle = a.fast_settle;
     }
 };
 

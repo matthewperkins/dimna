@@ -8,6 +8,15 @@
 //! to the recorder (`events`) for events.tsv. See `classify` for which changes can be made
 //! live, which reprogram the amplifiers gap-free, and which need a restart (refused while
 //! recording).
+//!
+//! Two copies of the settings exist while acquiring: `requested` (what the caller asked
+//! for, on its thread) and the source's own (what the board was told, on the acquisition
+//! thread, published as `in_use` after every command). They may differ only while commands
+//! are queued. `takeFailure` is how the caller learns that a command was refused, and it
+//! puts `requested` back to what the source has, so that the difference is seen and the
+//! next change is sent. Commands still queued when the thread stops are dropped (`join`):
+//! what follows a stop (a restart, a reopen) gives the source all of `requested` anyway,
+//! and `start` takes `requested` from the source again.
 
 const std = @import("std");
 const types = @import("types.zig");
@@ -20,6 +29,7 @@ const LiveCommand = types.LiveCommand;
 const Settings = types.Settings;
 const Atomic = std.atomic.Value;
 const os = @import("os.zig");
+const Published = @import("published.zig").Published;
 const log = std.log.scoped(.acquisition);
 
 pub const Command = union(enum) {
@@ -53,9 +63,43 @@ pub fn classify(old: Settings, new: Settings) Change {
     return .none;
 }
 
+/// Whether a recording is running when settings are changed, and whether the user has said
+/// that what is recorded may change under it.
+pub const While = enum {
+    not_recording,
+    /// Recording: changes to what is recorded (the amplifier band, DSP, fast settle, the
+    /// LEDs) are refused with `error.ConfirmWhileRecording`.
+    recording,
+    /// Recording, and the user confirmed the change: applied, and written to events.tsv.
+    recording_confirmed,
+};
+
+/// A command the source refused (`Acquisition.takeFailure`).
+pub const Failure = struct {
+    what: What,
+    err: anyerror,
+
+    pub const What = enum(u8) {
+        /// Amplifier band, DSP or fast settle: the chips may hold the old values, the new,
+        /// or the new on some and the old on others (`Board.setAmpLive`).
+        amplifier,
+        /// An output or indicator: not changed.
+        output,
+    };
+};
+
+/// Whether `new` changes what a running recording holds, compared with `old`, without a
+/// restart: the amplifier settings and the LEDs (which put a tone on the ADC inputs).
+pub fn changesRecordedData(old: Settings, new: Settings) bool {
+    return classify(old, new) == .amplifier or old.leds != new.leds;
+}
+
 pub const ApplyError = error{
     /// The change needs a restart, which is refused while recording.
     RecordingActive,
+    /// The change alters what is being recorded; apply it with `.recording_confirmed` once
+    /// the user has confirmed.
+    ConfirmWhileRecording,
     /// The change needs a restart: stop, `Board.applySettings`, start again.
     NeedsRestart,
     /// The command queue is full; try again shortly.
@@ -87,6 +131,16 @@ pub const Acquisition = struct {
     submitted: u64 = 0,
     applied: Atomic(u64) = .init(0),
     failed: Atomic(u64) = .init(0),
+    /// Commands dropped at `join`: still queued when the thread stopped.
+    dropped: u64 = 0,
+    /// The failures `takeFailure` has reported (caller's thread).
+    failed_seen: u64 = 0,
+    /// The last command refused: `Failure.What`, and the error as an integer.
+    last_failed_what: Atomic(u8) = .init(0),
+    last_failed_err: Atomic(u16) = .init(0),
+    /// The source's settings, published by the acquisition thread after every command.
+    in_use: Published(Settings) = .{},
+    in_use_seen: u32 = 0,
     /// Longest time spent applying one command, in µs (blocks wait meanwhile).
     max_apply_us: Atomic(u64) = .init(0),
     /// The settings as last requested through `applySettings` (owned by the caller's thread).
@@ -95,6 +149,7 @@ pub const Acquisition = struct {
     /// Starts the board and the thread. `self` must stay at a fixed address until `join`.
     pub fn start(self: *Acquisition) !void {
         self.requested = self.source.settings();
+        self.in_use.publish(&self.requested);
         try self.source.start(self.health);
         self.awake = os.keepAwake();
         self.thread = std.Thread.spawn(.{}, run, .{self}) catch |e| {
@@ -110,6 +165,9 @@ pub const Acquisition = struct {
         self.stop_flag.store(true, .release);
         if (self.thread) |t| t.join();
         self.thread = null;
+        // Commands the thread did not get to: dropped, not kept for the next run (they
+        // would be applied a second time there, with an event in the next recording).
+        while (self.commands.pop()) |_| self.dropped += 1;
         self.source.stop() catch |e| log.warn("stopping the source failed: {t}", .{e});
         os.allowSleep(&self.awake);
     }
@@ -144,14 +202,15 @@ pub const Acquisition = struct {
 
     /// Applies `new` while acquiring, as far as possible without a gap. Refuses changes that
     /// need a restart while `recording`; otherwise reports `NeedsRestart` for them.
-    pub fn applySettings(self: *Acquisition, new: Settings, recording: bool) ApplyError!Change {
+    pub fn applySettings(self: *Acquisition, new: Settings, during: While) ApplyError!Change {
         const old = self.requested;
         const change = classify(old, new);
         switch (change) {
             .none => return .none,
-            .restart => return if (recording) error.RecordingActive else error.NeedsRestart,
+            .restart => return if (during != .not_recording) error.RecordingActive else error.NeedsRestart,
             .live, .amplifier => {},
         }
+        if (during == .recording and changesRecordedData(old, new)) return error.ConfirmWhileRecording;
         if (change == .amplifier) try self.submit(.{ .amp = .{
             .lower_bandwidth = new.lower_bandwidth,
             .upper_bandwidth = new.upper_bandwidth,
@@ -172,9 +231,25 @@ pub const Acquisition = struct {
         return change;
     }
 
-    /// True once every submitted command has been applied (or has failed).
+    /// True once every submitted command has been applied, has failed, or was dropped.
     pub fn idle(self: *const Acquisition) bool {
-        return self.applied.load(.acquire) + self.failed.load(.acquire) == self.submitted;
+        return self.applied.load(.acquire) + self.failed.load(.acquire) + self.dropped == self.submitted;
+    }
+
+    /// A command the source refused since the last call, if one was, once no command is
+    /// queued any more. `requested` is then what the source has (so a later change is
+    /// compared with the truth, and what the caller shows is the truth). The caller's
+    /// thread; call it regularly.
+    pub fn takeFailure(self: *Acquisition) ?Failure {
+        const failed = self.failed.load(.acquire);
+        if (failed == self.failed_seen or !self.idle()) return null;
+        self.failed_seen = failed;
+        var now: Settings = undefined;
+        if (self.in_use.read(&now, &self.in_use_seen)) self.requested = now;
+        return .{
+            .what = @fromBackingInt(@intCast(self.last_failed_what.load(.acquire))),
+            .err = @errorFromInt(self.last_failed_err.load(.acquire)),
+        };
     }
 
     fn run(self: *Acquisition) void {
@@ -212,6 +287,7 @@ pub const Acquisition = struct {
         const ok = switch (cmd) {
             .amp => |a| blk: {
                 const actual = self.source.setAmpLive(a, t0.nanoseconds) catch |e| {
+                    self.noteFailure(.amplifier, e);
                     ev = .init(
                         at(next_sample, t0.nanoseconds, std.Io.Clock.awake.now(self.io).nanoseconds, rate),
                         "amplifier_failed",
@@ -238,6 +314,7 @@ pub const Acquisition = struct {
             },
             .live => |l| blk: {
                 const ok = if (self.source.live(l)) true else |e| fail: {
+                    self.noteFailure(.output, e);
                     ev = .init(
                         at(next_sample, t0.nanoseconds, std.Io.Clock.awake.now(self.io).nanoseconds, rate),
                         "output_failed",
@@ -268,7 +345,15 @@ pub const Acquisition = struct {
         };
         _ = self.max_apply_us.fetchMax(@intCast(t0.untilNow(self.io, .awake).toMicroseconds()), .monotonic);
         _ = self.events.push(ev);
+        // What the source holds now, before the count that lets `takeFailure` read it.
+        const now = self.source.settings();
+        self.in_use.publish(&now);
         if (ok) _ = self.applied.fetchAdd(1, .release) else _ = self.failed.fetchAdd(1, .release);
+    }
+
+    fn noteFailure(self: *Acquisition, what: Failure.What, err: anyerror) void {
+        self.last_failed_what.store(@backingInt(what), .release);
+        self.last_failed_err.store(@intFromError(err), .release);
     }
 };
 
@@ -397,4 +482,171 @@ test "classify sorts settings changes" {
     b = a;
     b.rhd2132_16ch[0] = true;
     try testing.expectEqual(Change.restart, classify(a, b));
+}
+
+fn bumped(comptime T: type, v: T) T {
+    return switch (@typeInfo(T)) {
+        .bool => !v,
+        .int, .float => v + 1,
+        .optional => |o| if (v == null) @as(o.child, 1) else null,
+        .array => |arr| blk: {
+            var x = v;
+            x[0] = bumped(arr.child, x[0]);
+            break :blk x;
+        },
+        else => @compileError("bumped: a Settings field of a type this test does not know: " ++ @typeName(T)),
+    };
+}
+
+test "every field of Settings is in a class, and a live or amplifier change sends commands that give the source exactly the new settings" {
+    const Sim = @import("sim.zig").Sim;
+    const gpa = testing.allocator;
+    const a: Settings = .{};
+    const info = @typeInfo(Settings).@"struct";
+    inline for (info.field_names, info.field_types) |name, Field| {
+        var b = a;
+        @field(b, name) = bumped(Field, @field(a, name));
+        const class = classify(a, b);
+        if (class == .none) {
+            std.debug.print("Settings.{s}: a change of it is in no class (classify)\n", .{name});
+            return error.TestUnexpectedResult;
+        }
+        if (class != .restart) {
+            var sim = try Sim.init(gpa, testing.io, &.{16});
+            defer sim.deinit();
+            var ring = try BlockRing.init(gpa, 4, sim.layout().numChannels(), a.block_samples);
+            defer ring.deinit(gpa);
+            var health: types.Health = .{};
+            var acq: Acquisition = .{ .io = testing.io, .source = .{ .sim = &sim }, .ring = &ring, .health = &health, .scratch = try .init(gpa, sim.layout().numChannels(), a.block_samples) };
+            defer acq.scratch.deinit(gpa);
+            acq.requested = a;
+            sim.settings = a;
+            try testing.expectEqual(class, try acq.applySettings(b, .not_recording));
+            // The commands, given to the source as the acquisition thread gives them.
+            while (acq.commands.pop()) |cmd| switch (cmd) {
+                .amp => |amp| _ = try acq.source.setAmpLive(amp, 0),
+                .live => |l| try acq.source.live(l),
+            };
+            if (!std.meta.eql(sim.settings, b)) {
+                std.debug.print("Settings.{s}: class {t}, but the commands sent ({d}) do not give the source the new value\n", .{ name, class, acq.submitted });
+                return error.TestUnexpectedResult;
+            }
+            // What changes the recorded data is what a recording must confirm.
+            const data = class == .amplifier or std.mem.eql(u8, name, "leds");
+            try testing.expectEqual(data, changesRecordedData(a, b));
+        }
+    }
+}
+
+fn waitIdle(acq: *Acquisition) !void {
+    const io = acq.io;
+    const t0 = std.Io.Clock.awake.now(io);
+    while (!acq.idle()) {
+        if (t0.untilNow(io, .awake).toMilliseconds() > 5000) return error.CommandsNotApplied;
+        try io.sleep(.fromMilliseconds(1), .awake);
+    }
+}
+
+test "live changes: the source's settings and `requested` agree after each step; a refusal is reported and can be sent again; nothing is replayed after a stop" {
+    const Sim = @import("sim.zig").Sim;
+    const gpa = testing.allocator;
+    const io = testing.io;
+    var sim = try Sim.init(gpa, io, &.{16});
+    defer sim.deinit();
+    const nch = sim.layout().numChannels();
+    var ring = try BlockRing.init(gpa, 64, nch, sim.settings.block_samples);
+    defer ring.deinit(gpa);
+    var health: types.Health = .{};
+    var acq: Acquisition = .{ .io = io, .source = .{ .sim = &sim }, .ring = &ring, .health = &health, .scratch = try .init(gpa, nch, sim.settings.block_samples) };
+    defer acq.scratch.deinit(gpa);
+    try acq.start();
+    var joined = false;
+    defer if (!joined) acq.join();
+
+    // An amplifier change, then outputs.
+    var want = acq.requested;
+    want.lower_bandwidth = 300;
+    try testing.expectEqual(Change.amplifier, try acq.applySettings(want, .not_recording));
+    try waitIdle(&acq);
+    try testing.expect(acq.takeFailure() == null);
+    try testing.expect(std.meta.eql(sim.settings, acq.requested));
+    try testing.expectEqual(@as(f64, 300), sim.settings.lower_bandwidth);
+    want.leds = true;
+    want.noise_slicer = 3;
+    want.dac_hpf_enabled = true;
+    try testing.expectEqual(Change.live, try acq.applySettings(want, .not_recording));
+    try waitIdle(&acq);
+    try testing.expect(std.meta.eql(sim.settings, acq.requested));
+    try testing.expect(sim.settings.leds and sim.settings.noise_slicer == 3);
+
+    // The source refuses an amplifier change: reported once, `requested` is what the source
+    // holds, and the same change is then sent again.
+    sim.refuse_live = 1;
+    want.upper_bandwidth = 3000;
+    _ = try acq.applySettings(want, .not_recording);
+    try waitIdle(&acq);
+    const f = acq.takeFailure() orelse return error.FailureNotReported;
+    try testing.expectEqual(Failure.What.amplifier, f.what);
+    try testing.expectEqual(@as(anyerror, error.SimulatedRefusal), f.err);
+    try testing.expect(acq.takeFailure() == null);
+    try testing.expectEqual(@as(f64, 7500), acq.requested.upper_bandwidth);
+    try testing.expect(std.meta.eql(sim.settings, acq.requested));
+    try testing.expectEqual(Change.amplifier, try acq.applySettings(want, .not_recording));
+    try waitIdle(&acq);
+    try testing.expectEqual(@as(f64, 3000), sim.settings.upper_bandwidth);
+    try testing.expect(std.meta.eql(sim.settings, acq.requested));
+
+    // An output refused.
+    sim.refuse_live = 1;
+    want.leds = false;
+    _ = try acq.applySettings(want, .not_recording);
+    try waitIdle(&acq);
+    try testing.expectEqual(Failure.What.output, (acq.takeFailure() orelse return error.FailureNotReported).what);
+    try testing.expect(acq.requested.leds);
+    try testing.expect(std.meta.eql(sim.settings, acq.requested));
+
+    // While recording: what changes the recorded data needs the confirmation; outputs do
+    // not; a restart change is refused whatever was confirmed.
+    const before = acq.submitted;
+    want = acq.requested;
+    want.lower_bandwidth = 1;
+    try testing.expectError(error.ConfirmWhileRecording, acq.applySettings(want, .recording));
+    want = acq.requested;
+    want.leds = false;
+    try testing.expectError(error.ConfirmWhileRecording, acq.applySettings(want, .recording));
+    try testing.expectEqual(before, acq.submitted);
+    try testing.expect(acq.requested.leds and acq.requested.lower_bandwidth == 300);
+    want = acq.requested;
+    want.noise_slicer = 5;
+    try testing.expectEqual(Change.live, try acq.applySettings(want, .recording));
+    want.lower_bandwidth = 1;
+    try testing.expectEqual(Change.amplifier, try acq.applySettings(want, .recording_confirmed));
+    want.acquire_adc = !want.acquire_adc;
+    try testing.expectError(error.RecordingActive, acq.applySettings(want, .recording_confirmed));
+    try waitIdle(&acq);
+    try testing.expect(std.meta.eql(sim.settings, acq.requested));
+
+    // A change made while the thread is not running (as after a read error, until the board
+    // is open again): dropped at the stop, not applied in the next run. What follows a stop
+    // gives the source all of `requested`, as `Pipeline.restart` and `reopenSource` do.
+    acq.join();
+    want = acq.requested;
+    want.upper_bandwidth = 6000;
+    _ = try acq.applySettings(want, .not_recording);
+    try testing.expect(!acq.idle());
+    acq.join();
+    try testing.expect(acq.idle());
+    try testing.expectEqual(@as(u64, 1), acq.dropped);
+    const applied = acq.applied.load(.acquire);
+    try sim.applySettings(acq.requested);
+    acq.stop_flag.store(false, .release);
+    acq.done.store(false, .release);
+    try acq.start();
+    try io.sleep(.fromMilliseconds(50), .awake);
+    acq.join();
+    joined = true;
+    try testing.expectEqual(applied, acq.applied.load(.acquire));
+    try testing.expectEqual(@as(f64, 6000), sim.settings.upper_bandwidth);
+    try testing.expect(std.meta.eql(sim.settings, acq.requested));
+    try testing.expect(acq.takeFailure() == null);
 }

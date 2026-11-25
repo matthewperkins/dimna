@@ -334,6 +334,8 @@ pub const Alarms = struct {
     seen: Counts = .{},
     /// A recording failed or could not be started, and that has not been acknowledged.
     recording_failed: bool = false,
+    /// The board refused a change of settings, and that has not been acknowledged.
+    setting_failed: ?dimna.acquisition.Failure = null,
     /// Acquisition ended on an error and that was acknowledged (a warning stays).
     ended_seen: bool = false,
     /// The disk filling: the lowest threshold (`disk_alarm_s`) already raised as an alarm
@@ -411,6 +413,7 @@ pub const Alarms = struct {
             acknowledged.* = false;
             self.seen = now;
             self.recording_failed = false;
+            self.setting_failed = null;
             self.disk_seen = disk_level;
             self.ended_seen = board.ended != null;
         }
@@ -446,6 +449,13 @@ pub const Alarms = struct {
         if (self.recording_failed) {
             w.writeAll(if (w.buffered().len > 0) sep else "") catch {};
             i18n.print(&w, .alarm_recording_failed, .{}) catch {};
+        }
+        if (self.setting_failed) |f| {
+            w.writeAll(if (w.buffered().len > 0) sep else "") catch {};
+            switch (f.what) {
+                .amplifier => i18n.print(&w, .alarm_amp_failed, .{ .err = f.err }) catch {},
+                .output => i18n.print(&w, .alarm_output_failed, .{ .err = f.err }) catch {},
+            }
         }
         if (now.overflow > self.seen.overflow) {
             w.writeAll(if (w.buffered().len > 0) sep else "") catch {};
@@ -804,6 +814,13 @@ pub const BoardControl = struct {
     restart_asked: bool = false,
     status: control.BoardStatus = .{},
     quit_prompt: control.QuitPrompt = .{},
+    /// A change that was refused because a recording is running, and until when pressing
+    /// the same again applies it anyway.
+    confirm: ?control.BoardAction = null,
+    confirm_until_ns: i96 = 0,
+
+    /// How long a refused change may be confirmed by pressing again.
+    pub const confirm_s = 5;
 
     pub fn init(in_use: dimna.types.Settings, config_path: []const u8) BoardControl {
         var self: BoardControl = .{ .saved = in_use, .pending = in_use };
@@ -814,8 +831,10 @@ pub const BoardControl = struct {
     }
 
     /// One change from the control window. Headstage filters are applied at once, without
-    /// a gap, also while recording (the change is then written to the recording's events);
-    /// the rate and half-channel mode are only collected, for `apply` to restart with.
+    /// a gap. While recording they change what is recorded for good, so the first press is
+    /// refused with a note, and the same press again within `confirm_s` applies it (the
+    /// change is then written to the recording's events). The rate and half-channel mode
+    /// are only collected, for `apply` to restart with.
     pub fn edit(
         self: *BoardControl,
         action: control.BoardAction,
@@ -846,16 +865,37 @@ pub const BoardControl = struct {
         }
         if (want.lower_bandwidth >= want.upper_bandwidth) {
             self.status.say(.note_band_edges, .{});
-        } else if (acq.applySettings(want, recording)) |_| {
-            // The live values carry over into what a restart will apply.
-            const rate = self.pending.sample_rate;
-            const half = self.pending.rhd2132_16ch;
-            self.pending = want;
-            self.pending.sample_rate = rate;
-            self.pending.rhd2132_16ch = half;
-        } else |err| {
-            self.status.say(.note_not_applied, .{ .err = err });
+        } else {
+            const now_ns = Io.Clock.awake.now(io).nanoseconds;
+            const confirmed = if (self.confirm) |c| std.meta.eql(c, action) and now_ns < self.confirm_until_ns else false;
+            self.confirm = null;
+            if (acq.applySettings(want, if (!recording) .not_recording else if (confirmed) .recording_confirmed else .recording)) |_| {
+                self.carry(want);
+            } else |err| switch (err) {
+                error.ConfirmWhileRecording => {
+                    self.confirm = action;
+                    self.confirm_until_ns = now_ns + confirm_s * std.time.ns_per_s;
+                    self.status.say(.note_confirm_recording, .{ .seconds = @as(u32, confirm_s) });
+                },
+                else => self.status.say(.note_not_applied, .{ .err = err }),
+            }
         }
+    }
+
+    /// The live values carry over into what a restart will apply.
+    fn carry(self: *BoardControl, in_use: dimna.types.Settings) void {
+        const rate = self.pending.sample_rate;
+        const half = self.pending.rhd2132_16ch;
+        self.pending = in_use;
+        self.pending.sample_rate = rate;
+        self.pending.rhd2132_16ch = half;
+    }
+
+    /// After the board refused a change (`Acquisition.takeFailure`): `in_use` is what it
+    /// holds, and what a restart will apply follows it.
+    pub fn refused(self: *BoardControl, in_use: dimna.types.Settings) void {
+        self.carry(in_use);
+        self.confirm = null;
     }
 
     /// The settings in use differ from the config file's.
@@ -1133,4 +1173,71 @@ test "Reopening.from: what the reopen is doing, for the alarm" {
     const g = Alarms.Reopening.from(&r, 3 * std.time.ns_per_s).?;
     try std.testing.expect(g.absent);
     try std.testing.expectApproxEqAbs(3.0, g.seconds, 1e-9);
+}
+
+test "board alarms: a change of settings the board refused, until acknowledged" {
+    var a: Alarms = .{};
+    var st: display_mod.Status = .{};
+    var ack = false;
+    a.setting_failed = .{ .what = .amplifier, .err = error.Timeout };
+    _ = a.update(&st, .{}, .{}, null, null, &ack);
+    try std.testing.expectEqualStrings("AMPLIFIER SETTINGS NOT APPLIED (Timeout): the headstages may hold the old band or the new; set it again", st.alarm());
+    a.setting_failed = .{ .what = .output, .err = error.Timeout };
+    _ = a.update(&st, .{}, .{}, null, null, &ack);
+    try std.testing.expectEqualStrings("A BOARD SETTING WAS NOT APPLIED (Timeout)", st.alarm());
+    ack = true;
+    _ = a.update(&st, .{}, .{}, null, null, &ack);
+    try std.testing.expectEqual(@as(usize, 0), st.alarm_len);
+}
+
+test "the band while recording: refused with a note, applied when the same is pressed again in time, not after another press or too late" {
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+    var sim = try dimna.sim.Sim.init(gpa, io, &.{16});
+    defer sim.deinit();
+    const nch = sim.layout().numChannels();
+    var ring = try dimna.ring.BlockRing.init(gpa, 4, nch, sim.settings.block_samples);
+    defer ring.deinit(gpa);
+    var health: dimna.types.Health = .{};
+    // Not started: `applySettings` only queues.
+    var acq: dimna.acquisition.Acquisition = .{ .io = io, .source = .{ .sim = &sim }, .ring = &ring, .health = &health, .scratch = try .init(gpa, nch, sim.settings.block_samples) };
+    defer acq.scratch.deinit(gpa);
+    acq.requested = sim.settings;
+    var bc: BoardControl = .init(acq.requested, "/nowhere/config.toml");
+    const lower = acq.requested.lower_bandwidth;
+
+    // Not recording: at once.
+    bc.edit(.{ .lower = true }, &acq, 30000, false, io, gpa, "");
+    try std.testing.expect(acq.requested.lower_bandwidth > lower);
+    try std.testing.expectEqual(@as(u64, 1), acq.submitted);
+    const now = acq.requested.lower_bandwidth;
+
+    // Recording: the first press is refused and says how to confirm.
+    bc.edit(.{ .lower = true }, &acq, 30000, true, io, gpa, "");
+    try std.testing.expectEqual(now, acq.requested.lower_bandwidth);
+    try std.testing.expectEqual(@as(u64, 1), acq.submitted);
+    try std.testing.expectEqualStrings("recording: press again within 5 s to change what is recorded", bc.status.note_buf[0..bc.status.note_len]);
+    // Another button does not confirm it (and is refused in its turn).
+    bc.edit(.{ .upper = false }, &acq, 30000, true, io, gpa, "");
+    try std.testing.expectEqual(@as(u64, 1), acq.submitted);
+    // That one pressed again: applied, and it carries into what a restart applies.
+    const upper = acq.requested.upper_bandwidth;
+    bc.edit(.{ .upper = false }, &acq, 30000, true, io, gpa, "");
+    try std.testing.expect(acq.requested.upper_bandwidth < upper);
+    try std.testing.expectEqual(@as(u64, 2), acq.submitted);
+    try std.testing.expectEqual(acq.requested.upper_bandwidth, bc.pending.upper_bandwidth);
+    // A third press is a new change: refused again.
+    bc.edit(.{ .upper = false }, &acq, 30000, true, io, gpa, "");
+    try std.testing.expectEqual(@as(u64, 2), acq.submitted);
+    // Too late: the time to confirm has passed.
+    bc.confirm_until_ns = 0;
+    bc.edit(.{ .upper = false }, &acq, 30000, true, io, gpa, "");
+    try std.testing.expectEqual(@as(u64, 2), acq.submitted);
+
+    // The board refused a change: what a restart applies follows what the board holds.
+    var held = acq.requested;
+    held.lower_bandwidth = lower;
+    bc.refused(held);
+    try std.testing.expectEqual(lower, bc.pending.lower_bandwidth);
+    try std.testing.expect(bc.confirm == null);
 }

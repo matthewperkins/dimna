@@ -24,7 +24,15 @@ kernel, and its tests fail if the list or that rule is broken.
 - **Amplifier bandwidth, DSP high-pass, fast settle:** gap-free. The idle AuxCmd3 bank pair
   (1/2 <-> 3/4) gets the new register-config list, then all four ports switch with one
   register write. Only the list entries that differ are written (a bandwidth change is 2-6
-  writes, about 5 ms). Not done by stock or oers, which stop and restart.
+  writes, about 5 ms). Not done by stock or oers, which stop and restart. While recording,
+  the control window asks for the change to be confirmed (`docs/control.md`).
+- **What the board was told, and what was asked for.** While acquiring there are two copies
+  of the settings: the caller's (`Acquisition.requested`) and the board's own
+  (`Board.settings`, updated by each live command once its register write has succeeded).
+  A refused command is reported (`Acquisition.takeFailure`, the alarm) and the caller's
+  copy goes back to the board's. Commands still queued when acquisition stops are dropped:
+  a restart or a reopen gives the board all of the caller's copy before the first sample.
+  The simulator keeps its settings the same way (`acquisition.zig` has the tests).
 - **Sample rate, AUX/ADC, 16-channel mode, cable delays, USB block size:** need a restart, and
   are refused while recording.
 

@@ -1157,32 +1157,34 @@ pub const Board = struct {
                 } else null) else null;
                 try self.applyDac(r.dac);
             },
+            // `settings` takes the new value only once the board has it: after a refused
+            // write it still says what the board holds (the same writes, in the same order).
             .set_leds => |on| {
-                self.settings.leds = on;
                 try self.enableLeds(on);
+                self.settings.leds = on;
             },
             .set_dac_hpf => |h| {
-                self.settings.dac_hpf_enabled = h.enabled;
-                self.settings.dac_hpf_hz = h.hz;
                 try self.setDacHpf(h.hz);
+                self.settings.dac_hpf_hz = h.hz;
                 try self.enableDacHpf(h.enabled);
+                self.settings.dac_hpf_enabled = h.enabled;
             },
             .set_noise_slicer => |n| {
-                self.settings.noise_slicer = n;
                 try self.setAudioNoiseSuppress(n);
+                self.settings.noise_slicer = n;
             },
             .set_ttl_mode => |on| {
-                self.settings.ttl_output_mode = on;
                 try self.setTtlMode(@intFromBool(on));
+                self.settings.ttl_output_mode = on;
             },
             .set_fast_ttl_settle => |ch| {
-                self.settings.fast_ttl_settle = ch;
                 try self.enableExternalFastSettle(ch != null);
                 try self.setExternalFastSettleChannel(ch orelse 0);
+                self.settings.fast_ttl_settle = ch;
             },
             .set_clock_divider => |d| {
-                self.settings.clock_divider = d;
                 try self.setClockDivider(d);
+                self.settings.clock_divider = d;
             },
         }
     }

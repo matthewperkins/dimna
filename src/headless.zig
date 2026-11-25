@@ -434,7 +434,8 @@ const LiveTest = struct {
         self.next_step += 1;
         var want = acq.requested;
         step.edit(&want);
-        if (acq.applySettings(want, recording)) |change| {
+        // The live test changes the band and the LEDs while recording, on purpose.
+        if (acq.applySettings(want, if (recording) .recording_confirmed else .not_recording)) |change| {
             log.info("live test: {s}: queued ({t})", .{ step.name, change });
             if (std.mem.indexOf(u8, step.name, "restart") != null and recording) {
                 log.err("live test: a restart change was accepted while recording", .{});

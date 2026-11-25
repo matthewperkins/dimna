@@ -81,9 +81,17 @@ leds = false
 
 The control window's Headstages section changes them for the run:
 
-- **Amplifier band and DSP high-pass** apply at once and without a gap, also while
-  recording (the change and the sample where it took effect go into the recording's
-  `events.tsv`). The window shows the values the chips really use.
+- **Amplifier band and DSP high-pass** apply at once and without a gap. The window shows
+  the values the chips really use.
+  - **While recording** they change what is recorded from that sample on, for good (these
+    are the chips' own filters). So the first press only says "recording: press again
+    within 5 s to change what is recorded"; the same button pressed again in that time
+    applies it, and the change and the sample where it took effect go into the
+    recording's `events.tsv` (and `[final] settings_changed`). Another button, or a press
+    after the 5 s, starts over.
+  - **If the board refuses a change**, a red alarm says so until acknowledged
+    ("AMPLIFIER SETTINGS NOT APPLIED (...)": the headstages may then hold the old band or
+    the new, so set it again), and the window goes back to showing what the board holds.
 - **Sample rate and half-channel mode** change the shape of the data, so they are chosen
   first and then applied together with "Apply (restarts acquisition)": acquisition stops,
   the board is reconfigured, and everything that depends on the channel count or rate is
