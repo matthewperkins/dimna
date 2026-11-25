@@ -92,19 +92,22 @@ The board ID is compared too: a different board on the bus is not continued with
 A small state machine in the core, `src/reopen.zig` (`Reopen`), with no I/O of its own
 (the callers do the reopening; it says when). Its policy:
 
-- **Attempts:** up to 6, after 0.5, 1, 2, 5, 10 and 30 s (about 48 s in all). The first
-  waits half a second because after a glitch Linux often takes the device off the bus and
-  back (re-enumeration), and udev must apply its permissions rule before the device can be
-  opened; an open before that fails with `AccessDenied` (counted as an attempt).
+- **Attempts:** up to 4, after 3, 10, 20 and 48 s (81 s in all; the owner's decision; the
+  first draft had 6, from 0.5 s). After a glitch Linux often takes the device off the bus
+  and back (re-enumeration), and udev must apply its permissions rule before the device can
+  be opened; an open before that fails with `AccessDenied` (counted as an attempt). 3 s is
+  well past that.
 - **A board that is gone** (`Board.open` fails with `ONI_EDEVID`: no FT600 with the board's
   product string on the bus) is **waited for, not retried**: looked for once a second, for
   as long as dimna runs, without using up an attempt. The alarm says it is waiting. When
   the board appears, the next attempt is made at once.
 - **A run that fails again soon:** an attempt counts as used when it is made. The count goes
   back to 0 only when a restarted run has lasted 60 s. So a cable that fails every few
-  seconds is opened again at most 6 times (6 new recording folders at most) and then left;
-  one that fails once an hour is reopened every time.
-- **Giving up:** after the 6th failed attempt, as today: the alarm "ACQUISITION STOPPED
+  seconds is opened again at most 4 times (4 new recording folders at most) and then left;
+  one that fails once an hour is reopened every time. Kept as it was with 4 attempts: the
+  longest wait (48 s) is less than the 60 s, so a run that lasts that long has outlived the
+  whole spacing, and nothing seen argues for another length.
+- **Giving up:** after the 4th failed attempt, as today: the alarm "ACQUISITION STOPPED
   (...)", then, acknowledged, the warning "... restart dimna". The program does not exit
   (the user may still look at what is on screen and stop the recording).
 
@@ -114,7 +117,7 @@ On the display's red bar (and the control window, which shows the same alarms), 
 tone, until acknowledged (Shift+a or the button):
 
 - while waiting for an attempt: `ACQUISITION STOPPED (OniFailed): opening the board again
-  in 4 s (attempt 3 of 6)`;
+  in 4 s (attempt 3 of 4)`;
 - while the board is gone: `THE BOARD IS GONE (OniFailed): waiting for it to come back
   (12 s so far)`;
 - after a restart: `ACQUISITION RESTARTED 1 time after a read error (OniFailed); 2.3 s not
@@ -148,8 +151,17 @@ At the read error, if a recording is running:
    `SESSION/ephys/` was the first, the next is `SESSION/ephys_2/`, then `ephys_3/`. The
    `current` link is not touched (it already points at the session). The new recording's
    `start` event text says what it continues: `after a read error (OniFailed); continues
-   SESSION/ephys`. Its sample numbers start at 0 again, and each folder is a complete,
-   self-consistent v1 recording that `dimna_read.py` verifies on its own.
+   SESSION/ephys`, and so does its `meta.toml` (the owner's decision), in `[start]`:
+
+       continues = "SESSION/ephys"        # absolute path of the folder before it
+       continues_end_sample = 1830000     # that recording's end_sample, in its numbering
+       gap_estimate_s = 3.214             # host clock: time acquired by neither
+
+   `gap_estimate_s` runs from the arrival of the last block of the one to that of the first
+   block of the other, less that block's duration: an estimate, written at the clean stop.
+   All three are additive version-1 keys (`docs/recording.md`); `dimna_read.py` prints
+   them, and `[final] reason`. Its sample numbers start at 0 again, and each folder is a
+   complete, self-consistent v1 recording that `dimna_read.py` verifies on its own.
 3. If the user presses Stop while dimna is waiting to reopen, nothing new is started. If
    the attempts are given up, no new folder is made.
 
@@ -203,18 +215,28 @@ At the read error, if a recording is running:
   back at all without a power cycle, how long re-enumeration takes, whether the board's
   gateware needs more than `initialize` after an unclean stop. All guessed.
 - A read that hangs rather than fails: the USB read times out after 1 s and is tried
-  again inside the driver, so a silent board raises no error. That stays the "no data"
-  alarm, and is not reopened (it could be, after some seconds: an owner question).
+  again inside the driver, so a silent board raises no error. It is **not reopened** (the
+  owner's decision). The GUI already made it an alarm that cannot be missed: the red bar
+  "NO DATA FROM THE BOARD FOR n s" from 0.5 s on, counting, with the tone; when data
+  comes back, "THE BOARD WENT QUIET ONCE (...)" until acknowledged (`Alarms.update`, its
+  test "board alarms: quiet now, quiet before ..."). Left as it is. `dimna-headless` said
+  nothing but its per-second count; it now writes an error line on stderr at 0.5 s and
+  every 5 s while the board is quiet, a line when data comes back, a count in the summary,
+  and exits 1 (`DIMNA_TEST_SIM_STALL=<at s>,<for s>` with `--sim` to try it).
 - The GUI's part is compiled and its alarm texts are tested; the main loop's reopen is not
   run by any test (it needs a window). It can be tried on the simulator with
   `DIMNA_TEST_SIM_FAIL_AT`, by someone allowed to open windows.
 
-## Questions for the owner
+## The owner's answers (2026-11-25)
 
-1. Folder names in the session: `ephys/`, `ephys_2/`, `ephys_3/`?
-2. 6 attempts over about 48 s, then give up; and wait without limit for a board that is
-   gone. Right? (The other way: wait for a gone board only so long.)
-3. `[final] reason` as the only new key, still format version 1? Or also a key in the new
-   recording's `[start]` naming the recording it continues (today only its `start` event
-   says so)?
-4. Should a board that has gone silent (no error, no data for N s) be reopened too?
+1. Folder names `ephys/`, `ephys_2/`, ...: yes.
+2. 4 attempts, after 3, 10, 20 and 48 s; a board absent from the bus is waited for, every
+   second, without limit and without using up an attempt; the count's reset after a run of
+   60 s kept.
+3. The new recording's `[start]` names the one it continues (`continues`,
+   `continues_end_sample`, `gap_estimate_s`), as additive v1 keys; the `start` event
+   text stays; `dimna_read.py` prints it.
+4. A board gone silent is not reopened, but it must be unmistakable and stay until
+   acknowledged (the GUI's already is; headless now says it on stderr).
+5. (The coordinator's default, not answered by the owner.) A restart makes
+   `dimna-headless` exit 1.
