@@ -42,7 +42,7 @@ Under Record, idle or recording, a line says how much room is left where recordi
 "disk: 87.0 GB free, about 7 h 26 min at this layout" (the time counted to the last
 10 GB, at the rate the current channels and sample rate write; while recording, as the
 alarms below see it). It is dim with more than 2 h left, amber below 2 h and red below
-5 min. With less than 10 GB free, Record is refused: nothing is created, the line under it
+30 min. With less than 10 GB free, Record is refused: nothing is created, the line under it
 says why ("not recording: 8.2 GB free under ..., at least 10 GB needed") and the
 recording-failed alarm is raised until acknowledged. A
 recording that fails (disk full, say) is shown as failed; acquisition is not affected and

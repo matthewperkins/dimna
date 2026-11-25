@@ -238,8 +238,9 @@ pub const DiskLine = struct {
     level: Level,
 
     pub const Level = enum { dim, warn, alarm };
-    /// Time left below which the line is in the alarm colour: the final alarms (5 min).
-    pub const alarm_below_s = dimna.disk.alarm_s[3];
+    /// Time left below which the line is in the alarm colour: the last of the owner's
+    /// three (30 min).
+    pub const alarm_below_s = dimna.disk.alarm_s[2];
 };
 
 /// "disk: 87.0 GB free, about 8 h 20 min at this layout": dim with more than
@@ -1094,8 +1095,10 @@ test "the disk line under Record: free space and time left, its colour by the ti
     try testing.expectEqual(DiskLine.Level.dim, diskLine(&buf, &rec).?.level);
     rec.disk.?.seconds = 2 * 3600 - 1;
     try testing.expectEqual(DiskLine.Level.warn, diskLine(&buf, &rec).?.level);
-    rec.disk.?.seconds = 5 * 60;
+    rec.disk.?.seconds = 30 * 60;
     try testing.expectEqual(DiskLine.Level.warn, diskLine(&buf, &rec).?.level);
+    rec.disk.?.seconds = 30 * 60 - 1;
+    try testing.expectEqual(DiskLine.Level.alarm, diskLine(&buf, &rec).?.level);
     rec.disk = .{ .seconds = 4 * 60, .free_bytes = 10_400_000_000 };
     line = diskLine(&buf, &rec).?;
     try testing.expectEqualStrings("disk: 10.4 GB free, about 4 min at this layout", line.text);
