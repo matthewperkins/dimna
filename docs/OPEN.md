@@ -37,9 +37,6 @@ seen, so it can be told apart from a guess. Remove an entry when it is fixed or 
 - **View-file error messages say "panel N"** where N counts `[[view]]` tables.
 - **After a restart whose panels cannot be made from the config, the fallback panels
   ignore a top-level `mode`** (`main.zig`, `panels.default(&layout, .scroll)`).
-- **The published-snapshot reader re-checks the sequence with an acquire load after plain
-  loads** (`published.zig`). Correct on x86-64, where this runs; a strict reading of the
-  memory model wants a fence before the re-check on weakly ordered CPUs.
 - **The write-failure recorder test runs in a forked child**, because the test runner
   counts the recorder's `log.err` as a failure. Logging it as a warning, or a custom test
   runner, would remove the fork.
