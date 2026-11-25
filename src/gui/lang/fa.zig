@@ -209,6 +209,8 @@ pub const rec_gaps_one = "{[gaps]d} شکاف";
 pub const rec_gaps_other = "{[gaps]d} شکاف";
 pub const rec_failed = "ثبت ناموفق";
 pub const rec_idle = "ثبت نمی\u{200C}شود";
+pub const rec_disk_free = "دیسک: {[gb]d:.1} GB آزاد، {[left]s} با این چیدمان";
+pub const rec_disk_too_full = "دیسک: {[gb]d:.1} GB آزاد، برای ثبت دست\u{200C}کم {[need]d:.0} GB لازم است";
 /// The line about the source, at the top.
 pub const about_source = "{[source]s}   {[rate]d} Hz   کانال: {[channels]d}، الکترود: {[electrodes]d}";
 pub const source_simulated = "برد شبیه\u{200C}سازی\u{200C}شده";
@@ -321,11 +323,13 @@ pub const warn_disk_full_in = "دیسک تا {[left]s} دیگر پر می\u{200C
 /// "about 12 min", "about 40 s": the time left, in the disk messages.
 pub const about_minutes = "حدود {[count]d:.0} min";
 pub const about_seconds = "حدود {[count]d:.0} s";
+pub const about_hours = "حدود {[hours]d} h {[minutes]d} min";
 
 // ---- Notes under the control window's board and recording lines ----
 
 pub const note_cannot_create = "ایجاد ثبت در {[dir]s} ممکن نشد: {[err]t}";
 pub const note_cannot_start = "راه\u{200C}اندازی ثبت\u{200C}کننده ممکن نشد: {[err]t}";
+pub const note_disk_too_full = "ثبت نمی\u{200C}شود: {[gb]d:.1} GB آزاد در {[dir]s}، دست\u{200C}کم {[need]d:.0} GB لازم است";
 pub const note_recording_failed = "ثبت ناموفق: {[err]t}؛ آنچه پیش از این نوشته شده سالم است";
 pub const note_last_recording = "آخرین ثبت: {[length]s}   نمونه\u{200C}ها: {[samples]d}   شکاف\u{200C}ها: {[gaps]d}";
 pub const note_saved_to = "در {[path]s} ذخیره شد";

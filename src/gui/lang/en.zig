@@ -218,6 +218,9 @@ pub const rec_gaps_one = "{[gaps]d} gap";
 pub const rec_gaps_other = "{[gaps]d} gaps";
 pub const rec_failed = "RECORDING FAILED";
 pub const rec_idle = "not recording";
+/// The line under Record about the disk, idle or recording ("about 8 h 20 min" is `left`).
+pub const rec_disk_free = "disk: {[gb]d:.1} GB free, {[left]s} at this layout";
+pub const rec_disk_too_full = "disk: {[gb]d:.1} GB free, at least {[need]d:.0} GB needed to record";
 /// The line about the source, at the top.
 pub const about_source = "{[source]s}   {[rate]d} Hz   channels: {[channels]d}, electrodes: {[electrodes]d}";
 pub const source_simulated = "simulated board";
@@ -335,14 +338,17 @@ pub const warn_reopen_waiting = "acquisition stopped ({[err]t}): opening the boa
 pub const warn_reopen_absent = "the board is gone ({[err]t}): waiting for it to come back ({[seconds]d:.0} s so far)";
 pub const warn_disk_behind = "the disk is {[behind]d:.0} s behind (samples are lost at 30 s)";
 pub const warn_disk_full_in = "the disk is full in {[left]s} ({[gb]d:.1} GB left)";
-/// "about 12 min", "about 40 s": the time left, in the disk messages.
+/// "about 12 min", "about 40 s", "about 1 h 50 min": the time left, in the disk messages.
 pub const about_minutes = "about {[count]d:.0} min";
 pub const about_seconds = "about {[count]d:.0} s";
+pub const about_hours = "about {[hours]d} h {[minutes]d} min";
 
 // ---- Notes under the control window's board and recording lines ----
 
 pub const note_cannot_create = "could not create a recording under {[dir]s}: {[err]t}";
 pub const note_cannot_start = "could not start the recorder: {[err]t}";
+/// Record pressed with too little free space: nothing was created.
+pub const note_disk_too_full = "not recording: {[gb]d:.1} GB free under {[dir]s}, at least {[need]d:.0} GB needed";
 pub const note_recording_failed = "recording failed: {[err]t}; what was written before is intact";
 pub const note_last_recording = "last recording: {[length]s}   samples: {[samples]d}   gaps: {[gaps]d}";
 pub const note_saved_to = "saved to {[path]s}";

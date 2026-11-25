@@ -37,7 +37,14 @@ With it open on the board (tearing on DP-2): 2.4 to 2.5 ms, as without.
 Record / Stop recording in the control window. Acquisition and the display
 carry on throughout; each press of Record makes a new session (no restart of dimna). While
 recording, the control window shows the time, size, how far the disk is behind and any
-gaps, and the neural display shows "REC" with the time beside its latency read-out. A
+gaps, and the neural display shows "REC" with the time beside its latency read-out.
+Under Record, idle or recording, a line says how much room is left where recordings go:
+"disk: 87.0 GB free, about 7 h 26 min at this layout" (the time counted to the last
+10 GB, at the rate the current channels and sample rate write; while recording, as the
+alarms below see it). It is dim with more than 2 h left, amber below 2 h and red below
+5 min. With less than 10 GB free, Record is refused: nothing is created, the line under it
+says why ("not recording: 8.2 GB free under ..., at least 10 GB needed") and the
+recording-failed alarm is raised until acknowledged. A
 recording that fails (disk full, say) is shown as failed; acquisition is not affected and
 what was written before stays valid. Quitting while recording closes the recording
 properly first.
@@ -132,13 +139,16 @@ caught up.
 
 **The disk filling.** While recording, dimna looks at the free space of the recording's
 disk every 5 s and works out how long until it is full: from how fast the free space fell
-over the last 5 minutes (so the cameras writing to the same disk count) or the recorder's
-own rate, whichever is faster, counting the last 5 GB as full (btrfs can refuse writes for
-want of metadata space before its free space reaches 0). Under 30 minutes an amber bar
-says how long and how many GB are left; under 5 minutes, and again under 1, a red alarm
-until acknowledged. On btrfs the free space moves only when a transaction commits (every
-120 s with `commit=120`), which is why the window is 5 minutes and the recorder's rate is
-the floor. `DIMNA_TEST_DISK_RESERVE_GB=<GB>` counts that much more as full, for testing. On the simulator,
+over the last 5 minutes (so the cameras writing to the same disk count), the recorder's
+own rate, or the rate the layout writes at, whichever is fastest (so there is a figure from
+the first look), counting the last 10 GB as full (btrfs can refuse writes for want of
+metadata space before its free space reaches 0). Under 2 hours an amber bar says how long
+and how many GB are left; a red alarm, until acknowledged, under 2 hours, and again under
+1 hour, 30 minutes, 5 minutes and 1 minute. On btrfs the free space moves only when a
+transaction commits (every 120 s with `commit=120`), which is why the window is 5 minutes
+and the recorder's rate is the floor. `DIMNA_TEST_DISK_RESERVE_GB=<GB>` counts that much
+as full instead of 10 GB, for testing (a value under 10 is ignored; `dimna-headless` reads
+it too). On the simulator,
 `DIMNA_TEST_SIM_STALL=<at s>,<for s>` makes it go quiet once and `DIMNA_TEST_SIM_FAIL_AT=<s>[,<times>]`
 makes it fail with a read error (that many seconds into a run, for the first `times` runs, 1 by default). `DIMNA_TEST_RECORD_FAIL_AFTER=<samples>`, `DIMNA_TEST_RECORD_STALL=<samples>,<ms>`
 and `DIMNA_TEST_RING_SECONDS=<s>` make these happen on purpose, for testing.

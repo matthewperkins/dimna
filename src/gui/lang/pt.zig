@@ -209,6 +209,8 @@ pub const rec_gaps_one = "{[gaps]d} lacuna";
 pub const rec_gaps_other = "{[gaps]d} lacunas";
 pub const rec_failed = "FALHA NA GRAVAÇÃO";
 pub const rec_idle = "sem gravação";
+pub const rec_disk_free = "disco: {[gb]d:.1} GB livres, {[left]s} nesta configuração";
+pub const rec_disk_too_full = "disco: {[gb]d:.1} GB livres, são necessários ao menos {[need]d:.0} GB para gravar";
 /// The line about the source, at the top.
 pub const about_source = "{[source]s}   {[rate]d} Hz   canais: {[channels]d}, eletrodos: {[electrodes]d}";
 pub const source_simulated = "placa simulada";
@@ -321,11 +323,13 @@ pub const warn_disk_full_in = "o disco enche em {[left]s} ({[gb]d:.1} GB livres)
 /// "about 12 min", "about 40 s": the time left, in the disk messages.
 pub const about_minutes = "cerca de {[count]d:.0} min";
 pub const about_seconds = "cerca de {[count]d:.0} s";
+pub const about_hours = "cerca de {[hours]d} h {[minutes]d} min";
 
 // ---- Notes under the control window's board and recording lines ----
 
 pub const note_cannot_create = "não foi possível criar uma gravação em {[dir]s}: {[err]t}";
 pub const note_cannot_start = "não foi possível iniciar o gravador: {[err]t}";
+pub const note_disk_too_full = "sem gravação: {[gb]d:.1} GB livres em {[dir]s}, são necessários ao menos {[need]d:.0} GB";
 pub const note_recording_failed = "falha na gravação: {[err]t}; o que foi escrito antes está intacto";
 pub const note_last_recording = "última gravação: {[length]s}   amostras: {[samples]d}   lacunas: {[gaps]d}";
 pub const note_saved_to = "salvo em {[path]s}";

@@ -327,82 +327,6 @@ pub const ReviewSession = struct {
     }
 };
 
-/// How long until the disk a recording is written to is full, from how fast its free space
-/// has been falling over the last few minutes (the cameras may write to the same disk) or
-/// the recorder's own rate, whichever is faster. Looked at every `period_s` while
-/// recording; `left` is null until there is a rate to go by.
-///
-/// btrfs (the rig's /home): free space moves only when a transaction commits (every 120 s
-/// there), so the window is 5 minutes and the recorder's rate is the floor; with
-/// compression the recorder's rate overstates, and the falling free space is the truth.
-/// btrfs can refuse writes for want of metadata space before the free space reaches 0, so
-/// the last `reserve_bytes` count as full.
-pub const DiskWatch = struct {
-    /// Free bytes and recorder bytes, every `period_s`: the newest `n` of them.
-    t: [n]f64 = undefined,
-    free: [n]f64 = undefined,
-    own: [n]f64 = undefined,
-    len: usize = 0,
-    next_s: f64 = 0,
-    /// Free space that counts as none (`DIMNA_TEST_DISK_RESERVE_GB` raises it, for testing).
-    reserve: f64 = reserve_bytes,
-
-    pub const period_s = 5;
-    const n = 61; // five minutes of history
-    /// Free space that counts as none, by default.
-    pub const reserve_bytes: f64 = 5e9;
-
-    pub const Left = struct { seconds: f64, free_bytes: u64 };
-
-    /// Forgets what it saw (a new recording).
-    pub fn reset(self: *DiskWatch) void {
-        self.* = .{ .reserve = self.reserve };
-    }
-
-    /// Whether it is time for another look (`add`) at `now_s`.
-    pub fn due(self: *const DiskWatch, now_s: f64) bool {
-        return now_s >= self.next_s;
-    }
-
-    /// One look: at `now_s`, `free_bytes` free on the disk and `written` bytes written by
-    /// the recorder so far.
-    pub fn add(self: *DiskWatch, now_s: f64, free_bytes: u64, written: u64) void {
-        if (self.len == n) {
-            std.mem.copyForwards(f64, self.t[0 .. n - 1], self.t[1..]);
-            std.mem.copyForwards(f64, self.free[0 .. n - 1], self.free[1..]);
-            std.mem.copyForwards(f64, self.own[0 .. n - 1], self.own[1..]);
-            self.len -= 1;
-        }
-        self.t[self.len] = now_s;
-        self.free[self.len] = @floatFromInt(free_bytes);
-        self.own[self.len] = @floatFromInt(written);
-        self.len += 1;
-        self.next_s = now_s + period_s;
-    }
-
-    /// Seconds until full at the faster of the two rates, and the free bytes now.
-    pub fn left(self: *const DiskWatch) ?Left {
-        if (self.len < 2) return null;
-        const dt = self.t[self.len - 1] - self.t[0];
-        if (dt <= 0) return null;
-        const falling = (self.free[0] - self.free[self.len - 1]) / dt;
-        const own = (self.own[self.len - 1] - self.own[0]) / dt;
-        const rate = @max(falling, own);
-        const free = self.free[self.len - 1];
-        if (rate <= 0) return null;
-        return .{ .seconds = @max(0, free - self.reserve) / rate, .free_bytes = @intFromFloat(free) };
-    }
-};
-
-/// Free bytes (for an unprivileged user) on the filesystem holding `path`, or null.
-pub fn freeBytes(path: []const u8) ?u64 {
-    var z: [std.fs.max_path_bytes:0]u8 = undefined;
-    if (path.len == 0 or path.len >= z.len) return null;
-    @memcpy(z[0..path.len], path);
-    z[path.len] = 0;
-    return dimna.os.freeBytes(&z);
-}
-
 /// Anything that means samples are not being kept: shown across the display until the
 /// user acknowledges it.
 pub const Alarms = struct {
@@ -418,8 +342,8 @@ pub const Alarms = struct {
 
     /// Time left on the disk below which there is an alarm (each once, until acknowledged);
     /// below `disk_warn_s` a warning.
-    pub const disk_alarm_s = [_]f64{ 5 * 60, 60 };
-    pub const disk_warn_s = 30 * 60;
+    pub const disk_alarm_s = dimna.disk.alarm_s;
+    pub const disk_warn_s = dimna.disk.warn_s;
 
     pub const Counts = struct {
         /// Blocks dropped because the ring was full (the recorder a whole ring behind).
@@ -477,7 +401,7 @@ pub const Alarms = struct {
     /// is behind acquisition, if recording. `acknowledged` is cleared when it was set.
     /// True if either text's presence changed.
     /// `disk`: how long until the recording's disk is full, if known.
-    pub fn update(self: *Alarms, status: *display_mod.Status, now: Counts, board: Board, behind_s: ?f64, disk: ?DiskWatch.Left, acknowledged: *bool) bool {
+    pub fn update(self: *Alarms, status: *display_mod.Status, now: Counts, board: Board, behind_s: ?f64, disk: ?dimna.disk.Left, acknowledged: *bool) bool {
         // The disk thresholds passed: an alarm while one is passed that was not acknowledged.
         var disk_level: usize = 0;
         if (disk) |d| for (disk_alarm_s) |limit| {
@@ -571,15 +495,12 @@ pub const Alarms = struct {
     }
 };
 
-/// "about 12 min", "about 40 s".
+/// "about 1 h 50 min", "about 12 min", "about 40 s".
 fn fmtLeft(seconds: f64) []const u8 {
     const S = struct {
-        threadlocal var buf: [24]u8 = undefined;
+        threadlocal var buf: [64]u8 = undefined;
     };
-    return if (seconds >= 90)
-        i18n.fmt(&S.buf, .about_minutes, .{ .count = seconds / 60 })
-    else
-        i18n.fmt(&S.buf, .about_seconds, .{ .count = @max(0, seconds) });
+    return control.fmtLeft(&S.buf, seconds);
 }
 
 /// The panels' settings as a view file: as they are now, and as last saved (at launch: as
@@ -736,6 +657,18 @@ pub const Recording = struct {
         self.status.path_len = @min(session_dir.len, self.status.path_buf.len);
         @memcpy(self.status.path_buf[0..self.status.path_len], session_dir[0..self.status.path_len]);
         return true;
+    }
+
+    /// Whether there is room on the disk to start a recording: not with less than `reserve`
+    /// free (`dimna.disk.startCheck`). False: `status` says why, and nothing is created.
+    pub fn roomToStart(self: *Recording, reserve: f64) bool {
+        const free = dimna.disk.freeBytesNear(self.root());
+        if (dimna.disk.startCheck(free, reserve, null) == .ok) return true;
+        const gb = @as(f64, @floatFromInt(free.?)) / 1e9;
+        self.status.state = .failed;
+        self.status.say(.note_disk_too_full, .{ .gb = gb, .dir = self.root(), .need = reserve / 1e9 });
+        log.warn("not recording: {d:.1} GB free under {s}, at least {d:.0} GB needed", .{ gb, self.root(), reserve / 1e9 });
+        return false;
     }
 
     /// Asks the recorder to finish; `poll` reports when it has. A recording waiting to go
@@ -1059,49 +992,39 @@ pub fn carryOver(new: *panels_mod.Set, old: *const panels_mod.Set) void {
     }
 }
 
-test "disk time left: the faster of the free space falling and the recorder's rate, less the reserve" {
-    var d: DiskWatch = .{};
-    try std.testing.expect(d.left() == null);
-    // Free space falls 10 MB/s (cameras too); the recorder writes 3 MB/s.
-    var t: f64 = 0;
-    while (t <= 60) : (t += DiskWatch.period_s) d.add(t, @intFromFloat(105e9 - 10e6 * t), @intFromFloat(3e6 * t));
-    const l = d.left().?;
-    try std.testing.expectApproxEqRel(@as(f64, (105e9 - 10e6 * 60 - DiskWatch.reserve_bytes) / 10e6), l.seconds, 1e-9);
-    // Free space that has not moved (btrfs has not committed yet): the recorder's rate.
-    var e: DiskWatch = .{};
-    e.add(0, 50e9, 0);
-    e.add(5, 50e9, 15e6);
-    try std.testing.expectApproxEqRel(@as(f64, (50e9 - DiskWatch.reserve_bytes) / 3e6), e.left().?.seconds, 1e-9);
-    // Within the reserve: no time left.
-    var f: DiskWatch = .{};
-    f.add(0, 4e9, 0);
-    f.add(5, 4e9, 15e6);
-    try std.testing.expectEqual(@as(f64, 0), f.left().?.seconds);
-}
-
-test "the disk window keeps the last five minutes" {
-    var d: DiskWatch = .{};
-    var t: f64 = 0;
-    // Ten minutes: free space fell fast in the first five, not at all in the last five.
-    while (t <= 600) : (t += DiskWatch.period_s) d.add(t, if (t < 300) @intFromFloat(100e9 - 100e6 * t) else @intFromFloat(70e9), @intFromFloat(1e6 * t));
-    try std.testing.expectEqual(@as(f64, 300), d.t[0]);
-    try std.testing.expectApproxEqRel(@as(f64, (70e9 - DiskWatch.reserve_bytes) / 1e6), d.left().?.seconds, 1e-9);
-}
-
-test "disk alarms: a warning under 30 min, an alarm under 5 and again under 1, each until acknowledged" {
+test "disk alarms: a warning under 2 h; an alarm under 2 h, 1 h, 30 min, 5 min and 1 min, each until acknowledged" {
     var a: Alarms = .{};
     var st: display_mod.Status = .{};
     var ack = false;
     const at = struct {
-        fn f(s: f64) DiskWatch.Left {
+        fn f(s: f64) dimna.disk.Left {
             return .{ .seconds = s, .free_bytes = 20e9 };
         }
     }.f;
-    _ = a.update(&st, .{}, .{}, null, at(3600), &ack);
+    _ = a.update(&st, .{}, .{}, null, at(3 * 3600), &ack);
     try std.testing.expectEqual(@as(usize, 0), st.alarm_len + st.warning_len);
-    _ = a.update(&st, .{}, .{}, null, at(20 * 60), &ack);
+    // Under 2 h: the alarm and the warning; acknowledged, the warning stays.
+    _ = a.update(&st, .{}, .{}, null, at(110 * 60), &ack);
+    try std.testing.expectEqualStrings("THE DISK IS FULL IN about 1 h 50 min", st.alarm());
+    try std.testing.expectEqualStrings("the disk is full in about 1 h 50 min (20.0 GB left)", st.warning());
+    ack = true;
+    _ = a.update(&st, .{}, .{}, null, at(110 * 60), &ack);
     try std.testing.expectEqual(@as(usize, 0), st.alarm_len);
+    try std.testing.expect(st.warning_len > 0);
+    // Raised again only below the next: 1 h, then 30 min, 5 min, 1 min.
+    _ = a.update(&st, .{}, .{}, null, at(61 * 60), &ack);
+    try std.testing.expectEqual(@as(usize, 0), st.alarm_len);
+    _ = a.update(&st, .{}, .{}, null, at(50 * 60), &ack);
+    try std.testing.expectEqualStrings("THE DISK IS FULL IN about 50 min", st.alarm());
+    ack = true;
+    _ = a.update(&st, .{}, .{}, null, at(50 * 60), &ack);
+    _ = a.update(&st, .{}, .{}, null, at(20 * 60), &ack);
+    try std.testing.expectEqualStrings("THE DISK IS FULL IN about 20 min", st.alarm());
     try std.testing.expectEqualStrings("the disk is full in about 20 min (20.0 GB left)", st.warning());
+    ack = true;
+    _ = a.update(&st, .{}, .{}, null, at(20 * 60), &ack);
+    _ = a.update(&st, .{}, .{}, null, at(6 * 60), &ack);
+    try std.testing.expectEqual(@as(usize, 0), st.alarm_len);
     _ = a.update(&st, .{}, .{}, null, at(4 * 60), &ack);
     try std.testing.expectEqualStrings("THE DISK IS FULL IN about 4 min", st.alarm());
     ack = true;
@@ -1110,10 +1033,10 @@ test "disk alarms: a warning under 30 min, an alarm under 5 and again under 1, e
     try std.testing.expect(st.warning_len > 0);
     _ = a.update(&st, .{}, .{}, null, at(50), &ack);
     try std.testing.expectEqualStrings("THE DISK IS FULL IN about 50 s", st.alarm());
-    // Room made (back over an hour): nothing; and the next fall alarms again.
+    // Room made (back over 2 h): nothing; and the next fall alarms again.
     ack = true;
     _ = a.update(&st, .{}, .{}, null, at(50), &ack);
-    _ = a.update(&st, .{}, .{}, null, at(3600), &ack);
+    _ = a.update(&st, .{}, .{}, null, at(3 * 3600), &ack);
     try std.testing.expectEqual(@as(usize, 0), st.alarm_len + st.warning_len);
     _ = a.update(&st, .{}, .{}, null, at(4 * 60), &ack);
     try std.testing.expect(st.alarm_len > 0);
@@ -1125,10 +1048,21 @@ test "disk alarms: a warning under 30 min, an alarm under 5 and again under 1, e
     try std.testing.expectEqual(@as(usize, 0), st.alarm_len + st.warning_len);
 }
 
-test "freeBytes reads the free space of a real folder, and refuses a missing one" {
-    try std.testing.expect(freeBytes("/") != null);
-    try std.testing.expect(freeBytes("/no/such/folder/here") == null);
-    try std.testing.expect(freeBytes("") == null);
+test "Record with less free space than the reserve is refused before anything is made, and says why" {
+    const dir = "/tmp/dimna-no-such-folder-for-a-test/recordings";
+    var r: Recording = .{};
+    r.setRoot(dir, "");
+    try std.testing.expect(!r.roomToStart(1e18));
+    try std.testing.expectEqual(control.RecStatus.State.failed, r.status.state);
+    try std.testing.expect(std.mem.startsWith(u8, r.status.note(), "not recording: "));
+    try std.testing.expect(std.mem.endsWith(u8, r.status.note(), " GB free under " ++ dir ++ ", at least 1000000000 GB needed"));
+    try std.testing.expect(dimna.disk.freeBytes(dir) == null);
+    // Room enough: nothing said.
+    var s: Recording = .{};
+    s.setRoot(dir, "");
+    try std.testing.expect(s.roomToStart(0));
+    try std.testing.expectEqual(control.RecStatus.State.idle, s.status.state);
+    try std.testing.expectEqual(@as(usize, 0), s.status.note_len);
 }
 
 test "board alarms: quiet now, quiet before (until acknowledged), and acquisition ended (then a warning)" {

@@ -19,6 +19,32 @@ write beside the ephys data without being told the folder's name:
 
 Start the dimna recording first, so every camera trigger edge is in its TTL files.
 
+### Free space: one disk, watched
+
+A recording is written to one place, `record_dir`, and nowhere else: there is no fallback
+disk, and a write that fails is not retried on other files. On the rig the likely failure is
+a full disk, and a second disk is weak insurance against it (an sshfs mount or a USB disk
+hangs rather than failing, an sshfs sync does not mean the bytes are on a disk, and every
+recording would be written differently). So the free space is watched instead, before it
+matters (`src/disk.zig`):
+
+- The last 10 GB of the disk count as full in every figure of time left (btrfs can refuse
+  writes for want of metadata space before its free space reaches 0). This is not
+  configurable below 10 GB.
+- A recording is not started with less than 10 GB free: nothing is created, and the
+  control window (or `dimna-headless`, with exit status 2) says why. `dimna-headless
+  --seconds N` is also refused when N seconds at the layout's rate need more than the free
+  space less the 10 GB.
+- The control window shows, under Record, the free space and how long it lasts at the
+  layout's rate (channels × 2 bytes × the sample rate, and the index), idle or recording.
+- While recording, the time left is raised as an alarm at 2 h, 1 h, 30 min, 5 min and
+  1 min (each once, until acknowledged), with a warning below 2 h. `dimna-headless`
+  prints the free space at the start and a `WARNING:` line on stderr at each of these.
+
+What is not covered: a disk that fails other than by filling (I/O errors, a hung mount:
+the recording is shown as failed), space taken by other programs faster than the
+5-minute window sees, and deleting or moving old recordings.
+
 ## Recording format (v1)
 
 One folder per recording, `ROOT/YYYY-MM-DD_HH-MM-SS/`. All binary files are little-endian and

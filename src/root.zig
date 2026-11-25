@@ -11,6 +11,7 @@ pub const reopen = @import("reopen.zig");
 pub const sim = @import("sim.zig");
 pub const source = @import("source.zig");
 pub const record = @import("record.zig");
+pub const disk = @import("disk.zig");
 pub const events = @import("events.zig");
 pub const toml = @import("toml.zig");
 pub const panels = @import("panels.zig");

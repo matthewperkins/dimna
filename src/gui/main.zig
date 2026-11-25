@@ -264,8 +264,10 @@ fn runDisplay(init: std.process.Init, env: *const Env, args: *const Args, config
     // What of the loss counters the user has acknowledged (the alarm shows the rest).
     var alarms: session.Alarms = .{};
     // How long until the recording's disk is full (looked at every 5 s while recording).
-    var disk: session.DiskWatch = .{};
-    if (env.disk_reserve_gb) |gb| disk.reserve = gb * 1e9;
+    var disk: dimna.disk.DiskWatch = .{ .reserve = dimna.disk.reserveFrom(env.disk_reserve_gb) };
+    // While not recording: the free space where recordings go, and how long it would last.
+    var idle_disk: ?dimna.disk.Left = null;
+    var idle_disk_next_s: f64 = 0;
 
     // ---- window and renderer ----
     var win: Window = undefined;
@@ -504,7 +506,7 @@ fn runDisplay(init: std.process.Init, env: *const Env, args: *const Args, config
                         // Review of an earlier recording ends where a new one begins.
                         review.active = false;
                         alarms.seen.gaps = 0;
-                        if (!recording.start(gpa, io, ring, recordInfo(layout, source, if (board) |*b| b else null, &display.set), &acq.events, nowNs())) alarms.recording_failed = true;
+                        if (!recording.roomToStart(disk.reserve) or !recording.start(gpa, io, ring, recordInfo(layout, source, if (board) |*b| b else null, &display.set), &acq.events, nowNs())) alarms.recording_failed = true;
                     } else if (!on) recording.requestStop();
                 },
                 .note_preset => |n| notes.stampPreset(n, note_stamp, recording.sessionPath()),
@@ -685,13 +687,26 @@ fn runDisplay(init: std.process.Init, env: *const Env, args: *const Args, config
             rec_published_ns = nowNs();
             snap_dirty = true;
         }
-        // The disk: a statfs every 5 s while recording (microseconds), else forgotten.
+        // The disk: a statfs every 5 s while recording (microseconds), else forgotten. Not
+        // recording, the same every 5 s where recordings go, for the line under Record.
+        const disk_rate = dimna.disk.bytesPerSecond(layout.*);
+        const disk_now_s = @as(f64, @floatFromInt(nowNs() - t_start)) / 1e9;
         if (recording.active()) {
-            const now_s = @as(f64, @floatFromInt(nowNs() - t_start)) / 1e9;
-            if (disk.due(now_s)) {
-                if (session.freeBytes(recording.sessionPath())) |free| disk.add(now_s, free, recording.written());
+            if (disk.due(disk_now_s)) {
+                if (dimna.disk.freeBytes(recording.sessionPath())) |free| disk.add(disk_now_s, free, recording.written());
             }
-        } else if (disk.len > 0) disk.reset();
+            idle_disk_next_s = 0;
+        } else {
+            if (disk.len > 0) disk.reset();
+            if (disk_now_s >= idle_disk_next_s) {
+                idle_disk_next_s = disk_now_s + dimna.disk.DiskWatch.period_s;
+                const free = dimna.disk.freeBytesNear(recording.root());
+                idle_disk = if (free) |f| dimna.disk.leftAt(f, disk.reserve, disk_rate) else null;
+                snap_dirty = true;
+            }
+        }
+        recording.status.disk = if (recording.active()) disk.left(disk_rate) else idle_disk;
+        recording.status.disk_reserve = disk.reserve;
         // Acquisition ended on a read error: the recording is closed at once (everything
         // acquired is in the ring), and the board opened again when `reopen` says.
         if (acq.done.load(.acquire) and reopen.state == .running) {
@@ -791,7 +806,7 @@ fn runDisplay(init: std.process.Init, env: *const Env, args: *const Args, config
             .restart_err = reopen.read_error,
             .down_s = @as(f64, @floatFromInt(reopen.down_ns)) / 1e9,
             .recording = recording.active() or recording.resumeIn() != null,
-        }, recording.behind(pl.bs, pl.fs), if (recording.active()) disk.left() else null, &display.acknowledged)) snap_dirty = true;
+        }, recording.behind(pl.bs, pl.fs), if (recording.active()) disk.left(disk_rate) else null, &display.acknowledged)) snap_dirty = true;
         audio_shared.alarm.store(status.alarm_len > 0, .monotonic);
         status.recording = recording.active();
         // One banner at a time: the language's first, then the colour scheme's.

@@ -216,6 +216,8 @@ pub const rec_gaps_few = "{[gaps]d} przerwy";
 pub const rec_gaps_many = "{[gaps]d} przerw";
 pub const rec_failed = "NAGRYWANIE NIEUDANE";
 pub const rec_idle = "nie nagrywa";
+pub const rec_disk_free = "dysk: wolne {[gb]d:.1} GB, {[left]s} przy tym układzie";
+pub const rec_disk_too_full = "dysk: wolne {[gb]d:.1} GB, do nagrywania potrzeba co najmniej {[need]d:.0} GB";
 /// The line about the source, at the top.
 pub const about_source = "{[source]s}   {[rate]d} Hz   kanały: {[channels]d}, elektrody: {[electrodes]d}";
 pub const source_simulated = "symulowana płytka";
@@ -335,11 +337,13 @@ pub const warn_disk_full_in = "dysk zapełni się za {[left]s} (zostało {[gb]d:
 /// "about 12 min", "about 40 s": the time left, in the disk messages.
 pub const about_minutes = "ok. {[count]d:.0} min";
 pub const about_seconds = "ok. {[count]d:.0} s";
+pub const about_hours = "ok. {[hours]d} h {[minutes]d} min";
 
 // ---- Notes under the control window's board and recording lines ----
 
 pub const note_cannot_create = "nie udało się utworzyć nagrania w {[dir]s}: {[err]t}";
 pub const note_cannot_start = "nie udało się uruchomić rejestratora: {[err]t}";
+pub const note_disk_too_full = "nie nagrywa: wolne {[gb]d:.1} GB w {[dir]s}, potrzeba co najmniej {[need]d:.0} GB";
 pub const note_recording_failed = "nagrywanie nieudane: {[err]t}; to, co zapisano wcześniej, jest nienaruszone";
 pub const note_last_recording = "ostatnie nagranie: {[length]s}   próbki: {[samples]d}   przerwy: {[gaps]d}";
 pub const note_saved_to = "zapisano w {[path]s}";

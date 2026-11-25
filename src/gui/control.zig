@@ -42,6 +42,11 @@ pub const RecStatus = struct {
     /// Why the last attempt failed, or how the last recording ended.
     note_buf: [160]u8 = undefined,
     note_len: usize = 0,
+    /// The free space where recordings go and how long it lasts at this layout (while
+    /// recording: as the recording's `DiskWatch` sees it); null if unknown. Free space
+    /// under `disk_reserve` counts as none, and a recording is not started with less.
+    disk: ?dimna.disk.Left = null,
+    disk_reserve: f64 = dimna.disk.reserve_bytes,
 
     pub fn path(self: *const RecStatus) []const u8 {
         return self.path_buf[0..self.path_len];
@@ -212,6 +217,47 @@ pub fn fmtClock(buf: []u8, seconds: f64) []const u8 {
         format.fmt(buf, "{d}:{d:0>2}:{d:0>2}", .{ s / 3600, s / 60 % 60, s % 60 })
     else
         format.fmt(buf, "{d}:{d:0>2}", .{ s / 60, s % 60 });
+}
+
+/// "about 1 h 50 min", "about 12 min", "about 40 s": the time left, in the disk messages.
+pub fn fmtLeft(buf: []u8, seconds: f64) []const u8 {
+    const s = @max(0, seconds);
+    if (s >= 3600) {
+        const total_min: u64 = @intFromFloat(@round(s / 60));
+        return i18n.fmt(buf, .about_hours, .{ .hours = total_min / 60, .minutes = total_min % 60 });
+    }
+    return if (s >= 90)
+        i18n.fmt(buf, .about_minutes, .{ .count = s / 60 })
+    else
+        i18n.fmt(buf, .about_seconds, .{ .count = s });
+}
+
+/// The line under Record about the disk: its text, and how it is coloured (`level`).
+pub const DiskLine = struct {
+    text: []const u8,
+    level: Level,
+
+    pub const Level = enum { dim, warn, alarm };
+    /// Time left below which the line is in the alarm colour: the final alarms (5 min).
+    pub const alarm_below_s = dimna.disk.alarm_s[3];
+};
+
+/// "disk: 87.0 GB free, about 8 h 20 min at this layout": dim with more than
+/// `dimna.disk.warn_s` left, the warning colour below it, the alarm colour below
+/// `DiskLine.alarm_below_s`, and when there is too little free to start a recording.
+/// Null when the free space is not known.
+pub fn diskLine(buf: []u8, rec: *const RecStatus) ?DiskLine {
+    const d = rec.disk orelse return null;
+    const gb = @as(f64, @floatFromInt(d.free_bytes)) / 1e9;
+    if (@as(f64, @floatFromInt(d.free_bytes)) < rec.disk_reserve) return .{
+        .text = i18n.fmt(buf, .rec_disk_too_full, .{ .gb = gb, .need = rec.disk_reserve / 1e9 }),
+        .level = .alarm,
+    };
+    var left_buf: [64]u8 = undefined;
+    return .{
+        .text = i18n.fmt(buf, .rec_disk_free, .{ .gb = gb, .left = fmtLeft(&left_buf, d.seconds) }),
+        .level = if (d.seconds >= dimna.disk.warn_s) .dim else if (d.seconds >= DiskLine.alarm_below_s) .warn else .alarm,
+    };
 }
 
 /// A change to one panel, asked for by the control window.
@@ -587,6 +633,14 @@ fn recordSection(ui: *ui_mod.Ui, rec: *const RecStatus, shared: *Shared) void {
         ui.text(i18n.text(.rec_failed), theme.text_warn);
     } else ui.text(i18n.text(.rec_idle), theme.text_dim);
     ui.newline();
+    if (diskLine(&buf, rec)) |line| {
+        ui.text(line.text, switch (line.level) {
+            .dim => theme.text_dim,
+            .warn => theme.text_warn,
+            .alarm => theme.text_rec,
+        });
+        ui.newline();
+    }
     if (rec.note_len > 0) {
         ui.text(rec.note(), if (rec.state == .failed) theme.text_warn else theme.text_dim);
         ui.newline();
@@ -1026,6 +1080,34 @@ test "edits queue and snapshots cross between the two sides" {
     try testing.expectEqual(3, out.target);
     try testing.expectEqual(300, out.status.fps);
     try testing.expect(!shared.read(&out, &seen));
+}
+
+test "the disk line under Record: free space and time left, its colour by the time left" {
+    var buf: [160]u8 = undefined;
+    var rec: RecStatus = .{};
+    try testing.expect(diskLine(&buf, &rec) == null);
+    rec.disk = .{ .seconds = 8 * 3600 + 20 * 60, .free_bytes = 87_000_000_000 };
+    var line = diskLine(&buf, &rec).?;
+    try testing.expectEqualStrings("disk: 87.0 GB free, about 8 h 20 min at this layout", line.text);
+    try testing.expectEqual(DiskLine.Level.dim, line.level);
+    rec.disk.?.seconds = 2 * 3600;
+    try testing.expectEqual(DiskLine.Level.dim, diskLine(&buf, &rec).?.level);
+    rec.disk.?.seconds = 2 * 3600 - 1;
+    try testing.expectEqual(DiskLine.Level.warn, diskLine(&buf, &rec).?.level);
+    rec.disk.?.seconds = 5 * 60;
+    try testing.expectEqual(DiskLine.Level.warn, diskLine(&buf, &rec).?.level);
+    rec.disk = .{ .seconds = 4 * 60, .free_bytes = 10_400_000_000 };
+    line = diskLine(&buf, &rec).?;
+    try testing.expectEqualStrings("disk: 10.4 GB free, about 4 min at this layout", line.text);
+    try testing.expectEqual(DiskLine.Level.alarm, line.level);
+    // Under the reserve: not enough to record.
+    rec.disk = .{ .seconds = 0, .free_bytes = 8_200_000_000 };
+    line = diskLine(&buf, &rec).?;
+    try testing.expectEqualStrings("disk: 8.2 GB free, at least 10 GB needed to record", line.text);
+    try testing.expectEqual(DiskLine.Level.alarm, line.level);
+    rec.disk_reserve = 50e9;
+    rec.disk = .{ .seconds = 9 * 3600, .free_bytes = 49_000_000_000 };
+    try testing.expectEqualStrings("disk: 49.0 GB free, at least 50 GB needed to record", diskLine(&buf, &rec).?.text);
 }
 
 // ---- The layout, frozen ----

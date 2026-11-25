@@ -40,6 +40,12 @@
 //! about one sample period every sample (`tstep`, in board-clock ticks: 1666.7 at 30 kHz and
 //! 50 MHz; it jitters by about ±10 ticks, and a lost sample would show as ~2×). Exit status 1
 //! if anything was lost.
+//!
+//! With --record, the free space where the recording goes: one line at the start (how long
+//! it lasts at this layout), and a WARNING line on stderr each time the time left falls
+//! below 2 h, 1 h, 30 min, 5 min and 1 min (see disk.zig). The last 10 GB count as full
+//! (DIMNA_TEST_DISK_RESERVE_GB=<GB> counts more, for testing). Exit status 2, nothing
+//! recorded, with less than that free, or when --seconds needs more than the rest.
 
 const std = @import("std");
 const dimna = @import("dimna");
@@ -172,6 +178,9 @@ pub fn main(init: std.process.Init) !u8 {
     logLayout(layout);
     const nch = layout.numChannels();
 
+    var disk: ?DiskAlarm = null;
+    if (args.record_root) |root| disk = DiskAlarm.check(init, args, root, layout) orelse return 2;
+
     const bs = args.settings.block_samples;
     // The ring absorbs consumer stalls: 30 s when recording (disk), else 2 s.
     const ring_s: f64 = if (args.record_root != null) 30.0 else 2.0;
@@ -208,6 +217,7 @@ pub fn main(init: std.process.Init) !u8 {
         .health = &health,
         .acq = &acq,
         .rec = rec,
+        .disk = if (disk) |*d| d else null,
         .timing = .{ .period_ns = 1e9 / layout.sample_rate },
         .layout = layout,
         .record_root = args.record_root,
@@ -292,6 +302,61 @@ fn createRecorder(
         return e;
     };
 }
+
+/// The free space where the recording goes: checked before it starts, then watched.
+const DiskAlarm = struct {
+    watch: dimna.disk.DiskWatch,
+    raised: dimna.disk.Raised = .{},
+    /// What the layout writes, bytes per second (the floor of the watch's rate).
+    rate: f64,
+
+    /// Says how much room there is under `root`, and refuses (null, logged) a recording
+    /// with less than the reserve free, or one of --seconds that needs more than the rest.
+    fn check(init: std.process.Init, args: Args, root: []const u8, layout: dimna.types.Layout) ?DiskAlarm {
+        const test_gb: ?f64 = if (init.environ_map.get("DIMNA_TEST_DISK_RESERVE_GB")) |v| std.fmt.parseFloat(f64, v) catch null else null;
+        const reserve = dimna.disk.reserveFrom(test_gb);
+        const rate = dimna.disk.bytesPerSecond(layout);
+        const free = dimna.disk.freeBytesNear(root) orelse {
+            log.warn("disk: the free space at {s} is not known; not watched", .{root});
+            return .{ .watch = .{ .reserve = reserve }, .rate = rate };
+        };
+        const gb = @as(f64, @floatFromInt(free)) / 1e9;
+        var left_buf: [32]u8 = undefined;
+        const left = dimna.disk.leftAt(free, reserve, rate).?;
+        std.debug.print("disk: {d:.1} GB free at {s}, {s} at {d} channels, {d} Hz\n", .{
+            gb, root, dimna.disk.formatLeft(&left_buf, left.seconds), layout.numChannels(), layout.sample_rate,
+        });
+        const needed: ?f64 = if (std.math.isFinite(args.seconds)) args.seconds * rate else null;
+        switch (dimna.disk.startCheck(free, reserve, needed)) {
+            .ok => {},
+            .too_little_free => {
+                log.err("not recording: {d:.1} GB free at {s}, at least {d:.0} GB needed", .{ gb, root, reserve / 1e9 });
+                return null;
+            },
+            .too_long => {
+                log.err("not recording: --seconds {d} needs {d:.1} GB, and {d:.1} GB free less the {d:.0} GB reserve leaves {d:.1} GB", .{
+                    args.seconds, needed.? / 1e9, gb, reserve / 1e9, @max(0, gb - reserve / 1e9),
+                });
+                return null;
+            },
+        }
+        return .{ .watch = .{ .reserve = reserve }, .rate = rate };
+    }
+
+    /// A look every `period_s` at `now_s`; a WARNING line on stderr when the time left
+    /// falls below another threshold.
+    fn poll(self: *DiskAlarm, now_s: f64, r: *dimna.record.Recorder) void {
+        if (!self.watch.due(now_s)) return;
+        const free = dimna.disk.freeBytes(r.path) orelse return;
+        self.watch.add(now_s, free, r.stats.bytes.load(.monotonic));
+        const left = self.watch.left(self.rate);
+        if (!self.raised.crossed(left)) return;
+        var left_buf: [32]u8 = undefined;
+        std.debug.print("WARNING: the disk is full in {s} ({d:.1} GB left)\n", .{
+            dimna.disk.formatLeft(&left_buf, left.?.seconds), @as(f64, @floatFromInt(left.?.free_bytes)) / 1e9,
+        });
+    }
+};
 
 /// --live-test: settings changes on a schedule while acquiring.
 const LiveTest = struct {
@@ -458,6 +523,7 @@ const Soak = struct {
     health: *dimna.types.Health,
     acq: *dimna.acquisition.Acquisition,
     rec: ?*dimna.record.Recorder,
+    disk: ?*DiskAlarm = null,
     cont: Continuity = .{},
     timing: Timing,
     next_tick: i64 = 1,
@@ -500,6 +566,7 @@ const Soak = struct {
             const elapsed_ms = t_start.untilNow(io, .awake).toMilliseconds();
             if (args.live_test) live.poll(self.acq, elapsed_ms, self.rec != null);
             if (elapsed_ms >= self.next_tick * 1000) self.second();
+            if (self.disk) |d| if (self.rec) |r| d.poll(@as(f64, @floatFromInt(elapsed_ms)) / 1000, r);
             if (@as(f64, @floatFromInt(elapsed_ms)) >= args.seconds * 1000.0) {
                 run_ms = elapsed_ms;
                 break;

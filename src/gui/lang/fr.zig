@@ -209,6 +209,8 @@ pub const rec_gaps_one = "{[gaps]d} trou";
 pub const rec_gaps_other = "{[gaps]d} trous";
 pub const rec_failed = "ENREGISTREMENT ÉCHOUÉ";
 pub const rec_idle = "pas d'enregistrement";
+pub const rec_disk_free = "disque : {[gb]d:.1} GB libres, {[left]s} avec cette configuration";
+pub const rec_disk_too_full = "disque : {[gb]d:.1} GB libres, au moins {[need]d:.0} GB nécessaires pour enregistrer";
 /// The line about the source, at the top.
 pub const about_source = "{[source]s}   {[rate]d} Hz   canaux : {[channels]d}, électrodes : {[electrodes]d}";
 pub const source_simulated = "carte simulée";
@@ -321,11 +323,13 @@ pub const warn_disk_full_in = "le disque sera plein dans {[left]s} ({[gb]d:.1} G
 /// "about 12 min", "about 40 s": the time left, in the disk messages.
 pub const about_minutes = "environ {[count]d:.0} min";
 pub const about_seconds = "environ {[count]d:.0} s";
+pub const about_hours = "environ {[hours]d} h {[minutes]d} min";
 
 // ---- Notes under the control window's board and recording lines ----
 
 pub const note_cannot_create = "impossible de créer un enregistrement dans {[dir]s} : {[err]t}";
 pub const note_cannot_start = "impossible de démarrer l'enregistreur : {[err]t}";
+pub const note_disk_too_full = "pas d'enregistrement : {[gb]d:.1} GB libres dans {[dir]s}, au moins {[need]d:.0} GB nécessaires";
 pub const note_recording_failed = "enregistrement échoué : {[err]t} ; ce qui a été écrit avant est intact";
 pub const note_last_recording = "dernier enregistrement : {[length]s}   échantillons : {[samples]d}   trous : {[gaps]d}";
 pub const note_saved_to = "sauvegardé dans {[path]s}";

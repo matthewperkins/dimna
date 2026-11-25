@@ -209,6 +209,8 @@ pub const rec_gaps_one = "{[gaps]d} Lücke";
 pub const rec_gaps_other = "{[gaps]d} Lücken";
 pub const rec_failed = "AUFNAHME FEHLGESCHLAGEN";
 pub const rec_idle = "keine Aufnahme";
+pub const rec_disk_free = "Platte: {[gb]d:.1} GB frei, {[left]s} bei diesem Layout";
+pub const rec_disk_too_full = "Platte: {[gb]d:.1} GB frei, mindestens {[need]d:.0} GB zum Aufnehmen nötig";
 /// The line about the source, at the top.
 pub const about_source = "{[source]s}   {[rate]d} Hz   Kanäle: {[channels]d}, Elektroden: {[electrodes]d}";
 pub const source_simulated = "simuliertes Board";
@@ -321,11 +323,13 @@ pub const warn_disk_full_in = "die Platte ist in {[left]s} voll ({[gb]d:.1} GB f
 /// "about 12 min", "about 40 s": the time left, in the disk messages.
 pub const about_minutes = "ca. {[count]d:.0} min";
 pub const about_seconds = "ca. {[count]d:.0} s";
+pub const about_hours = "ca. {[hours]d} h {[minutes]d} min";
 
 // ---- Notes under the control window's board and recording lines ----
 
 pub const note_cannot_create = "Aufnahme unter {[dir]s} konnte nicht angelegt werden: {[err]t}";
 pub const note_cannot_start = "Recorder konnte nicht gestartet werden: {[err]t}";
+pub const note_disk_too_full = "keine Aufnahme: {[gb]d:.1} GB frei unter {[dir]s}, mindestens {[need]d:.0} GB nötig";
 pub const note_recording_failed = "Aufnahme fehlgeschlagen: {[err]t}; bisher Geschriebenes ist intakt";
 pub const note_last_recording = "letzte Aufnahme: {[length]s}   Samples: {[samples]d}   Lücken: {[gaps]d}";
 pub const note_saved_to = "gespeichert in {[path]s}";

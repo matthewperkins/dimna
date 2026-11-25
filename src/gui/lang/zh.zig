@@ -206,6 +206,8 @@ pub const rec_disk_behind = "磁盘落后 {[behind]d:.1} s";
 pub const rec_gaps_other = "{[gaps]d} 个间隙";
 pub const rec_failed = "记录失败";
 pub const rec_idle = "未在记录";
+pub const rec_disk_free = "磁盘：剩余 {[gb]d:.1} GB，按当前布局可录{[left]s}";
+pub const rec_disk_too_full = "磁盘：剩余 {[gb]d:.1} GB，至少需要 {[need]d:.0} GB 才能记录";
 /// The line about the source, at the top.
 pub const about_source = "{[source]s}   {[rate]d} Hz   通道：{[channels]d}，电极：{[electrodes]d}";
 pub const source_simulated = "模拟采集板";
@@ -311,11 +313,13 @@ pub const warn_disk_full_in = "磁盘即将写满：剩余{[left]s}（还剩 {[g
 /// "about 12 min", "about 40 s": the time left, in the disk messages.
 pub const about_minutes = "约 {[count]d:.0} min";
 pub const about_seconds = "约 {[count]d:.0} s";
+pub const about_hours = "约 {[hours]d} h {[minutes]d} min";
 
 // ---- Notes under the control window's board and recording lines ----
 
 pub const note_cannot_create = "无法在 {[dir]s} 下创建记录：{[err]t}";
 pub const note_cannot_start = "无法启动记录器：{[err]t}";
+pub const note_disk_too_full = "未记录：{[dir]s} 下剩余 {[gb]d:.1} GB，至少需要 {[need]d:.0} GB";
 pub const note_recording_failed = "记录失败：{[err]t}；之前写入的数据完好";
 pub const note_last_recording = "上次记录：{[length]s}   样本：{[samples]d}   间隙：{[gaps]d}";
 pub const note_saved_to = "已保存到 {[path]s}";
