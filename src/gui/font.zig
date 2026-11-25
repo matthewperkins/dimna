@@ -1,8 +1,8 @@
-//! Text for the display: one font at one pixel size, rasterized by FreeType into a
-//! single-channel atlas, and laid out as textured quads. Latin-1 and a few symbols are
+//! Text for the display: one font at one pixel size, rasterized by the text backend
+//! (`text_backend.zig`) into a single-channel atlas, and laid out as textured quads. Latin-1 and a few symbols are
 //! rasterized at startup (the fixed glyphs); a string made only of those is laid out as it
 //! always was: one glyph per code point, left to right, no kerning. Any other string is
-//! shaped (`shape.zig`: bidi, font fallback, HarfBuzz), its glyphs rasterized into the atlas
+//! shaped (`shape.zig`: bidi, font fallback, shaping), its glyphs rasterized into the atlas
 //! the first time they are drawn. A second, fixed-width set of ASCII glyphs can be added to
 //! the same atlas (`addMono`), for text laid out in columns (`Batch.textMono`, never shaped).
 //!
@@ -10,10 +10,9 @@
 //! through the same pipeline as text (`Batch.rect`).
 
 const std = @import("std");
-const c = @import("gui_c");
 const theme = @import("theme.zig");
 const shape = @import("shape.zig");
-const fontfind = @import("fontfind.zig");
+const backend = @import("text_backend.zig");
 const log = std.log.scoped(.font);
 
 /// Pixels each side; room for the fixed glyphs and a few thousand drawn on demand.
@@ -63,49 +62,46 @@ pub const Font = struct {
     /// Where the next glyph goes in the atlas.
     pen: Pen = .{},
     /// Shaping, font fallback and glyphs on demand; null (a font made by hand, or one
-    /// HarfBuzz could not take) draws only the fixed glyphs, anything else as "?".
+    /// whose engine could not be made) draws only the fixed glyphs, anything else as "?".
     engine: ?*shape.Engine = null,
 
     /// Loads the font fontconfig picks for `family` (e.g. "sans-serif", "monospace",
     /// "Lato") at `px` pixels.
     pub fn init(gpa: std.mem.Allocator, family: [:0]const u8, px: u32) !Font {
         var path_buf: [std.fs.max_path_bytes:0]u8 = undefined;
-        const path = try fontfind.findFont(family, &path_buf);
+        const path = try backend.findFont(family, &path_buf);
 
-        var lib: c.FT_Library = null;
-        if (c.FT_Init_FreeType(&lib) != 0) return error.FreeType;
-        var face: c.FT_Face = null;
-        if (c.FT_New_Face(lib, path.ptr, 0, &face) != 0) {
-            _ = c.FT_Done_FreeType(lib);
+        const lib = try backend.Library.init();
+        const face = backend.Face.open(lib, path, 0) catch |e| {
+            lib.deinit();
             log.err("cannot load font {s}", .{path});
-            return error.FontNotLoaded;
-        }
+            return e;
+        };
         // Both are closed here unless the shaping engine takes them.
         var owned = true;
         defer if (owned) {
-            _ = c.FT_Done_Face(face);
-            _ = c.FT_Done_FreeType(lib);
+            face.deinit();
+            lib.deinit();
         };
-        if (c.FT_Set_Pixel_Sizes(face, 0, px) != 0) return error.FreeType;
+        try face.setPixelSize(px);
 
         const atlas = try gpa.alloc(u8, atlas_size * atlas_size);
         errdefer gpa.free(atlas);
         @memset(atlas, 0);
         for (0..white_block) |y| @memset(atlas[y * atlas_size ..][0..white_block], 255);
 
-        const metrics = face.*.size.*.metrics;
         var font: Font = .{
             .atlas = atlas,
             .px = px,
-            .ascent = @as(f32, @floatFromInt(metrics.ascender)) / 64.0,
-            .line_height = @as(f32, @floatFromInt(metrics.height)) / 64.0,
+            .ascent = face.ascent(),
+            .line_height = face.lineHeight(),
         };
         // Shelf packing, one pixel of padding around each glyph.
         var pen: Pen = .{};
         var index: usize = 0;
         while (index < font.glyphs.len) : (index += 1) {
             // A character the font lacks stays empty for now.
-            if (!font.place(face, codepointAt(index), index, &pen)) continue;
+            if (!font.place(&face, codepointAt(index), index, &pen)) continue;
         }
         // The few characters beyond Latin-1 that the font lacks (the note that marks a
         // channel listened to, say) are taken from whatever font fontconfig offers for
@@ -115,12 +111,11 @@ pub const Font = struct {
             var want_buf: [48:0]u8 = undefined;
             const want = std.fmt.bufPrintSentinel(&want_buf, "sans-serif:charset={x}", .{cp}, 0) catch continue;
             var other_buf: [std.fs.max_path_bytes:0]u8 = undefined;
-            const other_path = fontfind.findFont(want, &other_buf) catch continue;
-            var other: c.FT_Face = null;
-            if (c.FT_New_Face(lib, other_path.ptr, 0, &other) != 0) continue;
-            defer _ = c.FT_Done_Face(other);
-            if (c.FT_Set_Pixel_Sizes(other, 0, px) != 0) continue;
-            if (font.place(other, cp, at, &pen)) log.info("U+{X:0>4} from {s}", .{ cp, other_path });
+            const other_path = backend.findFont(want, &other_buf) catch continue;
+            const other = backend.Face.open(lib, other_path, 0) catch continue;
+            defer other.deinit();
+            other.setPixelSize(px) catch continue;
+            if (font.place(&other, cp, at, &pen)) log.info("U+{X:0>4} from {s}", .{ cp, other_path });
         }
         font.pen = pen;
         log.info("font {s} at {d} px", .{ path, px });
@@ -139,18 +134,16 @@ pub const Font = struct {
     /// ordinary glyphs. A character the face lacks is drawn with the ordinary glyph.
     pub fn addMono(self: *Font, family: [:0]const u8) !void {
         var path_buf: [std.fs.max_path_bytes:0]u8 = undefined;
-        const path = try fontfind.findFont(family, &path_buf);
-        var lib: c.FT_Library = null;
-        if (c.FT_Init_FreeType(&lib) != 0) return error.FreeType;
-        defer _ = c.FT_Done_FreeType(lib);
-        var face: c.FT_Face = null;
-        if (c.FT_New_Face(lib, path.ptr, 0, &face) != 0) return error.FontNotLoaded;
-        defer _ = c.FT_Done_Face(face);
-        if (c.FT_Set_Pixel_Sizes(face, 0, self.px) != 0) return error.FreeType;
+        const path = try backend.findFont(family, &path_buf);
+        const lib = try backend.Library.init();
+        defer lib.deinit();
+        const face = try backend.Face.open(lib, path, 0);
+        defer face.deinit();
+        try face.setPixelSize(self.px);
         var pen = if (self.engine) |e| e.pen else self.pen;
         var glyphs: @TypeOf(self.mono) = @splat(.{});
         for (&glyphs, mono_first..) |*g, cp| {
-            g.* = self.render(face, @intCast(cp), &pen) catch |e| switch (e) {
+            g.* = self.render(&face, @intCast(cp), &pen) catch |e| switch (e) {
                 error.NoGlyph => continue,
                 error.AtlasFull => return e,
             };
@@ -227,7 +220,7 @@ pub const Font = struct {
 
     /// Renders `cp` from `face` into the atlas as glyph slot `index`. False if the face
     /// has no such character, or the atlas is full.
-    fn place(self: *Font, face: c.FT_Face, cp: u32, index: usize, pen: *Pen) bool {
+    fn place(self: *Font, face: *const backend.Face, cp: u32, index: usize, pen: *Pen) bool {
         self.glyphs[index] = self.render(face, cp, pen) catch |e| {
             if (e == error.AtlasFull) log.warn("font atlas full at code point {d}; it and later glyphs are missing", .{cp});
             return false;
@@ -236,16 +229,15 @@ pub const Font = struct {
     }
 
     /// Renders `cp` from `face` into the atlas at `pen` (moved on past it).
-    fn render(self: *Font, face: c.FT_Face, cp: u32, pen: *Pen) error{ NoGlyph, AtlasFull }!Glyph {
-        if (c.FT_Get_Char_Index(face, cp) == 0) return error.NoGlyph;
-        if (c.FT_Load_Char(face, cp, c.FT_LOAD_RENDER) != 0) return error.NoGlyph;
-        const slot = face.*.glyph;
-        const bm = slot.*.bitmap;
+    fn render(self: *Font, face: *const backend.Face, cp: u32, pen: *Pen) error{ NoGlyph, AtlasFull }!Glyph {
+        const gid = face.glyphIndex(cp);
+        if (gid == 0) return error.NoGlyph;
+        const bm = face.render(gid) orelse return error.NoGlyph;
         const w: usize = bm.width;
         const h: usize = bm.rows;
         const at = pen.fit(w, h) orelse return error.AtlasFull;
         for (0..h) |row| {
-            const src: [*]const u8 = bm.buffer + row * @as(usize, @intCast(bm.pitch));
+            const src: [*]const u8 = bm.pixels.? + row * @as(usize, @intCast(bm.pitch));
             @memcpy(self.atlas[(at[1] + row) * atlas_size + at[0] ..][0..w], src[0..w]);
         }
         return .{
@@ -253,9 +245,9 @@ pub const Font = struct {
             .y = @intCast(at[1]),
             .w = @intCast(w),
             .h = @intCast(h),
-            .left = @intCast(slot.*.bitmap_left),
-            .top = @intCast(slot.*.bitmap_top),
-            .advance = @as(f32, @floatFromInt(slot.*.advance.x)) / 64.0,
+            .left = @intCast(bm.left),
+            .top = @intCast(bm.top),
+            .advance = bm.advance,
         };
     }
 
