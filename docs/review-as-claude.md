@@ -181,6 +181,11 @@ what is recorded", which is honest at the moment of the click; the file should b
 honest afterwards (a `changed_during_recording = true` in the final metadata, and the
 reader tool warning about it).
 
+*Closed (2026-11): `[final]` has `settings_changed` and the count of each kind of change
+(`amplifier_events`, `amplifier_failed_events`, `leds_events`); `tools/dimna_read.py` warns
+and checks the counts against `events.tsv`. See `docs/recording.md`, "Settings changed
+during a recording".*
+
 ### B3. Review shows the past in the place of the present
 
 Review is marked with an amber badge and "review" in each title. Triggered panels stay

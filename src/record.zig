@@ -163,6 +163,8 @@ pub const Recorder = struct {
     events_in: ?*events.EventQueue = null,
     /// Notes typed by the user (from the display thread), written to events.tsv too.
     notes_in: ?*events.EventQueue = null,
+    /// events.tsv lines written that change a value of [settings] (for [final]).
+    settings_events: SettingsEvents = .{},
 
     stats: Stats = .{},
     /// For testing how failures are reported (set before `start`): fail the next write
@@ -517,6 +519,7 @@ pub const Recorder = struct {
         for (text[0..@min(text.len, 900)]) |ch| try w.writeByte(if (ch == '\t' or ch == '\n' or ch == '\r') ' ' else ch);
         try w.writeByte('\n');
         try self.events_file.writeStreamingAll(self.io, w.buffered());
+        self.settings_events.count(kind);
     }
 
     fn writeMeta(self: *Recorder, final_end: ?i64) !void {
@@ -529,6 +532,25 @@ pub const Recorder = struct {
         try os.syncToDisk(self.io, f);
         f.close(self.io);
         try Io.Dir.rename(self.dir, tmp, self.dir, "meta.toml", self.io);
+    }
+};
+
+/// Counts of the events.tsv kinds that change what [settings] says: `amplifier` (band, DSP
+/// high-pass, fast settle), `amplifier_failed` (a change that failed part way may have
+/// taken effect), and `leds`. Every other key of [settings] needs a restart, which is
+/// refused while recording.
+pub const SettingsEvents = struct {
+    amplifier: u64 = 0,
+    amplifier_failed: u64 = 0,
+    leds: u64 = 0,
+
+    fn count(self: *SettingsEvents, kind: []const u8) void {
+        if (std.mem.eql(u8, kind, "amplifier")) self.amplifier += 1;
+        if (std.mem.eql(u8, kind, "amplifier_failed")) self.amplifier_failed += 1;
+        if (std.mem.eql(u8, kind, "leds")) self.leds += 1;
+    }
+    pub fn any(self: SettingsEvents) bool {
+        return self.amplifier + self.amplifier_failed + self.leds > 0;
     }
 };
 
@@ -708,6 +730,11 @@ fn writeToml(w: *Io.Writer, r: *const Recorder, final_end: ?i64) !void {
                 s.ttl_edges.load(.monotonic),
                 s.bytes.load(.monotonic),
             },
+        );
+        const se = r.settings_events;
+        try w.print(
+            "# [settings] holds the values at the start. Each change after it is an events.tsv line\n# of the kind named below; settings_changed is true when there was any.\nsettings_changed = {}\namplifier_events = {d}\namplifier_failed_events = {d}\nleds_events = {d}\n",
+            .{ se.any(), se.amplifier, se.amplifier_failed, se.leds },
         );
     }
 }

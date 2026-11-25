@@ -37,6 +37,30 @@ append-only; `meta.toml` describes everything and is replaced atomically.
 made before the program was renamed from oEZ say `oez-recording`, in the same version 1;
 `tools/dimna_read.py` reads both.
 
+`format_version` changes only when a reader of version 1 would misread the new files. Keys
+added to `meta.toml` keep version 1: a reader that ignores keys it does not know reads the
+recording as before, and a reader that wants a new key must allow for its absence in older
+recordings.
+
+### Settings changed during a recording
+
+The amplifier band, the DSP high-pass, fast settle and the board LEDs (which put a ~1 kHz
+tone on the ADC inputs) can be changed while recording. `[settings]` holds the values at the
+start; each change is a line of `events.tsv`, stamped with the estimated sample it reached the board
+at. Every other key of `[settings]` needs a restart, which is refused while recording.
+`[final]` says whether any change was made, with the number of `events.tsv` lines of each
+kind (keys added in version 1, absent in older recordings):
+
+    settings_changed = true          # any of the three below is not 0
+    amplifier_events = 2             # kind "amplifier": band, DSP, fast settle as applied
+    amplifier_failed_events = 0      # kind "amplifier_failed": may have taken effect in part
+    leds_events = 0                  # kind "leds"
+
+When `settings_changed` is true, `[settings]` does not hold for the whole recording; read
+`events.tsv` for where it changed. `tools/dimna_read.py` warns, lists the changes, and checks
+the counts against `events.tsv`. An interrupted recording has no `[final]`; the reader still
+warns from `events.tsv`.
+
 Crash safety: once a second `samples.i16` is synced, then the index records for it are written
 and synced, so every index record points at data already on disk. After a crash the indexed
 data is CRC-verifiable and any tail beyond it is kept but unverified.
@@ -62,7 +86,7 @@ the same through the GUI on the simulator; it opens windows, so never run it dur
 `zig build test` includes `src/record_test.zig`: a producer thread feeds the ring blocks whose
 every value is a function of (sample number, channel), and each recording is read back and
 checked (every sample, every TTL change, index offsets, CRCs and gap flags, `events.tsv`,
-`[final]`). It covers a whole stream, attaching to a running stream, stopping while the
+`[final]`, its counts of settings changes against `events.tsv`). It covers a whole stream, attaching to a running stream, stopping while the
 producer carries on (and the ring being let go), lost blocks, an injected write failure, and
 events from both queues. `tools/crash-test.sh [SECONDS]` records from the simulator, kills
 `dimna-headless` with `kill -9` after that many seconds, and checks with `dimna_read.py` that the

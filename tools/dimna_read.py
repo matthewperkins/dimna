@@ -6,7 +6,9 @@
     uv = r.samples[:, :32] * r.bit_volts[:32]      # electrodes in µV (memory-mapped)
 
 Run as a script to verify a recording: every index record's CRC against samples.i16, chunk
-contiguity, file sizes, TTL edges, and the [final] counts.
+contiguity, file sizes, TTL edges, and the [final] counts (of settings changes too, against
+events.tsv). It warns when settings changed during the recording: [settings] in meta.toml
+holds the values at the start, and each change is a line of events.tsv.
 
     python3 dimna_read.py RECORDING_DIR
 """
@@ -24,6 +26,13 @@ INDEX_DTYPE = np.dtype([
 FLAG_GAP = 1
 # The format's name; recordings made before the program was renamed from oez say "oez-recording".
 FORMAT_NAMES = ("dimna-recording", "oez-recording")
+# events.tsv kinds that change a value of [settings] during the recording, and the [final]
+# key that counts each (the keys are absent in recordings made before they were added).
+SETTINGS_EVENTS = {
+    "amplifier": "amplifier_events",
+    "amplifier_failed": "amplifier_failed_events",
+    "leds": "leds_events",
+}
 
 
 class Recording:
@@ -56,6 +65,9 @@ class Recording:
         self.first_sample = m.get("start", {}).get("first_sample",
                                                    int(self.index["first_sample"][0]) if self.index.size else 0)
         self.complete = "final" in m
+        self.events = read_events(self.path / "events.tsv")
+        # The events.tsv lines after which [settings] no longer holds: (sample, kind, text).
+        self.settings_changes = [e for e in self.events if e[1] in SETTINGS_EVENTS]
 
     def sample_numbers(self):
         """Board sample number of every verified row (handles gaps via the index)."""
@@ -102,7 +114,29 @@ class Recording:
                 problems.append(f"[final] chunks {f['chunks']} != {self.index.size}")
             if tail:
                 problems.append(f"{tail} bytes past the last index record in a complete recording")
+            if "settings_changed" in f:
+                for kind, key in SETTINGS_EVENTS.items():
+                    n = sum(1 for e in self.settings_changes if e[1] == kind)
+                    if f.get(key) != n:
+                        problems.append(f"[final] {key} {f.get(key)} != {n} '{kind}' lines in events.tsv")
+                if f["settings_changed"] != bool(self.settings_changes):
+                    problems.append(f"[final] settings_changed {f['settings_changed']} but "
+                                    f"{len(self.settings_changes)} change(s) in events.tsv")
         return problems, tail
+
+
+def read_events(path):
+    """events.tsv as a list of (sample, kind, text); [] if the file is missing."""
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except FileNotFoundError:
+        return []
+    out = []
+    for line in lines[1:]:
+        f = line.split("\t", 2)
+        if len(f) >= 2:
+            out.append((int(f[0]), f[1], f[2] if len(f) > 2 else ""))
+    return out
 
 
 def main(argv):
@@ -129,6 +163,13 @@ def main(argv):
         sd = x.std(axis=0)
         print(f"  electrode SD over the first {x.shape[0] / r.sample_rate:.1f} s (uV): "
               f"min {sd.min():.2f}, median {np.median(sd):.2f}, max {sd.max():.2f}")
+    if r.settings_changes:
+        print(f"  WARNING: settings changed during the recording ({len(r.settings_changes)} change(s) in "
+              f"events.tsv); [settings] holds the values at the start only:")
+        for sample, kind, text in r.settings_changes[:10]:
+            print(f"    sample {sample}: {kind} {text}")
+        if len(r.settings_changes) > 10:
+            print(f"    ... and {len(r.settings_changes) - 10} more")
     for p in problems:
         print("  PROBLEM:", p)
     print("  OK" if not problems else f"  {len(problems)} problem(s)")

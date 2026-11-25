@@ -272,6 +272,22 @@ const Recording = struct {
         }
         return null;
     }
+    /// `key = true|false` in `[table]` of meta.toml, or null.
+    fn metaBool(self: *const Recording, comptime table: []const u8, comptime key: []const u8) !?bool {
+        const head = "\n[" ++ table ++ "]\n";
+        const at = std.mem.indexOf(u8, self.meta, head) orelse return null;
+        var it = std.mem.splitScalar(u8, self.meta[at + head.len ..], '\n');
+        while (it.next()) |line| {
+            if (line.len > 0 and line[0] == '[') break;
+            if (std.mem.startsWith(u8, line, key ++ " = ")) {
+                const v = line[key.len + 3 ..];
+                if (std.mem.eql(u8, v, "true")) return true;
+                if (std.mem.eql(u8, v, "false")) return false;
+                return failure("{s} = {s} is not a boolean", .{ key, v });
+            }
+        }
+        return null;
+    }
     fn hasFinal(self: *const Recording) bool {
         return std.mem.indexOf(u8, self.meta, "\n[final]\n") != null;
     }
@@ -431,6 +447,23 @@ fn checkComplete(gpa: std.mem.Allocator, rec: *const Recording, c: Checked, sum:
     }
     try testing.expectEqual(@as(usize, 1), starts);
     try testing.expectEqualStrings(try std.fmt.bufPrint(&buf, "{d}\tstop\t", .{c.end}), lines[lines.len - 1]);
+
+    // [final]'s count of each settings-changing kind is its number of lines in events.tsv.
+    var amplifier: i64 = 0;
+    var amplifier_failed: i64 = 0;
+    var leds: i64 = 0;
+    for (lines) |l| {
+        var f = std.mem.splitScalar(u8, l, '\t');
+        _ = f.next();
+        const kind = f.next() orelse return failure("events.tsv line without a kind: '{s}'", .{l});
+        if (std.mem.eql(u8, kind, "amplifier")) amplifier += 1;
+        if (std.mem.eql(u8, kind, "amplifier_failed")) amplifier_failed += 1;
+        if (std.mem.eql(u8, kind, "leds")) leds += 1;
+    }
+    try testing.expectEqual(@as(?i64, amplifier), try rec.metaInt("final", "amplifier_events"));
+    try testing.expectEqual(@as(?i64, amplifier_failed), try rec.metaInt("final", "amplifier_failed_events"));
+    try testing.expectEqual(@as(?i64, leds), try rec.metaInt("final", "leds_events"));
+    try testing.expectEqual(@as(?bool, amplifier + amplifier_failed + leds > 0), try rec.metaBool("final", "settings_changed"));
 }
 
 fn dupePath(gpa: std.mem.Allocator, r: *const Recorder) ![]u8 {
@@ -851,4 +884,83 @@ test "recorder: events from both queues land in events.tsv with their samples" {
     }
     // start, the five, stop.
     try testing.expectEqual(@as(usize, want.len + 2), lines.len);
+}
+
+test "recorder: [final] says whether settings changed, and counts each kind of change" {
+    const gpa = testing.allocator;
+    const tmp = try TmpRoot.init("settings-changed");
+    defer tmp.deinit();
+    var ring = try BlockRing.init(gpa, ring_slots, nch, bs);
+    defer ring.deinit(gpa);
+    const evq = try gpa.create(events.EventQueue);
+    defer gpa.destroy(evq);
+    evq.* = .{};
+    const notes = try gpa.create(events.EventQueue);
+    defer gpa.destroy(notes);
+    notes.* = .{};
+
+    const r = try Recorder.create(gpa, testing.io, &ring, tmp.path(), testInfo());
+    const path = try dupePath(gpa, r);
+    defer gpa.free(path);
+    r.events_in = evq;
+    r.notes_in = notes;
+    try r.start();
+    var s: i64 = 0;
+    for (0..200) |k| {
+        // The kinds acquisition.zig writes, and some that are not changes of [settings].
+        if (k == 20) try testing.expect(evq.push(.init(s, "amplifier", "lower_hz=300.000 upper_hz=7500.0", .{})));
+        if (k == 40) try testing.expect(evq.push(.init(s, "leds", "on", .{})));
+        if (k == 60) try testing.expect(evq.push(.init(s, "amplifier_failed", "Timeout", .{})));
+        if (k == 80) try testing.expect(evq.push(.init(s, "amplifier", "lower_hz=1.000 upper_hz=7500.0", .{})));
+        if (k == 90) try testing.expect(evq.push(.init(s, "dac_route", "dac=1 electrode=3 threshold_uv=0", .{})));
+        if (k == 95) try testing.expect(evq.push(.init(s, "output_failed", "set_ttl_out Timeout", .{})));
+        if (k == 100) try testing.expect(notes.push(.init(s, "note", "amplifier", .{})));
+        try produce(&ring, s, bs);
+        s += bs;
+    }
+    try caughtUp(r);
+    const sum = try stop(r);
+
+    var rec = try Recording.load(gpa, path);
+    defer rec.deinit();
+    const c = try checkIndexed(&rec);
+    // checkComplete compares the counts with events.tsv; these say what they must be.
+    try checkComplete(gpa, &rec, c, sum);
+    try testing.expectEqual(@as(?bool, true), try rec.metaBool("final", "settings_changed"));
+    try testing.expectEqual(@as(?i64, 2), try rec.metaInt("final", "amplifier_events"));
+    try testing.expectEqual(@as(?i64, 1), try rec.metaInt("final", "amplifier_failed_events"));
+    try testing.expectEqual(@as(?i64, 1), try rec.metaInt("final", "leds_events"));
+}
+
+test "recorder: [final] says settings did not change when no change was written" {
+    const gpa = testing.allocator;
+    const tmp = try TmpRoot.init("settings-unchanged");
+    defer tmp.deinit();
+    var ring = try BlockRing.init(gpa, ring_slots, nch, bs);
+    defer ring.deinit(gpa);
+    const notes = try gpa.create(events.EventQueue);
+    defer gpa.destroy(notes);
+    notes.* = .{};
+
+    const r = try Recorder.create(gpa, testing.io, &ring, tmp.path(), testInfo());
+    const path = try dupePath(gpa, r);
+    defer gpa.free(path);
+    r.notes_in = notes;
+    try r.start();
+    var s: i64 = 0;
+    for (0..100) |k| {
+        if (k == 50) try testing.expect(notes.push(.init(s, "note", "leds", .{})));
+        try produce(&ring, s, bs);
+        s += bs;
+    }
+    try caughtUp(r);
+    const sum = try stop(r);
+
+    var rec = try Recording.load(gpa, path);
+    defer rec.deinit();
+    try checkComplete(gpa, &rec, try checkIndexed(&rec), sum);
+    try testing.expectEqual(@as(?bool, false), try rec.metaBool("final", "settings_changed"));
+    try testing.expectEqual(@as(?i64, 0), try rec.metaInt("final", "amplifier_events"));
+    try testing.expectEqual(@as(?i64, 0), try rec.metaInt("final", "amplifier_failed_events"));
+    try testing.expectEqual(@as(?i64, 0), try rec.metaInt("final", "leds_events"));
 }
