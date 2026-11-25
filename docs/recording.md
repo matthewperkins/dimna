@@ -105,6 +105,28 @@ that ignores keys it does not know is unaffected, so `format_version` stays 1.
 `tools/version-test.sh` builds dimna-headless with git, with `-Dgit=false` and with git
 not on `PATH`, records a second from the simulator with each, and checks both keys.
 
+### Which channels belong together: groups
+
+A spike sorter needs to know which channels can see the same unit. dimna knows no
+coordinates and writes none. What the user can say, in the config (or `dimna-headless
+--probe A1=each,B1=4`), is how each headstage's channels group:
+
+    [[probe]]
+    headstage = "A1"
+    name = "microwire bundle, 16 wires"   # optional, free text
+    group = "each"     # every channel alone: wires too far apart to share a unit, or of
+                       # unknown geometry (a bundle): each is sorted on its own
+                       # "all": one group (a shank); a number n: groups of n (4: tetrodes)
+
+A recording then has, in `[channels]`, `group`: one number per channel, the same for
+channels to be sorted together, -1 where nothing is said (a headstage with no probe named,
+AUX, ADC). A group's number is the index of its first channel, so it is the same in every
+recording of the same layout and never shared between headstages. The `[[probe]]` tables
+are written as given, for the connected headstages. Both are keys added in version 1,
+absent from recordings made before them and from recordings with no probe named: a reader
+must then decide for itself (the owner's pipeline gave every wire its own place 1 mm from
+the next, which is `group = "each"`).
+
 ### After a read error
 
 (Simulator only so far; `docs/plans/reopen-after-read-error.md`.) The recording is closed

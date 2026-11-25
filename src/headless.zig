@@ -2,10 +2,14 @@
 //!
 //!   dimna-headless [--seconds S] [--16ch A1,B1] [--aux] [--adc] [--leds] [--rate HZ] [--block N]
 //!                  [--record ROOT] [--live-test] [--driver d3xx|usb] [--usb-block BYTES]
-//!                  [--sim 32,16] [--band LOW,HIGH] [--no-dsp]
+//!                  [--sim 32,16] [--band LOW,HIGH] [--no-dsp] [--probe A1=each,B1=4]
 //!
 //! --sim runs from simulated headstages (channels each) instead of the board: no hardware is
 //! touched, and the acquisition thread does not ask for real-time priority.
+//!
+//! --probe says, for a recording's meta.toml, which channels of a headstage may see the same
+//! unit (probe.zig): HEADSTAGE=each, =all or =N (groups of N channels). The display's config
+//! has this as [[probe]] tables.
 //!
 //! --band sets the amplifier band in Hz and --no-dsp turns the chips' DSP high-pass off, for
 //! every port (see docs/OPEN.md: this board does not take different settings per port).
@@ -68,6 +72,8 @@ const Args = struct {
     live_test: bool = false,
     driver: dimna.board.Driver = .usb,
     settings: dimna.types.Settings = .{},
+    /// `--probe`: what is plugged into the headstages, for meta.toml.
+    probes: dimna.probe.Probes = .{},
     /// Simulated headstages (channels each) instead of the board.
     sim: [8]usize = @splat(0),
     num_sim: usize = 0,
@@ -130,6 +136,21 @@ fn parseArgs(args: []const [:0]const u8) !Args {
             a.settings.acquire_adc = true;
         } else if (std.mem.eql(u8, arg, "--leds")) {
             a.settings.leds = true;
+        } else if (std.mem.eql(u8, arg, "--probe")) {
+            var it = std.mem.tokenizeScalar(u8, try next(args, &i, arg), ',');
+            while (it.next()) |item| {
+                const eq = std.mem.indexOfScalar(u8, item, '=') orelse item.len;
+                const slot = dimna.probe.slotOf(item[0..eq]);
+                const grouping = if (eq < item.len) dimna.probe.parseGrouping(item[eq + 1 ..]) else null;
+                if (slot == null or grouping == null) {
+                    log.err("--probe: '{s}' is not HEADSTAGE=each, =all or =N (e.g. A1=each,B1=4)", .{item});
+                    return error.BadArgs;
+                }
+                a.probes.add(slot.?, grouping.?, "") catch {
+                    log.err("--probe: headstage {s} given twice", .{item[0..eq]});
+                    return error.BadArgs;
+                };
+            }
         } else if (std.mem.eql(u8, arg, "--16ch")) {
             var it = std.mem.tokenizeScalar(u8, try next(args, &i, arg), ',');
             while (it.next()) |name| {
@@ -191,7 +212,7 @@ pub fn main(init: std.process.Init) !u8 {
     const me = ring.addConsumer().?;
     var rec: ?*dimna.record.Recorder = null;
     if (args.record_root) |root| {
-        rec = createRecorder(gpa, io, &ring, root, layout, source, if (board) |*b| b else null, "", null) catch return 1;
+        rec = createRecorder(gpa, io, &ring, root, layout, source, if (board) |*b| b else null, "", null, args.probes) catch return 1;
     }
     var health: dimna.types.Health = .{};
     var acq: dimna.acquisition.Acquisition = .{
@@ -219,6 +240,7 @@ pub fn main(init: std.process.Init) !u8 {
         .acq = &acq,
         .rec = rec,
         .disk = if (disk) |*d| d else null,
+        .probes = args.probes,
         .timing = .{ .period_ns = 1e9 / layout.sample_rate },
         .layout = layout,
         .record_root = args.record_root,
@@ -288,10 +310,12 @@ fn createRecorder(
     board: ?*const Board,
     start_text: []const u8,
     continues: ?dimna.record.Info.Continues,
+    probes: dimna.probe.Probes,
 ) !*dimna.record.Recorder {
     return dimna.record.Recorder.create(gpa, io, ring, root, .{
         .start_text = start_text,
         .continues = continues,
+        .probes = probes,
         .layout = layout,
         .settings = source.settings(),
         .gateware = if (board) |b| b.fw else @splat(0),
@@ -525,6 +549,7 @@ const Soak = struct {
     acq: *dimna.acquisition.Acquisition,
     rec: ?*dimna.record.Recorder,
     disk: ?*DiskAlarm = null,
+    probes: dimna.probe.Probes = .{},
     cont: Continuity = .{},
     timing: Timing,
     next_tick: i64 = 1,
@@ -764,7 +789,7 @@ const Soak = struct {
             .path = self.last_path_buf[0..self.last_path_len],
             .end_sample = self.last_end_sample,
             .last_wall_ns = self.last_wall_ns,
-        }) catch {
+        }, self.probes) catch {
             self.rec_ok = false;
             return;
         };

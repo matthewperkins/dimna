@@ -37,6 +37,9 @@ pub const Args = struct {
     print_scheme: []const u8 = "",
     /// `--swatch`: also write a swatch PNG of it here.
     swatch: []const u8 = "",
+    /// The config's `[[probe]]` tables: what is plugged into the headstages, for a
+    /// recording's meta.toml (`dimna.probe`).
+    probes: dimna.probe.Probes = .{},
     /// Where recordings go: one session folder per recording beneath it.
     record_dir: []const u8 = "~/dimna-recordings",
     /// The spike tiles (a third window).
@@ -178,7 +181,7 @@ pub fn applyConfig(a: *Args, doc: dimna.toml.Document) void {
     for (doc.entries) |e| {
         if (e.table.len != 0) {
             if (!std.mem.eql(u8, e.table, "panel") and !std.mem.eql(u8, e.table, "board") and
-                !std.mem.eql(u8, e.table, "ttl") and
+                !std.mem.eql(u8, e.table, "ttl") and !std.mem.eql(u8, e.table, "probe") and
                 !std.mem.eql(u8, e.table, "notes")) log.warn("config line {d}: unknown table [{s}]", .{ e.line, e.table });
             continue;
         }
@@ -234,6 +237,11 @@ pub fn parseArgs(args: []const [:0]const u8, doc: dimna.toml.Document) !Args {
     var board_diag: dimna.board_config.Diagnostics = .{};
     dimna.board_config.read(doc, &a.settings, &board_diag) catch {
         log.err("config: {s}", .{board_diag.message()});
+        return error.BadArgs;
+    };
+    var probe_diag: dimna.probe.Diagnostics = .{};
+    a.probes = dimna.probe.read(doc, &probe_diag) catch {
+        log.err("config: {s}", .{probe_diag.message()});
         return error.BadArgs;
     };
     var i: usize = 1;

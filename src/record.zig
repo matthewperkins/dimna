@@ -23,6 +23,7 @@ const build_info = @import("build_info");
 const types = @import("types.zig");
 const BlockRing = @import("ring.zig").BlockRing;
 const events = @import("events.zig");
+const probe_mod = @import("probe.zig");
 const os = @import("os.zig");
 const Block = types.Block;
 const Io = std.Io;
@@ -93,6 +94,9 @@ pub const Info = struct {
     /// the same take can sit beside them), and `<root>/current` is made a link to the
     /// session folder. Otherwise the files go straight into `<root>/<date_time>/`.
     session: bool = false,
+    /// What is plugged into the headstages (the config's `[[probe]]` tables): written as
+    /// `[channels] group` and `[[probe]]`; neither when no probe is named.
+    probes: probe_mod.Probes = .{},
     /// What the TTL input lines are connected to ("" = not named), written to meta.toml.
     ttl_names: [8][]const u8 = @splat(""),
     /// A session folder (absolute) this recording continues, after acquisition was
@@ -772,6 +776,15 @@ fn writeToml(w: *Io.Writer, r: *const Recorder, final_end: ?i64) !void {
         try tomlStr(w, name);
     }
     try w.writeAll("]\n# AUX values are raw - 32768, i.e. the true voltage minus 1.2255 V (as stock).\n");
+    const probes = &r.info.probes;
+    if (probes.len > 0) {
+        try w.writeAll("# Channels with the same group number may see the same unit and are to be sorted\n# together (see [[probe]]); -1: nothing is said (no probe named, or not an electrode).\n# A group's number is the index of its first channel.\ngroup = [");
+        for (0..l.numChannels()) |i| {
+            if (i > 0) try w.writeAll(", ");
+            if (probes.groupOf(l, i)) |g| try w.print("{d}", .{g}) else try w.writeAll("-1");
+        }
+        try w.writeAll("]\n");
+    }
 
     for (l.headstageSlice()) |h| {
         try w.writeAll("\n[[headstage]]\nslot = ");
@@ -781,6 +794,20 @@ fn writeToml(w: *Io.Writer, r: *const Recorder, final_end: ?i64) !void {
         const half = std.mem.eql(u8, h.chip, "RHD2132") and h.num_channels == 16;
         try w.print("\nnum_channels = {d}\nfirst_channel = {d}\n", .{ h.num_channels, h.first_channel });
         if (half) try w.writeAll("# 16-channel RHD2132 headstage: channels are chip inputs 8..23.\nfirst_chip_input = 8\n");
+    }
+
+    // As the config gave them; a probe on a headstage that is not connected is left out.
+    for (l.headstageSlice()) |h| {
+        const p = probes.ofSlot(h.slot) orelse continue;
+        try w.writeAll("\n[[probe]]\nheadstage = ");
+        try tomlStr(w, types.headstage_names[h.slot]);
+        try w.writeAll("\nname = ");
+        try tomlStr(w, p.name());
+        switch (p.grouping) {
+            .each => try w.writeAll("\ngroup = \"each\"\n"),
+            .all => try w.writeAll("\ngroup = \"all\"\n"),
+            .of => |per| try w.print("\ngroup = {d}\n", .{per}),
+        }
     }
 
     const fw = r.info.gateware;

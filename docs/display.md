@@ -255,6 +255,19 @@ Audio section's CAR button turns that off; the noise is measured again when it c
 Like the display filter, it never touches what is recorded. The panel's title says CAR.
 Changing either set redoes the panel's recent past, so the whole window changes at once.
 
+## What is plugged in: `[[probe]]`
+
+Not for the display but for recordings: which channels of a headstage may see the same
+unit, written to each recording's `meta.toml` for the spike sorter (`docs/recording.md`,
+"Which channels belong together").
+
+```toml
+[[probe]]
+headstage = "A1"
+name = "microwire bundle, 16 wires"
+group = "each"          # "each", "all", or a number of channels per group (4: tetrodes)
+```
+
 ## TTL lanes and tint
 
 A panel with `source = "ttl"` shows the digital input lines as

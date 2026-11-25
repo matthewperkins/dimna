@@ -1023,3 +1023,35 @@ test "recorder: meta.toml names the software, and its commit only when the build
         }
     }
 }
+
+test "recorder: meta.toml has the groups and the probe when one is named, and neither when not" {
+    const gpa = testing.allocator;
+    for ([_]bool{ true, false }) |named| {
+        const tmp = try TmpRoot.init(if (named) "probe-named" else "probe-none");
+        defer tmp.deinit();
+        var ring = try BlockRing.init(gpa, ring_slots, nch, bs);
+        defer ring.deinit(gpa);
+        var info = testInfo();
+        // 4 electrodes on A1 and an ADC input: pairs.
+        if (named) try info.probes.add(0, .{ .of = 2 }, "two \"stereotrodes\"");
+        const r = try Recorder.create(gpa, testing.io, &ring, tmp.path(), info);
+        const path = try dupePath(gpa, r);
+        defer gpa.free(path);
+        try r.start();
+        var s: i64 = 0;
+        for (0..20) |_| {
+            try produce(&ring, s, bs);
+            s += bs;
+        }
+        try caughtUp(r);
+        _ = try stop(r);
+
+        var rec = try Recording.load(gpa, path);
+        defer rec.deinit();
+        const has_group = std.mem.indexOf(u8, rec.meta, "\ngroup = [0, 0, 2, 2, -1]\n") != null;
+        const has_probe = std.mem.indexOf(u8, rec.meta, "\n[[probe]]\nheadstage = \"A1\"\nname = \"two \\\"stereotrodes\\\"\"\ngroup = 2\n") != null;
+        if (named and !(has_group and has_probe)) return failure("the group list or the [[probe]] table is not in meta.toml:\n{s}", .{rec.meta});
+        if (!named and (std.mem.indexOf(u8, rec.meta, "group") != null or std.mem.indexOf(u8, rec.meta, "probe") != null))
+            return failure("meta.toml speaks of groups although no probe was named:\n{s}", .{rec.meta});
+    }
+}

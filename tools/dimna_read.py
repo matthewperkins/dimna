@@ -64,6 +64,10 @@ class Recording:
         self.kind = ch["kind"]
         self.units = ch["units"]
         self.bit_volts = np.asarray(ch["bit_volts"], dtype=np.float64)
+        # Channels with the same number are to be sorted together; -1: nothing said. None
+        # when the recording names no probe (see docs/recording.md).
+        self.group = ch.get("group")
+        self.probes = m.get("probe", [])
         self.index = np.fromfile(self.path / "index.bin", dtype=INDEX_DTYPE)
         raw = np.memmap(self.path / "samples.i16", dtype="<i2", mode="r")
         self.total_rows = raw.size // self.num_channels
@@ -128,6 +132,8 @@ class Recording:
                 problems.append(f"[final] chunks {f['chunks']} != {self.index.size}")
             if tail:
                 problems.append(f"{tail} bytes past the last index record in a complete recording")
+            if self.group is not None and len(self.group) != self.num_channels:
+                problems.append(f"[channels] group has {len(self.group)} entries for {self.num_channels} channels")
             if "settings_changed" in f:
                 for kind, key in SETTINGS_EVENTS.items():
                     n = sum(1 for e in self.settings_changes if settings_kind(e) == kind)
@@ -139,6 +145,12 @@ class Recording:
                     problems.append(f"[final] settings_changed {f['settings_changed']} but "
                                     f"{len(self.settings_changes)} change(s) in events.tsv")
         return problems, tail
+
+
+def ch_headstage(r):
+    """The headstage of every channel ("" for AUX and ADC)."""
+    hs = r.meta["channels"].get("headstage", [])
+    return list(hs) + [""] * (r.num_channels - len(hs))
 
 
 def read_events(path):
@@ -172,6 +184,9 @@ def main(argv):
         dclk = np.diff(r.index["board_clock"].astype(np.int64)) / np.diff(r.index["first_sample"])
         print(f"  board clock per sample: {dclk.mean():.4f} ticks "
               f"(nominal {r.meta['board_clock_hz'] / r.sample_rate:.4f})")
+    for p in r.probes:
+        n = len({g for g, h in zip(r.group, ch_headstage(r)) if h == p["headstage"] and g >= 0})
+        print(f"  probe on {p['headstage']}: {p['name'] or '(unnamed)'}, group = {p['group']!r} ({n} group(s))")
     el = [i for i, k in enumerate(r.kind) if k == "electrode"]
     if el and r.verified_rows:
         x = r.samples[: min(r.verified_rows, int(10 * r.sample_rate)), el].astype(np.float64) * r.bit_volts[el]

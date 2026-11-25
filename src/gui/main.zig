@@ -506,7 +506,7 @@ fn runDisplay(init: std.process.Init, env: *const Env, args: *const Args, config
                         // Review of an earlier recording ends where a new one begins.
                         review.active = false;
                         alarms.seen.gaps = 0;
-                        if (!recording.roomToStart(disk.reserve) or !recording.start(gpa, io, ring, recordInfo(layout, source, if (board) |*b| b else null, &display.set), &acq.events, nowNs())) alarms.recording_failed = true;
+                        if (!recording.roomToStart(disk.reserve) or !recording.start(gpa, io, ring, recordInfo(layout, source, if (board) |*b| b else null, &display.set, &args.probes), &acq.events, nowNs())) alarms.recording_failed = true;
                     } else if (!on) recording.requestStop();
                 },
                 .note_preset => |n| notes.stampPreset(n, note_stamp, recording.sessionPath()),
@@ -751,7 +751,7 @@ fn runDisplay(init: std.process.Init, env: *const Env, args: *const Args, config
                     const prev = prev_buf[0..resume_at.continues.path.len];
                     @memcpy(prev, resume_at.continues.path);
                     var text_buf: [std.fs.max_path_bytes + 64]u8 = undefined;
-                    var info = recordInfo(layout, source, if (board) |*b| b else null, &display.set);
+                    var info = recordInfo(layout, source, if (board) |*b| b else null, &display.set, &args.probes);
                     info.continue_in = std.fs.path.dirname(prev) orelse prev;
                     info.continues = .{ .path = prev, .end_sample = resume_at.continues.end_sample, .last_wall_ns = resume_at.continues.last_wall_ns };
                     info.start_text = std.fmt.bufPrint(&text_buf, "after a read error ({t}); continues {s}", .{ reopen.read_error.?, prev }) catch "after a read error";
@@ -926,8 +926,9 @@ fn runDisplay(init: std.process.Init, env: *const Env, args: *const Args, config
 }
 
 /// What a recording of the source as it is now says about itself (meta.toml).
-fn recordInfo(layout: *const dimna.types.Layout, source: dimna.source.Source, board: ?*const dimna.board.Board, set: *const dimna.panels.Set) dimna.record.Info {
+fn recordInfo(layout: *const dimna.types.Layout, source: dimna.source.Source, board: ?*const dimna.board.Board, set: *const dimna.panels.Set, probes: *const dimna.probe.Probes) dimna.record.Info {
     return .{
+        .probes = probes.*,
         .layout = layout.*,
         .settings = source.settings(),
         .gateware = if (board) |b| b.fw else @splat(0),
