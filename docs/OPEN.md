@@ -110,5 +110,19 @@ seen, so it can be told apart from a guess. Remove an entry when it is fixed or 
 - The audio by ear, by the author of the code.
 - CAR and the spike tiles on real spikes (the owner has looked; no measurement).
 - Cameras and triggers running beside a recording made with dimna.
-- DAC and TTL outputs: not ported.
+- **DAC and TTL outputs: ported, but nothing can ask for them.** The board side is ported
+  from the plugin with the same writes (`board.zig`: the defaults written at every open and
+  start, which have run on the board; and `Board.live` for `dac_route`, `set_ttl_out`,
+  `set_ttl_mode`, `set_dac_hpf`, `set_noise_slicer`, `set_fast_ttl_settle`,
+  `set_clock_divider`, logged to `events.tsv` when applied). But no config key, command-line
+  flag, control-window button or headless step issues any of them (searched: `dac_route`
+  and `set_ttl_out` are made nowhere; the others only in `Acquisition.applySettings`, from
+  `Settings` fields that nothing sets away from their defaults). Of the outputs, only the
+  LEDs can be changed.
+  So routing a DAC, a TTL output word, the DAC threshold mode, the DAC high-pass, the noise
+  slicer, fast settle on a TTL input and the sync-clock divider have never been sent to the
+  board. The plugin's ways in, for a port of the front end: its editor (audio channel to
+  DAC 1/2, DAC high-pass, "DAC TTL" mode, fast-settle TTL line, noise slicer, clock divider)
+  and `ACQBOARD TRIGGER <line 1-8> <10..5000 ms>` broadcast messages (a pulse on one TTL
+  output; `AcqBoardOutput` sends them on an input TTL edge).
 - Power loss or a full disk during a recording (the crash test kills the process only).

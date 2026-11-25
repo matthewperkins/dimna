@@ -19,7 +19,8 @@ kernel, and its tests fail if the list or that rule is broken.
 
 - **Outputs and indicators** (LEDs, DAC routing and high-pass, TTL out and mode, noise slicer,
   fast TTL settle, clock divider): register writes applied by the acquisition thread between
-  blocks. The data stream is untouched.
+  blocks. The data stream is untouched. Of these, only the LEDs can be asked for today (config,
+  `--leds`); the rest is ported but has no way in (`docs/OPEN.md`, "Never tested").
 - **Amplifier bandwidth, DSP high-pass, fast settle:** gap-free. The idle AuxCmd3 bank pair
   (1/2 <-> 3/4) gets the new register-config list, then all four ports switch with one
   register write. Only the list entries that differ are written (a bandwidth change is 2-6
