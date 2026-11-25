@@ -1,0 +1,32 @@
+FreeType 2.14.3 (vendor/freetype, static); HarfBuzz 14.3.0; FriBidi 1.0.16
+== Q6: cost (3000 repetitions each; microseconds per operation)
+-- a face made
+  first CTFontCreateUIFontForLanguage in this process: 2966.2 us
+  CT: UI system font at 14/15/16 px (released each time)         median     3.42  mean     3.68  p99     4.25  worst     61.50  best    3.25 us
+  CT: CTFontCreateWithName("Geeza Pro") (installed)              median     0.42  mean     0.58  p99     0.50  worst    453.83  best    0.38 us
+  first CTFont from the file SFNS.ttf (URL -> descriptors -> font): 3989.5 us
+  CT: CTFont from a file path, n=300                             median  3661.00  mean  4970.90  p99 16004.08  worst 111113.08  best 2865.67 us
+  first FT_New_Face + FT_Set_Pixel_Sizes (SFNS.ttf): 105.9 us
+  FT: FT_New_Face + FT_Set_Pixel_Sizes, SFNS.ttf                 median    43.42  mean    57.26  p99   236.33  worst    748.62  best   36.42 us
+  FT: FT_New_Face + FT_Set_Pixel_Sizes, GeezaPro.ttc             median    28.29  mean    37.32  p99   153.42  worst    551.46  best   23.04 us
+-- a Latin line of about 40 characters (every string different)
+  (the last string has 38 code points)
+  CT: string + attributed string + CTLine only                   median     7.62  mean     9.04  p99    29.04  worst    916.79  best    6.42 us
+  CT: the line, then every glyph, position, advance read out     median     8.00  mean     9.44  p99    37.00  worst    100.17  best    7.42 us
+  CT: the same string every time, full path                      median     8.04  mean     8.79  p99    27.04  worst     61.54  best    7.50 us
+  for scale: HarfBuzz (hb-ft, 14 px) shaping the same kind of line median     5.79  mean     6.57  p99    18.29  worst   1453.71  best    5.25 us
+-- a Persian line of about 30 characters
+  CT: isolates added, base RTL, line + glyphs read out           median    37.67  mean    41.17  p99    93.58  worst   1964.92  best   32.33 us
+  CT: no isolates, base RTL                                      median    40.88  mean    44.65  p99   114.62  worst    256.25  best   36.83 us
+  for scale: FriBidi levels + HarfBuzz, one Geeza Pro run (no isolation) median     3.29  mean     3.94  p99    15.17  worst    708.88  best    3.00 us
+-- a Chinese line of about 30 characters (the benchmark's kind, with the fallback font)
+  CT: Chinese + digits + Latin, natural direction                median    20.08  mean    26.22  p99    85.17  worst   3193.88  best   17.58 us
+-- one glyph rasterised at 14 px
+  CT: context made + CTFontDrawGlyphs + context freed (24x24)    median     1.46  mean     2.11  p99     9.33  worst   1096.21  best    1.33 us
+  CT: context reused, clear + CTFontDrawGlyphs (the same glyph)  median     0.29  mean     0.36  p99     0.79  worst     20.92  best    0.25 us
+  CT: 2000 different CJK ideographs, fallback font, context reused median    37.42  mean   104.81  p99   855.79  worst   4343.00  best    7.54 us
+  CT: 2000 different glyph ids of the system font, context reused median     9.92  mean    18.09  p99   204.25  worst    791.50  best    0.79 us
+  (100460 inked pixels over those 2000 glyphs, so they were drawn)
+  FT: FT_Load_Glyph(FT_LOAD_RENDER), SFNS.ttf, the same glyph    median     3.67  mean     4.10  p99    17.88  worst    206.42  best    3.25 us
+  FT: 2000 different glyph ids of SFNS.ttf, FT_LOAD_RENDER       median     8.17  mean     9.72  p99    38.04  worst    222.92  best    2.04 us
+  FT: 2000 different CJK ideographs, Hiragino Sans GB            median    12.08  mean    13.76  p99    44.75  worst    100.67  best    4.71 us

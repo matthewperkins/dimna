@@ -1,0 +1,108 @@
+DUMP primary .SFNS-Regular line_height 16 cap_px 9.864258
+DUMP rtl=false "Port A": 6 glyphs, width 37
+DUMP   face 0 gid 235 x 0 y 0 adv 8 char U+0050
+DUMP   face 0 gid 816 x 8 y 0 adv 8 char U+006F
+DUMP   face 0 gid 860 x 16 y 0 adv 4 char U+0072
+DUMP   face 0 gid 895 x 20 y 0 adv 4 char U+0074
+DUMP   face 0 gid 3 x 24 y 0 adv 3 char U+0020
+DUMP   face 0 gid 19 x 27 y 0 adv 10 char U+0041
+DUMP rtl=false "سلام": 3 glyphs, width 27
+DUMP   face 2 gid 344 x 0 y 0 adv 7 char U+0645
+DUMP   face 2 gid 219 x 7 y 0 adv 9 char U+0000
+DUMP   face 2 gid 277 x 16 y 0 adv 11 char U+0000
+DUMP rtl=false "فیلتر 300-6000 Hz": 17 glyphs, width 115
+DUMP   face 0 gid 1313 x 0 y 0 adv 8 char U+0033
+DUMP   face 0 gid 1308 x 8 y 0 adv 9 char U+0030
+DUMP   face 0 gid 1308 x 17 y 0 adv 9 char U+0030
+DUMP   face 0 gid 1404 x 26 y 0 adv 6 char U+002D
+DUMP   face 0 gid 1317 x 32 y 0 adv 9 char U+0036
+DUMP   face 0 gid 1308 x 41 y 0 adv 9 char U+0030
+DUMP   face 0 gid 1308 x 50 y 0 adv 9 char U+0030
+DUMP   face 0 gid 1308 x 59 y 0 adv 9 char U+0030
+DUMP   face 0 gid 3 x 68 y 0 adv 3 char U+0020
+DUMP   face 0 gid 112 x 71 y 0 adv 10 char U+0048
+DUMP   face 0 gid 970 x 81 y 0 adv 7 char U+007A
+DUMP   face 2 gid 3 x 88 y 0 adv 5 char U+0020
+DUMP   face 2 gid 273 x 93 y 0 adv 6 char U+0000
+DUMP   face 2 gid 250 x 99 y 0 adv 4 char U+0000
+DUMP   face 2 gid 342 x 103 y 0 adv 3 char U+0000
+DUMP   face 2 gid 665 x 106 y 0 adv 4 char U+0000
+DUMP   face 2 gid 329 x 110 y 0 adv 5 char U+0000
+DUMP rtl=false "通道 3 阈值 5": 9 glyphs, width 80
+DUMP   face 1 gid 3673 x 0 y 0 adv 13 char U+901A
+DUMP   face 1 gid 1441 x 13 y 0 adv 13 char U+9053
+DUMP   face 1 gid 1 x 26 y 0 adv 4 char U+0020
+DUMP   face 0 gid 1313 x 30 y 0 adv 8 char U+0033
+DUMP   face 0 gid 3 x 38 y 0 adv 3 char U+0020
+DUMP   face 1 gid 5776 x 41 y 0 adv 13 char U+9608
+DUMP   face 1 gid 4532 x 54 y 0 adv 13 char U+503C
+DUMP   face 1 gid 1 x 67 y 0 adv 4 char U+0020
+DUMP   face 0 gid 1316 x 71 y 0 adv 9 char U+0035
+DUMP rtl=false "Port A فیلتر": 12 glyphs, width 62
+DUMP   face 0 gid 235 x 0 y 0 adv 8 char U+0050
+DUMP   face 0 gid 816 x 8 y 0 adv 8 char U+006F
+DUMP   face 0 gid 860 x 16 y 0 adv 4 char U+0072
+DUMP   face 0 gid 895 x 20 y 0 adv 4 char U+0074
+DUMP   face 0 gid 3 x 24 y 0 adv 3 char U+0020
+DUMP   face 0 gid 19 x 27 y 0 adv 10 char U+0041
+DUMP   face 0 gid 3 x 37 y 0 adv 3 char U+0020
+DUMP   face 2 gid 273 x 40 y 0 adv 6 char U+0000
+DUMP   face 2 gid 250 x 46 y 0 adv 4 char U+0000
+DUMP   face 2 gid 342 x 50 y 0 adv 3 char U+0000
+DUMP   face 2 gid 665 x 53 y 0 adv 4 char U+0000
+DUMP   face 2 gid 329 x 57 y 0 adv 5 char U+0000
+DUMP rtl=true "Port A": 6 glyphs, width 37
+DUMP   face 0 gid 235 x 0 y 0 adv 8 char U+0050
+DUMP   face 0 gid 816 x 8 y 0 adv 8 char U+006F
+DUMP   face 0 gid 860 x 16 y 0 adv 4 char U+0072
+DUMP   face 0 gid 895 x 20 y 0 adv 4 char U+0074
+DUMP   face 0 gid 3 x 24 y 0 adv 3 char U+0020
+DUMP   face 0 gid 19 x 27 y 0 adv 10 char U+0041
+DUMP rtl=true "سلام": 3 glyphs, width 27
+DUMP   face 2 gid 344 x 0 y 0 adv 7 char U+0645
+DUMP   face 2 gid 219 x 7 y 0 adv 9 char U+0000
+DUMP   face 2 gid 277 x 16 y 0 adv 11 char U+0000
+DUMP rtl=true "فیلتر 300-6000 Hz": 17 glyphs, width 115
+DUMP   face 0 gid 1313 x 0 y 0 adv 8 char U+0033
+DUMP   face 0 gid 1308 x 8 y 0 adv 9 char U+0030
+DUMP   face 0 gid 1308 x 17 y 0 adv 9 char U+0030
+DUMP   face 0 gid 1404 x 26 y 0 adv 6 char U+002D
+DUMP   face 0 gid 1317 x 32 y 0 adv 9 char U+0036
+DUMP   face 0 gid 1308 x 41 y 0 adv 9 char U+0030
+DUMP   face 0 gid 1308 x 50 y 0 adv 9 char U+0030
+DUMP   face 0 gid 1308 x 59 y 0 adv 9 char U+0030
+DUMP   face 0 gid 3 x 68 y 0 adv 3 char U+0020
+DUMP   face 0 gid 112 x 71 y 0 adv 10 char U+0048
+DUMP   face 0 gid 970 x 81 y 0 adv 7 char U+007A
+DUMP   face 2 gid 3 x 88 y 0 adv 5 char U+0020
+DUMP   face 2 gid 273 x 93 y 0 adv 6 char U+0000
+DUMP   face 2 gid 250 x 99 y 0 adv 4 char U+0000
+DUMP   face 2 gid 342 x 103 y 0 adv 3 char U+0000
+DUMP   face 2 gid 665 x 106 y 0 adv 4 char U+0000
+DUMP   face 2 gid 329 x 110 y 0 adv 5 char U+0000
+DUMP rtl=true "通道 3 阈值 5": 9 glyphs, width 80
+DUMP   face 1 gid 3673 x 0 y 0 adv 13 char U+901A
+DUMP   face 1 gid 1441 x 13 y 0 adv 13 char U+9053
+DUMP   face 1 gid 1 x 26 y 0 adv 4 char U+0020
+DUMP   face 0 gid 1313 x 30 y 0 adv 8 char U+0033
+DUMP   face 0 gid 3 x 38 y 0 adv 3 char U+0020
+DUMP   face 1 gid 5776 x 41 y 0 adv 13 char U+9608
+DUMP   face 1 gid 4532 x 54 y 0 adv 13 char U+503C
+DUMP   face 1 gid 1 x 67 y 0 adv 4 char U+0020
+DUMP   face 0 gid 1316 x 71 y 0 adv 9 char U+0035
+DUMP rtl=true "Port A فیلتر": 12 glyphs, width 62
+DUMP   face 2 gid 273 x 0 y 0 adv 6 char U+0000
+DUMP   face 2 gid 250 x 6 y 0 adv 4 char U+0000
+DUMP   face 2 gid 342 x 10 y 0 adv 3 char U+0000
+DUMP   face 2 gid 665 x 13 y 0 adv 4 char U+0000
+DUMP   face 2 gid 329 x 17 y 0 adv 5 char U+0000
+DUMP   face 0 gid 3 x 22 y 0 adv 3 char U+0020
+DUMP   face 0 gid 235 x 25 y 0 adv 8 char U+0050
+DUMP   face 0 gid 816 x 33 y 0 adv 8 char U+006F
+DUMP   face 0 gid 860 x 41 y 0 adv 4 char U+0072
+DUMP   face 0 gid 895 x 45 y 0 adv 4 char U+0074
+DUMP   face 0 gid 3 x 49 y 0 adv 3 char U+0020
+DUMP   face 0 gid 19 x 52 y 0 adv 10 char U+0041
+DUMP face 0: System Font / .SFNS-Regular ppem 14 line_height 16
+DUMP face 1: Hiragino Sans GB / HiraginoSansGB-W3 ppem 13 line_height 19
+DUMP face 2: Geeza Pro / GeezaPro ppem 15 line_height 20

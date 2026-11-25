@@ -1,0 +1,90 @@
+FreeType 2.14.3 (vendor/freetype, static); HarfBuzz 14.3.0; FriBidi 1.0.16
+== Q5: bidi apart from shaping?
+-- (a) kCTTypesetterOptionForcedEmbeddingLevel (the header: any directional control characters are then ignored)
+  string فیلتر 300-6000 Hz, forced level 0
+    2 run(s), typographic width 123.313 px
+    run 0: LTR chars [0,5) font .SFArabic-Regular (.SF Arabic) size 14.00, 7 glyphs, run width 30.919
+    run 1: LTR chars [5,17) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 12 glyphs, run width 92.395
+    left to right, one entry per glyph (the character it stands for): ف ی ی ل ت ت ر   3 0 0 - 6 0 0 0   H z
+  string فیلتر 300-6000 Hz, forced level 1
+    2 run(s), typographic width 118.029 px
+    run 0: RTL chars [5,17) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 12 glyphs, run width 92.395
+    run 1: RTL chars [0,5) font .SFArabic-Regular (.SF Arabic) size 14.00, 8 glyphs, run width 25.635
+    left to right, one entry per glyph (the character it stands for): z H   0 0 0 6 - 0 0 3   ر ت ت ل ی ی ف ف
+  string فیلتر 300-6000 Hz, forced level 2
+    2 run(s), typographic width 123.313 px
+    run 0: LTR chars [0,5) font .SFArabic-Regular (.SF Arabic) size 14.00, 7 glyphs, run width 30.919
+    run 1: LTR chars [5,17) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 12 glyphs, run width 92.395
+    left to right, one entry per glyph (the character it stands for): ف ی ی ل ت ت ر   3 0 0 - 6 0 0 0   H z
+  string 300-6000 Hz, forced level 0
+    1 run(s), typographic width 88.607 px
+    run 0: LTR chars [0,11) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 11 glyphs, run width 88.607
+    left to right, one entry per glyph (the character it stands for): 3 0 0 - 6 0 0 0   H z
+  string 300-6000 Hz, forced level 1
+    1 run(s), typographic width 88.607 px
+    run 0: RTL chars [0,11) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 11 glyphs, run width 88.607
+    left to right, one entry per glyph (the character it stands for): z H   0 0 0 6 - 0 0 3
+  string 300-6000 Hz, forced level 2
+    1 run(s), typographic width 88.607 px
+    run 0: LTR chars [0,11) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 11 glyphs, run width 88.607
+    left to right, one entry per glyph (the character it stands for): 3 0 0 - 6 0 0 0   H z
+  string سلام, forced level 0
+    1 run(s), typographic width 30.078 px
+    run 0: LTR chars [0,4) font .SFArabic-Regular (.SF Arabic) size 14.00, 3 glyphs, run width 30.078
+    left to right, one entry per glyph (the character it stands for): س ل م
+  string سلام, forced level 1
+    1 run(s), typographic width 25.478 px
+    run 0: RTL chars [0,4) font .SFArabic-Regular (.SF Arabic) size 14.00, 3 glyphs, run width 25.478
+    left to right, one entry per glyph (the character it stands for): م ل س
+  string سلام, forced level 2
+    1 run(s), typographic width 30.078 px
+    run 0: LTR chars [0,4) font .SFArabic-Regular (.SF Arabic) size 14.00, 3 glyphs, run width 30.078
+    left to right, one entry per glyph (the character it stands for): س ل م
+  string Port A فیلتر, forced level 0
+    2 run(s), typographic width 74.689 px
+    run 0: LTR chars [0,7) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 7 glyphs, run width 43.771
+    run 1: LTR chars [7,12) font .SFArabic-Regular (.SF Arabic) size 14.00, 7 glyphs, run width 30.919
+    left to right, one entry per glyph (the character it stands for): P o r t   A   ف ی ی ل ت ت ر
+  string Port A فیلتر, forced level 1
+    2 run(s), typographic width 69.405 px
+    run 0: RTL chars [7,12) font .SFArabic-Regular (.SF Arabic) size 14.00, 8 glyphs, run width 25.635
+    run 1: RTL chars [0,7) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 7 glyphs, run width 43.771
+    left to right, one entry per glyph (the character it stands for): ر ت ت ل ی ی ف ف   A   t r o P
+  string Port A فیلتر, forced level 2
+    2 run(s), typographic width 74.689 px
+    run 0: LTR chars [0,7) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 7 glyphs, run width 43.771
+    run 1: LTR chars [7,12) font .SFArabic-Regular (.SF Arabic) size 14.00, 7 glyphs, run width 30.919
+    left to right, one entry per glyph (the character it stands for): P o r t   A   ف ی ی ل ت ت ر
+-- (b) what a line says about direction: one RTL bit per run, no level. A paragraph with isolates, natural direction (LTR first letter):
+    10 run(s), typographic width 173.202 px
+    run 0: LTR chars [30,32) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 1 glyphs, run width 9.051
+    run 1: RTL chars [28,30) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 1 glyphs, run width 3.787
+    run 2: RTL chars [24,28) font .SFArabic-Regular (.SF Arabic) size 14.00, 3 glyphs, run width 25.478
+    run 3: RTL chars [22,24) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 1 glyphs, run width 3.787
+    run 4: LTR chars [11,22) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 11 glyphs, run width 88.607
+    run 5: RTL chars [9,11) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 1 glyphs, run width 3.787
+    run 6: RTL chars [4,9) font .SFArabic-Regular (.SF Arabic) size 14.00, 8 glyphs, run width 25.635
+    run 7: RTL chars [2,4) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 1 glyphs, run width 3.787
+    run 8: LTR chars [1,2) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 1 glyphs, run width 9.283
+    run 9: RTL chars [0,1) font .SFNS-Regular (.AppleSystemUIFont) size 14.00, 1 glyphs, run width 0.000
+    left to right, one entry per glyph (the character it stands for): B   م ل س   3 0 0 - 6 0 0 0   H z   ر ت ت ل ی ی ف ف   A <LRI>
+-- (c) ICU in the system: this SDK's usr/include/unicode has uchar.h (bidi class of a code point) but no ubidi.h
+  dlopen libicucore: ok
+  dlsym u_charDirection        found
+  dlsym u_getIntPropertyValue  found
+  dlsym ubidi_open             found
+  dlsym ubidi_setPara          found
+  dlsym ubidi_getLevels        found
+  dlsym ubidi_getVisualMap     found
+  dlsym ubidi_writeReordered   found
+  u_charDirection (ICU UCharDirection: 0 L, 1 R, 2 EN, 3 ES, 4 ET, 5 AN, 6 CS, 7 B, 8 S, 9 WS, 10 ON, 13 AL, 19 LRI, 22 PDI): U+0041=0 U+0033=2 U+002D=3 U+0020=9 U+0644=13 U+06CC=13 U+06F3=2 U+2066=20 U+2069=22 U+4E2D=0
+  dlsym ubidi_getBaseDirection found, ubidi_close found
+  ubidi_setPara paragraph level 0, "فیلتر 300-6000 Hz": err 0, levels 1 1 1 1 1 1 2 2 2 1 2 2 2 2 0 0 0
+  ubidi_setPara paragraph level 1, "فیلتر 300-6000 Hz": err 0, levels 1 1 1 1 1 1 2 2 2 1 2 2 2 2 1 2 2
+  ubidi_getBaseDirection (rule P2; 0 LTR, 1 RTL, 3 neutral): 1
+  ubidi_setPara paragraph level 0, "Port A فیلتر": err 0, levels 0 0 0 0 0 0 0 1 1 1 1 1
+  ubidi_setPara paragraph level 1, "Port A فیلتر": err 0, levels 2 2 2 2 2 2 1 1 1 1 1 1
+  ubidi_getBaseDirection (rule P2; 0 LTR, 1 RTL, 3 neutral): 0
+  ubidi_setPara paragraph level 0, "300-6000 Hz فیلتر": err 0, levels 0 0 0 0 0 0 0 0 0 0 0 0 1 1 1 1 1
+  ubidi_setPara paragraph level 1, "300-6000 Hz فیلتر": err 0, levels 2 2 2 2 2 2 2 2 1 2 2 1 1 1 1 1 1
+  ubidi_getBaseDirection (rule P2; 0 LTR, 1 RTL, 3 neutral): 0

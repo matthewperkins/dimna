@@ -1,0 +1,121 @@
+FreeType 2.14.3 (vendor/freetype, static); HarfBuzz 14.3.0; FriBidi 1.0.16
+== Q3: which font
+-- CTFontCreateUIFontForLanguage, 14 px, language NULL
+  UI kind 0 User                     -> Helvetica                    family Helvetica              asc 10.78 desc 3.22
+  UI kind 1 UserFixedPitch           -> Menlo-Regular                family Menlo                  asc 13.00 desc 3.30
+  UI kind 2 System                   -> .SFNS-Regular                family .AppleSystemUIFont     asc 13.54 desc 2.95
+  UI kind 3 EmphasizedSystem         -> .SFNS-Bold                   family .AppleSystemUIFont     asc 13.54 desc 2.95
+  UI kind 4 SmallSystem              -> .SFNS-Regular                family .AppleSystemUIFont     asc 13.54 desc 2.95
+  UI kind 5 SmallEmphasizedSystem    -> .SFNS-Bold                   family .AppleSystemUIFont     asc 13.54 desc 2.95
+  UI kind 6 MiniSystem               -> .SFNS-Regular                family .AppleSystemUIFont     asc 13.54 desc 2.95
+  UI kind 7 MiniEmphasizedSystem     -> .SFNS-Bold                   family .AppleSystemUIFont     asc 13.54 desc 2.95
+  UI kind 8 Views                    -> .SFNS-Regular                family .AppleSystemUIFont     asc 13.54 desc 2.95
+  UI kind 9 Application              -> .SFNS-Regular                family .AppleSystemUIFont     asc 13.54 desc 2.95
+  UI kind 10 Label                   -> .SFNS-Regular                family .AppleSystemUIFont     asc 13.54 desc 2.95
+  UI kind 11 MenuTitle               -> .SFNS-Regular                family .AppleSystemUIFont     asc 13.54 desc 2.95
+  UI kind 12 MenuItem                -> .SFNS-Regular                family .AppleSystemUIFont     asc 13.54 desc 2.95
+  UI kind 13 MenuItemMark            -> .SFNS-Regular                family .AppleSystemUIFont     asc 13.54 desc 2.95
+  UI kind 14 MenuItemCmdKey          -> .Keyboard                    family .Keyboard              asc 13.54 desc 2.95
+  UI kind 15 WindowTitle             -> .SFNS-Bold                   family .AppleSystemUIFont     asc 12.57 desc 2.74
+  UI kind 16 PushButton              -> .SFNS-Regular                family .AppleSystemUIFont     asc 13.54 desc 2.95
+  UI kind 17 UtilityWindowTitle      -> .SFNS-Regular                family .AppleSystemUIFont     asc 13.54 desc 2.95
+  UI kind 18 AlertHeader             -> .SFNS-Bold                   family .AppleSystemUIFont     asc 13.54 desc 2.95
+  UI kind 19 SystemDetail            -> .SFNS-Regular                family .AppleSystemUIFont     asc 13.54 desc 2.95
+  UI kind 20 EmphasizedSystemDetail  -> .SFNS-Bold                   family .AppleSystemUIFont     asc 13.54 desc 2.95
+  UI kind 21 Toolbar                 -> .SFNS-Regular                family .AppleSystemUIFont     asc 13.54 desc 2.95
+  UI kind 22 SmallToolbar            -> .SFNS-Regular                family .AppleSystemUIFont     asc 13.54 desc 2.95
+  UI kind 23 Message                 -> .SFNS-Regular                family .AppleSystemUIFont     asc 13.54 desc 2.95
+  UI kind 24 Palette                 -> .SFNS-Regular                family .AppleSystemUIFont     asc 13.54 desc 2.95
+  UI kind 25 ToolTip                 -> .SFNS-Regular                family .AppleSystemUIFont     asc 13.54 desc 2.95
+  UI kind 26 ControlContent          -> .SFNS-Regular                family .AppleSystemUIFont     asc 13.54 desc 2.95
+-- size 0 (the kind's own size) for System, UserFixedPitch, Label
+  size 0, System                     -> ps=.SFNS-Regular family=.AppleSystemUIFont full=System Font Regular size=13.0
+                                        file=/System/Library/Fonts/SFNS.ttf upem=2048 variable=yes
+                                        axis 'wdth' (Width): min 30.0 default 100.0 max 150.0; this instance: nan
+                                        axis 'opsz' (Optical Size): min 17.0 default 28.0 max 96.0; this instance: 17.00
+                                        axis 'GRAD' (GRAD): min 400.0 default 400.0 max 1000.0; this instance: nan
+                                        axis 'wght' (Weight): min 1.0 default 400.0 max 1000.0; this instance: nan
+  size 0, UserFixedPitch             -> ps=Menlo-Regular family=Menlo full=Menlo Regular size=10.0
+                                        file=/System/Library/Fonts/Menlo.ttc upem=2048 variable=no
+  size 0, Label                      -> ps=.SFNS-Regular family=.AppleSystemUIFont full=System Font Regular size=10.0
+                                        file=/System/Library/Fonts/SFNS.ttf upem=2048 variable=yes
+                                        axis 'wdth' (Width): min 30.0 default 100.0 max 150.0; this instance: nan
+                                        axis 'opsz' (Optical Size): min 17.0 default 28.0 max 96.0; this instance: 17.00
+                                        axis 'GRAD' (GRAD): min 400.0 default 400.0 max 1000.0; this instance: nan
+                                        axis 'wght' (Weight): min 1.0 default 400.0 max 1000.0; this instance: nan
+-- the system UI font in detail at 14, 20, 24 px (does the optical size follow the size?)
+  System at 14 px                    -> ps=.SFNS-Regular family=.AppleSystemUIFont full=System Font Regular size=14.0
+                                        file=/System/Library/Fonts/SFNS.ttf upem=2048 variable=yes
+                                        axis 'wdth' (Width): min 30.0 default 100.0 max 150.0; this instance: nan
+                                        axis 'opsz' (Optical Size): min 17.0 default 28.0 max 96.0; this instance: 17.00
+                                        axis 'GRAD' (GRAD): min 400.0 default 400.0 max 1000.0; this instance: nan
+                                        axis 'wght' (Weight): min 1.0 default 400.0 max 1000.0; this instance: nan
+                                        advances (px): H 10.2402 n 8.0186 i 3.3086; glyph ids H 112 n 802 i 739
+  System at 20 px                    -> ps=.SFNS-Regular family=.AppleSystemUIFont full=System Font Regular size=20.0
+                                        file=/System/Library/Fonts/SFNS.ttf upem=2048 variable=yes
+                                        axis 'wdth' (Width): min 30.0 default 100.0 max 150.0; this instance: nan
+                                        axis 'opsz' (Optical Size): min 17.0 default 28.0 max 96.0; this instance: 20.00
+                                        axis 'GRAD' (GRAD): min 400.0 default 400.0 max 1000.0; this instance: nan
+                                        axis 'wght' (Weight): min 1.0 default 400.0 max 1000.0; this instance: nan
+                                        advances (px): H 14.1914 n 10.9530 i 4.2983; glyph ids H 112 n 802 i 739
+  System at 24 px                    -> ps=.SFNS-Regular family=.AppleSystemUIFont full=System Font Regular size=24.0
+                                        file=/System/Library/Fonts/SFNS.ttf upem=2048 variable=yes
+                                        axis 'wdth' (Width): min 30.0 default 100.0 max 150.0; this instance: nan
+                                        axis 'opsz' (Optical Size): min 17.0 default 28.0 max 96.0; this instance: 24.00
+                                        axis 'GRAD' (GRAD): min 400.0 default 400.0 max 1000.0; this instance: nan
+                                        axis 'wght' (Weight): min 1.0 default 400.0 max 1000.0; this instance: nan
+                                        advances (px): H 17.0391 n 12.9620 i 5.1946; glyph ids H 112 n 802 i 739
+-- the system UI font for languages
+  System, language fa                -> .SFNS-Regular (.AppleSystemUIFont)
+  System, language zh-Hans           -> .SFNS-Regular (.AppleSystemUIFont)
+  System, language ar                -> .SFNS-Regular (.AppleSystemUIFont)
+  System, language en                -> .SFNS-Regular (.AppleSystemUIFont)
+-- the file SFNS.ttf (what dimna's sans-serif is today), a CTFont made from it at 14 px, and FreeType's view of it
+  SFNS.ttf from file                 -> ps=.SFNS-Regular family=.SF NS full=System Font Regular size=14.0
+                                        file=/System/Library/Fonts/SFNS.ttf upem=2048 variable=yes
+                                        axis 'wdth' (Width): min 30.0 default 100.0 max 150.0; this instance: nan
+                                        axis 'opsz' (Optical Size): min 17.0 default 28.0 max 96.0; this instance: 17.00
+                                        axis 'GRAD' (GRAD): min 400.0 default 400.0 max 1000.0; this instance: nan
+                                        axis 'wght' (Weight): min 1.0 default 400.0 max 1000.0; this instance: nan
+  FT's face: ps=.SFNS-Regular, variation flag yes (multiple masters), upem 2048
+-- families by name, only if listed by CTFontManagerCopyAvailableFontFamilyNames (CTFontCreateWithName, 14 px)
+  Helvetica Neue                     -> ps=HelveticaNeue family=Helvetica Neue full=Helvetica Neue size=14.0
+                                        file=/System/Library/Fonts/HelveticaNeue.ttc upem=1000 variable=no
+  Menlo                              -> ps=Menlo-Regular family=Menlo full=Menlo Regular size=14.0
+                                        file=/System/Library/Fonts/Menlo.ttc upem=2048 variable=no
+  Geeza Pro                          -> ps=GeezaPro family=Geeza Pro full=Geeza Pro Regular size=14.0
+                                        file=/System/Library/Fonts/GeezaPro.ttc upem=2212 variable=no
+  Hiragino Sans GB                   -> ps=HiraginoSansGB-W3 family=Hiragino Sans GB full=Hiragino Sans GB W3 size=14.0
+                                        file=/System/Library/Fonts/Hiragino Sans GB.ttc upem=1000 variable=no
+  Damascus                           -> ps=Damascus family=Damascus full=Damascus Regular size=14.0
+                                        file=/System/Library/Fonts/Supplemental/Damascus.ttc upem=2048 variable=no
+  Heiti SC                           -> ps=STHeitiSC-Light family=Heiti SC full=Heiti SC Light size=14.0
+                                        file=/System/Library/Fonts/STHeiti Light.ttc upem=1000 variable=no
+  PingFang SC                        -> ps=PingFangSC-Regular family=PingFang SC full=PingFang SC Regular size=14.0
+                                        file=/System/Library/PrivateFrameworks/FontServices.framework/Resources/Reserved/PingFangUI.ttc upem=1000 variable=yes
+                                        axis 'WDTH' (Width): min 1.0 default 500.0 max 1000.0; this instance: nan
+                                        axis 'wght' (Weight): min 100.0 default 500.0 max 600.0; this instance: 400.00
+                                        axis 'HGHT' (Height): min 1.0 default 500.0 max 1000.0; this instance: nan
+  SF Arabic                          -> not among the installed family names: not asked for
+  Courier                            -> not among the installed family names: not asked for
+-- the fixed-width system font
+  UserFixedPitch 14                  -> ps=Menlo-Regular family=Menlo full=Menlo Regular size=14.0
+                                        file=/System/Library/Fonts/Menlo.ttc upem=2048 variable=no
+  advances i 8.4287 W 8.4287; monospace trait: yes
+-- a name that is not installed, asked for without a download
+  'Zqxj Nonexistent Probe Family 7731' among the installed families: no
+  CTFontCreateWithFontDescriptorAndOptions -> ps=Helvetica family=Helvetica full=Helvetica size=14.0
+                                        file=/System/Library/Fonts/Helvetica.ttc upem=2048 variable=no
+-- fallback: CTFontCreateForString(system UI font at 14 px, one character)
+  U+03C3 sigma                       -> .SFNS-Regular                  fam .AppleSystemUIFont   size 14.00 file /System/Library/Fonts/SFNS.ttf | FT opens face 0: yes, has the char: yes
+  U+2013 en dash                     -> .SFNS-Regular                  fam .AppleSystemUIFont   size 14.00 file /System/Library/Fonts/SFNS.ttf | FT opens face 0: yes, has the char: yes
+  U+2192 right arrow                 -> .SFNS-Regular                  fam .AppleSystemUIFont   size 14.00 file /System/Library/Fonts/SFNS.ttf | FT opens face 0: yes, has the char: yes
+  U+266A eighth note                 -> HelveticaNeue                  fam Helvetica Neue       size 14.00 file /System/Library/Fonts/HelveticaNeue.ttc | FT opens face 0: yes, has the char: yes
+  U+25B8 small right triangle        -> .SFNS-Regular                  fam .AppleSystemUIFont   size 14.00 file /System/Library/Fonts/SFNS.ttf | FT opens face 0: yes, has the char: yes
+  U+25BE small down triangle         -> .SFNS-Regular                  fam .AppleSystemUIFont   size 14.00 file /System/Library/Fonts/SFNS.ttf | FT opens face 0: yes, has the char: yes
+  U+901A Chinese tong                -> .PingFangUITextSC-Regular      fam .PingFang UI SC      size 14.00 file /System/Library/PrivateFrameworks/FontServices.framework/Resources/Reserved/PingFangUI.ttc | FT opens face 0: no, has the char: no
+  U+9053 Chinese dao                 -> .PingFangUITextSC-Regular      fam .PingFang UI SC      size 14.00 file /System/Library/PrivateFrameworks/FontServices.framework/Resources/Reserved/PingFangUI.ttc | FT opens face 0: no, has the char: no
+  U+0644 Persian/Arabic lam          -> .SFArabic-Regular              fam .SF Arabic           size 14.00 file /System/Library/Fonts/SFArabic.ttf | FT opens face 0: yes, has the char: yes
+  U+06CC Persian yeh                 -> .SFArabic-Regular              fam .SF Arabic           size 14.00 file /System/Library/Fonts/SFArabic.ttf | FT opens face 0: yes, has the char: yes
+  U+0041 A (no fallback needed)      -> .SFNS-Regular                  fam .AppleSystemUIFont   size 14.00 file /System/Library/Fonts/SFNS.ttf | FT opens face 0: yes, has the char: yes
+  U+00B5 micro                       -> .SFNS-Regular                  fam .AppleSystemUIFont   size 14.00 file /System/Library/Fonts/SFNS.ttf | FT opens face 0: yes, has the char: yes
