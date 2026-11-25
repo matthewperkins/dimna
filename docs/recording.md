@@ -61,6 +61,18 @@ When `settings_changed` is true, `[settings]` does not hold for the whole record
 the counts against `events.tsv`. An interrupted recording has no `[final]`; the reader still
 warns from `events.tsv`.
 
+What wrote the recording: `software = "dimna 0.2.1"`, the version in `build.zig.zon` (the
+build passes it in; it is typed nowhere else), and, beside it, `software_commit`: the git
+commit the program was built from, 40 hex digits, with `-dirty` after them when a tracked
+file differed from that commit at build time (untracked files do not count). The key is
+left out, never guessed, when the build could not know the commit: no git, a source tree
+that is not a git checkout of its own (a release tarball unpacked, a copy), a checkout git
+refuses (owned by another user, without `safe.directory`), or `zig build -Dgit=false`.
+`software_commit` was added within version 1 (recordings from before it lack it); a reader
+that ignores keys it does not know is unaffected, so `format_version` stays 1.
+`tools/version-test.sh` builds dimna-headless with git, with `-Dgit=false` and with git
+not on `PATH`, records a second from the simulator with each, and checks both keys.
+
 Crash safety: once a second `samples.i16` is synced, then the index records for it are written
 and synced, so every index record points at data already on disk. After a crash the indexed
 data is CRC-verifiable and any tail beyond it is kept but unverified.

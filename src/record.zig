@@ -19,6 +19,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const c = @import("c");
+const build_info = @import("build_info");
 const types = @import("types.zig");
 const BlockRing = @import("ring.zig").BlockRing;
 const events = @import("events.zig");
@@ -83,7 +84,11 @@ pub const Info = struct {
     board_id: u32,
     cable_delay: [4]i32,
     board_kind: []const u8 = "Open Ephys acquisition board (ECP5, FT600, ONI)",
-    software: []const u8 = "dimna 0.2.1",
+    /// build.zig.zon's version, and the commit built ("-dirty" when the tree differed from
+    /// it; null, and then not in meta.toml, when the build could not know). See build.zig's
+    /// addBuildInfo.
+    software: []const u8 = "dimna " ++ build_info.version,
+    software_commit: ?[]const u8 = build_info.commit,
     /// Session layout: the files go into `<root>/<date_time>/ephys/` (so videos and notes of
     /// the same take can sit beside them), and `<root>/current` is made a link to the
     /// session folder. Otherwise the files go straight into `<root>/<date_time>/`.
@@ -622,6 +627,10 @@ fn writeToml(w: *Io.Writer, r: *const Recorder, final_end: ?i64) !void {
     try w.print("format = \"dimna-recording\"\nformat_version = {d}\nbyte_order = \"little\"\n", .{format_version});
     try w.writeAll("software = ");
     try tomlStr(w, r.info.software);
+    if (r.info.software_commit) |commit| {
+        try w.writeAll("\nsoftware_commit = ");
+        try tomlStr(w, commit);
+    }
     try w.print("\ncreated = {s}\n", .{r.created_local[0..r.created_len]});
     try w.print(
         "sample_rate = {f}\nboard_clock_hz = {f}\nnum_channels = {d}\nsamples_per_chunk = {d}\n",

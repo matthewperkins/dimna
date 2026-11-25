@@ -94,6 +94,7 @@ pub fn build(b: *std.Build) void {
     // zig-wayland and vulkan-zig (lazy dependencies) are not fetched.
     const with_gui = b.option(bool, "gui", "Build the GUI, dimna (default: true; false: the core and dimna-headless only)") orelse true;
     const vk_registry_option = b.option([]const u8, "vk-registry", "Path to vk.xml (default: vendor/vulkan/vk.xml)");
+    const use_git = b.option(bool, "git", "Ask git which commit is built, for meta.toml's software_commit (default: true; false: the key is left out)") orelse true;
 
     // Made first, so that `zig build --help` lists the steps in the order it always has.
     const headless_step = b.step("headless", "Run the headless acquisition tool");
@@ -103,7 +104,8 @@ pub fn build(b: *std.Build) void {
     const release_step = b.step("release", "Build the release tarballs (x86_64 glibc 2.34 and musl) into zig-out/release");
 
     // ---- The normal build: -Dtarget (this machine by default). ----
-    const core = addCore(b, target, optimize, null);
+    const build_info = addBuildInfo(b, use_git);
+    const core = addCore(b, target, optimize, null, build_info);
     b.installArtifact(core.headless);
 
     const run = b.addRunArtifact(core.headless);
@@ -220,7 +222,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .name = "shader-check", .root_module = shader_check_mod })).step);
 
     // ---- zig build release: one tarball per entry of release_targets, in zig-out/release. ----
-    addRelease(b, release_step, inputs, &.{
+    addRelease(b, release_step, inputs, build_info, &.{
         b.path("LICENSE"),
         b.path("vendor/liboni/LICENSE"),
         b.path("vendor/stb/LICENSE"),
@@ -265,6 +267,7 @@ fn addCore(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     system_dirs: ?SystemDirs,
+    build_info: *std.Build.Module,
 ) Core {
     // liboni (MIT, vendored from oers, which carries one patch: oni_set_driver_search_dir).
     // It dlopen()s libonidriver_<name>.so at runtime, so nothing here links FTDI's library.
@@ -295,7 +298,10 @@ fn addCore(
         .target = target,
         .optimize = optimize,
         .link_libc = true,
-        .imports = &.{.{ .name = "c", .module = c_api.createModule() }},
+        .imports = &.{
+            .{ .name = "c", .module = c_api.createModule() },
+            .{ .name = "build_info", .module = build_info },
+        },
     };
     // The normal build's module is also offered to packages that depend on this one.
     const dimna = if (system_dirs == null) b.addModule("dimna", dimna_options) else b.createModule(dimna_options);
@@ -497,7 +503,7 @@ fn addMacGui(
 /// (bin/dimna, bin/dimna-headless, packaging/, tools/dimna_read.py, licenses/, README.md,
 /// BUILD-INFO, COMMIT, CHECK) and the same folder as dimna-<version>-<name>.tar.gz. Needs tar, gzip, readelf and
 /// objdump; and git for COMMIT (it says "unknown" without).
-fn addRelease(b: *std.Build, release_step: *std.Build.Step, inputs: Inputs, licences: []const std.Build.LazyPath) void {
+fn addRelease(b: *std.Build, release_step: *std.Build.Step, inputs: Inputs, build_info: *std.Build.Module, licences: []const std.Build.LazyPath) void {
     const version = @import("build.zig.zon").version;
 
     // This machine's header and library folders, as Zig would search them for a native
@@ -517,7 +523,7 @@ fn addRelease(b: *std.Build, release_step: *std.Build.Step, inputs: Inputs, lice
     for (release_targets) |rt| {
         const query = std.Target.Query.parse(.{ .arch_os_abi = rt.query }) catch @panic("bad release target");
         const release_target = b.resolveTargetQuery(query);
-        const core = addCore(b, release_target, .ReleaseSafe, system_dirs);
+        const core = addCore(b, release_target, .ReleaseSafe, system_dirs, build_info);
         const gui = addGui(b, release_target, .ReleaseSafe, inputs, system_dirs, core.dimna);
         const dir = b.fmt("dimna-{s}-{s}", .{ version, rt.name });
 
@@ -570,6 +576,52 @@ fn addRelease(b: *std.Build, release_step: *std.Build.Step, inputs: Inputs, lice
         release_step.dependOn(&b.addInstallFileWithDir(tarball, .{ .custom = "release" }, b.fmt("{s}.tar.gz", .{dir})).step);
     }
 }
+
+/// The `build_info` module, imported by the core (src/record.zig writes both into meta.toml):
+///
+///     pub const version: []const u8   build.zig.zon's .version, the one place it is typed
+///     pub const commit: ?[]const u8   the commit built, or null when it cannot be known
+///
+/// `commit` is `git rev-parse HEAD` in the build root, with "-dirty" appended when a tracked
+/// file differs from that commit (untracked files do not count, as with `git describe
+/// --dirty`, which makes the release's COMMIT). It is null, never guessed, when git is not
+/// installed, when the build root is not the top of a git work tree (an unpacked tarball, a
+/// Zig package in the cache, a folder inside some other repository), when git refuses the
+/// tree (a checkout owned by another user, without safe.directory), or with -Dgit=false.
+///
+/// Asked at make time on every build (a Run step with side effects), not at configure
+/// time: Zig may reuse a configuration without running build.zig again, which would keep
+/// an older build's commit. The file changes only when the answer does, so nothing that
+/// imports it is rebuilt otherwise.
+fn addBuildInfo(b: *std.Build, use_git: bool) *std.Build.Module {
+    const version = @import("build.zig.zon").version;
+    const gen = b.addSystemCommand(&.{ "sh", "-c", build_info_sh, "build-info", version, if (use_git) "git" else "no-git" });
+    gen.setCwd(b.path("."));
+    gen.has_side_effects = true;
+    return b.createModule(.{ .root_source_file = gen.captureStdOut(.{ .basename = "build_info.zig" }) });
+}
+
+/// Writes the build_info module to stdout. $1: the version; $2: "git" to ask git for the commit.
+const build_info_sh =
+    \\set -eu
+    \\case "$1" in '' | *[!0-9A-Za-z.+-]*) echo "build-info: unexpected version '$1'" >&2; exit 1 ;; esac
+    \\commit=
+    \\if [ "$2" = git ] && command -v git >/dev/null 2>&1 &&
+    \\    top=$(git rev-parse --show-toplevel 2>/dev/null) &&
+    \\    [ "$(cd "$top" && pwd -P)" = "$(pwd -P)" ] &&
+    \\    head=$(git rev-parse --verify HEAD 2>/dev/null) &&
+    \\    changed=$(git --no-optional-locks status --porcelain --untracked-files=no 2>/dev/null); then
+    \\    case "$head" in '' | *[!0-9a-f]*) ;; *) commit=$head${changed:+-dirty} ;; esac
+    \\fi
+    \\printf '//! Made by build.zig (addBuildInfo).\n'
+    \\printf 'pub const version: []const u8 = "%s";\n' "$1"
+    \\if [ -n "$commit" ]; then
+    \\    printf 'pub const commit: ?[]const u8 = "%s";\n' "$commit"
+    \\else
+    \\    printf 'pub const commit: ?[]const u8 = null;\n'
+    \\fi
+    \\
+;
 
 /// The licence files in a release, by the order addRelease is given them.
 const licence_names = [_][]const u8{ "dimna.LICENSE", "liboni.LICENSE", "stb.LICENSE", "zig-wayland.LICENSE", "vulkan-zig.LICENSE" };

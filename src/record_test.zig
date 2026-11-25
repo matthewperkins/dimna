@@ -964,3 +964,47 @@ test "recorder: [final] says settings did not change when no change was written"
     try testing.expectEqual(@as(?i64, 0), try rec.metaInt("final", "amplifier_failed_events"));
     try testing.expectEqual(@as(?i64, 0), try rec.metaInt("final", "leds_events"));
 }
+
+test "recorder: meta.toml names the software, and its commit only when the build knew it" {
+    const gpa = testing.allocator;
+    const cases = [_]struct { dir: []const u8, commit: ?[]const u8 }{
+        .{ .dir = "software-commit", .commit = "0123456789abcdef0123456789abcdef01234567-dirty" },
+        .{ .dir = "software-no-commit", .commit = null },
+    };
+    for (cases) |case| {
+        const tmp = try TmpRoot.init(case.dir);
+        defer tmp.deinit();
+        var ring = try BlockRing.init(gpa, ring_slots, nch, bs);
+        defer ring.deinit(gpa);
+        var info = testInfo();
+        info.software = "dimna 9.8.7";
+        info.software_commit = case.commit;
+        const r = try Recorder.create(gpa, testing.io, &ring, tmp.path(), info);
+        const path = try dupePath(gpa, r);
+        defer gpa.free(path);
+        try r.start();
+        var s: i64 = 0;
+        for (0..20) |_| {
+            try produce(&ring, s, bs);
+            s += bs;
+        }
+        try caughtUp(r);
+        _ = try stop(r);
+
+        var rec = try Recording.load(gpa, path);
+        defer rec.deinit();
+        if (!rec.hasFinal()) return failure("meta.toml has no [final]", .{});
+        // The top-level keys: everything before the first table.
+        const top = rec.meta[0 .. std.mem.indexOf(u8, rec.meta, "\n[") orelse rec.meta.len];
+        if (std.mem.indexOf(u8, top, "\nsoftware = \"dimna 9.8.7\"\n") == null)
+            return failure("no 'software = \"dimna 9.8.7\"' at the top of meta.toml:\n{s}", .{top});
+        if (case.commit) |want| {
+            var buf: [96]u8 = undefined;
+            const line = try std.fmt.bufPrint(&buf, "\nsoftware_commit = \"{s}\"\n", .{want});
+            if (std.mem.indexOf(u8, top, line) == null)
+                return failure("no '{s}' at the top of meta.toml:\n{s}", .{ line[1 .. line.len - 1], top });
+        } else if (std.mem.indexOf(u8, rec.meta, "software_commit") != null) {
+            return failure("software_commit is in meta.toml although the build did not know it:\n{s}", .{top});
+        }
+    }
+}
