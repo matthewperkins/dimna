@@ -92,7 +92,7 @@ pub const Pipeline = struct {
             self.bs,
             self.gpu,
             self.args.font,
-            self.args.font_px,
+            self.args.tilesFontPx(),
             self.env,
         );
     }

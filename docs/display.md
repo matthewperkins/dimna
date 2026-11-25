@@ -15,7 +15,10 @@ Config: `~/.config/dimna/config.toml` (command-line options win).
 monitor = "DP-2"      # fullscreen on this monitor: the neural display
 tearing = true        # show each frame at once (see below)
 font = "sans-serif"   # optional: a fontconfig name
-font_px = 14          # optional: text size in pixels
+font_px = 14          # optional: text size in pixels (6 to 64), for all three windows
+display_font_px = 20  # optional: one window's own size, which wins over font_px;
+control_font_px = 24  #   likewise control_font_px and tiles_font_px. With none of the
+tiles_font_px = 14    #   four, Linux uses 14 everywhere and macOS 20, 24 and 14 (as here)
 scheme_image = "~/Pictures/lab.jpg"   # optional: colours taken from this picture (below)
 language = "en"       # optional: the language of the texts (below)
 

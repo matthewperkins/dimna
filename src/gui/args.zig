@@ -62,18 +62,33 @@ pub const Args = struct {
     /// The config file gave `font_px` (otherwise macOS draws the display's and the control
     /// window's text larger: `displayFontPx`, `controlFontPx`).
     font_px_given: bool = false,
+    /// One window's text size, from `display_font_px`, `control_font_px` and `tiles_font_px`
+    /// in the config; null: `font_px` (or, without that on macOS, that window's default).
+    display_font_px: ?u32 = null,
+    control_font_px: ?u32 = null,
+    tiles_font_px: ?u32 = null,
     /// The view file (panel settings saved from the control window), applied on top of the
     /// config's panels.
     views_doc: dimna.toml.Document = .{ .entries = &.{} },
     /// The parsed config file (panels are read from it once the channel layout is known).
     doc: dimna.toml.Document = .{ .entries = &.{} },
 
+    /// Each window's text size in pixels: its own key if the config has it; else `font_px`
+    /// if the config has that; else the default (14, or on macOS the window's own).
     pub fn displayFontPx(self: *const Args) u32 {
-        return if (builtin.os.tag == .macos and !self.font_px_given) mac_display_font_px else self.font_px;
+        return self.display_font_px orelse self.sharedFontPx(mac_display_font_px);
     }
 
     pub fn controlFontPx(self: *const Args) u32 {
-        return if (builtin.os.tag == .macos and !self.font_px_given) mac_control_font_px else self.font_px;
+        return self.control_font_px orelse self.sharedFontPx(mac_control_font_px);
+    }
+
+    pub fn tilesFontPx(self: *const Args) u32 {
+        return self.tiles_font_px orelse self.font_px;
+    }
+
+    fn sharedFontPx(self: *const Args, mac_default: u32) u32 {
+        return if (builtin.os.tag == .macos and !self.font_px_given) mac_default else self.font_px;
     }
 };
 
@@ -180,6 +195,12 @@ pub fn applyConfig(a: *Args, doc: dimna.toml.Document) void {
         } else if (std.mem.eql(u8, e.key, "font_px") and e.value == .number and e.value.number >= 6 and e.value.number <= 64) {
             a.font_px = @intFromFloat(e.value.number);
             a.font_px_given = true;
+        } else if (std.mem.eql(u8, e.key, "display_font_px") and e.value == .number and e.value.number >= 6 and e.value.number <= 64) {
+            a.display_font_px = @intFromFloat(e.value.number);
+        } else if (std.mem.eql(u8, e.key, "control_font_px") and e.value == .number and e.value.number >= 6 and e.value.number <= 64) {
+            a.control_font_px = @intFromFloat(e.value.number);
+        } else if (std.mem.eql(u8, e.key, "tiles_font_px") and e.value == .number and e.value.number >= 6 and e.value.number <= 64) {
+            a.tiles_font_px = @intFromFloat(e.value.number);
         } else if (std.mem.eql(u8, e.key, "tiles") and e.value == .boolean) {
             a.tiles = e.value.boolean;
         } else if (std.mem.eql(u8, e.key, "audio") and e.value == .boolean) {
@@ -343,6 +364,33 @@ test "audio_period: 128 unless the config or the command line says otherwise; th
         try std.testing.expectEqual(128, (try parseArgs(&.{"dimna"}, bad)).audio_period);
         try std.testing.expectEqual(256, (try parseArgs(&.{ "dimna", "--audio-period", "256" }, bad)).audio_period);
     }
+}
+
+test "text sizes: a window's own key, then font_px, then the default" {
+    var diag: dimna.toml.Diagnostics = .{};
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const mac = builtin.os.tag == .macos;
+    // Nothing given: 14 everywhere, except the display and the control window on macOS.
+    const none = try parseArgs(&.{"dimna"}, try dimna.toml.parse(arena.allocator(), "", &diag));
+    try std.testing.expectEqual(@as(u32, if (mac) mac_display_font_px else 14), none.displayFontPx());
+    try std.testing.expectEqual(@as(u32, if (mac) mac_control_font_px else 14), none.controlFontPx());
+    try std.testing.expectEqual(@as(u32, 14), none.tilesFontPx());
+    // font_px alone: all three.
+    const shared = try parseArgs(&.{"dimna"}, try dimna.toml.parse(arena.allocator(), "font_px = 18\n", &diag));
+    try std.testing.expectEqual(@as(u32, 18), shared.displayFontPx());
+    try std.testing.expectEqual(@as(u32, 18), shared.controlFontPx());
+    try std.testing.expectEqual(@as(u32, 18), shared.tilesFontPx());
+    // A window's own key wins over font_px; the others keep font_px.
+    const own = try parseArgs(&.{"dimna"}, try dimna.toml.parse(arena.allocator(), "font_px = 18\ndisplay_font_px = 22\ntiles_font_px = 12\n", &diag));
+    try std.testing.expectEqual(@as(u32, 22), own.displayFontPx());
+    try std.testing.expectEqual(@as(u32, 18), own.controlFontPx());
+    try std.testing.expectEqual(@as(u32, 12), own.tilesFontPx());
+    // One window's key without font_px: the others keep their defaults. Out of range: ignored.
+    const one = try parseArgs(&.{"dimna"}, try dimna.toml.parse(arena.allocator(), "control_font_px = 30\ndisplay_font_px = 200\n", &diag));
+    try std.testing.expectEqual(@as(u32, 30), one.controlFontPx());
+    try std.testing.expectEqual(@as(u32, if (mac) mac_display_font_px else 14), one.displayFontPx());
+    try std.testing.expectEqual(@as(u32, 14), one.tilesFontPx());
 }
 
 test "scheme_image is read from the config, and the scheme options from the command line" {
