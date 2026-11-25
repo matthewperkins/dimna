@@ -82,6 +82,13 @@ const OS_CLOCK_MACH_ABSOLUTE_TIME: u32 = 32;
 
 // ---- the loop ----
 
+/// A dialog with one or two buttons, in front of everything, for what dimna must say before
+/// it has a window when it was started from Finder (no terminal). Waits for the answer:
+/// true for the first button. From any thread under `run`.
+pub fn alert(title: [:0]const u8, text: [:0]const u8, first: [:0]const u8, second: ?[:0]const u8) bool {
+    return c.dimna_aw_alert(title.ptr, text.ptr, first.ptr, if (second) |s| s.ptr else null) == 0;
+}
+
 /// `window.run` on macOS: `body` on a new thread, AppKit's loop on this one (the main
 /// thread) until `body` returns; then `body`'s result. Called elsewhere than on the main
 /// thread, it calls `body` on the calling thread, with no loop (its windows then fail).

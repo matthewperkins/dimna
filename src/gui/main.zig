@@ -159,6 +159,26 @@ pub fn main(init: std.process.Init) !u8 {
 /// (the language, the colour scheme), the source, the display's window, the pipeline and
 /// the other windows' threads, the loop, and the teardown in the reverse order. `main`
 /// has read the environment, the config, the arguments and the view file.
+/// No board could be opened. Started as the Mac app (dimna.app's launcher sets `DIMNA_APP`:
+/// there is no terminal, and the reason is only in the log), dimna says so in a dialog and
+/// offers its simulator, so that a double-click without a board does not look like an app
+/// that fails to start. True: run the simulator instead. Anywhere else: false (the caller
+/// ends with status 1, as always).
+fn simulateInstead(err: anyerror) bool {
+    if (builtin.os.tag != .macos or std.c.getenv("DIMNA_APP") == null) return false;
+    var buf: [600]u8 = undefined;
+    const text = std.fmt.bufPrintSentinel(&buf,
+        \\dimna could not open an Open Ephys acquisition board ({t}).
+        \\
+        \\Connect the board's USB 3 cable and its power, and close any other program that is using it; then open dimna again.
+        \\
+        \\Or run the simulator, to try dimna with two simulated headstages and no board. The log is in ~/Library/Logs/dimna/dimna.log.
+    , .{err}, 0) catch return false;
+    const simulate = window_mod.alert("No acquisition board found", text, "Run the Simulator", "Quit");
+    if (simulate) log.info("no board: the simulator was chosen instead", .{});
+    return simulate;
+}
+
 fn runDisplay(init: std.process.Init, env: *const Env, args: *const Args, config_path: []const u8, views_path: []const u8) !u8 {
     const io = init.io;
     const gpa = init.gpa;
@@ -214,24 +234,30 @@ fn runDisplay(init: std.process.Init, env: *const Env, args: *const Args, config
     defer if (board) |*b| b.close();
     var sim: ?dimna.sim.Sim = null;
     defer if (sim) |*sm| sm.deinit();
-    const source: dimna.source.Source = if (args.num_sim > 0) blk: {
-        sim = try dimna.sim.Sim.init(gpa, io, args.sim[0..args.num_sim]);
+    // The simulated headstages: those asked for, or, when dimna was started as the Mac app
+    // and no board answered, the two the user chose to try it with (`simulateInstead`).
+    var sim_spec: []const usize = args.sim[0..args.num_sim];
+    if (sim_spec.len == 0) {
+        var dirbuf: [std.fs.max_path_bytes:0]u8 = undefined;
+        if (args.driver == .d3xx) _ = dimna.oni.configureDriverSearch(io, init.environ_map, &dirbuf);
+        if (!dimna.acquisition.lockMemory()) log.warn("mlockall failed; pages may be swapped out", .{});
+        if (dimna.board.Board.open(io, args.driver)) |b| {
+            board = b;
+            try board.?.applySettings(args.settings);
+        } else |e| {
+            log.err("could not open the board: {t} (liboni: {s})", .{ e, dimna.oni.errorStr(dimna.oni.lastError()) });
+            if (!simulateInstead(e)) return 1;
+            sim_spec = &.{ 32, 16 };
+        }
+    }
+    const source: dimna.source.Source = if (board) |*b| .{ .board = b } else blk: {
+        sim = try dimna.sim.Sim.init(gpa, io, sim_spec);
         try sim.?.applySettings(args.settings);
         sim.?.stall_at_s = env.sim_stall_at;
         sim.?.stall_s = env.sim_stall_s;
         sim.?.fail_at_s = env.sim_fail_at;
-        log.info("simulated board: {d} headstages, {d} units", .{ args.num_sim, sim.?.units.len });
+        log.info("simulated board: {d} headstages, {d} units", .{ sim_spec.len, sim.?.units.len });
         break :blk .{ .sim = &sim.? };
-    } else blk: {
-        var dirbuf: [std.fs.max_path_bytes:0]u8 = undefined;
-        if (args.driver == .d3xx) _ = dimna.oni.configureDriverSearch(io, init.environ_map, &dirbuf);
-        if (!dimna.acquisition.lockMemory()) log.warn("mlockall failed; pages may be swapped out", .{});
-        board = dimna.board.Board.open(io, args.driver) catch |e| {
-            log.err("could not open the board: {t} (liboni: {s})", .{ e, dimna.oni.errorStr(dimna.oni.lastError()) });
-            return 1;
-        };
-        try board.?.applySettings(args.settings);
-        break :blk .{ .board = &board.? };
     };
     var health: dimna.types.Health = .{};
     // What of the loss counters the user has acknowledged (the alarm shows the rest).

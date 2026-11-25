@@ -11,4 +11,8 @@ log=$log_dir/dimna.log
 # Keep the log from growing without end: start afresh past 5 MB, keeping the last one.
 if [ -f "$log" ] && [ "$(wc -c <"$log")" -gt 5242880 ]; then mv -f "$log" "$log.1"; fi
 echo "---- $(date '+%Y-%m-%d %H:%M:%S') dimna $*" >>"$log" 2>/dev/null
+# DIMNA_APP tells dimna it has no terminal: what it cannot go on without (no board
+# answering) is then said in a dialog too, not only in the log.
+DIMNA_APP=1
+export DIMNA_APP
 exec "$dir/dimna" "$@" >>"$log" 2>&1

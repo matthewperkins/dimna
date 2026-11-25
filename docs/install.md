@@ -154,8 +154,9 @@ Each release has `dimna-macos-arm64.zip`: `dimna.app`, made and checked by
   release's notes say which; `LSMinimumSystemVersion` in its Info.plist). It has not been
   built for, or tried on, anything older.
 - **Starting it.** From Launchpad, Spotlight or the Dock it opens the board, as
-  `dimna` without options does; `open -a dimna --args --sim 32,16` gives it options (here
-  the simulator). `~/.config/dimna/config.toml` is read as always. An app started this way
+  `dimna` without options does. If no board answers, a dialog says so and offers the
+  simulator (two simulated headstages), so that the app can be tried without a board.
+  `open -a dimna --args --sim 32,16` gives it options (here the simulator at once). `~/.config/dimna/config.toml` is read as always. An app started this way
   has no `LANG`, so it shows English unless the config has `language`.
 - **The log** of an app started that way is `~/Library/Logs/dimna/dimna.log` (it starts
   afresh past 5 MB, keeping the last as `dimna.log.1`).

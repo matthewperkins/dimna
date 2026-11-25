@@ -2,7 +2,7 @@
   <img src="packaging/icon/dimna-icon.svg" width="160" alt="The dimna icon: two jackals in profile, one blue and one red, on parchment">
 </p>
 
-<h1 align="center">dimna</h1>
+# dimna — Open Neural Acquisition in Zig, for the Gamers.
 
 Acquisition, display and recording for the Open Ephys acquisition board (the ECP5 / FT600
 USB 3 / ONI board), written in Zig. It runs on Linux (Wayland) and on macOS (Apple
@@ -82,8 +82,8 @@ from a browser:
     cd ~/Downloads && curl -L -O https://github.com/matthewperkins/dimna/releases/latest/download/dimna-macos-arm64.zip \
       && unzip -o dimna-macos-arm64.zip && mv dimna.app /Applications/
 
-Then open dimna like any app; `open -a dimna --args --sim 32,16` starts it on simulated
-headstages. [docs/install.md](docs/install.md), "macOS", has the rest (a copy downloaded
+Then open dimna like any app: it opens the board, or, if none answers, offers its
+simulator; `open -a dimna --args --sim 32,16` starts it on simulated headstages at once. [docs/install.md](docs/install.md), "macOS", has the rest (a copy downloaded
 with a browser, the log, the programs from a terminal).
 
 **From source**, on Linux or macOS (Zig 0.17.1; what each system needs is in

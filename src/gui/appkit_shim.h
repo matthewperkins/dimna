@@ -119,6 +119,11 @@ int dimna_aw_fullscreen(DimnaAwWindow *w, const char *name);
 // housing): `cut` gets its left edge, right edge and depth in pixels of the window. 0: the
 // window is not fullscreen, or its screen has none.
 int dimna_aw_top_cut(DimnaAwWindow *w, double cut[3]);
+// A dialog in front of everything, with one or two buttons (`second` may be NULL), from any
+// thread while the application's loop runs (or on the main thread itself); waits for the
+// answer. Returns 0 for the first button, 1 for the second. For what a program started
+// from Finder must say before it has a window (it has no terminal to say it in).
+int dimna_aw_alert(const char *title, const char *text, const char *first, const char *second);
 // The application's picture in the Dock and the application switcher, from an image
 // file's bytes (PNG). Any thread; the first call counts.
 void dimna_aw_set_icon(const void *bytes, size_t len);

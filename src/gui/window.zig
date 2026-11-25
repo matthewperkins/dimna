@@ -62,6 +62,8 @@ const backend = switch (builtin.os.tag) {
     else => @compileError("dimna has no window backend for this system yet"),
 };
 pub const Window = backend.Window;
+/// macOS only (`window_appkit.zig`): a dialog before there is a window.
+pub const alert = if (@hasDecl(backend, "alert")) backend.alert else {};
 
 /// Runs `body` with `args` (a tuple) with this system's windowing set up around it, and
 /// returns what `body` returns (its status, or its error). main.zig runs the display's

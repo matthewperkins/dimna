@@ -625,6 +625,29 @@ int dimna_aw_top_cut(DimnaAwWindow *w, double cut[3]) {
     return 1;
 }
 
+int dimna_aw_alert(const char *title, const char *text, const char *first, const char *second) {
+    NSString *t = [NSString stringWithUTF8String:title ? title : ""];
+    NSString *x = [NSString stringWithUTF8String:text ? text : ""];
+    NSString *a = [NSString stringWithUTF8String:first ? first : "OK"];
+    NSString *b = second ? [NSString stringWithUTF8String:second] : nil;
+    __block int answer = 0;
+    void (^work)(void) = ^{
+      ensureApp();
+      if (NSApp.activationPolicy != NSApplicationActivationPolicyRegular)
+          [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
+      NSAlert *alert = [NSAlert new];
+      alert.messageText = t;
+      alert.informativeText = x;
+      [alert addButtonWithTitle:a];
+      if (b) [alert addButtonWithTitle:b];
+      [NSApp activate];
+      answer = [alert runModal] == NSAlertFirstButtonReturn ? 0 : 1;
+    };
+    if ([NSThread isMainThread]) work();
+    else dispatch_sync(dispatch_get_main_queue(), work);
+    return answer;
+}
+
 void dimna_aw_set_icon(const void *bytes, size_t len) {
     static atomic_int set;
     if (atomic_exchange(&set, 1)) return;
