@@ -2,8 +2,9 @@
 //! shaping. This file holds what the backends and their callers (`font.zig`, `shape.zig`)
 //! agree on and the choice of this system's backend, at compile time: the types are the
 //! backend's own, so a caller calls the backend's functions directly; there is no indirect
-//! call. For now both systems use `text_freetype.zig` (FreeType; HarfBuzz and FriBidi
-//! loaded at run time).
+//! call. Linux uses `text_freetype.zig` (FreeType; HarfBuzz and FriBidi loaded at run time);
+//! macOS the same by default, or `text_coretext.zig` (Core Text, CoreGraphics, ICU) when
+//! built with `-Dtext=coretext`, until Core Text's look has been accepted.
 //!
 //! What is shared policy and stays in `font.zig` and `shape.zig`: the fixed glyphs and their
 //! fast path; whether a string needs shaping at all; the paragraph direction rule and the
@@ -19,14 +20,18 @@
 //!
 //! - `findFont(pattern, buf)`: the name of the font for a pattern, with `fontfind`'s meaning
 //!   (fontconfig's syntax; its errors); what `Face.open` takes, with index 0, and what the
-//!   log shows.
-//! - `Library`: `init() !Library` (`error.FreeType` if it cannot start), `deinit()`. Faces
-//!   are opened from one and closed before it.
+//!   log shows. FreeType: a file's path. Core Text: the pattern as it will be made and the
+//!   font's PostScript name (`sans-serif = .SFNS-Regular`). A family that is not installed
+//!   is no error: another font stands in (fontconfig's substitute; Core Text: the system
+//!   font, logged).
+//! - `Library`: `init() !Library` (`error.FreeType` if FreeType cannot start; Core Text
+//!   needs nothing started), `deinit()`. Faces are opened from one and closed before it.
 //! - `Face`: one font at one size, for the fixed glyphs (`font.zig`).
 //!   - `open(lib, name, index) !Face` (`error.FontNotLoaded`), `deinit()`.
-//!   - `setPixelSize(px) !void`: an em of `px` pixels (`error.FreeType`).
+//!   - `setPixelSize(px) !void`: an em of `px` pixels (`error.FreeType`, `error.CoreText`).
 //!   - Metrics at that size: `ascent()` (top of the line to the baseline) and
-//!     `lineHeight()`, in pixels.
+//!     `lineHeight()`, in whole pixels (as FreeType rounds a scalable font's: the ascent
+//!     up, the line height to the nearest pixel).
 //!   - `glyphIndex(cp) u32`: the glyph for a code point, 0 if the face has none.
 //!   - `render(gid) ?Coverage`: the glyph's bitmap (null: cannot be drawn). Valid until the
 //!     next call on this face. The caller copies it into the atlas.
@@ -43,11 +48,15 @@
 //!     U+2069, which draw nothing), with base direction `base` (`bidi.par_ltr`,
 //!     `bidi.par_rtl`, or `bidi.par_on`: from the first strong letter); appends to `out`
 //!     the glyphs in visual order, left to right, each with its face (found now if need
-//!     be), glyph id, offsets and advance. A glyph may have no advance and no ink. An error
-//!     (out of memory, or the libraries failed) leaves `out` to be discarded: the caller
-//!     lays the string out with `mapSimple` instead.
-//!   - Fields the callers read: `nfaces`, and for the tests `named`, `cap_px`,
-//!     `faces[k].line_height`, `capPx(k)`.
+//!     be), glyph id, offsets and advance. A glyph may have no advance and no ink; the
+//!     isolate marks' glyphs may be left out or given (as such). An error (out of memory,
+//!     or the libraries failed) leaves `out` to be discarded: the caller lays the string out
+//!     with `mapSimple` instead.
+//!   - Fields the callers read: `nfaces`, and for the tests `named` (the primary and the
+//!     named fallbacks; Core Text has none: 1), `cap_px` (the primary's capital height in
+//!     pixels), `faces[k].line_height` (face `k`'s own), `capPx(k)` (face `k`'s capital, or
+//!     alef, height in pixels at its size; FreeType scales fallbacks to the primary's
+//!     capitals, Core Text does not).
 //! - `shaping() ?*const Shaping`: whether this system can shape (bidi and joined scripts),
 //!   null if not (logged once by the backend). Safe from any thread; the first call may
 //!   load libraries. `Fonts.layout` and `bidiTypes` take what it returned.
@@ -62,7 +71,12 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 const backend = switch (builtin.os.tag) {
-    .linux, .macos => @import("text_freetype.zig"),
+    .linux => @import("text_freetype.zig"),
+    // The build's `-Dtext` (FreeType until Core Text's look has been accepted).
+    .macos => switch (@import("text_options").text) {
+        .freetype => @import("text_freetype.zig"),
+        .coretext => @import("text_coretext.zig"),
+    },
     else => @compileError("dimna has no text backend for this system yet"),
 };
 
@@ -127,8 +141,11 @@ pub const bidi = struct {
 };
 
 test "the shared text code calls no text library: everything goes through this file" {
-    // The tokens of the libraries' C names, and the import of the translated headers.
-    const forbidden = [_][]const u8{ "gui_c", "FT_", "hb_", "fribidi_" };
+    // The tokens of the libraries' C names, and the import of the translated headers; then
+    // Core Text's, CoreGraphics', CoreFoundation's and ICU's.
+    const forbidden_ft = [_][]const u8{ "gui_c", "FT_", "hb_", "fribidi_" };
+    const forbidden_ct = [_][]const u8{ "CTFont", "CTLine", "CGContext", "CFRelease", "u_charDirection" };
+    const forbidden = forbidden_ft ++ forbidden_ct;
     const Shared = struct { name: []const u8, text: []const u8, has: []const u8 };
     const shared = [_]Shared{
         .{ .name = "font.zig", .text = @embedFile("font.zig"), .has = "pub const Font = struct" },
@@ -147,8 +164,10 @@ test "the shared text code calls no text library: everything goes through this f
             };
         }
     }
-    // The backend does use every one of them, so the spellings looked for are the ones in use.
+    // The backends do use every one of them, so the spellings looked for are the ones in use.
     const ft = @embedFile("text_freetype.zig");
-    for (forbidden) |word| try std.testing.expect(std.mem.indexOf(u8, ft, word) != null);
+    for (forbidden_ft) |word| try std.testing.expect(std.mem.indexOf(u8, ft, word) != null);
+    const ct = @embedFile("text_coretext.zig");
+    for (forbidden_ct) |word| try std.testing.expect(std.mem.indexOf(u8, ct, word) != null);
     try std.testing.expectEqual(0, bad);
 }

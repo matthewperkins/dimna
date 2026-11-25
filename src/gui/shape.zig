@@ -441,10 +441,15 @@ fn needLibs() !*const Libs {
     return libs() orelse skipBecause("HarfBuzz or FriBidi not installed");
 }
 
-/// The named fallback that has `cp`, or null.
-fn fallbackFor(e: *const Engine, cp: u32) ?u8 {
-    for (1..e.fonts.named) |k| if (e.fonts.covers(@intCast(k), cp)) return @intCast(k);
-    return null;
+/// The font other than the primary that the backend draws `cp` with (found now if need
+/// be): with FreeType the first named fallback that has it (or, if none has, the one the
+/// lookup offers); with Core Text the one Core Text offers. Null if there is none.
+fn fallbackFor(e: *Engine, cp: u32) ?u8 {
+    var one: std.ArrayList(backend.FaceGlyph) = .empty;
+    defer one.deinit(testing.allocator);
+    e.fonts.mapSimple(&.{cp}, &one) catch return null;
+    const g = one.items[0];
+    return if (g.face == 0 or g.gid == 0) null else g.face;
 }
 
 /// A copy of what `bytes` lays out to (the engine's result lives until its next layout).
@@ -569,25 +574,21 @@ test "Persian with a range in Hz: the Latin and the digits are one left-to-right
     defer testing.allocator.free(all);
     const latin = try shapedCopy(&f, "300-6000 Hz");
     defer testing.allocator.free(latin);
-    // The primary font's glyphs are "300-6000 Hz" as drawn alone, in the same order and
-    // spacing, leftmost; the Persian word is to their right.
-    var block: std.ArrayList(Placed) = .empty;
-    defer block.deinit(testing.allocator);
-    var first: ?usize = null;
-    for (all, 0..) |p, k| {
-        if (p.face != 0) continue;
-        if (first == null) first = k;
-        try block.append(testing.allocator, p);
-    }
-    try testing.expectEqual(latin.len, block.items.len);
-    try testing.expectEqual(0, first.?);
-    for (latin, block.items) |want, got| {
+    // Leftmost, "300-6000 Hz" as drawn alone: the primary font's glyphs in the same order
+    // and spacing; the Persian word is to their right. Of the primary font's glyphs, only
+    // a space may be elsewhere (the one between the word and the block, which Core Text
+    // draws with the primary font and FreeType with the Persian one).
+    try testing.expect(all.len > latin.len);
+    const block = all[0..latin.len];
+    for (latin, block) |want, got| {
+        try testing.expectEqual(0, got.face);
         try testing.expectEqual(want.gid, got.gid);
-        try testing.expectEqual(want.x - latin[0].x, got.x - block.items[0].x);
+        try testing.expectEqual(want.x - latin[0].x, got.x - block[0].x);
     }
-    const right_of_block = block.items[block.items.len - 1].x;
+    const right_of_block = block[block.len - 1].x;
     var persian: usize = 0;
-    for (all[block.items.len..]) |p| {
+    for (all[block.len..]) |p| {
+        if (p.face == 0) try testing.expectEqual(f.engine.?.fonts.glyphIndex(0, ' '), p.gid);
         if (p.face != ar) continue;
         persian += 1;
         try testing.expect(p.x > right_of_block);
@@ -848,15 +849,16 @@ test "Persian read right to left: a Latin name first is on the right, a Persian 
     defer testing.allocator.free(latin);
     const h = Spans.of(hz, ar);
     try testing.expect(h.latin[1] < h.persian[0]);
-    k = 0;
-    for (hz) |p| {
-        if (p.face != 0) continue;
-        try testing.expect(k < latin.len);
-        try testing.expectEqual(latin[k].gid, p.gid);
-        try testing.expectEqual(latin[k].x - latin[0].x, p.x - h.latin[0]);
-        k += 1;
+    // Its first glyphs; of the primary font's others, only the space before the word.
+    try testing.expect(hz.len > latin.len);
+    for (latin, hz[0..latin.len]) |want, p| {
+        try testing.expectEqual(0, p.face);
+        try testing.expectEqual(want.gid, p.gid);
+        try testing.expectEqual(want.x - latin[0].x, p.x - h.latin[0]);
     }
-    try testing.expectEqual(latin.len, k);
+    for (hz[latin.len..]) |p| {
+        if (p.face == 0) try testing.expectEqual(space, p.gid);
+    }
 }
 
 test "Persian read right to left: a string with no right-to-left letter is laid out as before" {
@@ -1077,4 +1079,206 @@ test "dump: the vertices and atlas of strings in every language, for comparing b
     const file = try std.Io.Dir.cwd().createFile(testing.io, std.mem.span(path), .{});
     defer file.close(testing.io);
     try file.writeStreamingAll(testing.io, out.items);
+}
+
+/// The quads of `batch` composited over `rgb` (`w` x `h`, 3 bytes a pixel) as the windows'
+/// renderers draw them: each quad's atlas texels, nearest, one to one; the colour's alpha
+/// times the coverage, blended over what is there in 8-bit values.
+fn composite(batch: *const font.Batch, rgb: []u8, w: usize, h: usize) void {
+    const atlas = batch.font.atlas;
+    const s: f32 = font.atlas_size;
+    var q: usize = 0;
+    while (q + 6 <= batch.len) : (q += 6) {
+        const v0 = batch.vertices[q];
+        const v2 = batch.vertices[q + 2];
+        const x0 = @round(v0.pos[0]);
+        const y0 = @round(v0.pos[1]);
+        const x1 = @round(v2.pos[0]);
+        const y1 = @round(v2.pos[1]);
+        if (x1 <= x0 or y1 <= y0) continue;
+        var y = y0;
+        while (y < y1) : (y += 1) {
+            var x = x0;
+            while (x < x1) : (x += 1) {
+                if (x < 0 or y < 0 or x >= @as(f32, @floatFromInt(w)) or y >= @as(f32, @floatFromInt(h))) continue;
+                const u = v0.uv[0] + (x + 0.5 - x0) / (x1 - x0) * (v2.uv[0] - v0.uv[0]);
+                const t = v0.uv[1] + (y + 0.5 - y0) / (y1 - y0) * (v2.uv[1] - v0.uv[1]);
+                const tx: usize = @intFromFloat(@min(@max(u * s, 0), s - 1));
+                const ty: usize = @intFromFloat(@min(@max(t * s, 0), s - 1));
+                const cov: f32 = @floatFromInt(atlas[ty * font.atlas_size + tx]);
+                const a = cov / 255.0 * @as(f32, @floatFromInt(v0.colour[3])) / 255.0;
+                const px = rgb[(@as(usize, @intFromFloat(y)) * w + @as(usize, @intFromFloat(x))) * 3 ..][0..3];
+                for (px, v0.colour[0..3]) |*d, c| {
+                    const blended = @as(f32, @floatFromInt(c)) * a + @as(f32, @floatFromInt(d.*)) * (1 - a);
+                    d.* = @intFromFloat(@round(@min(@max(blended, 0), 255)));
+                }
+            }
+        }
+    }
+}
+
+// A picture of sample text as this build draws it (the lead compares the two backends'):
+// at 14, 20 and 24 px, each block at its size and below it magnified three times (nearest
+// neighbour), on the display's background. Not part of the usual run: set DIMNA_TEXT_SHEET
+// to the PNG file to write.
+test "sheet: sample text drawn through the batch as the windows draw it, written as a PNG" {
+    const path = std.c.getenv("DIMNA_TEXT_SHEET") orelse return error.SkipZigTest;
+    const gpa = testing.allocator;
+    const i18n = @import("i18n.zig");
+    const theme = @import("theme.zig");
+    const scheme = @import("scheme.zig");
+    const Way = enum { text, mono, label };
+    const Line = struct { s: []const u8, way: Way = .text };
+    var lines: std.ArrayList(Line) = .empty;
+    defer lines.deinit(gpa);
+    try lines.appendSlice(gpa, &.{
+        .{ .s = "A   2.00 s   400\u{b5}V/row   300-6000 Hz" },
+        .{ .s = "A   2.00 s   400\u{b5}V/row   300-6000 Hz   (a label, on its backing)", .way = .label },
+        .{ .s = "0123456789  +-.,:;/()[]{}%#&*=<>?!@  \u{b1}\u{b0}\u{d7}\u{f7}\u{b5}" },
+        .{ .s = "  12.345 ms   -0.250 uV   ch 01 02 03   (fixed width)", .way = .mono },
+        .{ .s = "\u{3c3}  \u{2013}  \u{2192}  \u{266a}  \u{25b8}  \u{25be}   (the six symbols)" },
+    });
+    for (std.enums.values(i18n.Language)) |lang| try lines.append(gpa, .{ .s = i18n.textOfIn(lang, .help_title) });
+    try lines.appendSlice(gpa, &.{
+        .{ .s = "\u{641}\u{6cc}\u{644}\u{62a}\u{631} 300-6000 Hz" },
+        .{ .s = "\u{901a}\u{9053} 3   \u{9608}\u{503c} 5   \u{5fae}\u{4f0f}   \u{6ee4}\u{6ce2}\u{5668}   300-6000 Hz" },
+    });
+    const bg: [3]u8 = .{
+        @intFromFloat(@round(theme.background[0] * 255)),
+        @intFromFloat(@round(theme.background[1] * 255)),
+        @intFromFloat(@round(theme.background[2] * 255)),
+    };
+    const vertices = try gpa.alloc(font.Vertex, 6 * 256);
+    defer gpa.free(vertices);
+    const margin = 8;
+    const zoom = 3;
+    // Each size's block, at 1x: a caption, then the lines.
+    const Block = struct { rgb: []u8, w: usize, h: usize };
+    var blocks: [3]Block = undefined;
+    var made: usize = 0;
+    defer for (blocks[0..made]) |b| gpa.free(b.rgb);
+    var sheet_w: usize = 0;
+    var sheet_h: usize = 0;
+    for ([_]u32{ 14, 20, 24 }, 0..) |px, k| {
+        var f = try font.Font.init(gpa, "sans-serif", px);
+        defer f.deinit(gpa);
+        f.addMono("monospace") catch {};
+        var caption_buf: [64]u8 = undefined;
+        const caption = try std.fmt.bufPrint(&caption_buf, "{d} px (above: as drawn; below: magnified {d}x)", .{ px, zoom });
+        var w: f32 = f.width(caption);
+        for (lines.items) |l| w = @max(w, if (l.way == .mono) f.widthMono(l.s) else f.width(l.s) + 6);
+        const lh: usize = @intFromFloat(f.line_height + 4);
+        const bw: usize = @as(usize, @intFromFloat(@ceil(w))) + 2 * margin;
+        const bh: usize = (lines.items.len + 1) * lh + 2 * margin;
+        const rgb = try gpa.alloc(u8, bw * bh * 3);
+        for (0..bw * bh) |i| @memcpy(rgb[i * 3 ..][0..3], &bg);
+        blocks[k] = .{ .rgb = rgb, .w = bw, .h = bh };
+        made += 1;
+        var batch: font.Batch = .{ .font = &f, .vertices = vertices };
+        _ = batch.text(margin, margin, caption, theme.text_dim);
+        composite(&batch, rgb, bw, bh);
+        for (lines.items, 1..) |l, j| {
+            batch.clear();
+            const x: f32 = margin + 3;
+            const y: f32 = @floatFromInt(margin + j * lh);
+            _ = switch (l.way) {
+                .text => batch.text(x, y, l.s, theme.text_bright),
+                .mono => batch.textMono(x, y, l.s, theme.text_bright),
+                .label => batch.label(x, y, l.s, theme.text_bright),
+            };
+            composite(&batch, rgb, bw, bh);
+        }
+        sheet_w = @max(sheet_w, bw * zoom);
+        sheet_h += bh * (1 + zoom) + 2 * margin;
+    }
+    // The blocks one under the other, each at 1x and then magnified.
+    const sheet = try gpa.alloc(u8, sheet_w * sheet_h * 3);
+    defer gpa.free(sheet);
+    @memset(sheet, 40);
+    var top: usize = 0;
+    for (blocks[0..made]) |b| {
+        for (0..b.h) |y| @memcpy(sheet[((top + y) * sheet_w) * 3 ..][0 .. b.w * 3], b.rgb[y * b.w * 3 ..][0 .. b.w * 3]);
+        top += b.h + margin;
+        for (0..b.h * zoom) |y| for (0..b.w * zoom) |x| {
+            @memcpy(sheet[((top + y) * sheet_w + x) * 3 ..][0..3], b.rgb[((y / zoom) * b.w + x / zoom) * 3 ..][0..3]);
+        };
+        top += b.h * zoom + margin;
+    }
+    const png = try scheme.encodePng(gpa, sheet, sheet_w, sheet_h);
+    defer gpa.free(png);
+    const file = try std.Io.Dir.cwd().createFile(testing.io, std.mem.span(path), .{});
+    defer file.close(testing.io);
+    try file.writeStreamingAll(testing.io, png);
+    std.debug.print("text sheet {s}: {d} x {d} px\n", .{ path, sheet_w, sheet_h });
+}
+
+/// What every string draws to with a font of its own (`sans-serif` at 14 px): a hash of
+/// each string's end and vertices, then of the atlas.
+fn drawAllHash(gpa: std.mem.Allocator, strings: []const []const u8, vertices: []font.Vertex) !u64 {
+    var f = try font.Font.init(gpa, "sans-serif", 14);
+    defer f.deinit(gpa);
+    var h = std.hash.Wyhash.init(0);
+    var batch: font.Batch = .{ .font = &f, .vertices = vertices };
+    for (strings) |s| {
+        batch.clear();
+        const end = batch.text(3.4, 7.6, s, .{ 255, 255, 255, 255 });
+        h.update(std.mem.asBytes(&end));
+        h.update(std.mem.sliceAsBytes(vertices[0..batch.len]));
+    }
+    h.update(f.atlas);
+    return h.final();
+}
+
+// Three threads, each with its own font (as the three windows have), laying out and drawing
+// every message of every language again and again, against what one thread alone drew. Not
+// part of the usual run: set DIMNA_TEXT_THREADS to the seconds to run for.
+test "threads: three fonts drawing every language at once draw what one alone does" {
+    const env = std.c.getenv("DIMNA_TEXT_THREADS") orelse return error.SkipZigTest;
+    const seconds = try std.fmt.parseInt(u32, std.mem.span(env), 10);
+    const gpa = testing.allocator;
+    const i18n = @import("i18n.zig");
+    var strings: std.ArrayList([]const u8) = .empty;
+    defer strings.deinit(gpa);
+    for (std.enums.values(i18n.Language)) |lang| {
+        for (std.enums.values(i18n.Id)) |id| try strings.append(gpa, i18n.textOfIn(lang, id));
+    }
+    try strings.append(gpa, "\u{641}\u{6cc}\u{644}\u{62a}\u{631} 300-6000 Hz");
+    const vertices = try gpa.alloc(font.Vertex, 6 * 512);
+    defer gpa.free(vertices);
+    const want = try drawAllHash(gpa, strings.items, vertices);
+    const Worker = struct {
+        strings: []const []const u8,
+        want: u64,
+        until_ns: i96,
+        rounds: usize = 0,
+        wrong: usize = 0,
+        failed: ?anyerror = null,
+
+        fn run(self: *@This()) void {
+            const vs = testing.allocator.alloc(font.Vertex, 6 * 512) catch |e| {
+                self.failed = e;
+                return;
+            };
+            defer testing.allocator.free(vs);
+            while (std.Io.Clock.awake.now(testing.io).nanoseconds < self.until_ns) {
+                const got = drawAllHash(testing.allocator, self.strings, vs) catch |e| {
+                    self.failed = e;
+                    return;
+                };
+                self.rounds += 1;
+                if (got != self.want) self.wrong += 1;
+            }
+        }
+    };
+    const until = std.Io.Clock.awake.now(testing.io).nanoseconds + @as(i96, seconds) * std.time.ns_per_s;
+    var workers: [3]Worker = @splat(.{ .strings = strings.items, .want = want, .until_ns = until });
+    var threads: [3]std.Thread = undefined;
+    for (&threads, &workers) |*t, *w| t.* = try std.Thread.spawn(.{}, Worker.run, .{w});
+    for (threads) |t| t.join();
+    for (workers, 0..) |w, k| {
+        std.debug.print("thread {d}: {d} rounds of {d} strings, {d} not as one thread alone drew them\n", .{ k, w.rounds, strings.items.len, w.wrong });
+        if (w.failed) |e| return e;
+        try testing.expect(w.rounds > 0);
+        try testing.expectEqual(0, w.wrong);
+    }
 }
