@@ -5,10 +5,11 @@
 //! glyph per code point, left to right, as the fixed glyphs are laid out.
 //!
 //! A string with a character of a right-to-left or joined script (Persian, Hebrew, the
-//! Indic scripts; combining marks) is also shaped: FriBidi puts its runs in visual order and
-//! HarfBuzz shapes each piece. Neither library is linked: both are loaded with dlopen the
-//! first time such a string is drawn (`libs`). Without them that text is laid out unshaped,
-//! left to right, and one line in the log says so.
+//! Indic scripts; combining marks) is also shaped: its bidi levels and the shaping of each
+//! piece come from the text backend (`text_backend.zig`; FriBidi and HarfBuzz, loaded with
+//! dlopen the first time such a string is drawn), the runs' visual order from here. Where
+//! the system cannot shape (`libs` is null), that text is laid out unshaped, left to right,
+//! and one line in the log says so.
 //!
 //! The result is kept in a cache of laid-out strings, so a label drawn every frame is laid
 //! out once.
@@ -18,7 +19,7 @@
 //! every string with a right-to-left letter is laid out right to left, whatever comes first
 //! ("{source} ..." with a Latin name first, a number first). Otherwise the direction is
 //! that of the string's first strong letter (taken before the isolation below, which would
-//! hide the Latin letters from FriBidi's own rule). Numbers and
+//! hide the Latin letters from the bidi algorithm's own rule). Numbers and
 //! Latin text inside right-to-left text ("فیلتر 300-6000 Hz") are kept together as one
 //! left-to-right block: each stretch from a Latin letter or a digit to the last Latin letter
 //! or digit before the next right-to-left letter is isolated (as if between U+2066 and
@@ -27,9 +28,8 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
-const c = @import("gui_c");
 const font = @import("font.zig");
-const fontfind = @import("fontfind.zig");
+const backend = @import("text_backend.zig");
 const log = std.log.scoped(.font);
 
 /// Fonts one engine may hold: the primary, the named fallbacks, and those found for single
@@ -66,119 +66,12 @@ const named_fallbacks = switch (builtin.os.tag) {
     },
 };
 
-// ---- HarfBuzz and FriBidi, loaded at run time ----
-
-const HbFont = opaque {};
-const HbBuffer = opaque {};
-/// hb_glyph_info_t and hb_glyph_position_t (hb-buffer.h).
-const HbGlyphInfo = extern struct { codepoint: u32, mask: u32, cluster: u32, var1: u32, var2: u32 };
-const HbGlyphPosition = extern struct { x_advance: i32, y_advance: i32, x_offset: i32, y_offset: i32, v: u32 };
-const hb_direction_ltr: c_uint = 4;
-const hb_direction_rtl: c_uint = 5;
-
-/// The functions used, looked up by their field names.
-const HarfBuzz = struct {
-    hb_ft_font_create_referenced: *const fn (c.FT_Face) callconv(.c) ?*HbFont,
-    hb_ft_font_set_load_flags: *const fn (*HbFont, c_int) callconv(.c) void,
-    hb_font_destroy: *const fn (*HbFont) callconv(.c) void,
-    hb_buffer_create: *const fn () callconv(.c) ?*HbBuffer,
-    hb_buffer_allocation_successful: *const fn (*HbBuffer) callconv(.c) c_int,
-    hb_buffer_destroy: *const fn (*HbBuffer) callconv(.c) void,
-    hb_buffer_clear_contents: *const fn (*HbBuffer) callconv(.c) void,
-    hb_buffer_add_codepoints: *const fn (*HbBuffer, [*]const u32, c_int, c_uint, c_int) callconv(.c) void,
-    hb_buffer_set_direction: *const fn (*HbBuffer, c_uint) callconv(.c) void,
-    hb_buffer_guess_segment_properties: *const fn (*HbBuffer) callconv(.c) void,
-    hb_shape: *const fn (*HbFont, *HbBuffer, ?*const anyopaque, c_uint) callconv(.c) void,
-    hb_buffer_get_glyph_infos: *const fn (*HbBuffer, *c_uint) callconv(.c) ?[*]HbGlyphInfo,
-    hb_buffer_get_glyph_positions: *const fn (*HbBuffer, *c_uint) callconv(.c) ?[*]HbGlyphPosition,
-};
-
-/// FriBidiCharType values (fribidi-bidi-types.h: the masks combined as there).
-const bidi = struct {
-    const L: u32 = 0x110;
-    const R: u32 = 0x111;
-    const AL: u32 = 0x113;
-    const EN: u32 = 0x220;
-    const ES: u32 = 0x10420;
-    const ET: u32 = 0x20420;
-    const NSM: u32 = 0x80020;
-    const BS: u32 = 0x202840;
-    /// FRIBIDI_PAR_ON: the direction from the first strong character.
-    const par_on: u32 = 0x40;
-    /// FRIBIDI_PAR_LTR and FRIBIDI_PAR_RTL (the types of L and R).
-    const par_ltr: u32 = L;
-    const par_rtl: u32 = R;
-};
-
-const FriBidi = struct {
-    fribidi_get_bidi_types: *const fn ([*]const u32, c_int, [*]u32) callconv(.c) void,
-    fribidi_get_bracket_types: *const fn ([*]const u32, c_int, [*]const u32, [*]u32) callconv(.c) void,
-    fribidi_get_par_embedding_levels_ex: *const fn ([*]const u32, [*]const u32, c_int, *u32, [*]i8) callconv(.c) i8,
-    fribidi_reorder_line: *const fn (u32, [*]const u32, c_int, c_int, u32, [*]i8, ?[*]u32, ?[*]c_int) callconv(.c) i8,
-};
-
-pub const Libs = struct { hb: HarfBuzz, fb: FriBidi };
-
-/// The file names HarfBuzz and FriBidi are opened by on this system, tried in order (the
-/// first that opens is used). A system with no names here draws that text unshaped.
-const harfbuzz_names: []const [:0]const u8 = switch (builtin.os.tag) {
-    .linux => &.{"libharfbuzz.so.0"},
-    // Homebrew's (Apple silicon: /opt/homebrew), then by name (found on dyld's paths).
-    .macos => &.{ "/opt/homebrew/lib/libharfbuzz.0.dylib", "libharfbuzz.0.dylib" },
-    else => &.{},
-};
-const fribidi_names: []const [:0]const u8 = switch (builtin.os.tag) {
-    .linux => &.{"libfribidi.so.0"},
-    .macos => &.{ "/opt/homebrew/lib/libfribidi.0.dylib", "libfribidi.0.dylib" },
-    else => &.{},
-};
-
-/// 0: not tried, 1: loading, 2: loaded, 3: missing.
-var libs_state: std.atomic.Value(u8) = .init(0);
-var libs_value: Libs = undefined;
-
-/// HarfBuzz and FriBidi, loaded the first time this is called (from any thread); null if
-/// either library or one of its functions is missing (logged once).
-pub fn libs() ?*const Libs {
-    while (true) switch (libs_state.load(.acquire)) {
-        2 => return &libs_value,
-        3 => return null,
-        1 => std.atomic.spinLoopHint(),
-        else => if (libs_state.cmpxchgStrong(0, 1, .acquire, .monotonic) == null) {
-            const ok = load(HarfBuzz, harfbuzz_names, &libs_value.hb) and load(FriBidi, fribidi_names, &libs_value.fb);
-            libs_state.store(if (ok) 2 else 3, .release);
-        },
-    };
-}
-
-/// Opens the first of `names` that opens (kept open for good) and looks up every function
-/// of `T` in it.
-fn load(comptime T: type, comptime names: []const [:0]const u8, out: *T) bool {
-    const hint = "Persian and other right-to-left or joined scripts are drawn unshaped, left to right (install harfbuzz and fribidi)";
-    inline for (names) |name| {
-        if (std.DynLib.open(name)) |opened| {
-            var lib = opened;
-            const info = @typeInfo(T).@"struct";
-            inline for (info.field_names, info.field_types) |field, FieldType| {
-                @field(out, field) = lib.lookup(FieldType, field) orelse {
-                    log.warn(name ++ " has no " ++ field ++ ": " ++ hint, .{});
-                    lib.close();
-                    return false;
-                };
-            }
-            return true;
-        } else |_| {}
-    }
-    log.warn("cannot load " ++ comptime orList(names) ++ ": " ++ hint, .{});
-    return false;
-}
-
-/// "a", "a or b", ...: the names of a list, for a message.
-fn orList(comptime names: []const [:0]const u8) []const u8 {
-    var s: []const u8 = "";
-    for (names, 0..) |name, k| s = s ++ (if (k > 0) " or " else "") ++ name;
-    return s;
-}
+/// Bidi and shaping as the backend does them: null if this system cannot (the libraries
+/// are missing; logged once). The first call may load them.
+pub const Libs = backend.Shaping;
+pub const libs = backend.shaping;
+/// The bidi classes and paragraph directions the rules here look at.
+const bidi = backend.bidi;
 
 /// True for a code point that has to be shaped: right-to-left and joined scripts, the
 /// Indic and South-East Asian ones, combining marks, joiners and bidi controls.
@@ -223,7 +116,7 @@ fn isNeutral(cp: u32) bool {
 // ---- The engine ----
 
 /// A glyph placed in a laid-out string: `x` pixels right of the string's origin (the pen
-/// plus HarfBuzz's offset), `y` pixels above its baseline.
+/// plus the shaper's offset), `y` pixels above its baseline.
 pub const Placed = struct {
     g: font.Glyph,
     x: i32,
@@ -240,18 +133,16 @@ pub const Shaped = struct {
 };
 
 const Face = struct {
-    ft: c.FT_Face,
-    /// Made the first time this font shapes something.
-    hb: ?*HbFont = null,
+    face: backend.Face,
     /// Pixels from the top of one line to the next, at the size it is set to.
     line_height: f32,
 };
 
 pub const Engine = struct {
     gpa: std.mem.Allocator,
-    lib: c.FT_Library,
+    lib: backend.Library,
     /// The font lookup the fallbacks are found with, kept for the engine's life.
-    matcher: fontfind.Matcher,
+    matcher: backend.Matcher,
     faces: [max_faces]Face = undefined,
     nfaces: u8 = 0,
     /// `faces[0..named]`: the primary and the named fallbacks; later ones were found for a
@@ -265,7 +156,7 @@ pub const Engine = struct {
     cap_px: ?f32 = null,
     /// Rasterised glyphs by (font, glyph index).
     glyphs: std.AutoHashMapUnmanaged(u64, font.Glyph) = .empty,
-    /// Characters none of the named fonts has: the font fontconfig found for each
+    /// Characters none of the named fonts has: the font the lookup found for each
     /// (`no_face`: none).
     best: std.AutoHashMapUnmanaged(u21, u8) = .empty,
     /// Where the next glyph goes in the atlas.
@@ -280,23 +171,21 @@ pub const Engine = struct {
     /// Strings laid out (cache misses), and of them shaped: for tests and the benchmark.
     shape_calls: usize = 0,
     shaped_calls: usize = 0,
-    /// False: never shape (tests of the path taken without HarfBuzz and FriBidi).
+    /// False: never shape (tests of the path taken without shaping).
     allow_shaping: bool = true,
     /// A string with a right-to-left letter is laid out with a right-to-left paragraph
     /// direction (the language is read right to left); false: the direction of its first
     /// strong letter. Fixed when the engine is made (`start_rtl`), as the cache holds
     /// strings laid out with it.
     rtl: bool,
-    /// HarfBuzz's buffer, made the first time something is shaped.
-    buf: ?*HbBuffer = null,
+    /// The backend's state for bidi and shaping.
+    shaper: backend.Shaper = .{},
     cache: Cache = .{},
     // Scratch, reused from string to string.
     raw: std.ArrayList(u32) = .empty,
     raw_types: std.ArrayList(u32) = .empty,
     text: std.ArrayList(u32) = .empty,
     marks: std.ArrayList(bool) = .empty,
-    types: std.ArrayList(u32) = .empty,
-    brackets: std.ArrayList(u32) = .empty,
     levels: std.ArrayList(i8) = .empty,
     runs: std.ArrayList(Run) = .empty,
     order: std.ArrayList(u32) = .empty,
@@ -308,7 +197,7 @@ pub const Engine = struct {
 
     /// Takes `lib` and `primary` (set to the font's size) on success; on failure the caller
     /// still owns them. `f`: the font whose atlas and fixed glyphs this engine extends.
-    pub fn create(gpa: std.mem.Allocator, lib: c.FT_Library, primary: c.FT_Face, f: *const font.Font) !*Engine {
+    pub fn create(gpa: std.mem.Allocator, lib: backend.Library, primary: backend.Face, f: *const font.Font) !*Engine {
         const self = try gpa.create(Engine);
         self.* = .{
             .gpa = gpa,
@@ -318,13 +207,13 @@ pub const Engine = struct {
             .pen = f.pen,
             .rtl = start_rtl,
         };
-        self.faces[0] = .{ .ft = primary, .line_height = f.line_height };
+        self.faces[0] = .{ .face = primary, .line_height = f.line_height };
         self.nfaces = 1;
-        if (capRatio(primary)) |r| self.cap_px = r * @as(f32, @floatFromInt(f.px));
+        if (capRatio(&primary)) |r| self.cap_px = r * @as(f32, @floatFromInt(f.px));
         // The fixed glyphs the primary font drew are the same glyphs by index.
         for (f.glyphs, 0..) |g, k| {
             if (g.advance <= 0) continue;
-            const gid = c.FT_Get_Char_Index(primary, font.Font.codepointAt(k));
+            const gid = primary.glyphIndex(font.Font.codepointAt(k));
             if (gid == 0) continue;
             self.glyphs.put(gpa, key(0, gid), g) catch {};
         }
@@ -346,18 +235,13 @@ pub const Engine = struct {
     pub fn destroy(self: *Engine) void {
         const gpa = self.gpa;
         self.cache.deinit(gpa);
-        // hb objects exist only if the libraries were loaded.
-        const l: ?*const Libs = if (libs_state.load(.acquire) == 2) &libs_value else null;
-        for (self.faces[0..self.nfaces]) |face| {
-            if (face.hb) |hb| l.?.hb.hb_font_destroy(hb);
-            _ = c.FT_Done_Face(face.ft);
-        }
-        if (self.buf) |buf| l.?.hb.hb_buffer_destroy(buf);
-        _ = c.FT_Done_FreeType(self.lib);
+        for (self.faces[0..self.nfaces]) |face| face.face.deinit();
+        self.shaper.deinit(gpa);
+        self.lib.deinit();
         self.matcher.deinit();
         self.glyphs.deinit(gpa);
         self.best.deinit(gpa);
-        inline for (.{ "raw", "raw_types", "text", "marks", "types", "brackets", "levels", "runs", "order", "items", "out" }) |name| {
+        inline for (.{ "raw", "raw_types", "text", "marks", "levels", "runs", "order", "items", "out" }) |name| {
             @field(self, name).deinit(gpa);
         }
         gpa.destroy(self);
@@ -410,19 +294,16 @@ pub const Engine = struct {
     /// Rasterises a glyph into the atlas. One that does not fit is the missing glyph with
     /// its own advance (the first such is logged).
     fn render(self: *Engine, atlas: []u8, face_i: u8, gid: u32) error{NoGlyph}!font.Glyph {
-        const face = self.faces[face_i].ft;
-        if (c.FT_Load_Glyph(face, gid, c.FT_LOAD_RENDER) != 0) return error.NoGlyph;
-        const slot = face.*.glyph;
-        const bm = slot.*.bitmap;
+        const bm = self.faces[face_i].face.render(gid) orelse return error.NoGlyph;
         var g: font.Glyph = .{
-            .left = @intCast(slot.*.bitmap_left),
-            .top = @intCast(slot.*.bitmap_top),
-            .advance = @as(f32, @floatFromInt(slot.*.advance.x)) / 64.0,
+            .left = @intCast(bm.left),
+            .top = @intCast(bm.top),
+            .advance = bm.advance,
         };
         const w: usize = bm.width;
         const h: usize = bm.rows;
         // Nothing to draw (a space), or not coverage (a colour bitmap): no room taken.
-        if (w == 0 or h == 0 or bm.pixel_mode != c.FT_PIXEL_MODE_GRAY) return g;
+        if (w == 0 or h == 0 or !bm.gray) return g;
         const at = (if (self.full) null else self.pen.fit(w, h)) orelse {
             if (!self.full) {
                 self.full_warnings += 1;
@@ -434,7 +315,7 @@ pub const Engine = struct {
             return missing;
         };
         for (0..h) |row| {
-            const src: [*]const u8 = bm.buffer + row * @as(usize, @intCast(bm.pitch));
+            const src: [*]const u8 = bm.pixels.? + row * @as(usize, @intCast(bm.pitch));
             @memcpy(atlas[(at[1] + row) * font.atlas_size + at[0] ..][0..w], src[0..w]);
         }
         g.x = @intCast(at[0]);
@@ -450,20 +331,19 @@ pub const Engine = struct {
     /// Its index in `faces`, or null (no room, cannot load, not scalable).
     fn addFace(self: *Engine, path: [:0]const u8, index: c_int) ?u8 {
         if (self.nfaces >= max_faces) return null;
-        var ft: c.FT_Face = null;
-        if (c.FT_New_Face(self.lib, path.ptr, index, &ft) != 0) return null;
-        const lh = (if (self.cap_px) |cap| scaleToCapHeight(ft, cap) else null) orelse scaleToLineHeight(ft, self.line_height) orelse {
-            _ = c.FT_Done_Face(ft);
+        const face = backend.Face.open(self.lib, path, index) catch return null;
+        const lh = (if (self.cap_px) |cap| scaleToCapHeight(&face, cap) else null) orelse face.sizeToLineHeight(self.line_height) orelse {
+            face.deinit();
             return null;
         };
         const at = self.nfaces;
-        self.faces[at] = .{ .ft = ft, .line_height = lh };
+        self.faces[at] = .{ .face = face, .line_height = lh };
         self.nfaces += 1;
         return at;
     }
 
     fn covers(self: *const Engine, face: u8, cp: u32) bool {
-        return c.FT_Get_Char_Index(self.faces[face].ft, cp) != 0;
+        return self.faces[face].face.glyphIndex(cp) != 0;
     }
 
     /// Which font draws `cp`, after a character drawn with `current`.
@@ -482,7 +362,7 @@ pub const Engine = struct {
         return if (found == no_face) 0 else found;
     }
 
-    /// fontconfig's best match for `cp`, loaded if it is not yet; `no_face` if there is
+    /// The lookup's best match for `cp`, loaded if it is not yet; `no_face` if there is
     /// none that has it.
     fn findFor(self: *Engine, cp: u32) u8 {
         // Already loaded (a font found for another character)?
@@ -508,7 +388,7 @@ pub const Engine = struct {
         for (self.raw.items) |cp| {
             const f = self.faceFor(cp, current);
             current = f;
-            const gid = c.FT_Get_Char_Index(self.faces[f].ft, cp);
+            const gid = self.faces[f].face.glyphIndex(cp);
             const g = self.glyph(atlas, f, gid);
             try self.out.append(self.gpa, .{ .g = g, .x = pen, .y = 0, .face = f, .gid = gid });
             pen += @intFromFloat(@round(g.advance));
@@ -516,27 +396,22 @@ pub const Engine = struct {
         return @floatFromInt(pen);
     }
 
-    /// Shapes `self.raw` into `self.out` with FriBidi and HarfBuzz; returns the width.
+    /// Shapes `self.raw` into `self.out` with the backend's bidi and shaping; returns the width.
     fn shape(self: *Engine, l: *const Libs, atlas: []u8) !f32 {
         const gpa = self.gpa;
         self.shaped_calls += 1;
         const raw = self.raw.items;
         if (raw.len == 0) return 0;
         try self.raw_types.resize(gpa, raw.len);
-        l.fb.fribidi_get_bidi_types(raw.ptr, @intCast(raw.len), self.raw_types.items.ptr);
-        var base = paragraphDirection(self.raw_types.items, self.rtl);
+        backend.bidiTypes(l, raw, self.raw_types.items);
+        const base = paragraphDirection(self.raw_types.items, self.rtl);
         try isolateLtr(gpa, raw, self.raw_types.items, &self.text, &self.marks);
 
         const text = self.text.items;
-        const n: c_int = @intCast(text.len);
-        try self.types.resize(gpa, text.len);
-        try self.brackets.resize(gpa, text.len);
         try self.levels.resize(gpa, text.len);
-        l.fb.fribidi_get_bidi_types(text.ptr, n, self.types.items.ptr);
-        l.fb.fribidi_get_bracket_types(text.ptr, n, self.types.items.ptr, self.brackets.items.ptr);
-        if (l.fb.fribidi_get_par_embedding_levels_ex(self.types.items.ptr, self.brackets.items.ptr, n, &base, self.levels.items.ptr) == 0) return error.Bidi;
-        // Rule L1 (trailing white space to the paragraph's level); the order is done below.
-        if (l.fb.fribidi_reorder_line(0, self.types.items.ptr, n, 0, base, self.levels.items.ptr, null, null) == 0) return error.Bidi;
+        // Rule L1 applied (trailing white space to the paragraph's level); the order is done
+        // below.
+        try self.shaper.embeddingLevels(gpa, l, text, base, self.levels.items);
 
         try runsOf(gpa, self.levels.items, self.marks.items, &self.runs);
         try visualOrder(gpa, self.runs.items, &self.order);
@@ -570,109 +445,48 @@ pub const Engine = struct {
     /// Shapes one piece of one run with its font, appends its glyphs at `pen`; returns the
     /// pen after it.
     fn shapeItem(self: *Engine, l: *const Libs, atlas: []u8, item: Item, rtl: bool, pen_in: i32) !i32 {
-        const hb = &l.hb;
-        const buf = self.buf orelse blk: {
-            const b = hb.hb_buffer_create() orelse return error.HarfBuzz;
-            if (hb.hb_buffer_allocation_successful(b) == 0) {
-                hb.hb_buffer_destroy(b);
-                return error.HarfBuzz;
-            }
-            self.buf = b;
-            break :blk b;
-        };
-        const face = &self.faces[item.face];
-        const hb_font = face.hb orelse blk: {
-            const f = hb.hb_ft_font_create_referenced(face.ft) orelse return error.HarfBuzz;
-            // Hinted advances, as FreeType gives the fixed glyphs.
-            hb.hb_ft_font_set_load_flags(f, c.FT_LOAD_DEFAULT);
-            face.hb = f;
-            break :blk f;
-        };
-        const text = self.text.items;
-        hb.hb_buffer_clear_contents(buf);
-        hb.hb_buffer_add_codepoints(buf, text.ptr, @intCast(text.len), item.start, @intCast(item.end - item.start));
-        hb.hb_buffer_set_direction(buf, if (rtl) hb_direction_rtl else hb_direction_ltr);
-        hb.hb_buffer_guess_segment_properties(buf);
-        hb.hb_shape(hb_font, buf, null, 0);
-        var count: c_uint = 0;
-        const infos = hb.hb_buffer_get_glyph_infos(buf, &count) orelse return pen_in;
-        const positions = hb.hb_buffer_get_glyph_positions(buf, &count) orelse return pen_in;
+        var run = try self.shaper.shape(l, &self.faces[item.face].face, self.text.items, item.start, item.end, rtl);
         var pen = pen_in;
-        for (infos[0..count], positions[0..count]) |info, pos| {
-            const g = self.glyph(atlas, item.face, info.codepoint);
+        while (run.next()) |r| {
+            const g = self.glyph(atlas, item.face, r.gid);
             try self.out.append(self.gpa, .{
                 .g = g,
-                .x = pen + round26(pos.x_offset),
-                .y = round26(pos.y_offset),
+                .x = pen + whole(r.x_offset),
+                .y = whole(r.y_offset),
                 .face = item.face,
-                .gid = info.codepoint,
+                .gid = r.gid,
             });
-            pen += round26(pos.x_advance);
+            pen += whole(r.x_advance);
         }
         return pen;
     }
 };
 
-/// 26.6 fixed point to whole pixels, as the fixed glyphs' advances are rounded.
-fn round26(v: i32) i32 {
-    return @intFromFloat(@round(@as(f32, @floatFromInt(v)) / 64.0));
+/// Pixels to whole pixels, as the fixed glyphs' advances are rounded.
+fn whole(v: f32) i32 {
+    return @intFromFloat(@round(v));
 }
 
-/// Sets `ft` to the size at which its line height is nearest `target` pixels (within a
-/// pixel where FreeType's rounding allows). The line height it got; null if the font cannot
-/// be scaled.
-/// The height of `ft`'s capital H, or of its alef where it has no Latin (an Arabic-script
+/// The height of `face`'s capital H, or of its alef where it has no Latin (an Arabic-script
 /// font: alef stands as tall as a capital), as a fraction of its em; null if it has
 /// neither or is not scalable.
-fn capRatio(ft: c.FT_Face) ?f32 {
-    if (ft.*.face_flags & c.FT_FACE_FLAG_SCALABLE == 0 or ft.*.units_per_EM == 0) return null;
+fn capRatio(face: *const backend.Face) ?f32 {
     for ([_]u32{ 'H', 0x0627 }) |cp| {
-        if (c.FT_Get_Char_Index(ft, cp) == 0) continue;
-        if (c.FT_Load_Char(ft, cp, c.FT_LOAD_NO_SCALE) != 0) continue;
-        const h: f32 = @floatFromInt(ft.*.glyph.*.metrics.height);
-        if (h <= 0) continue;
-        return h / @as(f32, @floatFromInt(ft.*.units_per_EM));
+        if (face.heightRatio(cp)) |r| return r;
     }
     return null;
 }
 
-/// Sets `ft`'s size so that its capitals (`capRatio`) are `cap_px` pixels tall; its line
+/// Sets `face`'s size so that its capitals (`capRatio`) are `cap_px` pixels tall; its line
 /// height at that size, or null (no capital to measure: the caller matches line heights).
 /// A font whose line is taller than the primary's for its letters (Arabic-script fonts
 /// leave room for vowel marks) is then not shrunk to fit the primary's line.
-fn scaleToCapHeight(ft: c.FT_Face, cap_px: f32) ?f32 {
-    const r = capRatio(ft) orelse return null;
-    const size: c.FT_F26Dot6 = @intFromFloat(@round(cap_px / r * 64.0));
-    if (size <= 0 or c.FT_Set_Char_Size(ft, 0, size, 72, 72) != 0) return null;
-    return @as(f32, @floatFromInt(ft.*.size.*.metrics.height)) / 64.0;
+fn scaleToCapHeight(face: *const backend.Face, cap_px: f32) ?f32 {
+    const r = capRatio(face) orelse return null;
+    return face.setEmSize(cap_px / r);
 }
 
-fn scaleToLineHeight(ft: c.FT_Face, target: f32) ?f32 {
-    if (ft.*.face_flags & c.FT_FACE_FLAG_SCALABLE == 0) return null;
-    const upem: f32 = @floatFromInt(ft.*.units_per_EM);
-    var units: f32 = @floatFromInt(ft.*.height);
-    if (units <= 0) units = @floatFromInt(@as(i32, ft.*.ascender) - ft.*.descender);
-    if (units <= 0 or upem <= 0) return null;
-    // Size in 26.6 points at 72 dpi = pixels per em in 26.6.
-    var size: c.FT_F26Dot6 = @intFromFloat(@round(target * 64.0 * upem / units));
-    var best_size = size;
-    var best_err: f32 = std.math.inf(f32);
-    for (0..12) |_| {
-        if (size <= 0 or c.FT_Set_Char_Size(ft, 0, size, 72, 72) != 0) break;
-        const lh = @as(f32, @floatFromInt(ft.*.size.*.metrics.height)) / 64.0;
-        const err = lh - target;
-        if (@abs(err) < @abs(best_err)) {
-            best_err = err;
-            best_size = size;
-        }
-        if (@abs(err) <= 0.5) break;
-        size += if (err > 0) -16 else 16;
-    }
-    if (c.FT_Set_Char_Size(ft, 0, best_size, 72, 72) != 0) return null;
-    return @as(f32, @floatFromInt(ft.*.size.*.metrics.height)) / 64.0;
-}
-
-/// FriBidi's paragraph direction for a string of bidi types `types`: right to left if `rtl`
+/// The paragraph direction (`bidi.par_*`) for a string of bidi types `types`: right to left if `rtl`
 /// and it has a right-to-left letter; else that of its first strong letter (rule P2, but on
 /// the string as given: explicit isolates in it are not skipped); FRIBIDI_PAR_ON if it has
 /// none.
@@ -853,8 +667,8 @@ pub const Cache = struct {
 
 // ---- Tests ----
 //
-// These load real fonts through fontconfig, and HarfBuzz and FriBidi where a test needs
-// them (no window, no GPU). A test whose font or library is not installed is skipped, and
+// These load real fonts through the font lookup, and shaping where a test needs
+// it (no window, no GPU). A test whose font or library is not installed is skipped, and
 // says so.
 
 const testing = std.testing;
@@ -897,28 +711,6 @@ fn inked(atlas: []const u8, g: font.Glyph) bool {
     return false;
 }
 
-test "the bidi types declared here are FriBidi's" {
-    const l = try needLibs();
-    const cps = [_]u32{ 'a', 0x5d0, 0x641, '3', '-', '%', 0x64b, '\n' };
-    const want = [_]u32{ bidi.L, bidi.R, bidi.AL, bidi.EN, bidi.ES, bidi.ET, bidi.NSM, bidi.BS };
-    var got: [cps.len]u32 = undefined;
-    l.fb.fribidi_get_bidi_types(&cps, cps.len, &got);
-    try testing.expectEqualSlices(u32, &want, &got);
-}
-
-test "a missing library, or a missing function in one, is reported as missing" {
-    const One = struct { hb_buffer_create: *const fn () callconv(.c) ?*HbBuffer };
-    const Missing = struct { hb_no_such_function: *const fn () callconv(.c) void };
-    var one: One = undefined;
-    var missing: Missing = undefined;
-    try testing.expect(!load(One, &.{"libdimna-no-such-library.so.0"}, &one));
-    try testing.expect(!load(Missing, harfbuzz_names, &missing));
-    _ = try needLibs();
-    try testing.expect(load(One, harfbuzz_names, &one));
-    // The names are tried in order: one that does not open is passed over.
-    try testing.expect(load(One, &[_][:0]const u8{"libdimna-no-such-library.so.0"} ++ harfbuzz_names, &one));
-}
-
 test "Latin and digits inside right-to-left text are isolated as one block; nothing else is" {
     const l = try needLibs();
     const gpa = testing.allocator;
@@ -943,7 +735,7 @@ test "Latin and digits inside right-to-left text are isolated as one block; noth
         while (it.next()) |cp| try raw.append(gpa, cp);
         const types = try gpa.alloc(u32, raw.items.len);
         defer gpa.free(types);
-        l.fb.fribidi_get_bidi_types(raw.items.ptr, @intCast(raw.items.len), types.ptr);
+        backend.bidiTypes(l, raw.items, types);
         try isolateLtr(gpa, raw.items, types, &text, &marks);
         var got: std.ArrayList(u8) = .empty;
         defer got.deinit(gpa);
@@ -1015,8 +807,8 @@ test "Persian: lam-alef is one glyph in a font that has the ligature" {
     try testing.expectEqual(1, la.len);
     try testing.expectEqual(0, la[0].face);
     try testing.expect(la[0].gid != 0);
-    try testing.expect(la[0].gid != c.FT_Get_Char_Index(e.faces[0].ft, 0x644));
-    try testing.expect(la[0].gid != c.FT_Get_Char_Index(e.faces[0].ft, 0x627));
+    try testing.expect(la[0].gid != e.faces[0].face.glyphIndex(0x644));
+    try testing.expect(la[0].gid != e.faces[0].face.glyphIndex(0x627));
 }
 
 test "Persian: lam-alef takes its own forms in a font that draws it as two glyphs" {
@@ -1034,7 +826,7 @@ test "Persian: lam-alef takes its own forms in a font that draws it as two glyph
     try testing.expect(la.len == 1 or la.len == 2);
     for (la) |p| {
         try testing.expectEqual(ar, p.face);
-        for ([_]u32{ 0x644, 0x627 }) |cp| try testing.expect(p.gid != c.FT_Get_Char_Index(f.engine.?.faces[ar].ft, cp));
+        for ([_]u32{ 0x644, 0x627 }) |cp| try testing.expect(p.gid != f.engine.?.faces[ar].face.glyphIndex(cp));
         for (lm) |q| try testing.expect(p.gid != q.gid);
         for (ba) |q| try testing.expect(p.gid != q.gid);
     }
@@ -1087,7 +879,7 @@ test "without shaping, Persian is drawn letter by letter, left to right, from it
     try testing.expectEqual(4, word.len);
     for (word, [_]u32{ 0x633, 0x644, 0x627, 0x645 }, 0..) |p, cp, k| {
         try testing.expectEqual(ar, p.face);
-        try testing.expectEqual(c.FT_Get_Char_Index(e.faces[ar].ft, cp), p.gid);
+        try testing.expectEqual(e.faces[ar].face.glyphIndex(cp), p.gid);
         if (k > 0) try testing.expect(p.x > word[k - 1].x);
     }
     try testing.expectEqual(0, e.shaped_calls);
@@ -1109,7 +901,7 @@ test "Chinese: 阈值 is two glyphs from the CJK font, drawn, its capitals as ta
     try testing.expect(glyphs[1].x > glyphs[0].x);
     // Its capitals as tall as the primary's (to a pixel), not its line as high.
     if (e.cap_px) |cap| {
-        try testing.expect(@abs(capRatio(e.faces[cjk].ft).? * @as(f32, @floatFromInt(e.faces[cjk].ft.*.size.*.metrics.y_ppem)) - cap) <= 1);
+        try testing.expect(@abs(capRatio(&e.faces[cjk].face).? * @as(f32, @floatFromInt(e.faces[cjk].face.ppem())) - cap) <= 1);
     }
     // Chinese needs no shaping (nor HarfBuzz or FriBidi).
     try testing.expectEqual(0, e.shaped_calls);
@@ -1124,7 +916,7 @@ test "Chinese: 阈值 is two glyphs from the CJK font, drawn, its capitals as ta
 test "Polish: ł is drawn from the primary font" {
     var f = try testFont();
     defer f.deinit(testing.allocator);
-    const gid = c.FT_Get_Char_Index(f.engine.?.faces[0].ft, 0x142);
+    const gid = f.engine.?.faces[0].face.glyphIndex(0x142);
     if (gid == 0) return skipBecause("the primary font has no ł");
     const glyphs = try shapedCopy(&f, "ł");
     defer testing.allocator.free(glyphs);
@@ -1294,7 +1086,7 @@ test "Persian read right to left: a Latin name first is on the right, a Persian 
     // The name itself left to right, its letters in order: as laid out alone.
     const name = try shapedCopy(&f, "Simulator");
     defer testing.allocator.free(name);
-    const space = c.FT_Get_Char_Index(e.faces[0].ft, ' ');
+    const space = e.faces[0].face.glyphIndex(' ');
     var k: usize = 0;
     var last_x: i32 = std.math.minInt(i32);
     for (got) |p| {
@@ -1462,8 +1254,8 @@ test "Persian: alef stands as tall as the primary's capitals, not shrunk to its 
     const e = f.engine.?;
     const ar = fallbackFor(e, 0x0627) orelse return skipBecause("no Persian/Arabic font installed");
     const cap = e.cap_px orelse return skipBecause("the primary font has no capital H");
-    const face = e.faces[ar].ft;
-    const alef_px = capRatio(face).? * @as(f32, @floatFromInt(face.*.size.*.metrics.x_ppem));
+    const face = &e.faces[ar].face;
+    const alef_px = capRatio(face).? * @as(f32, @floatFromInt(face.ppem()));
     try testing.expect(@abs(alef_px - cap) <= 1);
     // Noto Sans Arabic's line is far taller than the primary's for the same letters, so
     // matching lines would have drawn alef at little more than half the height.
@@ -1523,7 +1315,7 @@ test "dump: the vertices and atlas of strings in every language, for comparing b
                 defer f.deinit(gpa);
                 const mono: []const u8 = if (f.addMono("monospace")) "mono" else |e| @errorName(e);
                 var path_buf: [std.fs.max_path_bytes:0]u8 = undefined;
-                const found = fontfind.findFont(family, &path_buf) catch "?";
+                const found = backend.findFont(family, &path_buf) catch "?";
                 try out.appendSlice(gpa, try std.fmt.bufPrint(&line, "file {s}; shaping libraries loaded: {}\n", .{ found, libs() != null }));
                 try out.appendSlice(gpa, try std.fmt.bufPrint(&line, "font {s} {d} px rtl {}: ascent {d} line {d} engine {} {s}\n", .{ family, px, rtl, f.ascent, f.line_height, f.engine != null, mono }));
                 var batch: font.Batch = .{ .font = &f, .vertices = vertices };
