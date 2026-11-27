@@ -308,6 +308,40 @@ Steps 1 and 2 are a few days of agent work and risk nothing. With the Windows ma
 available for one day only, the backends of steps 4 and 5 are also written and compiled
 before that day ("The day on Windows"), and steps 2 to 5 are tried on it together.
 
+## Step 1, as done (2026-11-27, branch `windows-port`)
+
+`zig build -Dgui=false -Dtarget=x86_64-windows` on the rig makes `dimna-headless.exe`, and
+the core's tests compile for Windows. **Nothing of it has run**: there is no Windows here
+(and no wine), so every Windows call below is as its documentation reads. On Linux the
+tests are as before (314 of 319 pass, 5 skipped, debug and `--release=safe`).
+
+- `src/os_windows.zig`: the system calls, through kernel32. Three of them do less than
+  Linux's and say so: `lockMemory` is always false; `unmap` of part of a mapping gives the
+  memory back but keeps the addresses; `swapLink` is always false (question 4 below), so
+  a recording logs that the `current` link could not be made.
+- `src/usb_windows.zig`: no USB backend, in the contract's shape: nothing is found and
+  every call fails. `board.Driver.default` is `d3xx` on Windows.
+- `os.zig` gained `DirHandle`, `onInterrupt` (Windows: Ctrl-C, the console closed, a
+  logoff, a shutdown; `dimna-headless` uses it where it used SIGINT) and `tempDir` (the
+  tests' folders, `/tmp` elsewhere). `keepAwake` is now also Windows's.
+- The driver search looks for `libonidriver_ft600.dll` in `%ONI_DRIVER_PATH%` (semicolons)
+  and beside the program.
+- Local time: Windows' `struct tm` has no UTC offset; `c.h` works it out.
+- liboni is unchanged. The build gives it a `Windows.h` that includes `windows.h` (file
+  names differ by case on Linux) and lets clang pass an `int *` where Windows wants a
+  `long *`, which MSVC only warns of.
+- The two tests that `fork` are skipped on Windows.
+
+Not done, and the first things to look at on Windows:
+
+- whether it starts at all, and `--sim --record` verifies;
+- paths: the recorder joins folders with `/`, which Windows' own calls accept and `std.Io`
+  is assumed to;
+- test buffers sized for `/tmp` paths: the ones holding the folder itself were enlarged,
+  ones built from them may still be short for a long `%TEMP%`;
+- `libonidriver_ft600.dll` itself: liboni's FT600 driver built for Windows against FTDI's
+  library. Not attempted; FTDI's files are not in this repository.
+
 ## The day on Windows
 
 The Windows machine is the rig, booted the other way. That shapes the work:

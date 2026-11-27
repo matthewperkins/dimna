@@ -108,8 +108,9 @@ fn dimnaRead(dir: []const u8) !?bool {
 
 test "a read error: the recording is closed with the reason, the source opened again, and every sample is in one of two folders" {
     const io = testing.io;
-    var root_buf: [96]u8 = undefined;
-    const root = try std.fmt.bufPrint(&root_buf, "/tmp/dimna-reopen-test-{d}", .{os.getpid()});
+    var root_buf: [300]u8 = undefined;
+    var tmp_buf: [200]u8 = undefined;
+    const root = try std.fmt.bufPrint(&root_buf, "{s}/dimna-reopen-test-{d}", .{ os.tempDir(&tmp_buf), os.getpid() });
     Io.Dir.cwd().deleteTree(io, root) catch {};
     defer Io.Dir.cwd().deleteTree(io, root) catch {};
     try Io.Dir.cwd().createDirPath(io, root);
@@ -145,6 +146,8 @@ test "a read error: the recording is closed with the reason, the source opened a
 /// Runs `scenario(root)` in a child process with its stderr in `err_path`; fails if it does
 /// (and shows that stderr).
 fn runInChild(root: []const u8, err_path: [:0]const u8) !void {
+    // Windows has no fork; the test is skipped there until it starts a second process.
+    if (comptime @import("builtin").os.tag == .windows) return error.SkipZigTest;
     const c = std.c;
     const pid = c.fork();
     if (pid < 0) return error.ForkFailed;

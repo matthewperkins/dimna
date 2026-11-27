@@ -43,9 +43,9 @@ pub const Review = struct {
     hi: i64 = 0,
     /// The sample the feed's filters are ready to continue at, if any.
     feed_at: ?i64 = null,
-    samples_fd: i32 = -1,
-    ttl_sample_fd: i32 = -1,
-    ttl_word_fd: i32 = -1,
+    samples_fd: os.Fd = -1,
+    ttl_sample_fd: os.Fd = -1,
+    ttl_word_fd: os.Fd = -1,
     /// The first sample in the file.
     first_sample: i64 = 0,
     read_buf: []i16,
@@ -117,7 +117,7 @@ pub const Review = struct {
         self.close();
         var buf: [std.fs.max_path_bytes:0]u8 = undefined;
         const names = [_][]const u8{ "samples.i16", "ttl_sample.i64", "ttl_word.u16" };
-        var fds: [3]i32 = @splat(-1);
+        var fds: [3]os.Fd = @splat(-1);
         errdefer for (fds) |fd| {
             if (fd >= 0) os.close(fd);
         };
@@ -135,7 +135,7 @@ pub const Review = struct {
     }
 
     pub fn close(self: *Review) void {
-        for ([_]*i32{ &self.samples_fd, &self.ttl_sample_fd, &self.ttl_word_fd }) |fd| {
+        for ([_]*os.Fd{ &self.samples_fd, &self.ttl_sample_fd, &self.ttl_word_fd }) |fd| {
             if (fd.* >= 0) os.close(fd.*);
             fd.* = -1;
         }
@@ -292,8 +292,9 @@ test "review reads a recording back through the feed, in pieces, in any order" {
     // is a 1 kHz sine on an offset; TTL line 2 is high from 20,000 to 20,300.
     const first: i64 = 5000;
     const total = 40000;
-    var dir_buf: [64]u8 = undefined;
-    const dir = try std.fmt.bufPrintSentinel(&dir_buf, "/tmp/dimna-review-test-{d}", .{os.getpid()}, 0);
+    var dir_buf: [300]u8 = undefined;
+    var tmp_buf: [200]u8 = undefined;
+    const dir = try std.fmt.bufPrintSentinel(&dir_buf, "{s}/dimna-review-test-{d}", .{ os.tempDir(&tmp_buf), os.getpid() }, 0);
     try Io.Dir.cwd().createDirPath(testing.io, dir);
     defer Io.Dir.cwd().deleteTree(testing.io, dir) catch {};
     {

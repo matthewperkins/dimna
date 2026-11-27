@@ -1381,8 +1381,9 @@ test "backfill from a recording equals the live store, apart from the lead-ins" 
             try ew.append(gpa, w);
         }
     }
-    var dir_buf: [64]u8 = undefined;
-    const dir = try std.fmt.bufPrintSentinel(&dir_buf, "/tmp/dimna-pyramid-test-{d}", .{os.getpid()}, 0);
+    var dir_buf: [300]u8 = undefined;
+    var tmp_buf: [200]u8 = undefined;
+    const dir = try std.fmt.bufPrintSentinel(&dir_buf, "{s}/dimna-pyramid-test-{d}", .{ os.tempDir(&tmp_buf), os.getpid() }, 0);
     try std.Io.Dir.cwd().createDirPath(testing.io, dir);
     defer std.Io.Dir.cwd().deleteTree(testing.io, dir) catch {};
     inline for (

@@ -467,7 +467,7 @@ fn feedWidth(layout: *const types.Layout, set: *const panels.Set) !usize {
 /// `written` (the rest can be written later, `writeRest`).
 const TestRec = struct {
     gpa: std.mem.Allocator,
-    dir_buf: [80:0]u8 = undefined,
+    dir_buf: [300:0]u8 = undefined,
     dir_len: usize = 0,
     first: i64,
     end: i64,
@@ -506,7 +506,8 @@ const TestRec = struct {
             if (@mod(s, 9001) < 300) w |= 8;
             self.words[i] = w;
         }
-        const d = try std.fmt.bufPrintSentinel(&self.dir_buf, "/tmp/dimna-overview-test-{d}-{s}", .{ os.getpid(), tag }, 0);
+        var tmp_buf: [200]u8 = undefined;
+        const d = try std.fmt.bufPrintSentinel(&self.dir_buf, "{s}/dimna-overview-test-{d}-{s}", .{ os.tempDir(&tmp_buf), os.getpid(), tag }, 0);
         self.dir_len = d.len;
         try std.Io.Dir.cwd().createDirPath(testing.io, self.dir());
         try self.write(written);
@@ -830,8 +831,9 @@ test "no recording folder: inactive, logged; a file shorter than file_end: retri
     defer ov.deinit();
 
     // A folder that is not there (removed before the thread got to it).
-    var gone_buf: [80]u8 = undefined;
-    const gone = try std.fmt.bufPrint(&gone_buf, "/tmp/dimna-overview-test-{d}-gone", .{os.getpid()});
+    var gone_buf: [300]u8 = undefined;
+    var tmp_buf: [200]u8 = undefined;
+    const gone = try std.fmt.bufPrint(&gone_buf, "{s}/dimna-overview-test-{d}-gone", .{ os.tempDir(&tmp_buf), os.getpid() });
     try ov.begin(gone, 5000, &set, width);
     var until = deadline(30);
     while (ov.active()) {

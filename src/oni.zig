@@ -176,13 +176,16 @@ pub const Frame = struct {
 /// Finds the first directory holding libonidriver_ft600.so: `$ONI_DRIVER_PATH` (colon
 /// separated), next to the executable, `../lib` from it, `~/.local/lib`, `/usr/local/lib`.
 /// Points liboni at it and returns it (in `buf`), or null to use the default search path.
+/// On Windows the file is libonidriver_ft600.dll and the folders are `%ONI_DRIVER_PATH%`
+/// (semicolon separated) and the executable's.
 pub fn configureDriverSearch(io: std.Io, env: *const std.process.Environ.Map, buf: *[std.fs.max_path_bytes:0]u8) ?[:0]const u8 {
-    const lib = "libonidriver_ft600.so";
+    const windows = @import("builtin").os.tag == .windows;
+    const lib = if (windows) "libonidriver_ft600.dll" else "libonidriver_ft600.so";
     var cands: [16][]const u8 = undefined;
     var n: usize = 0;
     var store: [4][std.fs.max_path_bytes]u8 = undefined;
     if (env.get("ONI_DRIVER_PATH")) |p| {
-        var it = std.mem.tokenizeScalar(u8, p, ':');
+        var it = std.mem.tokenizeScalar(u8, p, if (windows) ';' else ':');
         while (it.next()) |d| {
             if (n < 8) {
                 cands[n] = d;
@@ -198,14 +201,16 @@ pub fn configureDriverSearch(io: std.Io, env: *const std.process.Environ.Map, bu
             n += 1;
         } else |_| {}
     } else |_| {}
-    if (env.get("HOME")) |h| {
-        if (std.fmt.bufPrint(&store[2], "{s}/.local/lib", .{h})) |s| {
-            cands[n] = s;
-            n += 1;
-        } else |_| {}
+    if (!windows) {
+        if (env.get("HOME")) |h| {
+            if (std.fmt.bufPrint(&store[2], "{s}/.local/lib", .{h})) |s| {
+                cands[n] = s;
+                n += 1;
+            } else |_| {}
+        }
+        cands[n] = "/usr/local/lib";
+        n += 1;
     }
-    cands[n] = "/usr/local/lib";
-    n += 1;
     for (cands[0..n]) |d| {
         const path = std.fmt.bufPrint(&store[3], "{s}/{s}", .{ d, lib }) catch continue;
         std.Io.Dir.accessAbsolute(io, path, .{}) catch continue;

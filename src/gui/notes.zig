@@ -64,7 +64,7 @@ pub const Notes = struct {
     /// Notes saved since the caller last took them (for the recording).
     fresh: [8]Note = undefined,
     num_fresh: usize = 0,
-    log_fd: i32 = -1,
+    log_fd: os.Fd = -1,
     /// Set when something changed that the control window shows.
     dirty: bool = false,
 
@@ -477,8 +477,9 @@ test "recent keeps the last 32 notes, newest first" {
 }
 
 test "a saved note is one line in the log: time, sample, session, text" {
-    var dir_buf: [64]u8 = undefined;
-    const dir = try std.fmt.bufPrintSentinel(&dir_buf, "/tmp/dimna-notes-test-{d}", .{os.getpid()}, 0);
+    var dir_buf: [300]u8 = undefined;
+    var tmp_buf: [200]u8 = undefined;
+    const dir = try std.fmt.bufPrintSentinel(&dir_buf, "{s}/dimna-notes-test-{d}", .{ os.tempDir(&tmp_buf), os.getpid() }, 0);
     var file_buf: [96]u8 = undefined;
     const file = try std.fmt.bufPrintSentinel(&file_buf, "{s}/notes.log", .{dir}, 0);
     // A fresh folder, so the log is new and empty, opened as `Notes.init` opens it.

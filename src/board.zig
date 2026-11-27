@@ -139,11 +139,15 @@ pub const Driver = enum {
     usb,
     /// liboni's ft600 driver on FTDI's closed D3XX library (libonidriver_ft600.so): a fallback.
     d3xx,
+
+    /// `usb`, except on Windows: the board's FT600 belongs to FTDI's driver there, which
+    /// only FTDI's library speaks to (docs/plans/windows-port.md).
+    pub const default: Driver = if (@import("builtin").os.tag == .windows) .d3xx else .usb;
 };
 
 pub const Board = struct {
     io: Io,
-    driver: Driver = .usb,
+    driver: Driver = .default,
     ctx: oni.Context,
     settings: Settings = .{},
     regs: Rhd2000Registers,

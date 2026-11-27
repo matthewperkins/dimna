@@ -66,11 +66,16 @@ fn onSigint(_: std.posix.SIG) callconv(.c) void {
     interrupted.store(true, .release);
 }
 
+/// Windows: Ctrl-C, and also the console closed, a logoff or a shutdown (`os.onInterrupt`).
+fn onInterrupt() void {
+    interrupted.store(true, .release);
+}
+
 const Args = struct {
     seconds: f64 = 10.0,
     record_root: ?[]const u8 = null,
     live_test: bool = false,
-    driver: dimna.board.Driver = .usb,
+    driver: dimna.board.Driver = .default,
     settings: dimna.types.Settings = .{},
     /// `--probe`: what is plugged into the headstages, for meta.toml.
     probes: dimna.probe.Probes = .{},
@@ -224,7 +229,11 @@ pub fn main(init: std.process.Init) !u8 {
     };
     defer acq.scratch.deinit(gpa);
 
-    std.posix.sigaction(.INT, &.{ .handler = .{ .handler = onSigint }, .mask = std.posix.sigemptyset(), .flags = 0 }, null);
+    if (@import("builtin").os.tag == .windows) {
+        dimna.os.onInterrupt(&onInterrupt);
+    } else {
+        std.posix.sigaction(.INT, &.{ .handler = .{ .handler = onSigint }, .mask = std.posix.sigemptyset(), .flags = 0 }, null);
+    }
 
     if (rec) |r| {
         r.events_in = &acq.events;

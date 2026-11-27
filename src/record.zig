@@ -685,7 +685,9 @@ fn localNow(name_buf: []u8, created_buf: []u8) LocalTime {
     const h: u32 = @intCast(tm.tm_hour);
     const mi: u32 = @intCast(tm.tm_min);
     const s: u32 = @intCast(tm.tm_sec);
-    const off_min = @divTrunc(tm.tm_gmtoff, 60);
+    // Seconds east of UTC: a field of `tm` except on Windows, which has none (`c.h`).
+    const off_s: i64 = if (@hasField(c.struct_tm, "tm_gmtoff")) tm.tm_gmtoff else c.dimna_utc_offset_s(&tm, t);
+    const off_min = @divTrunc(off_s, 60);
     const sign: u8 = if (off_min < 0) '-' else '+';
     const aoff: u64 = @abs(off_min);
     return .{

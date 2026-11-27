@@ -21,6 +21,7 @@ const builtin = @import("builtin");
 const impl = switch (builtin.os.tag) {
     .linux => @import("os_linux.zig"),
     .macos => @import("os_darwin.zig"),
+    .windows => @import("os_windows.zig"),
     else => @compileError("dimna has no os layer for this system yet"),
 };
 
@@ -29,6 +30,8 @@ pub const E = impl.E;
 /// A file descriptor.
 pub const Fd = impl.Fd;
 pub const Pid = impl.Pid;
+/// A folder's handle, as `std.Io.Dir` holds it (a descriptor, except on Windows).
+pub const DirHandle = if (builtin.os.tag == .windows) impl.DirHandle else Fd;
 
 /// Nanoseconds on the monotonic clock `Io.Clock.awake` reads (`CLOCK_MONOTONIC` on Linux,
 /// `CLOCK_UPTIME_RAW` on macOS). Needs no `Io`.
@@ -68,7 +71,7 @@ pub fn setThreadIdle() E {
 }
 
 /// Locks the process's current and future pages in RAM. False if refused (always on
-/// macOS, which has no such call).
+/// macOS and Windows, which have no such call).
 pub fn lockMemory() bool {
     return impl.lockMemory();
 }
@@ -92,8 +95,8 @@ pub fn unmap(ptr: [*]const u8, len: usize) void {
 
 /// Makes `name` in the folder `dir` a symbolic link to `target`, replacing what was there
 /// in one step: the link is made as `tmp_name` (removed first) and renamed over `name`.
-/// False if it could not be made.
-pub fn swapLink(dir: Fd, target: [*:0]const u8, tmp_name: [*:0]const u8, name: [*:0]const u8) bool {
+/// False if it could not be made (always on Windows, for now: `os_windows.zig`).
+pub fn swapLink(dir: DirHandle, target: [*:0]const u8, tmp_name: [*:0]const u8, name: [*:0]const u8) bool {
     return impl.swapLink(dir, target, tmp_name, name);
 }
 
@@ -143,21 +146,33 @@ pub fn syncToDisk(io: Io, file: Io.File) Io.File.SyncError!void {
 }
 
 /// A hold on the machine staying awake, from `keepAwake`; empty (zero bytes) on Linux.
-pub const Awake = if (builtin.os.tag == .macos) impl.Awake else struct {};
+pub const Awake = if (builtin.os.tag == .linux) struct {} else impl.Awake;
 
-/// Keeps the machine from sleeping when idle, until `allowSleep`: macOS sleeps an idle
-/// machine, which would stop acquisition. Not a closed lid (macOS sleeps the machine then
+/// Keeps the machine from sleeping when idle, until `allowSleep`: macOS and Windows sleep
+/// an idle machine, which would stop acquisition. Not a closed lid (the machine sleeps then
 /// anyway). On Linux nothing: the program has never needed it there, and the two calls
 /// compile to nothing. Logs if it could not.
 pub fn keepAwake() Awake {
-    if (builtin.os.tag != .macos) return .{};
+    if (builtin.os.tag == .linux) return .{};
     return impl.keepAwake();
 }
 
 /// Gives up what `keepAwake` got (nothing if it got nothing or was given up already).
 pub fn allowSleep(awake: *Awake) void {
-    if (builtin.os.tag != .macos) return;
+    if (builtin.os.tag == .linux) return;
     impl.allowSleep(awake);
+}
+
+/// Windows only (elsewhere the callers install signal handlers themselves): calls `handler`,
+/// on a thread of the system's, on Ctrl-C, Ctrl-Break, the console being closed, a logoff or
+/// a shutdown.
+pub const onInterrupt = if (builtin.os.tag == .windows) impl.onInterrupt else {};
+
+/// The folder for temporary files, without a trailing separator, for the tests: `/tmp`, on
+/// Windows `%TEMP%`. `buf` must hold it.
+pub fn tempDir(buf: []u8) []const u8 {
+    if (builtin.os.tag == .windows) return impl.tempDir(buf);
+    return "/tmp";
 }
 
 const testing = std.testing;

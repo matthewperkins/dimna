@@ -360,11 +360,12 @@ fn expectedFiles(gpa: std.mem.Allocator) !struct { samples: []u8, edges: Edges }
 test "display processing never changes what is recorded" {
     const gpa = testing.allocator;
     const io = testing.io;
-    var base_buf: [64]u8 = undefined;
-    const base = try std.fmt.bufPrint(&base_buf, "/tmp/dimna-independence-test-{d}", .{os.getpid()});
+    var base_buf: [300]u8 = undefined;
+    var tmp_buf: [200]u8 = undefined;
+    const base = try std.fmt.bufPrint(&base_buf, "{s}/dimna-independence-test-{d}", .{ os.tempDir(&tmp_buf), os.getpid() });
     defer Io.Dir.cwd().deleteTree(io, base) catch {};
-    var with_root_buf: [96]u8 = undefined;
-    var without_root_buf: [96]u8 = undefined;
+    var with_root_buf: [400]u8 = undefined;
+    var without_root_buf: [400]u8 = undefined;
     const with_root = try std.fmt.bufPrint(&with_root_buf, "{s}/with-display", .{base});
     const without_root = try std.fmt.bufPrint(&without_root_buf, "{s}/without-display", .{base});
 

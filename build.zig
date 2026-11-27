@@ -276,7 +276,12 @@ fn addCore(
         .root = b.path("vendor/liboni"),
         .files = &.{ "oni.c", "onix.c", "onidriverloader.c" },
         // As upstream release builds: asserts off. No UBSan trap in third-party C.
-        .flags = &.{ "-DNDEBUG", "-w", "-fno-sanitize=undefined" },
+        // Windows: oni.c hands `int *` to InterlockedIncrement, which takes `long *`. Both
+        // are 32 bits there and MSVC only warns; clang refuses unless told not to.
+        .flags = if (target.result.os.tag == .windows)
+            &.{ "-DNDEBUG", "-w", "-fno-sanitize=undefined", "-Wno-error=incompatible-pointer-types" }
+        else
+            &.{ "-DNDEBUG", "-w", "-fno-sanitize=undefined" },
     });
     liboni_mod.addIncludePath(b.path("vendor/liboni"));
     const liboni = b.addLibrary(.{ .name = "oni", .root_module = liboni_mod });
@@ -289,6 +294,16 @@ fn addCore(
     if (target.result.abi.isMusl()) {
         const shim = b.addWriteFiles();
         _ = shim.add("execinfo.h", "/* Empty: liboni includes execinfo.h but uses nothing from it. */\n");
+        liboni_mod.addIncludePath(shim.getDirectory());
+        c_api.addIncludePath(shim.getDirectory());
+    }
+
+    // onidriverloader.h includes <Windows.h>; the headers Zig brings for Windows name it
+    // windows.h, which is another file on a system whose file names tell case apart (a
+    // build for Windows made on Linux).
+    if (target.result.os.tag == .windows) {
+        const shim = b.addWriteFiles();
+        _ = shim.add("Windows.h", "#include <windows.h>\n");
         liboni_mod.addIncludePath(shim.getDirectory());
         c_api.addIncludePath(shim.getDirectory());
     }

@@ -151,12 +151,13 @@ fn testInfo() record.Info {
 // ---- the temporary folder ----
 
 const TmpRoot = struct {
-    buf: [128]u8 = undefined,
+    buf: [300]u8 = undefined,
     len: usize = 0,
 
     fn init(name: []const u8) !TmpRoot {
         var t: TmpRoot = .{};
-        const p = try std.fmt.bufPrint(&t.buf, "/tmp/dimna-record-test-{d}/{s}", .{ os.getpid(), name });
+        var tmp_buf: [200]u8 = undefined;
+        const p = try std.fmt.bufPrint(&t.buf, "{s}/dimna-record-test-{d}/{s}", .{ os.tempDir(&tmp_buf), os.getpid(), name });
         t.len = p.len;
         Io.Dir.cwd().deleteTree(testing.io, p) catch {};
         try Io.Dir.cwd().createDirPath(testing.io, p);
@@ -168,8 +169,9 @@ const TmpRoot = struct {
     fn deinit(self: *const TmpRoot) void {
         Io.Dir.cwd().deleteTree(testing.io, self.path()) catch {};
         // The per-process parent, once the last test's folder is gone (fails while others remain).
-        var pbuf: [64]u8 = undefined;
-        const parent = std.fmt.bufPrint(&pbuf, "/tmp/dimna-record-test-{d}", .{os.getpid()}) catch return;
+        var pbuf: [300]u8 = undefined;
+        var tmp_buf: [200]u8 = undefined;
+        const parent = std.fmt.bufPrint(&pbuf, "{s}/dimna-record-test-{d}", .{ os.tempDir(&tmp_buf), os.getpid() }) catch return;
         Io.Dir.cwd().deleteDir(testing.io, parent) catch {};
     }
 };
@@ -689,6 +691,8 @@ test "recorder: a write failure does not hold the producer, and what was indexed
     // error logged during a test as a failure of that test. So this one runs in a child
     // process, whose exit status is the result. Its stderr goes to a file, shown if it fails.
     if (builtin.os.tag == .macos) return failureInChildDarwin();
+    // Windows has no fork; the test is skipped there until it starts a second process.
+    if (comptime builtin.os.tag == .windows) return error.SkipZigTest;
     const linux = std.os.linux;
     const tmp = try TmpRoot.init("failure");
     defer tmp.deinit();

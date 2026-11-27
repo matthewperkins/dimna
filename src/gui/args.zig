@@ -21,7 +21,7 @@ const present_default: gpu_mod.PresentMode = if (builtin.os.tag == .macos) .fifo
 pub const Args = struct {
     seconds: f64 = 0,
     settings: dimna.types.Settings = .{},
-    driver: dimna.board.Driver = .usb,
+    driver: dimna.board.Driver = .default,
     sim: [8]usize = @splat(0),
     num_sim: usize = 0,
     present: gpu_mod.PresentMode = present_default,

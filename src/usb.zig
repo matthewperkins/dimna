@@ -46,6 +46,8 @@ const impl = switch (builtin.os.tag) {
     .linux => @import("usb_linux.zig"),
     // IOKit's USB user client.
     .macos => @import("usb_darwin.zig"),
+    // None: the board is reached through FTDI's library there (`usb_windows.zig`).
+    .windows => @import("usb_windows.zig"),
     else => @compileError("dimna has no USB layer for this system yet"),
 };
 
