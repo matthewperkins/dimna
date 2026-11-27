@@ -18,7 +18,7 @@ before any code:
 1. **How dimna reaches the board.** On Windows a USB device has exactly one driver. FTDI's
    own driver is the one the Open Ephys GUI uses; dimna's own FT600 code needs a different
    one (WinUSB). One board on one machine cannot serve both programs without switching the
-   driver by hand. See "The USB decision".
+   driver by hand. Decided: FTDI's DLL. See "The USB decision".
 2. **The latency figure.** 1.6 to 2.6 ms from sample to screen was measured on Hyprland
    with tearing. Windows may reach it fullscreen; it cannot be promised before it is
    measured, and in a window it will very probably be a frame later.
@@ -256,10 +256,23 @@ it decides whether the hardware-safety rule and the measured block timing carry 
 **C. Both**, as on Linux: B as the default because it needs no setup, A for those who
 install WinUSB. Twice the testing on a system with the least testing.
 
-My recommendation: start with **B** to get a working headless recorder on Windows with
-the least risk, and try **A with FTDI's WinUSB package** on the first day a Windows
-machine has the board, since it decides whether dimna's own code can be the default
-there too.
+**Decided with the owner (2026-11-26): B.** dimna on Windows uses FTDI's DLL, so that it
+works beside the Open Ephys GUI with no driver switching. The GUI's Windows setup binds
+the board to FTDI's kernel driver (`FTDIBUS3.sys`): its driver page asks for the "FTD3XX
+driver", and liboni's FT600 driver has a workaround named for that driver line's 1.3.0.8
+(not seen in Device Manager on a real machine). Switching to WinUSB and back needs
+administrator rights each time, and Windows Update may undo it. What follows from B:
+
+- `--driver d3xx` is the default on Windows, and at first the only transport there.
+- `ft600.zig` and its guard are not used on Windows. `docs/hardware.md` must say that
+  there the rule "no chip-configuration write" is a promise not to call
+  `FT_SetChipConfiguration`, with a test that no source file names it.
+- dimna states a minimum driver version (1.3.0.10, for the out-of-order fix) and checks
+  it at open.
+- Block timing and CPU use are measured again on Windows; the rig's `d3xx` figures do not
+  carry over.
+- Route A (WinUSB, dimna's own code) is not planned. It could be added later as an option
+  for a dedicated machine, and `usb_windows.zig` is then the only new file it needs.
 
 ## What cannot be known before a Windows machine has the board
 
@@ -284,22 +297,47 @@ Each step ends with something that can be shown, as the Mac port's did.
 2. **Headless on the simulator**, on a Windows machine or CI runner: `dimna-headless
    --sim --record`, verified by `dimna_read.py`; the unit tests pass. The `current` link
    decision is needed here.
-3. **Headless on the board**: route B, then the route A check. The first step that
+3. **Headless on the board**, through FTDI's DLL (route B). The first step that
    touches hardware, so under the owner's hand, with the registers written stated as for
    any board run (they are the same as on Linux).
 4. **Window and Vulkan**: the display on the simulator, then the latency measurement.
 5. **Text**, then **sound**.
 6. **A soak and a recording compared against the rig's**, then packaging.
 
-Steps 1 and 2 are a few days of agent work and risk nothing. Step 3 decides whether the
-rest is worth doing.
+Steps 1 and 2 are a few days of agent work and risk nothing. With the Windows machine
+available for one day only, the backends of steps 4 and 5 are also written and compiled
+before that day ("The day on Windows"), and steps 2 to 5 are tried on it together.
+
+## The day on Windows
+
+The Windows machine is the rig, booted the other way. That shapes the work:
+
+- **The rig records nothing that day**, and a session running on the Linux side is not
+  there: whoever works on Windows (an agent included) starts there with this file and the
+  branch, and nothing else.
+- **So everything that can be done from Linux is done first**: every Windows backend
+  written and cross-compiled here (`-Dtarget=x86_64-windows`), the display included, since
+  headless alone is not the goal. The day is for what only Windows can show: does it
+  start, draw, find the board, record, and how late is a frame.
+- **MSVC is not needed.** Zig brings its own Windows toolchain and C library (the `gnu`
+  target), and builds the C and C++ shims too. To check: linking liboni's FT600 driver
+  against FTDI's `FTD3XX.lib` with it, or loading `FTD3XX.dll` at run time instead.
+- **What the Windows side needs beforehand**: Zig 0.17.1 (a zip, no installer), git,
+  Python with numpy for `dimna_read.py`, the GPU's current driver, FTDI's D3XX driver
+  (1.3.0.10 or later; the Open Ephys GUI's installer brings one), and a folder for
+  recordings with room in it. If the Linux disk is to be read from Windows, or the
+  reverse, Windows' fast startup must be off, or the shared disk can be damaged.
+- **The board**: the same registers as on Linux are written, through FTDI's DLL. No
+  animal connected, and the owner's go as for any board run.
 
 ## Questions for the owner
 
-1. Who would use it, and on what machine? A lab that already runs the Open Ephys GUI on
-   Windows points to route B; a dedicated dimna machine points to A.
-2. Is a headless recorder on Windows useful by itself, or is the display the point?
-3. Is there a Windows machine that can have the board for a day?
+1. Answered (2026-11-26): labs that run the Open Ephys GUI on Windows and try dimna
+   beside it, so route B.
+2. Answered (2026-11-27): a headless recorder alone is not useful on Windows. The display
+   is the point; headless is only the first thing that can be shown to work.
+3. Answered (2026-11-27): the rig itself (gallbladder), which also boots Windows, for a
+   day. See "The day on Windows".
 4. `current`: a junction or a text file? (A text file could be written on every system,
    beside the link, so `record.sh` reads one thing everywhere.)
 5. Text: DirectWrite (nothing to ship) or FreeType built in (less new code)?
