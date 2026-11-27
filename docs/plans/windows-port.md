@@ -366,6 +366,91 @@ The Windows machine is the rig, booted the other way. That shapes the work:
 - **The board**: the same registers as on Linux are written, through FTDI's DLL. No
   animal connected, and the owner's go as for any board run.
 
+## Handoff (2026-11-27): the session moves off the tower
+
+"The tower" is the rig's computer (a Dell Precision 3620; Linux hostname `gallbladder`). It
+boots Linux or Windows. While it is in Windows, the work is run from another Linux host in
+the office, which reaches the tower by ssh. This section is what a session starting on
+that host needs; it has this repository and nothing else from the earlier conversations.
+Read `docs/plans/README.md` first, then this file from the top.
+
+### Where things stand
+
+- Branch `windows-port`, two commits on top of `main`: step 1 (above) and the junction.
+  Decisions made, all by the owner: FTDI's DLL through liboni (route B); the display is the
+  goal, headless only a milestone; `current` is a junction on Windows; Vulkan with
+  `VK_KHR_win32_surface`, not Direct3D 12.
+- Nothing has run on Windows. Steps 2 to 6 of "A possible order" are open. Not written at
+  all: the Win32 window backend, the Vulkan win32 surface, text, WASAPI sound, the GUI's
+  signal handling and config paths (`%APPDATA%`), `VirtualLock` of the rings and the
+  display history, `libonidriver_ft600.dll`, a `windows-latest` CI job.
+- Open questions for the owner: 5 (text: DirectWrite or FreeType) and 6 (is "record
+  animals on Linux, Windows for looking and bench work" an acceptable first state).
+
+### Switching the tower
+
+Read from the tower's firmware on 2026-11-27; the round trip has not been tried.
+
+- Linux to Windows: `sudo efibootmgr --bootnext 0000 && systemctl reboot`. Entry 0000 is
+  Windows Boot Manager. It applies to one boot and skips rEFInd.
+- Windows to Linux: restart. The boot order has rEFInd first (entry 0003, on the Linux
+  disk), which waits 20 s and takes its last choice, expected to be Linux since the boot
+  into Windows went round it. A power cycle of a hung Windows should end the same way.
+- If a Windows update has put Windows first: `sudo efibootmgr -o 0003,0000` from Linux, or
+  rEFInd from the firmware's F12 menu.
+
+### The working loop
+
+- **On the office host**: a clone of this repository with `windows-port` checked out, and
+  Zig 0.17.1. Build there: `zig build -Dtarget=x86_64-windows` (add `-Dgui=false` until the
+  display backends exist), and `zig build test` for Linux, which must stay as it is
+  (313 of 318 pass, 5 skipped; one test more with `-Dgit=false`).
+- **On the tower in Windows**, set up by the owner: the OpenSSH server
+  (`Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0`, then
+  `Start-Service sshd` and `Set-Service sshd -StartupType Automatic`, in an administrator
+  PowerShell), git, Zig 0.17.1, and the rest of the list under "The day on Windows". The
+  office host gets an ssh alias `tower` for it, by address.
+- **Running**: either copy `zig-out/bin/*.exe` to the tower with `scp`, or keep a clone on
+  the tower and run `zig build test --summary all` there over ssh; the second is the only
+  way to run the unit tests. Use a folder under `%TEMP%` or one the owner names for
+  recordings made in tests.
+- **Windows cannot be opened over ssh**: a program started that way is not on the desktop.
+  The owner starts the display and says what is seen, as on Linux.
+- If this loop proves clumsy, the fallback is a Claude Code session on Windows itself,
+  starting from this file.
+
+### First things to do on Windows
+
+1. `dimna-headless.exe --sim --record` into a test folder for a minute; Ctrl-C; check it
+   with `tools/dimna_read.py`. Then the unit tests.
+2. The list under "Step 1, as done", and these from `os_windows.zig`: that setting a target
+   on a junction that exists replaces it; `keepAwake` and `allowSleep` called on the same
+   thread; that `nowNs` (QueryPerformanceCounter) and `Io.Clock.awake` are one clock.
+3. Device Manager with the board plugged in: which driver holds it (`FTDIBUS3.sys` is
+   expected) and its version, 1.3.0.10 or later. Looking only; this opens nothing.
+4. Only then, and on the owner's go: the board through FTDI's DLL.
+
+### Rules that hold on every machine
+
+- Never touch the board without the owner's go. Before a change that touches hardware,
+  say which registers or devices it writes.
+- During the owner's recordings: no board access and no windows. Before a board run, check
+  that nothing else has it: on Linux `pgrep -x` for `oers`, `kalila`, `kalila-headless`,
+  `headless`, `oez`, `oez-headless`, `dimna`, `dimna-headless`, and
+  `pgrep -fa 'examples/headless|[o]pen-ephys'`; on Windows `tasklist` for the same names
+  and `open-ephys.exe`.
+- Do not open windows; the owner tries the display. No `--present fifo` on the rig.
+- Commit and push only when asked. Commits carry the owner's name and the co-author line
+  the earlier ones do.
+- On the office host, write only inside this repository's clone and a scratch folder.
+  Other folders in that home are other work and are read-only at most.
+- `docs/upstream/` and `packaging/icon/candidates/kalila-*` in the tower's main checkout
+  are untracked on purpose: not to be touched or committed. The kalila repository belongs
+  to another session.
+- The rules for agents in `docs/plans/README.md`: `--sim` only unless told otherwise,
+  temporary files in a temp folder, break every tested property once on purpose,
+  `zig fmt --check src build.zig` clean.
+
 ## Questions for the owner
 
 1. Answered (2026-11-26): labs that run the Open Ephys GUI on Windows and try dimna
