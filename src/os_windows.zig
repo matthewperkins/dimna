@@ -189,12 +189,81 @@ pub fn unmap(ptr: [*]const u8, len: usize) void {
     _ = VirtualFree(addr, len, mem_decommit);
 }
 
-/// Always false, for now: a symbolic link needs administrator rights or Developer Mode on
-/// Windows, and what stands in for the `current` link there is not decided
-/// (docs/plans/windows-port.md, the questions for the owner).
+extern "kernel32" fn GetFinalPathNameByHandleW(file: HANDLE, buf: [*]u16, len: DWORD, flags: DWORD) callconv(.winapi) DWORD;
+extern "kernel32" fn DeviceIoControl(device: HANDLE, code: DWORD, in: ?*const anyopaque, in_len: DWORD, out: ?*anyopaque, out_len: DWORD, returned: ?*DWORD, overlapped: ?*Overlapped) callconv(.winapi) BOOL;
+
+/// Makes `name` in the folder `dir` a junction to the folder `target` in it (a symbolic link
+/// needs administrator rights or Developer Mode on Windows; a junction needs neither, and
+/// other programs follow it as they would a link). `tmp_name` is not used: a junction that
+/// is there already is given its new target in place, in one request. False if it could not
+/// be made: `dir` is not on a local NTFS disk (a network share, an exFAT disk), or `name` is
+/// something else (a folder with files in it, a file).
+///
+/// Unlike Linux's link, a junction holds the whole path of its target: after the folder
+/// `dir` is renamed or moved it points nowhere, until the next recording sets it again.
+///
+/// To check on Windows: that setting the target of an existing junction replaces it.
 pub fn swapLink(dir: DirHandle, target: [*:0]const u8, tmp_name: [*:0]const u8, name: [*:0]const u8) bool {
-    _ = .{ dir, target, tmp_name, name };
-    return false;
+    _ = tmp_name;
+    // `dir`'s path, as "\\?\C:\folder" (a network share's begins "\\?\UNC\": no junctions).
+    var root: [max_path]u16 = undefined;
+    const root_len = GetFinalPathNameByHandleW(dir, &root, root.len, 0);
+    if (root_len < 7 or root_len >= root.len) return false;
+    const prefix = [_]u16{ '\\', '\\', '?', '\\' };
+    if (!std.mem.eql(u16, root[0..4], &prefix) or root[5] != ':') return false;
+    const drive_path = root[4..root_len]; // "C:\folder"
+
+    // "C:\folder\<name>": the junction itself, a folder made if it is not there.
+    var link: [max_path:0]u16 = undefined;
+    const link_len = joinWide(&link, drive_path, std.mem.span(name)) orelse return false;
+    _ = CreateDirectoryW(link[0..link_len :0], null);
+    const generic_write = 0x4000_0000;
+    // To open a folder at all, and the junction itself, not what it points to.
+    const backup_semantics = 0x0200_0000;
+    const open_reparse_point = 0x0020_0000;
+    const h = CreateFileW(link[0..link_len :0], generic_write, share_all, null, open_existing, backup_semantics | open_reparse_point, null);
+    if (h == invalid_handle) return false;
+    defer _ = CloseHandle(handleOf(h));
+
+    // REPARSE_DATA_BUFFER for a mount point, as 16-bit words: tag (2), data length, reserved;
+    // then the offsets and lengths (in bytes) of two names and the names themselves, each
+    // zero-terminated: the target as the kernel wants it ("\??\C:\folder\target") and as
+    // it is shown ("C:\folder\target").
+    var buf: [8 + 2 * max_path + 8]u16 = undefined;
+    var dest: [max_path:0]u16 = undefined;
+    const dest_len = joinWide(&dest, drive_path, std.mem.span(target)) orelse return false;
+    const nt_prefix = [_]u16{ '\\', '?', '?', '\\' };
+    const names = buf[8..];
+    @memcpy(names[0..4], &nt_prefix);
+    @memcpy(names[4..][0..dest_len], dest[0..dest_len]);
+    const subst_len = 4 + dest_len;
+    names[subst_len] = 0;
+    @memcpy(names[subst_len + 1 ..][0..dest_len], dest[0..dest_len]);
+    names[subst_len + 1 + dest_len] = 0;
+    const data_bytes = 8 + 2 * (subst_len + 1 + dest_len + 1);
+    const tag_mount_point: u32 = 0xA000_0003;
+    buf[0] = @truncate(tag_mount_point);
+    buf[1] = @truncate(tag_mount_point >> 16);
+    buf[2] = @intCast(data_bytes);
+    buf[3] = 0;
+    buf[4] = 0;
+    buf[5] = @intCast(2 * subst_len);
+    buf[6] = @intCast(2 * (subst_len + 1));
+    buf[7] = @intCast(2 * dest_len);
+    const fsctl_set_reparse_point = 0x0009_00A4;
+    var returned: DWORD = 0;
+    return DeviceIoControl(handleOf(h), fsctl_set_reparse_point, &buf, @intCast(8 + data_bytes), null, 0, &returned, null) != 0;
+}
+
+/// `folder`, a backslash and `leaf` (UTF-8) in `out`, zero-terminated: its length, or null
+/// if it does not fit.
+fn joinWide(out: *[max_path:0]u16, folder: []const u16, leaf: []const u8) ?usize {
+    if (folder.len + 1 + leaf.len >= max_path) return null;
+    @memcpy(out[0..folder.len], folder);
+    out[folder.len] = '\\';
+    const n = std.unicode.utf8ToUtf16Le(out[folder.len + 1 ..], leaf) catch return null;
+    out[folder.len + 1 + n] = 0;
+    return folder.len + 1 + n;
 }
 
 pub fn getpid() Pid {

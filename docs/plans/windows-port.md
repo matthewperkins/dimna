@@ -317,8 +317,10 @@ tests are as before (314 of 319 pass, 5 skipped, debug and `--release=safe`).
 
 - `src/os_windows.zig`: the system calls, through kernel32. Three of them do less than
   Linux's and say so: `lockMemory` is always false; `unmap` of part of a mapping gives the
-  memory back but keeps the addresses; `swapLink` is always false (question 4 below), so
-  a recording logs that the `current` link could not be made.
+  memory back but keeps the addresses; `swapLink` makes `current` a junction (decided
+  with the owner, 2026-11-27: it reads as the link does, where a text file would be one
+  more thing a program has to know about), which holds its target's whole path and
+  exists only on a local NTFS disk.
 - `src/usb_windows.zig`: no USB backend, in the contract's shape: nothing is found and
   every call fails. `board.Driver.default` is `d3xx` on Windows.
 - `os.zig` gained `DirHandle`, `onInterrupt` (Windows: Ctrl-C, the console closed, a
@@ -372,8 +374,7 @@ The Windows machine is the rig, booted the other way. That shapes the work:
    is the point; headless is only the first thing that can be shown to work.
 3. Answered (2026-11-27): the rig itself (gallbladder), which also boots Windows, for a
    day. See "The day on Windows".
-4. `current`: a junction or a text file? (A text file could be written on every system,
-   beside the link, so `record.sh` reads one thing everywhere.)
+4. Answered (2026-11-27): a junction. Linux keeps its link; no text file anywhere.
 5. Text: DirectWrite (nothing to ship) or FreeType built in (less new code)?
 6. Is "record animals on Linux; Windows for looking and for bench work" an acceptable
    first state, as it is for the Mac?

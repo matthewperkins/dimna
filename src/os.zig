@@ -95,7 +95,7 @@ pub fn unmap(ptr: [*]const u8, len: usize) void {
 
 /// Makes `name` in the folder `dir` a symbolic link to `target`, replacing what was there
 /// in one step: the link is made as `tmp_name` (removed first) and renamed over `name`.
-/// False if it could not be made (always on Windows, for now: `os_windows.zig`).
+/// False if it could not be made. On Windows a junction, set in place (`os_windows.zig`).
 pub fn swapLink(dir: DirHandle, target: [*:0]const u8, tmp_name: [*:0]const u8, name: [*:0]const u8) bool {
     return impl.swapLink(dir, target, tmp_name, name);
 }
