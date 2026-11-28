@@ -369,8 +369,9 @@ The Windows machine is the rig, booted the other way. That shapes the work:
 ## Handoff (2026-11-27): the session moves off the tower
 
 "The tower" is the rig's computer (a Dell Precision 3620; Linux hostname `gallbladder`). It
-boots Linux or Windows. While it is in Windows, the work is run from another Linux host in
-the office, which reaches the tower by ssh. This section is what a session starting on
+boots Linux or Windows, and the board stays on it. While it is in Windows, the work is run
+from the office's Linux host (`intero` in the owner's ssh config, `interoceptlinux` on
+the tailnet), which reaches the tower by ssh and has no board: simulator only there. This section is what a session starting on
 that host needs; it has this repository and nothing else from the earlier conversations.
 Read `docs/plans/README.md` first, then this file from the top.
 
@@ -405,11 +406,12 @@ Read from the tower's firmware on 2026-11-27; the round trip has not been tried.
   Zig 0.17.1. Build there: `zig build -Dtarget=x86_64-windows` (add `-Dgui=false` until the
   display backends exist), and `zig build test` for Linux, which must stay as it is
   (313 of 318 pass, 5 skipped; one test more with `-Dgit=false`).
-- **On the tower in Windows**, set up by the owner: the OpenSSH server
-  (`Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0`, then
-  `Start-Service sshd` and `Set-Service sshd -StartupType Automatic`, in an administrator
-  PowerShell), git, Zig 0.17.1, and the rest of the list under "The day on Windows". The
-  office host gets an ssh alias `tower` for it, by address.
+- **On the tower in Windows**, set up by the owner: a Bitvise SSH server whose shell is
+  PowerShell, git, Zig 0.17.1, and the rest of the list under "The day on Windows". The
+  office host's ssh config already has it as `ethoviz`, with a key the owner expects to
+  work (not tried): `ssh ethoviz` is the tower in Windows. Commands sent over ssh are
+  PowerShell's: `$env:TEMP` where this file writes `%TEMP%`, `;` between commands, and
+  quoting by its rules. Files go over with `scp` or `sftp`.
 - **Running**: either copy `zig-out/bin/*.exe` to the tower with `scp`, or keep a clone on
   the tower and run `zig build test --summary all` there over ssh; the second is the only
   way to run the unit tests. Use a folder under `%TEMP%` or one the owner names for
